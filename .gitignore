@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 依赖
+node_modules/
+
+# 运行时
+*.log
+*.pid
+
+# 本地配置
+.env
+*.local
+
+# 上传与导出数据
+uploads/
+exports/
+results/
+
+# 外部算法模块（待打包集成）
+# alg_module/
+# models/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
