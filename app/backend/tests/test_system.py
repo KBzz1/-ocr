@@ -103,3 +103,58 @@ class TestErrorHandling:
         assert "RuntimeError" not in json.dumps(data)
         assert "traceback" not in json.dumps(data)
         assert "stack" not in json.dumps(data)
+
+
+class TestLanAddressSelection:
+    def test_get_lan_addresses_excludes_loopback_and_deduplicates(self, monkeypatch):
+        from app.backend import _get_lan_addresses
+        import socket
+
+        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda hostname, port, family: [
+                (family, None, None, "", ("127.0.0.1", 0)),
+                (family, None, None, "", ("192.168.1.20", 0)),
+                (family, None, None, "", ("192.168.1.20", 0)),
+                (family, None, None, "", ("10.0.0.8", 0)),
+            ],
+        )
+
+        assert _get_lan_addresses(8080) == ["192.168.1.20:8080", "10.0.0.8:8080"]
+
+    def test_get_lan_addresses_returns_empty_when_lookup_fails(self, monkeypatch):
+        from app.backend import _get_lan_addresses
+        import socket
+
+        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
+
+        def raise_os_error(hostname, port, family):
+            raise OSError("network unavailable")
+
+        monkeypatch.setattr(socket, "getaddrinfo", raise_os_error)
+        assert _get_lan_addresses(8080) == []
+
+
+class TestCreateBackendApp:
+    def test_create_backend_app_registers_system_route(self, tmp_path, monkeypatch):
+        import socket
+        from app.backend import create_backend_app
+
+        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda hostname, port, family: [
+                (family, None, None, "", ("192.168.1.20", 0)),
+            ],
+        )
+
+        app = create_backend_app(str(tmp_path))
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        data = json.loads(resp.data)
+
+        assert resp.status_code == 200
+        assert data["data"]["lan_addresses"] == ["192.168.1.20:8080"]
