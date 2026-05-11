@@ -21,14 +21,25 @@ node_modules/
 .env
 *.local
 
-# 上传与导出数据
-uploads/
-exports/
-results/
+# 本地运行数据
+data/uploads/*
+data/results/*
+data/temp/*
+exports/*
+logs/*
+!data/uploads/README.md
+!data/results/README.md
+!data/temp/README.md
+!exports/README.md
+!logs/README.md
 
-# 外部算法模块（待打包集成）
-# alg_module/
-# models/
+# 外部模型与运行时（待打包集成）
+models/ppstructure/*
+models/llm/*
+runtime/python/*
+!models/ppstructure/README.md
+!models/llm/README.md
+!runtime/python/README.md
 
 # 系统文件
 .DS_Store
@@ -38,5 +49,6 @@ desktop.ini
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
