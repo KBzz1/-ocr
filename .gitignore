@@ -52,3 +52,6 @@ desktop.ini
 .claude/
 *.swp
 *.swo
+
+# 本地配置覆盖
+app/config/local.yaml
