@@ -2,7 +2,16 @@
 
 ## 范围
 
-本地服务启动、配置加载、健康检查、统一错误响应、状态枚举。对应 TDD 实施顺序第 1 步（状态机 + 错误码 + 统一响应）和第 2 步（系统启动）。
+本地服务启动、配置加载、健康检查、统一错误响应、状态枚举。对应 TDD 实施顺序第 1 步（状态机 + 错误码 + 统一响应）和第 2 步（系统状态、离线启动、局域网地址选择）。
+
+本阶段覆盖：
+
+- BE-SYS-001：系统状态对象包含 `status`、`version`、`started_at`、`lan_addresses`。
+- BE-SYS-002：`GET /api/system/status` 返回 200 和 `status: "running"`。
+- BE-SYS-003/004：启动流程不访问外部网络，断网环境下仍可启动。
+- BE-SYS-005：多网卡场景返回候选局域网地址，不把 `127.0.0.1` 作为手机默认地址。
+
+本阶段不覆盖 BE-SYS-006 的二维码 URL 重生成接口，只保留配置与状态返回所需的地址选择能力。
 
 ## 技术选型
 
@@ -33,12 +42,13 @@ app/backend/
     ├── test_config.py
     ├── test_enums.py
     ├── test_errors.py
+    ├── test_json_store.py
     └── test_system.py
 ```
 
 ```
 app/config/
-├── default.yaml             # 提交的默认配置
+├── default.yaml             # 提交的安全默认/占位配置，不包含真实部署参数
 └── local.yaml               # 本地覆盖（gitignore）
 ```
 
@@ -97,21 +107,23 @@ class FieldStatus(Enum):
 
 ```python
 class ErrorCode(Enum):
-    SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", 404)
-    SESSION_EXPIRED = ("SESSION_EXPIRED", 409)
-    SESSION_LOCKED = ("SESSION_LOCKED", 409)
-    UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", 400)
-    FILE_TOO_LARGE = ("FILE_TOO_LARGE", 400)
-    INVALID_QUAD_POINTS = ("INVALID_QUAD_POINTS", 400)
-    TASK_NOT_FOUND = ("TASK_NOT_FOUND", 404)
-    INVALID_TASK_TRANSITION = ("INVALID_TASK_TRANSITION", 400)
-    REVIEW_VALIDATION_FAILED = ("REVIEW_VALIDATION_FAILED", 400)
-    EXPORT_VALIDATION_FAILED = ("EXPORT_VALIDATION_FAILED", 400)
-    EXPORT_FAILED = ("EXPORT_FAILED", 500)
-    # 算法模块错误码（任务进入 failed，无固定 HTTP 状态码）
-    ALGORITHM_MODULE_NOT_CONFIGURED = ("ALGORITHM_MODULE_NOT_CONFIGURED", 500)
-    ALGORITHM_MODULE_FAILED = ("ALGORITHM_MODULE_FAILED", 500)
-    ALGORITHM_CONTRACT_INVALID = ("ALGORITHM_CONTRACT_INVALID", 500)
+    SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", 404, "采集会话不存在")
+    SESSION_EXPIRED = ("SESSION_EXPIRED", 409, "采集会话已过期")
+    SESSION_LOCKED = ("SESSION_LOCKED", 409, "采集会话已完成采集，禁止编辑")
+    UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", 400, "不支持的文件类型")
+    FILE_TOO_LARGE = ("FILE_TOO_LARGE", 400, "文件超过大小限制")
+    INVALID_QUAD_POINTS = ("INVALID_QUAD_POINTS", 400, "框选坐标格式非法")
+    TASK_NOT_FOUND = ("TASK_NOT_FOUND", 404, "任务不存在")
+    INVALID_TASK_TRANSITION = ("INVALID_TASK_TRANSITION", 400, "非法任务状态流转")
+    REVIEW_VALIDATION_FAILED = ("REVIEW_VALIDATION_FAILED", 400, "审核确认校验失败")
+    EXPORT_VALIDATION_FAILED = ("EXPORT_VALIDATION_FAILED", 400, "导出前完整性校验失败")
+    EXPORT_FAILED = ("EXPORT_FAILED", 500, "导出文件写入失败")
+
+class AlgorithmErrorCode(Enum):
+    # 任务处理失败记录使用，不作为 AppError 的固定 HTTP 响应码。
+    ALGORITHM_MODULE_NOT_CONFIGURED = "ALGORITHM_MODULE_NOT_CONFIGURED"
+    ALGORITHM_MODULE_FAILED = "ALGORITHM_MODULE_FAILED"
+    ALGORITHM_CONTRACT_INVALID = "ALGORITHM_CONTRACT_INVALID"
 
 class AppError(Exception):
     def __init__(self, error_code: ErrorCode, message: str = None, details: dict = None):
@@ -121,7 +133,12 @@ class AppError(Exception):
         self.details = details or {}
 
 def register_error_handlers(app: Flask):
-    """注册全局 errorhandler，捕获 AppError 返回统一 JSON 结构。"""
+    """注册全局 errorhandler。
+
+    - AppError：返回统一 JSON 错误结构和对应 HTTP 状态码。
+    - werkzeug.exceptions.HTTPException：映射为统一 JSON，避免 Flask 默认 HTML。
+    - Exception：返回统一 JSON 500，不包含调用堆栈。
+    """
 
 def abort(error_code: ErrorCode, message: str = None, details: dict = None):
     """快捷抛出 AppError，被 errorhandler 捕获。"""
@@ -138,7 +155,7 @@ def success(data=None, status=200) -> Flask.Response:
 
 # 错误响应
 def error_response(app_error: AppError) -> Flask.Response:
-    """{"success": false, "error": {"code": "...", "message": "...", "details": {}}}"""
+    """{"error": {"code": "...", "message": "...", "details": {}}}"""
 ```
 
 ### storage/json_store.py
@@ -204,14 +221,19 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
 请求 GET /api/system/status
   → system_bp.get_system_status()
-    → responses.success({...})
+      → responses.success({...})
       → flask.jsonify({"success": true, "data": {...}})
 
 异常路径：
   任意路由层 raise AppError / abort()
     → Flask errorhandler
       → responses.error_response(app_error)
-        → flask.jsonify({"success": false, "error": {...}})
+        → flask.jsonify({"error": {...}})
+
+  未匹配路由 / HTTPException / 未预期异常
+    → Flask errorhandler
+      → 统一错误 JSON
+      → 不返回 HTML、不包含调用堆栈
 ```
 
 ## 配置加载策略
@@ -224,6 +246,8 @@ app/config/default.yaml (提交)
 app/config/local.yaml (可选，gitignore)
 ```
 
+- `default.yaml` 只能包含离线安全默认值或占位值，不提交本机私有路径、患者数据、密钥、真实模型路径或真实部署参数。
+- 落地 `default.yaml` 时同步更新 `app/config/README.md`，明确配置目录从“仅预留职责”变为“允许安全默认模板”。
 - 不配置 `app/config/` 目录 → 全用默认值 + warning 日志
 - 有 `default.yaml` 缺 `local.yaml` → 正常启动
 - 目录存在但 `default.yaml` 缺失 → 用默认值 + warning
@@ -237,7 +261,8 @@ app/config/local.yaml (可选，gitignore)
 | test_enums.py | 状态枚举值正确、状态流转合法/非法 | 实施顺序 #1 |
 | test_errors.py | ErrorCode 正确、AppError 属性、响应 JSON 结构 | BE-API-002 |
 | test_config.py | 默认值、YAML 加载、合并覆盖、路径归一化 | 实施顺序 #2 |
-| test_system.py | GET /api/system/status 返回 200 和正确结构 | BE-SYS-001, BE-SYS-002 |
+| test_system.py | GET /api/system/status 返回 200、正确结构、离线启动不联网、局域网地址不包含 127.0.0.1 作为手机默认地址 | BE-SYS-001, BE-SYS-002, BE-SYS-003, BE-SYS-004, BE-SYS-005 |
+| test_json_store.py | 路径越权拒绝、原子写入、默认值读取、删除和存在性判断 | 存储基础设施 |
 
 ## 不在此阶段实现
 
@@ -247,4 +272,4 @@ app/config/local.yaml (可选，gitignore)
 - 算法端口适配器
 - 审核结果持久化
 - 导出功能
-- LAN 地址自动发现（system status 中 lan_addresses 第一阶段写空列表）
+- 手动指定局域网地址后的二维码 URL 重生成接口（BE-SYS-006）
