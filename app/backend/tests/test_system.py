@@ -6,6 +6,7 @@ from app.backend.routes.system import system_bp
 
 def _make_app(config_overrides=None):
     """为测试构建最小 Flask app，只挂载 system_bp。"""
+    overrides = config_overrides or {}
     app = Flask(__name__)
     app.config["BACKEND_CONFIG"] = {
         "version": "0.1.0",
@@ -17,10 +18,10 @@ def _make_app(config_overrides=None):
         "model_dir": "/tmp/test_models",
         "storage_dir": "/tmp/test_data",
         "local_host": "127.0.0.1",
-        **(config_overrides or {}),
+        **overrides,
     }
     app.config["STARTED_AT"] = "2026-05-11T12:00:00+00:00"
-    app.config["LAN_ADDRESSES"] = []
+    app.config["LAN_ADDRESSES"] = overrides.get("LAN_ADDRESSES", [])
     from app.backend.errors import register_error_handlers
     register_error_handlers(app)
     app.register_blueprint(system_bp)
@@ -51,11 +52,20 @@ class TestSystemStatus:
 
     def test_lan_addresses_excludes_localhost(self):
         """127.0.0.1 不应作为手机端可用的默认地址。"""
-        client = _make_app().test_client()
+        overrides = {
+            "LAN_ADDRESSES": [
+                "127.0.0.1:8080",
+                "192.168.1.5:8080",
+                "10.0.0.8:8080",
+            ]
+        }
+        client = _make_app(config_overrides=overrides).test_client()
         resp = client.get("/api/system/status")
         data = json.loads(resp.data)
-        for addr in data["data"]["lan_addresses"]:
-            assert not addr.startswith("127.0.0.1")
+        assert data["data"]["lan_addresses"] == [
+            "192.168.1.5:8080",
+            "10.0.0.8:8080",
+        ]
 
 
 class TestErrorHandling:
