@@ -1,0 +1,15 @@
+# app/config/default.yaml
+# 安全默认/占位配置，不包含真实部署参数、本机路径、密钥或患者数据。
+
+app:
+  version: "0.1.0"
+
+server:
+  bind_host: "0.0.0.0"
+  port: 8080
+
+paths:
+  data_dir: "./data"
+  log_dir: "./logs"
+  export_dir: "./exports"
+  model_dir: "./models"
