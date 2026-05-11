@@ -16,6 +16,8 @@
 - 错误码：`docs/Shared/error-codes.md`
 - 术语表：`docs/Shared/terminology.md`
 - 应用目录边界：`app/README.md`
+- superpower 的 specs 文档内容：`docs/superpowers/specs`
+- superpower 的 plans 文档内容：`docs/superpowers/plans`
 
 ## 目录职责
 
