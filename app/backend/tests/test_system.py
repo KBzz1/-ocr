@@ -1,0 +1,95 @@
+import json
+import pytest
+from flask import Flask
+from app.backend.routes.system import system_bp
+
+
+def _make_app(config_overrides=None):
+    """为测试构建最小 Flask app，只挂载 system_bp。"""
+    app = Flask(__name__)
+    app.config["BACKEND_CONFIG"] = {
+        "version": "0.1.0",
+        "bind_host": "0.0.0.0",
+        "port": 8080,
+        "data_dir": "/tmp/test_data",
+        "log_dir": "/tmp/test_logs",
+        "export_dir": "/tmp/test_exports",
+        "model_dir": "/tmp/test_models",
+        "storage_dir": "/tmp/test_data",
+        "local_host": "127.0.0.1",
+        **(config_overrides or {}),
+    }
+    app.config["STARTED_AT"] = "2026-05-11T12:00:00+00:00"
+    app.config["LAN_ADDRESSES"] = []
+    from app.backend.errors import register_error_handlers
+    register_error_handlers(app)
+    app.register_blueprint(system_bp)
+    return app
+
+
+class TestSystemStatus:
+    def test_returns_200(self):
+        client = _make_app().test_client()
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+
+    def test_response_structure(self):
+        client = _make_app().test_client()
+        resp = client.get("/api/system/status")
+        data = json.loads(resp.data)
+        assert data["success"] is True
+        assert "data" in data
+        assert data["data"]["status"] == "running"
+        assert data["data"]["version"] == "0.1.0"
+        assert "started_at" in data["data"]
+        assert "lan_addresses" in data["data"]
+
+    def test_content_type_is_json(self):
+        client = _make_app().test_client()
+        resp = client.get("/api/system/status")
+        assert resp.content_type == "application/json"
+
+    def test_lan_addresses_excludes_localhost(self):
+        """127.0.0.1 不应作为手机端可用的默认地址。"""
+        client = _make_app().test_client()
+        resp = client.get("/api/system/status")
+        data = json.loads(resp.data)
+        for addr in data["data"]["lan_addresses"]:
+            assert not addr.startswith("127.0.0.1")
+
+
+class TestErrorHandling:
+    def test_404_returns_json_not_html(self):
+        app = _make_app()
+        client = app.test_client()
+        resp = client.get("/api/nonexistent")
+        data = json.loads(resp.data)
+        assert "error" in data
+        assert data["error"]["code"] == "HTTP_ERROR"
+        assert resp.content_type == "application/json"
+
+    def test_500_returns_json_without_stacktrace(self):
+        app = Flask(__name__)
+        app.config["BACKEND_CONFIG"] = {
+            "version": "0.1.0",
+            "bind_host": "0.0.0.0",
+            "port": 8080,
+        }
+        app.config["STARTED_AT"] = "2026-05-11T12:00:00+00:00"
+        app.config["LAN_ADDRESSES"] = []
+
+        @app.route("/api/will-crash")
+        def will_crash():
+            raise RuntimeError("boom")
+
+        from app.backend.errors import register_error_handlers
+        register_error_handlers(app)
+
+        client = app.test_client()
+        resp = client.get("/api/will-crash")
+        data = json.loads(resp.data)
+        assert resp.status_code == 500
+        assert data["error"]["code"] == "INTERNAL_ERROR"
+        assert "RuntimeError" not in json.dumps(data)
+        assert "traceback" not in json.dumps(data)
+        assert "stack" not in json.dumps(data)
