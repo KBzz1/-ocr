@@ -35,7 +35,9 @@ class TestErrorCode:
         assert "REVIEW_VALIDATION_FAILED" in codes
         assert "EXPORT_VALIDATION_FAILED" in codes
         assert "EXPORT_FAILED" in codes
-        assert len(codes) == 11
+        assert "REQUEST_NOT_FOUND" in codes
+        assert "INTERNAL_SERVER_ERROR" in codes
+        assert len(codes) == 13
 
 
 class TestAlgorithmErrorCode:
@@ -68,6 +70,10 @@ class TestAppError:
     def test_is_exception(self):
         err = AppError(ErrorCode.SESSION_NOT_FOUND)
         assert isinstance(err, Exception)
+
+    def test_exception_args_contains_message(self):
+        err = AppError(ErrorCode.TASK_NOT_FOUND)
+        assert err.args == ("任务不存在",)
 
 
 class TestAbort:

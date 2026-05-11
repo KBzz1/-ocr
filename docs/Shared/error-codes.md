@@ -2,6 +2,8 @@
 
 | 错误码 | HTTP 状态码 | 场景 |
 |--------|------------|------|
+| `REQUEST_NOT_FOUND` | 404 | 请求路径不存在 |
+| `INTERNAL_SERVER_ERROR` | 500 | 未预期服务端异常 |
 | `SESSION_NOT_FOUND` | 404 | 会话不存在 |
 | `SESSION_EXPIRED` | 409 | 会话已过期 |
 | `SESSION_LOCKED` | 409 | 会话已完成采集，禁止编辑 |

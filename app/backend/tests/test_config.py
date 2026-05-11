@@ -7,7 +7,7 @@ from app.backend.config import load_config, DEFAULT_CONFIG
 class TestDefaultConfig:
     def test_load_without_config_dir(self):
         config = load_config()
-        assert config["port"] == 8080
+        assert config["port"] == 8081
         assert config["bind_host"] == "0.0.0.0"
         assert config["local_host"] == "127.0.0.1"
         assert config["version"] == "0.1.0"
@@ -59,7 +59,7 @@ class TestYamlLoading:
 
     def test_missing_directory_uses_defaults(self):
         config = load_config("/nonexistent/path")
-        assert config["port"] == 8080
+        assert config["port"] == 8081
 
     def test_paths_normalized_to_absolute(self, tmp_path):
         import yaml
@@ -89,6 +89,30 @@ class TestValidation:
         blocking_file = tmp_path / "not_a_dir"
         blocking_file.write_text("block", encoding="utf-8")
         default_yaml = {"paths": {"data_dir": str(blocking_file / "child")}}
+        with open(tmp_path / "default.yaml", "w") as f:
+            yaml.dump(default_yaml, f)
+
+        with pytest.raises(ValueError, match="路径不可写"):
+            load_config(str(tmp_path))
+
+    def test_storage_dir_not_writable_raises(self, tmp_path):
+        import yaml
+
+        blocking_file = tmp_path / "not_a_dir"
+        blocking_file.write_text("block", encoding="utf-8")
+        default_yaml = {"paths": {"storage_dir": str(blocking_file / "child")}}
+        with open(tmp_path / "default.yaml", "w") as f:
+            yaml.dump(default_yaml, f)
+
+        with pytest.raises(ValueError, match="路径不可写"):
+            load_config(str(tmp_path))
+
+    def test_export_dir_not_writable_raises(self, tmp_path):
+        import yaml
+
+        blocking_file = tmp_path / "not_a_dir"
+        blocking_file.write_text("block", encoding="utf-8")
+        default_yaml = {"paths": {"export_dir": str(blocking_file / "child")}}
         with open(tmp_path / "default.yaml", "w") as f:
             yaml.dump(default_yaml, f)
 

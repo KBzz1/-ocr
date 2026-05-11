@@ -11,7 +11,7 @@ def _make_app(config_overrides=None):
     app.config["BACKEND_CONFIG"] = {
         "version": "0.1.0",
         "bind_host": "0.0.0.0",
-        "port": 8080,
+        "port": 8081,
         "data_dir": "/tmp/test_data",
         "log_dir": "/tmp/test_logs",
         "export_dir": "/tmp/test_exports",
@@ -54,17 +54,18 @@ class TestSystemStatus:
         """127.0.0.1 不应作为手机端可用的默认地址。"""
         overrides = {
             "LAN_ADDRESSES": [
-                "127.0.0.1:8080",
-                "192.168.1.5:8080",
-                "10.0.0.8:8080",
+                "127.0.0.1:8081",
+                "127.0.1.1:8081",
+                "192.168.1.5:8081",
+                "10.0.0.8:8081",
             ]
         }
         client = _make_app(config_overrides=overrides).test_client()
         resp = client.get("/api/system/status")
         data = json.loads(resp.data)
         assert data["data"]["lan_addresses"] == [
-            "192.168.1.5:8080",
-            "10.0.0.8:8080",
+            "192.168.1.5:8081",
+            "10.0.0.8:8081",
         ]
 
 
@@ -75,7 +76,7 @@ class TestErrorHandling:
         resp = client.get("/api/nonexistent")
         data = json.loads(resp.data)
         assert "error" in data
-        assert data["error"]["code"] == "HTTP_ERROR"
+        assert data["error"]["code"] == "REQUEST_NOT_FOUND"
         assert resp.content_type == "application/json"
 
     def test_500_returns_json_without_stacktrace(self):
@@ -83,7 +84,7 @@ class TestErrorHandling:
         app.config["BACKEND_CONFIG"] = {
             "version": "0.1.0",
             "bind_host": "0.0.0.0",
-            "port": 8080,
+            "port": 8081,
         }
         app.config["STARTED_AT"] = "2026-05-11T12:00:00+00:00"
         app.config["LAN_ADDRESSES"] = []
@@ -99,7 +100,7 @@ class TestErrorHandling:
         resp = client.get("/api/will-crash")
         data = json.loads(resp.data)
         assert resp.status_code == 500
-        assert data["error"]["code"] == "INTERNAL_ERROR"
+        assert data["error"]["code"] == "INTERNAL_SERVER_ERROR"
         assert "RuntimeError" not in json.dumps(data)
         assert "traceback" not in json.dumps(data)
         assert "stack" not in json.dumps(data)
@@ -110,31 +111,64 @@ class TestLanAddressSelection:
         from app.backend import _get_lan_addresses
         import socket
 
-        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
-        monkeypatch.setattr(
-            socket,
-            "getaddrinfo",
-            lambda hostname, port, family: [
-                (family, None, None, "", ("127.0.0.1", 0)),
-                (family, None, None, "", ("192.168.1.20", 0)),
-                (family, None, None, "", ("192.168.1.20", 0)),
-                (family, None, None, "", ("10.0.0.8", 0)),
-            ],
-        )
+        class FakeSocket:
+            addresses = iter(["127.0.0.1", "192.168.1.20"])
 
-        assert _get_lan_addresses(8080) == ["192.168.1.20:8080", "10.0.0.8:8080"]
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def connect(self, target):
+                return None
+
+            def getsockname(self):
+                return (next(self.addresses), 12345)
+
+        monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: FakeSocket())
+
+        assert _get_lan_addresses(8081) == ["192.168.1.20:8081"]
+
+    def test_get_lan_addresses_deduplicates_candidates(self, monkeypatch):
+        from app.backend import _get_lan_addresses
+        import socket
+
+        class FakeSocket:
+            addresses = iter(["192.168.1.20", "192.168.1.20"])
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def connect(self, target):
+                return None
+
+            def getsockname(self):
+                return (next(self.addresses), 12345)
+
+        monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: FakeSocket())
+
+        assert _get_lan_addresses(8081) == ["192.168.1.20:8081"]
 
     def test_get_lan_addresses_returns_empty_when_lookup_fails(self, monkeypatch):
         from app.backend import _get_lan_addresses
         import socket
 
-        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
+        class FailingSocket:
+            def __enter__(self):
+                return self
 
-        def raise_os_error(hostname, port, family):
-            raise OSError("network unavailable")
+            def __exit__(self, exc_type, exc, tb):
+                return None
 
-        monkeypatch.setattr(socket, "getaddrinfo", raise_os_error)
-        assert _get_lan_addresses(8080) == []
+            def connect(self, target):
+                raise OSError("network unavailable")
+
+        monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: FailingSocket())
+        assert _get_lan_addresses(8081) == []
 
 
 class TestCreateBackendApp:
@@ -142,14 +176,20 @@ class TestCreateBackendApp:
         import socket
         from app.backend import create_backend_app
 
-        monkeypatch.setattr(socket, "gethostname", lambda: "doctor-workstation")
-        monkeypatch.setattr(
-            socket,
-            "getaddrinfo",
-            lambda hostname, port, family: [
-                (family, None, None, "", ("192.168.1.20", 0)),
-            ],
-        )
+        class FakeSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def connect(self, target):
+                return None
+
+            def getsockname(self):
+                return ("192.168.1.20", 12345)
+
+        monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: FakeSocket())
 
         app = create_backend_app(str(tmp_path))
         client = app.test_client()
@@ -157,4 +197,4 @@ class TestCreateBackendApp:
         data = json.loads(resp.data)
 
         assert resp.status_code == 200
-        assert data["data"]["lan_addresses"] == ["192.168.1.20:8080"]
+        assert data["data"]["lan_addresses"] == ["192.168.1.20:8081"]

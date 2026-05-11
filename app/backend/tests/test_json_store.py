@@ -40,6 +40,25 @@ class TestReadWrite:
         assert len(tmp_files) == 0
         assert len(nested_tmp) == 0
 
+    def test_atomic_write_uses_unique_temp_file(self, tmp_path, monkeypatch):
+        store = JsonStore(str(tmp_path))
+        names = []
+
+        import tempfile
+        original = tempfile.NamedTemporaryFile
+
+        def recording_named_temp_file(*args, **kwargs):
+            f = original(*args, **kwargs)
+            names.append(f.name)
+            return f
+
+        monkeypatch.setattr(tempfile, "NamedTemporaryFile", recording_named_temp_file)
+        store.write("data.json", {"first": True})
+        store.write("data.json", {"second": True})
+
+        assert len(names) == 2
+        assert names[0] != names[1]
+
     def test_write_creates_parent_dir(self, tmp_path):
         store = JsonStore(str(tmp_path))
         store.write("a/b/c/data.json", {"x": 1})

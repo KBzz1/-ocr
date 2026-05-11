@@ -2,6 +2,8 @@ from enum import Enum
 
 
 class ErrorCode(Enum):
+    REQUEST_NOT_FOUND = ("REQUEST_NOT_FOUND", 404, "请求路径不存在")
+    INTERNAL_SERVER_ERROR = ("INTERNAL_SERVER_ERROR", 500, "服务器内部错误")
     SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", 404, "采集会话不存在")
     SESSION_EXPIRED = ("SESSION_EXPIRED", 409, "采集会话已过期")
     SESSION_LOCKED = ("SESSION_LOCKED", 409, "采集会话已完成采集，禁止编辑")
@@ -35,8 +37,10 @@ class AlgorithmErrorCode(Enum):
 
 class AppError(Exception):
     def __init__(self, error_code: ErrorCode, message=None, details=None):
+        resolved_message = message or error_code.default_message
+        super().__init__(resolved_message)
         self.code = error_code.code
-        self.message = message or error_code.default_message
+        self.message = resolved_message
         self.http_status = error_code.http_status
         self.details = details or {}
 
@@ -60,9 +64,12 @@ def register_error_handlers(app):
 
     @app.errorhandler(WerkzeugHTTPException)
     def handle_http_exception(error):
+        if error.code == 404:
+            app_error = AppError(ErrorCode.REQUEST_NOT_FOUND)
+            return error_response(app_error)
         return jsonify({
             "error": {
-                "code": "HTTP_ERROR",
+                "code": ErrorCode.INTERNAL_SERVER_ERROR.code,
                 "message": error.description or str(error),
                 "details": {},
             }
@@ -72,11 +79,5 @@ def register_error_handlers(app):
     def handle_unexpected(error):
         import logging
         logger = logging.getLogger(__name__)
-        logger.exception("Unexpected error")
-        return jsonify({
-            "error": {
-                "code": "INTERNAL_ERROR",
-                "message": "服务器内部错误",
-                "details": {},
-            }
-        }), 500
+        logger.error("Unexpected backend error: %s", type(error).__name__)
+        return error_response(AppError(ErrorCode.INTERNAL_SERVER_ERROR))

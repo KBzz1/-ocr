@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 
 
 class JsonStore:
@@ -35,10 +36,22 @@ class JsonStore:
     def write(self, relative_path: str, data):
         filepath = self._resolve(relative_path)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        tmp_path = filepath + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, filepath)
+        tmp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=os.path.dirname(filepath),
+                prefix=f".{os.path.basename(filepath)}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_file = f.name
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_file, filepath)
+        finally:
+            if tmp_file and os.path.exists(tmp_file):
+                os.remove(tmp_file)
 
     def delete(self, relative_path: str):
         filepath = self._resolve(relative_path)

@@ -8,7 +8,7 @@ DEFAULT_CONFIG = {
     "version": "0.1.0",
     "bind_host": "0.0.0.0",
     "local_host": "127.0.0.1",
-    "port": 8080,
+    "port": 8081,
     "data_dir": "./data",
     "log_dir": "./logs",
     "model_dir": "./models",
@@ -72,7 +72,7 @@ def _validate_config(config: dict):
     if not isinstance(port, int) or port < 1024 or port > 65535:
         raise ValueError(f"端口号必须在 1024-65535 之间，当前值: {port}")
 
-    for key in ("data_dir", "log_dir"):
+    for key in ("data_dir", "log_dir", "storage_dir", "export_dir"):
         path = config[key]
         try:
             os.makedirs(path, exist_ok=True)
@@ -88,7 +88,9 @@ def load_config(config_dir: str | None = None) -> dict:
         config_dir = os.path.join(PROJECT_ROOT, "app", "config")
     if not os.path.isdir(config_dir):
         logger.warning("配置文件目录 %s 不存在，使用默认配置", config_dir)
-        return _normalize_paths(merged)
+        result = _normalize_paths(merged)
+        _validate_config(result)
+        return result
 
     # 加载 default.yaml
     default_yaml_path = os.path.join(config_dir, "default.yaml")

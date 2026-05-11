@@ -14,10 +14,11 @@ from app.backend import create_backend_app
 def main():
     app = create_backend_app()
     config = app.config["BACKEND_CONFIG"]
-    print(f"后端服务启动中...")
+    debug = os.environ.get("MANZUFEI_BACKEND_DEBUG") == "1"
+    print("后端服务启动中...")
     print(f"  本地访问: http://{config['local_host']}:{config['port']}")
     print(f"  健康检查: http://{config['local_host']}:{config['port']}/api/system/status")
-    app.run(host=config["bind_host"], port=config["port"], debug=True)
+    app.run(host=config["bind_host"], port=config["port"], debug=debug)
 
 
 if __name__ == "__main__":
