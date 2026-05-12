@@ -5,7 +5,7 @@ from ipaddress import ip_address
 
 from flask import Flask
 
-from .config import load_config
+from .config import load_config, PROJECT_ROOT
 from .errors import register_error_handlers
 
 
@@ -83,6 +83,14 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.task_service import TaskService
     app.config["TASK_SERVICE"] = TaskService(store=store)
 
+    # 初始化 SchemaService
+    import os
+    from .services.schema_service import SchemaService
+
+    schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
+                               "medical_record.v1.yaml")
+    app.config["SCHEMA_SERVICE"] = SchemaService(schema_path)
+
     app.logger.warning("算法模块未配置")
 
     from .routes.system import system_bp
@@ -95,5 +103,8 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     from .routes.task import task_bp
     app.register_blueprint(task_bp)
+
+    from .routes.schema import schema_bp
+    app.register_blueprint(schema_bp)
 
     return app
