@@ -45,3 +45,65 @@ class SessionService:
                 self._store.write(f"sessions/{session_id}.json", session)
 
         return session
+
+    def _persist_session(self, session: dict) -> dict:
+        self._store.write(f"sessions/{session['session_id']}.json", session)
+        return session
+
+    def _ensure_editable(self, session: dict) -> None:
+        if session["status"] == "expired":
+            raise AppError(ErrorCode.SESSION_EXPIRED)
+        if session["status"] == "locked":
+            raise AppError(ErrorCode.SESSION_LOCKED)
+        if session["status"] == "cancelled":
+            raise AppError(ErrorCode.SESSION_LOCKED)
+
+    def _renumber_pages(self, pages: list[dict]) -> list[dict]:
+        for index, page in enumerate(pages, start=1):
+            page["page_no"] = index
+        return pages
+
+    def add_page(self, session_id: str, upload_ref=None) -> dict:
+        session = self.get(session_id)
+        self._ensure_editable(session)
+
+        page = {
+            "page_id": str(uuid.uuid4()),
+            "page_no": len(session["pages"]) + 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "upload_ref": upload_ref,
+        }
+        session["pages"].append(page)
+        session["page_count"] = len(session["pages"])
+        return self._persist_session(session)
+
+    def delete_page(self, session_id: str, page_id: str) -> dict:
+        session = self.get(session_id)
+        self._ensure_editable(session)
+
+        pages = [p for p in session["pages"] if p["page_id"] != page_id]
+        if len(pages) == len(session["pages"]):
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        session["pages"] = self._renumber_pages(pages)
+        session["page_count"] = len(session["pages"])
+        return self._persist_session(session)
+
+    def reorder_pages(self, session_id: str, page_ids: list[str]) -> dict:
+        session = self.get(session_id)
+        self._ensure_editable(session)
+
+        page_by_id = {p["page_id"]: p for p in session["pages"]}
+        if set(page_ids) != set(page_by_id.keys()) or len(page_ids) != len(page_by_id):
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        session["pages"] = self._renumber_pages([page_by_id[page_id] for page_id in page_ids])
+        session["page_count"] = len(session["pages"])
+        return self._persist_session(session)
+
+    def finish(self, session_id: str) -> dict:
+        session = self.get(session_id)
+        self._ensure_editable(session)
+        session["status"] = "locked"
+        session["locked_at"] = datetime.now(timezone.utc).isoformat()
+        return self._persist_session(session)

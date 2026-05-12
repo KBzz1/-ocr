@@ -92,3 +92,93 @@ class TestSessionCreateGet:
         assert fetched["status"] == "expired"
         persisted = JsonStore(str(tmp_path)).read(f"sessions/{session['session_id']}.json")
         assert persisted["status"] == "expired"
+
+
+class TestSessionPages:
+    def test_add_page_appends_page_and_updates_page_count(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        updated = service.add_page(session["session_id"])
+
+        assert updated["page_count"] == 1
+        assert len(updated["pages"]) == 1
+        assert updated["pages"][0]["page_no"] == 1
+        assert updated["pages"][0]["upload_ref"] is None
+
+    def test_add_page_assigns_incrementing_page_no(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        first = service.add_page(session["session_id"])
+        second = service.add_page(session["session_id"])
+
+        assert [p["page_no"] for p in second["pages"]] == [1, 2]
+        assert first["pages"][0]["page_id"] != second["pages"][1]["page_id"]
+
+    def test_delete_page_removes_page_and_renumbers(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"])
+        service.add_page(session["session_id"])
+        current = service.add_page(session["session_id"])
+        remove_id = current["pages"][1]["page_id"]
+
+        updated = service.delete_page(session["session_id"], remove_id)
+
+        assert updated["page_count"] == 2
+        assert [p["page_no"] for p in updated["pages"]] == [1, 2]
+        assert remove_id not in [p["page_id"] for p in updated["pages"]]
+
+    def test_delete_missing_page_raises_session_not_found(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        with pytest.raises(AppError) as exc_info:
+            service.delete_page(session["session_id"], "missing-page")
+
+        assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
+
+    def test_reorder_pages_persists_requested_order_and_renumbers(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"])
+        service.add_page(session["session_id"])
+        current = service.add_page(session["session_id"])
+        order = [current["pages"][2]["page_id"], current["pages"][0]["page_id"], current["pages"][1]["page_id"]]
+
+        updated = service.reorder_pages(session["session_id"], order)
+
+        assert [p["page_id"] for p in updated["pages"]] == order
+        assert [p["page_no"] for p in updated["pages"]] == [1, 2, 3]
+
+    def test_reorder_with_missing_page_id_raises_session_not_found(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        current = service.add_page(session["session_id"])
+
+        with pytest.raises(AppError) as exc_info:
+            service.reorder_pages(session["session_id"], [current["pages"][0]["page_id"], "missing"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
+
+    def test_expired_session_rejects_page_writes(self, tmp_path):
+        service = make_service(tmp_path, ttl_minutes=1)
+        session = service.create()
+        session["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        JsonStore(str(tmp_path)).write(f"sessions/{session['session_id']}.json", session)
+
+        with pytest.raises(AppError) as exc_info:
+            service.add_page(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_EXPIRED.code
+
+    def test_locked_session_rejects_page_writes(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.finish(session["session_id"])
+
+        with pytest.raises(AppError) as exc_info:
+            service.add_page(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_LOCKED.code
