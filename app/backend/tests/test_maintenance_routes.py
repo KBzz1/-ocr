@@ -45,3 +45,10 @@ def test_offline_check_route_returns_checks(client):
     assert data["status"] in ("ok", "warning", "failed")
     keys = {item["key"] for item in data["checks"]}
     assert {"storage_dir", "exports_dir", "logs_dir", "schema_file", "ppstructure_models", "llm_models"} <= keys
+
+
+def test_cleanup_route_requires_confirm(client):
+    resp = client.post("/api/maintenance/tasks/task-001/cleanup", json={"confirm": False})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "INVALID_REQUEST_PARAMS"

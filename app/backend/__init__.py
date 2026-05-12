@@ -69,6 +69,10 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     app.config["LOCAL_EVENT_LOG"] = event_log
     app.config["OFFLINE_CHECK_SERVICE"] = OfflineCheckService(config)
 
+    from .services.cleanup_service import CleanupService
+
+    app.config["CLEANUP_SERVICE"] = CleanupService(config=config, store=store)
+
     event_log.safe_write(
         "system_started",
         port=config["port"],
