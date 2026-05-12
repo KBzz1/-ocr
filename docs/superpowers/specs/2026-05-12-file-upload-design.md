@@ -4,7 +4,7 @@
 
 对应 PRD `PR-BE-003`、`PR-BE-011`，承接后端 TDD 实施顺序第 4 步（`docs/Backend/Backend_TDD/05-file-upload.md`）。
 
-本阶段必须衔接正在开发的 PR-BE-002 采集会话管理。PR-BE-002 的会话 JSON 维护 `pages` 清单，并负责 active/expired/locked 写操作 guard、页面顺序、page_count、finish 页序固化和最小 Task 桩。本阶段只把真实图片文件和采集元数据接入该页面清单，不另建独立页序模型。
+本阶段必须衔接已合并到主分支的 PR-BE-002 采集会话管理。PR-BE-002 的会话 JSON 维护 `pages` 清单，并负责 active/expired/locked 写操作 guard、页面顺序、page_count、finish 页序固化和最小 Task 桩。本阶段只把真实图片文件和采集元数据接入该页面清单，不另建独立页序模型。
 
 本阶段覆盖：
 
@@ -57,7 +57,7 @@ PR-BE-003 上传成功后，必须把 `upload_ref` 更新为页面元数据 JSON
 - `POST /api/mobile/{session_id}/pages` 语义是“上传真实图片并创建/更新会话页面项”。
 - finish 固化仍由 PR-BE-002 的 `SessionService.finish()` 负责，读取会话 `pages` 顺序生成 Task 桩 `page_order`。
 
-建议 PR-BE-002 或 PR-BE-003 补充以下会话服务方法。如果 PR-BE-002 首版只提供 `add_page(session_id, upload_ref=None)`，PR-BE-003 可以先用 TDD 扩展：
+主分支已提供以下会话服务方法。PR-BE-003 必须复用这些方法，不绕过 `SessionService` 直接修改会话 JSON：
 
 ```python
 class SessionService:

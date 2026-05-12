@@ -9,12 +9,14 @@
 ## 文档入口
 
 - 产品需求源头：`docs/产品PRD.md`
+- PRD 实现进度：`docs/PRD任务清单.md`
 - 前端文档规则：`docs/Front/AGENTS.md` / `docs/Front/CLAUDE.md`
 - 后端文档规则：`docs/Backend/AGENTS.md` / `docs/Backend/CLAUDE.md`
 
 ## 信息架构
 
 - `产品PRD.md`：产品目标、主流程、前后端职责、验收标准；修改任何用户行为或业务边界前先读。
+- `PRD任务清单.md`：PRD 到实现任务的当前进度索引；只记录边界和状态，不替代 spec/plan。
 - `Shared/`：状态枚举、错误码、术语；修改 API、状态机、错误处理或测试断言前先读。
 - `Front/`：前端 BDD/TDD 文档；改电脑端/手机端交互、审核、导出、错误展示前先读。
 - `Backend/`：后端 BDD/TDD 文档；改本地服务、任务生命周期、算法端口、持久化、导出前先读。
@@ -32,6 +34,7 @@
 - 修改错误码或错误响应：先读 `Shared/error-codes.md`，再读 `Backend/Backend_TDD/12-api-contracts.md` 和相关 BDD。
 - 修改算法集成边界：先读 `产品PRD.md`、`Backend/Backend_TDD/02-algorithm-ports.md` 和 `Backend/Backend_TDD/07-algorithm-failure-contracts.md`。
 - PRD 记录业务目标和验收标准；BDD 记录用户可观察行为；TDD 记录可执行测试设计、fixtures、失败条件和实施顺序。
+- superpowers 的 specs/plans 放在 `docs/superpowers/specs/` 和 `docs/superpowers/plans/`；合并实现后同步去掉过期 worktree 或“待接入”表述。
 - 共享契约变更必须同时扫描前端和后端引用，发现冲突先说明，不直接用局部文档覆盖全局契约。
 - 文档不得要求本仓库实现 OCR、LLM 字段抽取、图像预处理、裁剪、透视矫正或规则兜底抽取。
 - AGENTS.md 与 CLAUDE.md 成对维护；同目录内容保持一致，只替换标题行。

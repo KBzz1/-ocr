@@ -18,8 +18,8 @@
 | 任务 | 状态 | 工作区/文件 | 边界 |
 |------|------|-------------|------|
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
-| PR-BE-002 采集会话管理 | 进行中 | `.claude/worktrees/backend-minimal-skeleton/docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
-| PR-BE-003/011 图片上传与元数据 | 进行中 | `docs/superpowers/specs/2026-05-12-file-upload-design.md` | 接入 PR-BE-002 的会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理 |
+| PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
+| PR-BE-003/011 图片上传与元数据 | 进行中 | `docs/superpowers/specs/2026-05-12-file-upload-design.md`、`docs/superpowers/plans/2026-05-12-file-upload-plan.md` | 接入已合并的 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理 |
 
 ## 后端任务
 
@@ -53,27 +53,27 @@
 
 ### BE-02 采集会话管理（PR-BE-002）
 
-- [~] **BE-02-01 创建采集会话**
+- [x] **BE-02-01 创建采集会话**
   - 范围：生成 `session_id`、`created_at`、`expires_at`、`status: active`、二维码 URL。
   - 边界：不生成二维码图片细节，只提供手机访问 URL。
 
-- [~] **BE-02-02 查询采集会话**
+- [x] **BE-02-02 查询采集会话**
   - 范围：返回状态、页数、过期时间、页面清单。
   - 边界：查询时可自动把过期 active 会话转为 `expired`。
 
-- [~] **BE-02-03 页面清单骨架**
+- [x] **BE-02-03 页面清单骨架**
   - 范围：会话 JSON 中维护 `pages`，支持新增、删除、排序、补拍。
   - 边界：这里只维护页序元数据，不保存真实图片和 quad 信息。
 
-- [~] **BE-02-04 会话写操作 guard**
+- [x] **BE-02-04 会话写操作 guard**
   - 范围：active 允许编辑；expired 返回 `SESSION_EXPIRED`；locked 返回 `SESSION_LOCKED`。
   - 边界：所有后续上传和页面管理复用同一 guard。
 
-- [~] **BE-02-05 完成采集 finish**
+- [x] **BE-02-05 完成采集 finish**
   - 范围：锁定会话、写入 `locked_at`、固化 page order、创建或复用最小 Task 桩。
   - 边界：Task 桩只表示 `uploaded`，不启动算法处理。
 
-- [~] **BE-02-06 finish 幂等**
+- [x] **BE-02-06 finish 幂等**
   - 范围：重复 finish 返回同一个 locked 状态和同一个 task_id。
   - 边界：不得重复创建任务或改变已固化页序。
 

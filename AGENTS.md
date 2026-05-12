@@ -12,6 +12,7 @@
 
 - 文档规则：`docs/AGENTS.md` / `docs/CLAUDE.md`
 - 产品需求：`docs/产品PRD.md`
+- PRD 实现清单：`docs/PRD任务清单.md`
 - 状态枚举：`docs/Shared/state-enums.md`
 - 错误码：`docs/Shared/error-codes.md`
 - 术语表：`docs/Shared/terminology.md`
@@ -53,5 +54,6 @@
 - 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 README。
 - 修改行为、状态或错误码前，先检查 `docs/产品PRD.md`、`docs/Shared/` 和相关 TDD/BDD 文档，如果对应文档跟当前任务有冲突，请告知我。
 - 新增实现时，测试设计和契约文档先于实现落地；外部算法只写端口契约和失败处理，不在本仓库实现算法。
+- 当前 PRD 进度以 `docs/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。
 - AGENTS.md 与 CLAUDE.md 成对维护：同目录内容保持一致，只替换标题行。
 - Git commit message 使用中文。
