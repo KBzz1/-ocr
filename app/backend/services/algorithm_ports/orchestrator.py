@@ -1,4 +1,5 @@
 from ...storage.json_store import JsonStore
+from .field_extraction import validate_field_candidates
 
 
 class ProcessingOrchestrator:
@@ -136,7 +137,6 @@ class ProcessingOrchestrator:
                 details={"stage": "field_extraction", "reason": "module_exception"},
             )
 
-        from .field_extraction import validate_field_candidates
         if not isinstance(candidates, list):
             return task_service.mark_failed(
                 task_id, "ALGORITHM_CONTRACT_INVALID", "字段候选必须是列表",

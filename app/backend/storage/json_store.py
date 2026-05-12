@@ -74,5 +74,7 @@ class JsonStore:
             if not name.endswith(".json"):
                 continue
             path = os.path.join(relative_dir, name)
-            items.append(self.read(path))
+            item = self.read(path)
+            if item is not None:
+                items.append(item)
         return items
