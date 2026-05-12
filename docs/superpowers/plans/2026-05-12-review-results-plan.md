@@ -29,6 +29,12 @@
 - Modify: `app/backend/routes/__init__.py` add `_get_review_service()`
 - Modify: `app/backend/services/task_service.py` add optional `confirmed_at` and `review_summary` handling in `mark_confirmed()`
 
+## Parallel Merge Notes
+
+- BE-09 may also modify `app/backend/__init__.py` to register local event log and maintenance services. Merge by preserving both sets of app config keys: `REVIEW_SERVICE`, `LOCAL_EVENT_LOG`, `OFFLINE_CHECK_SERVICE`, and `CLEANUP_SERVICE`.
+- BE-09 may also modify `app/backend/services/task_service.py` to log processing events. Merge by keeping BE-07's `mark_confirmed(task_id, review_summary=None)` signature and BE-09's event calls in `_start_processing()`, `mark_failed()`, and `mark_ready()`; BE-09 must not write inside `mark_confirmed()` unless it only logs a summary after BE-07 is merged.
+- BE-01 should not touch review files. If a merge conflict appears with BE-01, prefer BE-01 for `run.bat`/`stop.bat` and BE-07 for review service/routes.
+
 ---
 
 ### Task 0: Baseline
