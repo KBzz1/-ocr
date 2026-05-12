@@ -1,579 +1,428 @@
-# 外部算法端口编排设计（A-lite）
+# 外部算法端口与编排设计（BE-05）
 
 ## 范围
 
-对应 PRD `PR-BE-004`、`PR-BE-005`、`PR-BE-006`，承接后端 TDD 实施顺序第 6-7 步（`docs/Backend/Backend_TDD/02-algorithm-ports.md`、`07-algorithm-failure-contracts.md`）。
+对应 PRD `PR-BE-005`、`PR-BE-006`，覆盖 `docs/PRD任务清单.md` 中：
 
-A-lite 阶段目标：定义图像处理、文档解析、字段抽取三个外部本地算法端口接口，实现处理编排器串联流水线，提供测试用 fixture 适配器，替换 `TaskService.process/retry` 中硬编码的未配置失败路径。不实现任何 OCR、LLM、图像处理、裁剪、透视矫正或规则抽取算法。
+- BE-05-01 图像处理端口契约
+- BE-05-02 文档解析端口契约
+- BE-05-03 字段抽取端口契约
+- BE-05-04 算法失败映射
 
-边界隔离：Agent B 并行开发 BE-06（Schema 管理）。BE-05 只能接收并透传 schema dict 给字段抽取端口，不定义 schema 文件结构，不读取固定 schema 路径，不校验 `field_key` 是否属于 schema。BE-05 只校验字段候选的端口结构合法性（`field_key` 非空、`original_value` 是字符串等）。schema 外字段检测由 BE-06 或未来可选 validator 提供；如果该 validator 被注入并返回非法，编排器只负责把错误映射为 `ALGORITHM_CONTRACT_INVALID`。
+本阶段承接 BE-04 任务生命周期：`POST /api/tasks/{taskId}/process` 和 `retry` 触发任务处理编排。BE-05 的目标是让后端具备调用外部本地算法模块的端口边界、fixture 成功路径、失败映射和结果持久化能力。
 
 本阶段覆盖：
 
-- 三个端口接口：`ImageProcessingPort`（原图路径+quad→processed 图像路径）、`DocumentParsingPort`（processed 图像路径列表→文本+结构）、`FieldExtractionPort`（解析结果+schema dict→候选字段列表）
-- `ProcessingOrchestrator`：按 image→document→field 顺序串联，任一步失败即停止并调用 `TaskService.mark_failed`
-- 失败映射：未配置→`ALGORITHM_MODULE_NOT_CONFIGURED`，异常→`ALGORITHM_MODULE_FAILED`，结构非法→`ALGORITHM_CONTRACT_INVALID`，空结果→failed
-- 失败时记录阶段和简短 details（`stage: image_processing/document_parsing/field_extraction`），不得记录完整病历原文、图片 base64 或模型输出全文
-- 每步结果持久化到 `data/results/{task_id}/`
-- 字段候选结构校验（不校验 schema 白名单）
-- Fixture 适配器：只返回预置结构或抛预置异常，用于覆盖成功/异常/空/部分失败/结构非法；不得在 fixture 中实现识别、抽取、裁剪或规则兜底
-- `TaskService.process/retry` 委托 `ProcessingOrchestrator.run()`
-- 多页图像处理：从任务 `session_id` + `page_order` 回查采集会话页面清单，按 `upload_ref` 读取每页元数据，逐页调用图像处理端口
+- 定义图像处理、文档解析、字段抽取三个本地端口的输入输出契约。
+- 提供默认未配置端口，触发处理时任务进入 `failed` 并保存 `ALGORITHM_MODULE_NOT_CONFIGURED`。
+- 提供测试用 fixture 端口，用于验证外部结果被原样保存，不验证识别准确率。
+- 编排流程：图像处理 → 文档解析 → 字段抽取。
+- 成功时保存处理后图像路径、文档解析结果、字段候选结果，并将任务推进到 `ready_for_review`。
+- 失败时保存 `error_code`、`error_message`、`failed_at`，任务进入 `failed`。
+- 部分页面解析失败时保留成功页外部结果，但整体任务进入 `failed`。
 
 本阶段不覆盖：
 
-- OCR、LLM、图像处理算法实现（外部交付）
-- Schema 定义、schema 外字段校验（BE-06）
-- 后端基于 schema、OCR 文本或页面内容补造字段
-- 真实外部模块配置文件或动态加载
-- 审核、导出
+- OCR、LLM、图像预处理、裁剪、透视矫正、自动边界识别或规则字段抽取实现。
+- 真实外部算法包的加载细节、模型路径探测或部署检查。
+- Schema 管理完整实现（BE-06）。本阶段仅允许使用测试 fixture schema 验证字段候选契约。
+- 审核结果编辑、确认校验、导出。
+- 前端审核页和结果展示。
 
 ## 设计原则
 
-- 只定义端口、编排器、失败处理和 fixture；不实现任何算法行为或规则兜底。
-- 端口签名对齐 `docs/Backend/Backend_TDD/02-algorithm-ports.md`，使用 input dict 便于后续扩展。
-- 任务本体仍是 `data/tasks/{task_id}.json`，只保存状态、时间、失败摘要和页面顺序等任务元数据；处理中间结果和候选字段写入 `data/results/{task_id}/`，不得写回任务本体。
-- 算法模块缺失时不降级；编排器确保失败路径完整覆盖所有失败契约。
-- 所有错误响应使用 `docs/Shared/error-codes.md` 统一结构。
+- 本仓库只定义端口、调用编排、契约校验、结果持久化和失败映射。
+- 任何端口未配置、抛异常、返回空结果或契约非法，都不得进入 `ready_for_review`。
+- 不允许用 schema、OCR 文本、页面内容或规则生成替代结构化字段。
+- fixture 只代表“外部模块返回的数据”，不得被解释为本项目具备识别或抽取能力。
+- 外部模块返回的文档解析结果和字段候选结果应原样保存；后端只补充本系统需要的状态、时间和任务引用字段。
+- 日志和错误响应不得包含完整病历原文、身份证号、图片 base64 或模型输出全文。
 
 ## 技术选型
 
 | 项 | 选择 |
 |----|------|
-| 端口定义 | Python ABC 或 duck-typing 接口类 |
-| 编排器注入 | 构造函数注入 `ProcessingOrchestrator(image_port=None, doc_port=None, field_port=None, schema_validator=None)`；`schema_validator` 可选且由 BE-06/后续阶段提供 |
-| 持久化 | 复用 `JsonStore`，结果写入 `data/results/{task_id}/` |
-| 测试 | Fixture 适配器，不调真实算法 |
+| 端口定义 | Python `Protocol` + dataclass/dict 契约 |
+| 编排层 | 新建 `AlgorithmOrchestrator` |
+| 默认端口 | 未配置端口，调用即抛 `AlgorithmPortNotConfigured` |
+| 测试端口 | fixture adapter，仅在测试中注入 |
+| 持久化 | 复用 `JsonStore` |
+| 状态更新 | 复用 `TaskService.mark_ready()` / `mark_failed()` |
 
 ## 目录结构（新增/变更）
 
-```
+```text
 app/backend/
+├── algorithm/
+│   ├── __init__.py                     # NEW 算法端口包
+│   ├── ports.py                        # NEW 端口 Protocol、错误类型、契约辅助类型
+│   ├── defaults.py                     # NEW 默认未配置端口
+│   ├── fixtures.py                     # NEW 测试 fixture 端口实现
+│   └── orchestrator.py                 # NEW 算法处理编排
 ├── services/
-│   └── algorithm_ports/
-│       ├── __init__.py
-│       ├── image_processing.py      # ImageProcessingPort 接口
-│       ├── document_parsing.py      # DocumentParsingPort 接口
-│       ├── field_extraction.py      # FieldExtractionPort 接口 + 结构校验
-│       ├── orchestrator.py          # ProcessingOrchestrator 流水线编排
-│       └── fixtures.py              # Fixture 适配器（仅测试用）
-├── services/
-│   └── task_service.py              # MODIFIED: process/retry 委托 orchestrator
-├── __init__.py                      # MODIFIED: 创建 orchestrator 并注入 TaskService
+│   └── task_service.py                 # MODIFIED process/retry 接入 orchestrator
+├── routes/
+│   └── task_results.py                 # NEW 文档解析结果和字段候选读取 API
 ├── tests/
-│   ├── test_image_processing_port.py
-│   ├── test_document_parsing_port.py
-│   ├── test_field_extraction_port.py
-│   └── test_orchestrator.py
+│   ├── test_algorithm_ports.py         # NEW 端口契约单元测试
+│   ├── test_algorithm_orchestrator.py  # NEW 编排集成测试
+│   └── test_task_results_routes.py     # NEW 结果读取 API 测试
+└── __init__.py                         # MODIFIED 注册默认端口、orchestrator、结果路由
 ```
 
-## 端口接口
+## 端口契约
 
-### ImageProcessingPort
+### 错误类型
+
+算法端口抛出的内部异常不直接暴露为 HTTP 响应，而是由编排层映射为任务失败信息。
 
 ```python
-class ImageProcessingPort:
-    """图像处理端口：逐页接收原图路径和 quad，返回 processed 图像路径。"""
+class AlgorithmPortNotConfigured(Exception):
+    """端口未配置。映射为 ALGORITHM_MODULE_NOT_CONFIGURED。"""
 
-    def process(self, input: dict) -> dict:
-        """
-        input: {
-            "task_id": str,
-            "page_id": str,             # 页面标识
-            "page_no": int,             # 冻结后的页序，从 task.page_order 推导
-            "original_path": str,       # 页面元数据中的原图路径
-            "quad_points": list | None, # 四边形角点坐标
-            "image_width": int,
-            "image_height": int,
-        }
-        returns: {"processed_path": str}
-        raises: NotImplementedError（未实现时）
-        """
-        raise NotImplementedError
+
+class AlgorithmPortFailed(Exception):
+    """端口调用异常。映射为 ALGORITHM_MODULE_FAILED。"""
+
+
+class AlgorithmContractInvalid(Exception):
+    """端口返回结构非法。映射为 ALGORITHM_CONTRACT_INVALID。"""
 ```
 
-### DocumentParsingPort
+### 图像处理端口
 
-```python
-class DocumentParsingPort:
-    """文档解析端口：接收 processed 图像路径列表，返回逐页解析结果。"""
+输入：
 
-    def parse(self, input: dict) -> dict:
-        """
-        input: {
-            "task_id": str,
-            "image_paths": [str],  # processed 图像路径列表（按页序）
-            "pages": [
-                {"page_id": str, "page_no": int, "processed_path": str}
-            ],
-        }
-        returns: {
-            "pages": [
-                {
-                    "page_id": str,
-                    "page_no": int,
-                    "status": "success" | "failed",
-                    "text": str,
-                    "blocks": [...],
-                    "tables": [...],
-                }
-            ],
-            "merged_text": str,
-        }
-        raises: NotImplementedError
-        """
-        raise NotImplementedError
-```
-
-### FieldExtractionPort
-
-```python
-class FieldExtractionPort:
-    """字段抽取端口：接收解析结果和 schema，返回候选字段列表。"""
-
-    def extract(self, input: dict) -> list[dict]:
-        """
-        input: {
-            "task_id": str,
-            "document_result": dict,  # DocumentParsingPort.parse() 的返回值
-            "schema": dict,           # schema dict；结构由 BE-06 定义，本端口只透传
-        }
-        returns: [
-            {
-                "field_key": str,
-                "original_value": str,
-                "evidence": str | None,
-                "confidence": float,
-            }
-        ]
-        raises: NotImplementedError
-        """
-        raise NotImplementedError
-```
-
-### 字段结构校验（独立函数，不依赖 schema 内容）
-
-```python
-def validate_field_candidates(candidates: list) -> None:
-    """校验字段候选结构合法性。不通过时 raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID)。
-
-    校验规则：
-    - candidates 必须是 list
-    - 每项必须是 dict
-    - field_key 必须是非空字符串
-    - original_value 必须是字符串
-    - confidence 如存在必须是 int 或 float
-    - evidence 如存在必须是 str 或 None
-
-    不接收 schema，不校验 field_key 是否在 schema 内（由 BE-06 或未来可选 validator 负责）。
-    """
-```
-
-## 编排器
-
-### ProcessingOrchestrator
-
-```python
-class ProcessingOrchestrator:
-    def __init__(
-        self,
-        store: JsonStore,
-        image_port: ImageProcessingPort | None = None,
-        doc_port: DocumentParsingPort | None = None,
-        field_port: FieldExtractionPort | None = None,
-        schema_validator=None,
-    ):
-        self._store = store
-        self._image_port = image_port
-        self._doc_port = doc_port
-        self._field_port = field_port
-        self._schema_validator = schema_validator
-
-    def run(self, task: dict, task_service, schema: dict | None = None) -> dict:
-        """串联 image → document → field 流水线。任一步失败即 mark_failed。
-        返回最终的 task dict（ready_for_review 或 failed）。
-        """
-```
-
-### 多页图像处理逻辑
-
-编排器不扫描 `data/pages/` 推导页序。唯一页序来源是 BE-04 任务本体中的 `page_order`。处理步骤：
-
-1. 从任务读取 `task_id`、`session_id`、`page_order`。
-2. 读取 `data/sessions/{session_id}.json`，用会话 `pages` 建立 `page_id → upload_ref` 映射。
-3. 按 `page_order` 顺序逐页读取 `upload_ref` 指向的页面元数据（如 `pages/{session_id}/{page_id}.json`）。
-4. 从页面元数据读取 `original_image_path`、`quad_points`、`image_width`、`image_height`。
-5. 逐页调用 `ImageProcessingPort.process(input)`，收集 `processed_path`，并把页序信息原样传给后续文档解析端口。
-
-如果 `session_id` 缺失、`page_order` 为空、会话缺失、页面不在会话清单内、某页 `upload_ref` 缺失、页面元数据文件缺失，或页面元数据缺少 `original_image_path`/尺寸字段，均视为任务输入契约不完整：
-
-```
-mark_failed(
-    task_id,
-    "ALGORITHM_CONTRACT_INVALID",
-    "页面元数据缺失",
-    stage="image_processing",
-    details={"stage": "image_processing", "reason": "page_metadata_missing"}
-)
-```
-
-`quad_points` 可以为 `null`，不得在 BE-05 内自行生成默认框选或执行裁剪/透视矫正。
-
-### schema 输入边界
-
-`ProcessingOrchestrator.run()` 可以接收调用方传入的 `schema: dict | None`，并把该 dict 原样放入 `FieldExtractionPort.extract()` 的 input。BE-05 不负责加载 schema 文件，也不定义 schema 字段结构。
-
-如果 BE-06 已提供 schema loader，TaskService 或上层装配代码可以在调用 orchestrator 前取得 schema dict。`FieldExtractionPort.extract()` 的 `schema` 输入必须是调用方传入的 dict；缺失或非 dict 视为 `field_extraction` 阶段输入契约不完整并进入 `failed`，不得自行构造默认 schema。
-
-如果后续注入 `schema_validator`，其职责只在字段候选返回后检查 schema 外字段等 schema 语义问题；编排器只捕获其失败并映射为 `ALGORITHM_CONTRACT_INVALID`，不在 BE-05 内实现 schema 规则。
-
-### 失败映射
-
-```
-启动处理
-  ├─ image_port is None
-  │   → mark_failed(ALGORITHM_MODULE_NOT_CONFIGURED,
-  │                  "图像处理模块未配置",
-  │                  stage="image_processing",
-  │                  details={"stage": "image_processing", "reason": "module_not_configured"})
-  │
-  ├─ 页面输入元数据缺失或非法
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "页面元数据缺失",
-  │                  stage="image_processing",
-  │                  details={"stage": "image_processing", "reason": "page_metadata_missing"})
-  │
-  ├─ image_port.process() raise Exception
-  │   → mark_failed(ALGORITHM_MODULE_FAILED,
-  │                  "图像处理模块异常",
-  │                  stage="image_processing",
-  │                  details={"stage": "image_processing", "reason": "module_exception"})
-  │
-  ├─ image_port.process() 返回缺少 processed_path
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "图像处理结果结构非法",
-  │                  stage="image_processing",
-  │                  details={"stage": "image_processing", "reason": "invalid_processed_path"})
-  │
-  ├─ doc_port is None
-  │   → mark_failed(ALGORITHM_MODULE_NOT_CONFIGURED,
-  │                  "文档解析模块未配置",
-  │                  stage="document_parsing",
-  │                  details={"stage": "document_parsing", "reason": "module_not_configured"})
-  │
-  ├─ doc_port.parse() raise Exception
-  │   → mark_failed(ALGORITHM_MODULE_FAILED,
-  │                  "文档解析模块异常",
-  │                  stage="document_parsing",
-  │                  details={"stage": "document_parsing", "reason": "module_exception"})
-  │
-  ├─ doc_port.parse() 返回空 pages
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "文档解析结果为空",
-  │                  stage="document_parsing",
-  │                  details={"stage": "document_parsing", "reason": "empty_pages"})
-  │
-  ├─ doc_port.parse() 部分页 status=failed
-  │   → mark_failed(ALGORITHM_MODULE_FAILED,
-  │                  "部分页面解析失败",
-  │                  stage="document_parsing",
-  │                  details={"stage": "document_parsing", "reason": "partial_page_failed", "failed_page_ids": [...]})
-  │   保留成功页结果在 document_result.json
-  │
-  ├─ field_port is None
-  │   → mark_failed(ALGORITHM_MODULE_NOT_CONFIGURED,
-  │                  "字段抽取模块未配置",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "module_not_configured"})
-  │
-  ├─ schema 缺失或不是 dict
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "字段 schema 缺失或非法",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "schema_missing_or_invalid"})
-  │
-  ├─ field_port.extract() raise Exception
-  │   → mark_failed(ALGORITHM_MODULE_FAILED,
-  │                  "字段抽取模块异常",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "module_exception"})
-  │
-  ├─ field_port.extract() 返回空列表
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "字段候选结果为空",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "empty_candidates"})
-  │
-  ├─ validate_field_candidates() 失败
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "字段候选结构非法: ...",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "invalid_candidate_contract"})
-  │
-  ├─ schema_validator 检测到 schema 外字段（仅当 BE-06/后续阶段注入）
-  │   → mark_failed(ALGORITHM_CONTRACT_INVALID,
-  │                  "字段候选不符合 schema",
-  │                  stage="field_extraction",
-  │                  details={"stage": "field_extraction", "reason": "schema_validation_failed"})
-  │
-  └─ 全部成功
-      → mark_ready()
-```
-
-每步成功后先持久化结果到 `data/results/{task_id}/`。失败 details 只记录阶段、原因码、失败页 ID 等排查摘要，不记录完整 OCR 文本、结构化字段全文、患者身份信息、图片 base64 或调用堆栈。
-
-## 存储布局
-
-```
-data/
-├── tasks/
-│   └── {task_id}.json              # 任务本体（BE-04 已有）
-├── pages/
-│   └── {session_id}/
-│       ├── {page_id}.jpg           # 原图（BE-03 已有）
-│       └── {page_id}.json          # 页面元数据（BE-03 已有）
-└── results/
-    └── {task_id}/
-        ├── image_result.json       # 图像处理结果
-        ├── document_result.json    # 文档解析结果
-        └── field_candidates.json   # 字段候选结果
-```
-
-任务本体文件路径仍为 `data/tasks/{task_id}.json`，只保存任务状态和失败摘要；处理结果独立存储在 `data/results/{task_id}/`。
-
-### 结果文件格式
-
-`image_result.json`：
 ```json
 {
   "task_id": "uuid4",
-  "stage": "image_processing",
-  "status": "success",
+  "page_id": "page_id_1",
+  "page_no": 1,
+  "original_path": "pages/{session_id}/{page_id}.jpg",
+  "quad_points": [[0, 0], [100, 0], [100, 100], [0, 100]],
+  "image_width": 1200,
+  "image_height": 1600
+}
+```
+
+输出：
+
+```json
+{
+  "page_id": "page_id_1",
+  "page_no": 1,
+  "processed_image_path": "results/{task_id}/processed/page_id_1.png",
+  "status": "success"
+}
+```
+
+契约要求：
+
+- `processed_image_path` 必须是非空相对路径。
+- 输出 `page_id` 必须等于输入 `page_id`。
+- 输出 `status` 必须为 `success`，失败应抛异常而不是返回空成功。
+- 后端不校验图像内容，不做裁剪或透视矫正。
+
+### 文档解析端口
+
+输入：
+
+```json
+{
+  "task_id": "uuid4",
   "pages": [
     {
-      "page_id": "uuid4",
+      "page_id": "page_id_1",
       "page_no": 1,
-      "original_path": "data/pages/{session_id}/{page_id}.jpg",
-      "quad_points": null,
-      "processed_path": "data/results/{task_id}/processed/{page_id}.jpg"
+      "processed_image_path": "results/{task_id}/processed/page_id_1.png"
     }
   ]
 }
 ```
 
-`document_result.json`：
+输出：
+
 ```json
 {
   "task_id": "uuid4",
-  "stage": "document_parsing",
-  "status": "success",
   "pages": [
-    {"page_id": "uuid4", "page_no": 1, "status": "success", "text": "...", "blocks": [...], "tables": [...]}
+    {
+      "page_id": "page_id_1",
+      "page_no": 1,
+      "status": "success",
+      "plain_text": "fixture text from external parser",
+      "blocks": [],
+      "tables": []
+    }
   ],
-  "merged_text": "..."
+  "merged_text": "fixture text from external parser"
 }
 ```
 
-`field_candidates.json`：
+契约要求：
+
+- `pages` 必须是非空列表。
+- 每页必须包含 `page_id`、`page_no`、`status`。
+- `status` 允许 `success` 或 `failed`。
+- 只要任一页 `status == "failed"`，整体任务进入 `failed`，但文档解析结果仍保存供排查。
+- 空 `pages`、缺字段、非法 `status` 映射为 `ALGORITHM_CONTRACT_INVALID`。
+- 后端不修改 `plain_text`、`blocks`、`tables`、`merged_text`。
+
+### 字段抽取端口
+
+输入：
+
 ```json
 {
   "task_id": "uuid4",
-  "stage": "field_extraction",
-  "status": "success",
-  "candidates": [
-    {"field_key": "chief_complaint", "original_value": "头痛3天", "evidence": "...", "confidence": 0.95}
-  ]
+  "document_result": {
+    "task_id": "uuid4",
+    "pages": [],
+    "merged_text": "fixture text from external parser"
+  },
+  "schema": {
+    "version": "fixture",
+    "fields": ["chief_complaint"]
+  }
 }
 ```
 
-## TaskService 变更
+输出：
 
-`TaskService` 继续负责任务读取、合法状态流转、失败/成功状态落盘；`ProcessingOrchestrator` 只负责算法端口编排、结果持久化和把阶段失败委托回 `TaskService.mark_failed()`。二者关系：
-
-- `TaskService.process()`：校验当前任务可进入 `processing`，清理旧失败字段，写入 `processing_at`，然后调用 `orchestrator.run(task, self, schema=schema_dict)`。
-- `TaskService.retry()`：只允许 `failed → processing`，清理旧失败字段和 details，随后调用同一个 orchestrator。
-- `schema_dict` 来自上层注入的 SchemaService 或测试 fixture。BE-05 不加载 schema 文件；如果 BE-06 尚未接入，成功主流程测试必须显式传入最小 schema dict。
-- `ProcessingOrchestrator`：不得直接改写任务状态文件；成功时调用 `task_service.mark_ready(task_id)`，失败时调用 `task_service.mark_failed(...)`。
-- 应用装配必须创建 orchestrator。A-lite 阶段端口可以全为 `None`，因此首个未配置阶段会明确失败在 `image_processing`，不再由 TaskService 写一个笼统的 `processing` 失败。
-
-`task_service.py` 中 `process()` 和 `retry()` 移除硬编码的 `mark_failed(ALGORITHM_MODULE_NOT_CONFIGURED)` 主路径，改为委托 `ProcessingOrchestrator.run()`。
-
-```python
-class TaskService:
-    def __init__(self, store: JsonStore, orchestrator):
-        self._store = store
-        self._orchestrator = orchestrator
-
-    def process(self, task_id: str, schema: dict | None = None) -> dict:
-        task = self._read_task(task_id)
-        task = self._transition(task, TaskStatus.PROCESSING.value, "触发任务处理")
-        task["processing_at"] = self._now()
-        task["error_code"] = None
-        task["error_message"] = None
-        task["failed_at"] = None
-        task["details"] = {}
-        if schema is not None:
-            task["schema_version"] = schema.get("version")
-            task["document_type"] = schema.get("document_type")
-        self._write_task(task)
-        return self._orchestrator.run(task, self, schema=schema)
-
-    def retry(self, task_id: str, schema: dict | None = None) -> dict:
-        task = self._read_task(task_id)
-        if task["status"] != TaskStatus.FAILED.value:
-            raise AppError(ErrorCode.INVALID_TASK_TRANSITION, ...)
-        task = self._transition(task, ...)
-        ...
-        task["details"] = {}
-        if schema is not None:
-            task["schema_version"] = schema.get("version")
-            task["document_type"] = schema.get("document_type")
-        return self._orchestrator.run(task, self, schema=schema)
+```json
+[
+  {
+    "field_key": "chief_complaint",
+    "field_name": "主诉",
+    "original_value": "fixture value from external extractor",
+    "evidence": "fixture evidence",
+    "page_no": 1,
+    "confidence": "medium"
+  }
+]
 ```
 
-`schema_version` 和 `document_type` 的权威来源由 BE-06 定义。BE-05 只在调用方传入 schema dict 时记录这两个字段；不得自行构造默认版本或默认文书类型。
+持久化时后端允许补充：
 
-`mark_failed` 签名扩展，增加 `stage` 和 `details` 参数。`details` 写入任务本体只作为失败摘要，不包含敏感全文：
-
-```python
-def mark_failed(self, task_id: str, error_code: str, message: str,
-                stage: str = "processing", details: dict | None = None) -> dict:
-    task = self._read_task(task_id)
-    task = self._transition(task, TaskStatus.FAILED.value, message)
-    task["error_code"] = error_code
-    task["error_message"] = message
-    task["failed_at"] = self._now()
-    task["details"] = {"stage": stage, **(details or {})}
-    self._write_task(task)
-    return task
+```json
+{
+  "status": "unreviewed",
+  "reviewed_value": null,
+  "reviewed_at": null,
+  "review_note": null
+}
 ```
 
-## 注册
+契约要求：
 
-`app/backend/__init__.py` 中必须创建 orchestrator 并注入 `TaskService`。A-lite 阶段所有端口为 `None`，触发处理后由 orchestrator 在 `image_processing` 阶段返回 `ALGORITHM_MODULE_NOT_CONFIGURED`：
+- 字段候选必须是非空列表。
+- 每个字段必须包含 `field_key`、`original_value`。
+- `field_key` 必须来自当前 schema。
+- `confidence` 如存在，必须原样保存；本阶段不基于置信度改变字段。
+- 字段状态初始为 `unreviewed`。
+- 空候选、schema 外字段、缺少关键字段均映射为 `ALGORITHM_CONTRACT_INVALID`。
+- 后端不得基于 schema 生成空字段候选或默认字段值。
 
-```python
-from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
+## 持久化布局
 
-orchestrator = ProcessingOrchestrator(store=store)
-app.config["TASK_SERVICE"] = TaskService(store=store, orchestrator=orchestrator)
+```text
+data/
+├── pages/
+│   └── {session_id}/
+│       └── {page_id}.json               # 已有上传元数据，含 original_image_path/quad_points
+├── tasks/
+│   └── {task_id}.json                   # 任务状态、错误信息、历史
+└── results/
+    └── {task_id}/
+        ├── image-processing.json        # 图像处理端口返回摘要
+        ├── document-result.json         # 文档解析端口原始返回
+        └── structured-fields.json       # 字段抽取候选 + 本系统字段状态
 ```
 
-## Fixture 适配器
+### 页面元数据回写
 
-仅用于测试，放在 `services/algorithm_ports/fixtures.py`。Fixture 只透传测试预置值或抛出测试预置异常，不根据图像内容、OCR 文本、schema 或规则生成字段：
+图像处理成功后，需要把每页的 `processed_image_path` 写回页面元数据 JSON。页面元数据仍以 PR-BE-003 的 upload metadata 为准，不新增独立页序来源。
 
-```python
-class FixtureImagePort(ImageProcessingPort):
-    def __init__(self, processed_dir: str | None = None, should_fail: bool = False):
-        self._processed_dir = processed_dir
-        self._should_fail = should_fail
+## 编排流程
 
-    def process(self, input: dict) -> dict:
-        if self._should_fail:
-            raise RuntimeError("fixture image processing failure")
-        return {"processed_path": f"{self._processed_dir}/{input['page_id']}_processed.jpg"}
-
-
-class FixtureDocPort(DocumentParsingPort):
-    def __init__(self, pages: list | None = None, merged_text: str = "",
-                 partial_fail_page_id: str | None = None, should_fail: bool = False,
-                 return_empty: bool = False):
-        ...
-
-    def parse(self, input: dict) -> dict:
-        if self._should_fail: raise RuntimeError(...)
-        if self._return_empty: return {"pages": [], "merged_text": ""}
-        # 返回构造函数注入的预置 pages；partial_fail_page_id 只把预置页状态改为 failed
-        ...
-
-
-class FixtureFieldPort(FieldExtractionPort):
-    def __init__(self, candidates: list | None = None, should_fail: bool = False,
-                 return_empty: bool = False):
-        ...
-
-    def extract(self, input: dict) -> list[dict]:
-        if self._should_fail: raise RuntimeError(...)
-        if self._return_empty: return []
-        return self._candidates
+```text
+TaskService.process(task_id)
+    ↓
+AlgorithmOrchestrator.process(task_id)
+    ↓
+读取 task.page_order
+    ↓
+读取每页 upload metadata
+    ↓
+ImageProcessingPort.process(each page)
+    ↓
+保存 image-processing.json，回写 processed_image_path
+    ↓
+DocumentParsingPort.parse(processed pages)
+    ↓
+保存 document-result.json
+    ↓
+若任一解析页 failed → TaskService.mark_failed(...)
+    ↓
+FieldExtractionPort.extract(document_result, schema)
+    ↓
+校验字段候选
+    ↓
+保存 structured-fields.json
+    ↓
+TaskService.mark_ready(task_id)
 ```
+
+`retry` 与 `process` 使用同一编排逻辑；区别只在任务状态从 `failed` 重新进入 `processing` 的状态历史由 BE-04 负责记录。
+
+## 成功路径
+
+给定测试 fixture 端口：
+
+- 图像处理 fixture 返回每页 `processed_image_path`。
+- 文档解析 fixture 返回 `pages`、`blocks`、`tables`、`merged_text`。
+- 字段抽取 fixture 返回非空字段候选。
+
+系统必须：
+
+- 保存三类结果文件。
+- 回写页面元数据中的 `processed_image_path`。
+- 保存字段候选并将每个字段标记为 `unreviewed`。
+- 任务状态进入 `ready_for_review`。
+- 不改写外部返回的 OCR 文本、块、表格、字段值、证据和置信度。
+
+## 失败映射
+
+| 场景 | 任务状态 | error_code | 额外要求 |
+|------|----------|------------|----------|
+| 任一端口未配置 | `failed` | `ALGORITHM_MODULE_NOT_CONFIGURED` | 不产生空成功结果 |
+| 任一端口抛 `AlgorithmPortFailed` 或未知异常 | `failed` | `ALGORITHM_MODULE_FAILED` | 不向 API 冒泡 500 |
+| 图像处理返回空 processed path | `failed` | `ALGORITHM_CONTRACT_INVALID` | 保留原图和 quad |
+| 文档解析返回空 pages | `failed` | `ALGORITHM_CONTRACT_INVALID` | 不暴露为空成功文档 |
+| 文档解析部分页面 failed | `failed` | `ALGORITHM_MODULE_FAILED` | 保存成功页和失败页状态 |
+| 字段抽取返回空候选 | `failed` | `ALGORITHM_CONTRACT_INVALID` | 不生成空字段 |
+| 字段抽取返回 schema 外字段 | `failed` | `ALGORITHM_CONTRACT_INVALID` | 非法候选不保存为审核结果 |
+| 字段抽取缺少 `field_key` 或 `original_value` | `failed` | `ALGORITHM_CONTRACT_INVALID` | 非法候选不保存为审核结果 |
+
+## API 契约
+
+### GET /api/tasks/{task_id}/document-result
+
+返回文档解析结果。
+
+成功任务响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "uuid4",
+    "pages": [],
+    "merged_text": "fixture text from external parser"
+  }
+}
+```
+
+错误响应：
+
+| 条件 | HTTP | error.code |
+|------|------|------------|
+| 任务不存在 | 404 | `TASK_NOT_FOUND` |
+| 任务未进入 `ready_for_review`/`confirmed`/`exported` | 400 | `INVALID_TASK_TRANSITION` |
+| 结果文件不存在 | 404 | `TASK_NOT_FOUND` |
+
+失败任务不得返回 `success: true` 和空结果。
+
+### GET /api/tasks/{task_id}/structured-fields
+
+返回字段候选结果。
+
+成功任务响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "uuid4",
+    "fields": [
+      {
+        "field_key": "chief_complaint",
+        "field_name": "主诉",
+        "original_value": "fixture value from external extractor",
+        "evidence": "fixture evidence",
+        "page_no": 1,
+        "confidence": "medium",
+        "status": "unreviewed",
+        "reviewed_value": null,
+        "reviewed_at": null,
+        "review_note": null
+      }
+    ]
+  }
+}
+```
+
+错误响应同文档结果 API。失败任务不得返回空数组成功响应。
+
+## 与 BE-04 的衔接
+
+BE-04 A-lite 中 `process/retry` 在未配置算法时固定进入 `failed`。BE-05 接入后应改为：
+
+- `TaskService.process()`：合法状态进入 `processing` 后调用 `AlgorithmOrchestrator.process(task_id)`。
+- `TaskService.retry()`：`failed -> processing` 后调用同一编排。
+- 默认端口未配置时，编排层仍返回 `ALGORITHM_MODULE_NOT_CONFIGURED`，保持 BE-04 的失败契约。
+- fixture 端口注入时，成功路径进入 `ready_for_review`。
 
 ## 测试策略
 
 遵循 TDD：先写失败测试 → RED → 实现 → GREEN → 重构。
 
-| 测试文件 | 层次 | 对应 TDD ID |
-|----------|------|-------------|
-| `test_image_processing_port.py` | 契约 | BE-IMG-001, 002, 004 |
-| `test_document_parsing_port.py` | 契约 | BE-DOC-001, 002, 004, 005 |
-| `test_field_extraction_port.py` | 契约 | BE-FLD-001, 002, 003, 004, 007 |
-| `test_orchestrator.py` | 集成 | 流水线编排 + 失败传播 + 完整主流程 |
+| 测试文件 | 层次 | 覆盖 |
+|----------|------|------|
+| `test_algorithm_ports.py` | 契约单元 | 默认未配置端口、fixture 端口、契约非法 |
+| `test_algorithm_orchestrator.py` | 集成 | 成功编排、失败映射、结果持久化 |
+| `test_task_results_routes.py` | API | 文档结果和字段结果读取，不伪装空成功 |
 
-### `test_image_processing_port.py`
-
-| 测试 | TDD ID | RED 失败点 |
-|------|--------|------------|
-| `test_port_not_configured_task_failed` | BE-IMG-001 | orchestrator 无 image_port 时未进入 failed |
-| `test_port_raises_exception_task_failed` | BE-IMG-004 | 端口抛异常后任务未进入 failed |
-| `test_fixture_port_returns_processed_path` | BE-IMG-003 | fixture 成功路径未返回 processed_path |
-| `test_failed_preserves_original_image_and_quad` | BE-IMG-002 | 失败后元数据丢失 |
-
-### `test_document_parsing_port.py`
+### `test_algorithm_ports.py`
 
 | 测试 | TDD ID | RED 失败点 |
 |------|--------|------------|
-| `test_port_not_configured_task_failed` | BE-DOC-001 | orchestrator 无 doc_port 时未进入 failed |
-| `test_empty_pages_marks_failed` | BE-DOC-002 | 空 pages 被当成成功 |
-| `test_fixture_result_preserved_as_is` | BE-DOC-003 | 系统改写了解析结果 |
-| `test_partial_page_failure_marks_task_failed` | BE-DOC-004 | 部分失败被放行 |
-| `test_partial_failure_preserves_success_pages` | BE-DOC-004 | 成功页结果被丢弃 |
+| `test_default_image_processing_port_not_configured` | BE-IMG-001 | 未配置端口被当成成功 |
+| `test_default_document_parsing_port_not_configured` | BE-DOC-001 | 未配置解析端口返回空成功 |
+| `test_default_field_extraction_port_not_configured` | BE-FLD-001 | 未配置抽取端口返回空成功 |
+| `test_fixture_image_processing_returns_processed_paths` | BE-IMG-003 | fixture 路径未返回 |
+| `test_fixture_document_parser_returns_pages_unchanged` | BE-DOC-003 | 解析 fixture 被改写 |
+| `test_fixture_field_extractor_returns_fields_unchanged` | BE-FLD-003 | 字段 fixture 被改写 |
 
-### `test_field_extraction_port.py`
+### `test_algorithm_orchestrator.py`
 
 | 测试 | TDD ID | RED 失败点 |
 |------|--------|------------|
-| `test_port_not_configured_task_failed` | BE-FLD-001 | orchestrator 无 field_port 时未进入 failed |
-| `test_empty_candidates_marks_failed` | BE-FLD-002 | 空候选被当成成功 |
-| `test_fixture_candidates_preserved_as_is` | BE-FLD-003 | 系统修改了候选值 |
-| `test_port_exception_marks_failed` | BE-FLD-004 | 异常后未进入 failed |
-| `test_missing_field_key_marks_contract_invalid` | BE-FLD-007 | 缺 field_key 被接受 |
-| `test_missing_original_value_marks_contract_invalid` | BE-FLD-007 | 缺 original_value 被接受 |
-| `test_non_string_field_key_marks_contract_invalid` | BE-FLD-007 | 非字符串 field_key 被接受 |
-| `test_extra_fields_in_candidate_are_ok` | — | BE-05 不拒绝携带额外字段的合法候选 |
-| `test_schema_outside_field_is_not_checked_without_validator` | — | BE-05 偷做 schema 白名单校验 |
+| `test_process_with_fixture_ports_marks_ready` | BE-05 成功编排 | 成功 fixture 未进入 ready_for_review |
+| `test_process_persists_image_processing_results` | BE-IMG-003 | processed path 未持久化 |
+| `test_process_persists_document_result_unchanged` | BE-DOC-003 | 文档解析结果被改写 |
+| `test_process_persists_structured_fields_unreviewed` | BE-FLD-003 | 字段状态不是 unreviewed |
+| `test_missing_image_port_marks_failed` | BE-IMG-001 | 未配置未失败 |
+| `test_image_port_exception_maps_failed` | BE-IMG-004 | 异常冒泡或 500 |
+| `test_empty_document_pages_marks_contract_invalid` | BE-DOC-002 | 空解析结果被放行 |
+| `test_partial_document_failure_marks_task_failed_and_keeps_result` | BE-DOC-004 | 部分失败被放行或结果丢失 |
+| `test_empty_fields_marks_contract_invalid` | BE-FLD-002 | 空字段进入审核 |
+| `test_schema_extra_field_marks_contract_invalid` | BE-FLD-006 | schema 外字段被保存 |
+| `test_missing_required_field_key_marks_contract_invalid` | BE-FLD-007 | 非法字段结构被保存 |
 
-### `test_orchestrator.py`
+### `test_task_results_routes.py`
 
-| 测试 | RED 失败点 |
-|------|------------|
-| `test_all_ports_configured_flow_to_ready` | 完整成功主流程未走到 ready_for_review |
-| `test_image_fails_skips_doc_and_field` | image 失败后继续调了 doc/field |
-| `test_doc_fails_skips_field` | doc 失败后继续调了 field |
-| `test_image_result_persisted_to_results_dir` | image_result.json 未落盘 |
-| `test_document_result_persisted_to_results_dir` | document_result.json 未落盘 |
-| `test_field_candidates_persisted_to_results_dir` | field_candidates.json 未落盘 |
-| `test_multi_page_reads_metadata_from_upload_ref` | 未从页面元数据读取 original_path 和 quad |
-| `test_page_order_empty_marks_failed` | 空 page_order 未进入 failed |
-| `test_failed_stage_recorded_in_task_details` | details.stage 未记录 |
-| `test_schema_validator_failure_maps_contract_invalid_when_injected` | 可选 validator 失败未映射为 BE-FLD-006 |
-| `test_full_success_fixture_flow` | 多页 success fixture 完整主流程中断 |
-| `test_success_flow_requires_explicit_schema_dict` | 未接入 BE-06 时 BE-05 自行构造了默认 schema |
-
-## 与后续阶段的衔接
-
-- BE-06（Agent B）：schema 外字段校验通过可选的 `SchemaValidator` 注入 `ProcessingOrchestrator`；BE-05 的 `validate_field_candidates` 不接收 schema。
-- 真实外部模块交付后：将 `ImageProcessingPort` 等子类化，实现真实的子进程调用或本地库调用，替换构造函数中的 None。
-- `data/results/{task_id}/` 中的结果文件供 BE-07 审核和 BE-08 导出读取。
-- `mark_failed` 的 `stage` 信息和 `details` 供前端展示失败阶段。
+| 测试 | TDD ID | RED 失败点 |
+|------|--------|------------|
+| `test_get_document_result_returns_saved_result` | BE-DOC-005 | 结果端点缺失 |
+| `test_get_document_result_for_failed_task_returns_error` | BE-DOC-005 | 失败任务返回空成功 |
+| `test_get_structured_fields_returns_saved_fields` | BE-FLD-005 | 字段端点缺失 |
+| `test_get_structured_fields_for_failed_task_returns_error` | BE-FLD-005 | 失败任务返回空数组成功 |
 
 ## 自审结论
 
-- 无 OCR、LLM、图像处理算法实现。
-- 存储布局 `data/results/` 与 `data/tasks/` 不冲突。
-- 字段校验不涉及 schema 白名单，BE-FLD-006 仅在 BE-06/未来 validator 注入后由编排器映射。
-- 端口签名使用 input dict 对齐 TDD 文档，可扩展。
-- 多页处理从 `task.session_id`、`task.page_order`、会话 `pages[].upload_ref` 读取元数据，数据来源明确。
-- 编排器构造函数注入，失败映射区分阶段并写入 details 摘要。
-- Fixture 适配器覆盖成功/异常/空/部分失败/结构非法。
-- `mark_failed` 新增 `stage` 参数，不破坏现有调用方。
+- 本 spec 不要求实现 OCR、LLM、图像处理、裁剪、透视矫正或规则抽取。
+- 成功路径只通过 fixture 端口模拟外部模块返回，用于验证编排和持久化。
+- 失败契约覆盖 `ALGORITHM_MODULE_NOT_CONFIGURED`、`ALGORITHM_MODULE_FAILED`、`ALGORITHM_CONTRACT_INVALID`。
+- 字段候选必须来自外部端口，后端只补充审核状态，不补造字段值。
+- BE-05 可作为 BE-06 schema 管理、BE-07 审核、BE-10 E2E 的前置基础。

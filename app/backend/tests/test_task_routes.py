@@ -84,6 +84,7 @@ class TestTaskRoutes:
         data = resp.get_json()["data"]
         assert data["status"] == "failed"
         assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+        assert data["error_message"] == "图像处理模块未配置"
         assert [e["to_status"] for e in data["status_history"]] == ["uploaded", "processing", "failed"]
 
     def test_process_task_invalid_state_returns_400(self, client, app):
@@ -100,6 +101,7 @@ class TestTaskRoutes:
         data = resp.get_json()["data"]
         assert data["status"] == "failed"
         assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+        assert data["error_message"] == "图像处理模块未配置"
 
     def test_retry_task_invalid_state_returns_400(self, client, app):
         write_task(app, status="uploaded")

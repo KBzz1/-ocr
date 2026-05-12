@@ -92,6 +92,7 @@ class TestPageService:
 
         current = ss.get(session["session_id"])
         assert current["pages"][0]["upload_ref"] is not None
+        assert not os.path.isabs(current["pages"][0]["upload_ref"])
         assert current["pages"][0]["upload_ref"].endswith(".json")
 
     def test_quad_points_null_when_not_provided(self, tmp_path):

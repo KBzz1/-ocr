@@ -4,9 +4,13 @@ from app.backend.errors import AppError, ErrorCode
 from app.backend.storage.json_store import JsonStore
 
 
-def make_service(tmp_path):
+def make_service(tmp_path, orchestrator=None, schema_provider=None):
     from app.backend.services.task_service import TaskService
-    return TaskService(JsonStore(str(tmp_path)))
+    return TaskService(
+        JsonStore(str(tmp_path)),
+        orchestrator=orchestrator,
+        schema_provider=schema_provider,
+    )
 
 
 def write_task(tmp_path, task_id="task-001", status="uploaded", **overrides):
@@ -145,7 +149,9 @@ class TestTaskServiceTransitions:
         assert result["processing_at"] is not None
         assert result["failed_at"] is not None
         assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert result["error_message"] == "算法模块未配置"
+        assert result["error_message"] == "图像处理模块未配置"
+        assert result["details"]["stage"] == "image_processing"
+        assert result["details"]["reason"] == "module_not_configured"
         assert [entry["to_status"] for entry in result["status_history"]] == [
             "uploaded",
             "processing",
@@ -160,6 +166,34 @@ class TestTaskServiceTransitions:
             service.process("task-001")
 
         assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+    def test_process_uses_schema_provider_when_schema_not_passed(self, tmp_path):
+        class RecordingOrchestrator:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, task, task_service, schema=None):
+                self.calls.append({"task": task, "schema": schema})
+                return task_service.mark_ready(task["task_id"])
+
+        write_task(tmp_path, status="uploaded")
+        orchestrator = RecordingOrchestrator()
+        service = make_service(
+            tmp_path,
+            orchestrator=orchestrator,
+            schema_provider=lambda: {"version": "1.0.0", "document_type": "general_medical_record"},
+        )
+
+        result = service.process("task-001")
+
+        assert result["status"] == "ready_for_review"
+        assert orchestrator.calls[0]["schema"] == {
+            "version": "1.0.0",
+            "document_type": "general_medical_record",
+        }
+        stored = JsonStore(str(tmp_path)).read("tasks/task-001.json")
+        assert stored["schema_version"] == "1.0.0"
+        assert stored["document_type"] == "general_medical_record"
 
     def test_retry_without_algorithm_marks_failed_again(self, tmp_path):
         write_task(
@@ -189,7 +223,9 @@ class TestTaskServiceTransitions:
 
         assert result["status"] == "failed"
         assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert result["error_message"] == "算法模块未配置"
+        assert result["error_message"] == "图像处理模块未配置"
+        assert result["details"]["stage"] == "image_processing"
+        assert result["details"]["reason"] == "module_not_configured"
         assert result["status_history"][-2]["from_status"] == "failed"
         assert result["status_history"][-2]["to_status"] == "processing"
         assert result["status_history"][-1]["from_status"] == "processing"
@@ -214,6 +250,7 @@ class TestTaskServiceTransitions:
         assert result["error_code"] == "ALGORITHM_MODULE_FAILED"
         assert result["error_message"] == "算法模块异常"
         assert result["failed_at"] is not None
+        assert result["details"]["stage"] == "processing"
 
     def test_mark_confirmed_and_exported(self, tmp_path):
         write_task(tmp_path, status="ready_for_review")
