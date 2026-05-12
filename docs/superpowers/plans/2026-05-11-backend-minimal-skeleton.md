@@ -636,22 +636,22 @@ git commit -m "feat: 实现 success / error_response 统一 JSON 响应 helper"
 
 ---
 
-### Task 5: config.py + default.yaml — 配置加载
+### Task 5: settings.py + default.yaml — 配置加载
 
 **Files:**
-- Create: `app/backend/tests/test_config.py`
-- Create: `app/backend/config.py`
+- Create: `app/backend/tests/test_settings.py`
+- Create: `app/backend/settings.py`
 - Create: `app/config/default.yaml`
 - Modify: `app/config/README.md`
 
 - [ ] **Step 1: 写失败测试**
 
 ```python
-# app/backend/tests/test_config.py
+# app/backend/tests/test_settings.py
 import os
 import pytest
 import tempfile
-from app.backend.config import load_config, DEFAULT_CONFIG
+from app.backend.settings import load_config, DEFAULT_CONFIG
 
 
 class TestDefaultConfig:
@@ -769,15 +769,15 @@ class TestDeepMerge:
 - [ ] **Step 2: 运行测试确认 RED**
 
 ```bash
-cd /home/kbzz1/manzufei_ocr && python -m pytest app/backend/tests/test_config.py -v
+cd /home/kbzz1/manzufei_ocr && python -m pytest app/backend/tests/test_settings.py -v
 ```
 
-Expected: 全部 FAIL（ModuleNotFoundError: No module named 'app.backend.config'）
+Expected: 全部 FAIL（ModuleNotFoundError: No module named 'app.backend.settings'）
 
-- [ ] **Step 3: 实现 `config.py`**
+- [ ] **Step 3: 实现 `settings.py`**
 
 ```python
-# app/backend/config.py
+# app/backend/settings.py
 import os
 import yaml
 import logging
@@ -925,7 +925,7 @@ paths:
 - [ ] **Step 6: 运行测试确认 GREEN**
 
 ```bash
-cd /home/kbzz1/manzufei_ocr && python -m pytest app/backend/tests/test_config.py -v
+cd /home/kbzz1/manzufei_ocr && python -m pytest app/backend/tests/test_settings.py -v
 ```
 
 Expected: 全部 PASS
@@ -933,7 +933,7 @@ Expected: 全部 PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/backend/config.py app/backend/tests/test_config.py app/config/default.yaml app/config/README.md
+git add app/backend/settings.py app/backend/tests/test_settings.py app/config/default.yaml app/config/README.md
 git commit -m "feat: 实现 YAML 配置加载 — 三层合并、路径归一化、port/路径校验"
 ```
 
@@ -1365,7 +1365,7 @@ from datetime import datetime, timezone
 
 from flask import Flask
 
-from .config import load_config
+from .settings import load_config
 from .errors import register_error_handlers
 
 

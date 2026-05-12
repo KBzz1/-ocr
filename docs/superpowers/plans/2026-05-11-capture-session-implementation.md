@@ -103,8 +103,8 @@ Task 桩只表达采集已完成并形成待处理任务，不实现任务处理
 | 文件 | 操作 | 职责 |
 |------|------|------|
 | `app/config/default.yaml` | MODIFY | 新增 `sessions.capture_session_ttl_minutes` |
-| `app/backend/config.py` | MODIFY | 展平并校验 `capture_session_ttl_minutes` |
-| `app/backend/tests/test_config.py` | MODIFY | TTL 配置测试 |
+| `app/backend/settings.py` | MODIFY | 展平并校验 `capture_session_ttl_minutes` |
+| `app/backend/tests/test_settings.py` | MODIFY | TTL 配置测试 |
 | `app/backend/services/__init__.py` | CREATE | service 包 |
 | `app/backend/services/session_service.py` | CREATE | 会话业务逻辑 |
 | `app/backend/tests/test_session_service.py` | CREATE | 单元测试 |
@@ -118,13 +118,13 @@ Task 桩只表达采集已完成并形成待处理任务，不实现任务处理
 ### Task 1: Config — capture_session_ttl_minutes
 
 **Files:**
-- Modify: `app/backend/tests/test_config.py`
+- Modify: `app/backend/tests/test_settings.py`
 - Modify: `app/config/default.yaml`
-- Modify: `app/backend/config.py`
+- Modify: `app/backend/settings.py`
 
 - [ ] **Step 1: 写失败测试**
 
-在 `app/backend/tests/test_config.py` 末尾追加：
+在 `app/backend/tests/test_settings.py` 末尾追加：
 
 ```python
 class TestSessionConfig:
@@ -163,7 +163,7 @@ class TestSessionConfig:
 Run:
 
 ```bash
-conda run -n manzufei_ocr python -m pytest app/backend/tests/test_config.py::TestSessionConfig -v
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_settings.py::TestSessionConfig -v
 ```
 
 Expected: FAIL，至少 `KeyError: 'capture_session_ttl_minutes'`。
@@ -178,7 +178,7 @@ sessions:
   capture_session_ttl_minutes: 30
 ```
 
-- [ ] **Step 4: 修改 `config.py`**
+- [ ] **Step 4: 修改 `settings.py`**
 
 `DEFAULT_CONFIG` 新增：
 
@@ -207,7 +207,7 @@ sessions:
 Run:
 
 ```bash
-conda run -n manzufei_ocr python -m pytest app/backend/tests/test_config.py -v
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_settings.py -v
 ```
 
 Expected: PASS。
@@ -215,7 +215,7 @@ Expected: PASS。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/config/default.yaml app/backend/config.py app/backend/tests/test_config.py
+git add app/config/default.yaml app/backend/settings.py app/backend/tests/test_settings.py
 git commit -m "feat: 新增采集会话 TTL 配置"
 ```
 
@@ -1094,7 +1094,7 @@ git commit -m "feat: 实现采集会话 API"
 Run:
 
 ```bash
-conda run -n manzufei_ocr python -m pytest app/backend/tests/test_config.py app/backend/tests/test_session_service.py -v
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_settings.py app/backend/tests/test_session_service.py -v
 ```
 
 Expected: PASS。

@@ -1,7 +1,7 @@
 import os
 import pytest
 import tempfile
-from app.backend.config import load_config, DEFAULT_CONFIG
+from app.backend.settings import load_config, DEFAULT_CONFIG
 
 
 class TestDefaultConfig:

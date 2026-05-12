@@ -27,7 +27,7 @@
 app/backend/
 ├── __init__.py              # create_backend_app() 工厂
 ├── main.py                  # 开发/调试入口
-├── config.py                # 配置加载（YAML + 默认值 + 合并）
+├── settings.py                # 配置加载（YAML + 默认值 + 合并）
 ├── enums.py                 # 状态枚举（任务/会话/字段 + 状态流转）
 ├── errors.py                # ErrorCode 枚举、AppError 异常、全局 errorhandler
 ├── responses.py             # success() / error_response() helper
@@ -39,7 +39,7 @@ app/backend/
 │   └── json_store.py        # JsonStore(base_dir)，原子写入
 └── tests/
     ├── __init__.py
-    ├── test_config.py
+    ├── test_settings.py
     ├── test_enums.py
     ├── test_errors.py
     ├── test_json_store.py
@@ -54,7 +54,7 @@ app/config/
 
 ## 模块接口契约
 
-### config.py
+### settings.py
 
 ```python
 def load_config(config_dir: str | None = None) -> dict:
@@ -239,7 +239,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 ## 配置加载策略
 
 ```
-硬编码默认值 (config.py 内置)
+硬编码默认值 (settings.py 内置)
   ↓ 被覆盖
 app/config/default.yaml (提交)
   ↓ 被覆盖
@@ -260,7 +260,7 @@ app/config/local.yaml (可选，gitignore)
 |----------|----------|-------------|
 | test_enums.py | 状态枚举值正确、状态流转合法/非法 | 实施顺序 #1 |
 | test_errors.py | ErrorCode 正确、AppError 属性、响应 JSON 结构 | BE-API-002 |
-| test_config.py | 默认值、YAML 加载、合并覆盖、路径归一化 | 实施顺序 #2 |
+| test_settings.py | 默认值、YAML 加载、合并覆盖、路径归一化 | 实施顺序 #2 |
 | test_system.py | GET /api/system/status 返回 200、正确结构、离线启动不联网、局域网地址不包含 127.0.0.1 作为手机默认地址 | BE-SYS-001, BE-SYS-002, BE-SYS-003, BE-SYS-004, BE-SYS-005 |
 | test_json_store.py | 路径越权拒绝、原子写入、默认值读取、删除和存在性判断 | 存储基础设施 |
 

@@ -92,7 +92,7 @@ sessions:
   capture_session_ttl_minutes: 30
 ```
 
-`config.py` 变更：
+`settings.py` 变更：
 
 - `DEFAULT_CONFIG` 新增 `"capture_session_ttl_minutes": 30`
 - `_flatten_config` 展平 `sessions.capture_session_ttl_minutes`

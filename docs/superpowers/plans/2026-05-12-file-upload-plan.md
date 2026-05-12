@@ -112,29 +112,29 @@ git commit -m "feat: 新增 INVALID_REQUEST_PARAMS 错误码"
 ### Task 2: 新增上传配置项
 
 **Files:**
-- Modify: `app/backend/config.py`
+- Modify: `app/backend/settings.py`
 - Modify: `app/config/default.yaml`
-- Modify: `app/backend/tests/test_config.py`
+- Modify: `app/backend/tests/test_settings.py`
 
 - [ ] **Step 1: 写 RED 测试**
 
-在 `test_config.py` 中新增：
+在 `test_settings.py` 中新增：
 
 ```python
 def test_upload_max_file_size_mb_default(tmp_path):
-    from app.backend.config import load_config
+    from app.backend.settings import load_config
     config = load_config(str(tmp_path / "nonexistent"))
     assert config["max_upload_file_size_mb"] == 10
 
 
 def test_upload_min_quad_area_ratio_default(tmp_path):
-    from app.backend.config import load_config
+    from app.backend.settings import load_config
     config = load_config(str(tmp_path / "nonexistent"))
     assert config["min_quad_area_ratio"] == 0.01
 
 
 def test_flatten_upload_config(tmp_path):
-    from app.backend.config import load_config
+    from app.backend.settings import load_config
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "default.yaml").write_text("""
@@ -149,7 +149,7 @@ upload:
 
 def test_max_upload_file_size_mb_must_be_positive(tmp_path):
     import pytest
-    from app.backend.config import load_config
+    from app.backend.settings import load_config
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "default.yaml").write_text("upload:\n  max_file_size_mb: -5\n", encoding="utf-8")
@@ -159,7 +159,7 @@ def test_max_upload_file_size_mb_must_be_positive(tmp_path):
 
 def test_min_quad_area_ratio_must_be_between_0_and_1(tmp_path):
     import pytest
-    from app.backend.config import load_config
+    from app.backend.settings import load_config
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "default.yaml").write_text("upload:\n  min_quad_area_ratio: 2.0\n", encoding="utf-8")
@@ -168,13 +168,13 @@ def test_min_quad_area_ratio_must_be_between_0_and_1(tmp_path):
 ```
 
 ```bash
-python -m pytest app/backend/tests/test_config.py::test_upload_max_file_size_mb_default -v
+python -m pytest app/backend/tests/test_settings.py::test_upload_max_file_size_mb_default -v
 # 预期: FAIL — KeyError
 ```
 
 - [ ] **Step 2: 修改 DEFAULT_CONFIG**
 
-在 `config.py` 的 `DEFAULT_CONFIG` dict 中新增：
+在 `settings.py` 的 `DEFAULT_CONFIG` dict 中新增：
 
 ```python
 "max_upload_file_size_mb": 10,
@@ -217,13 +217,13 @@ upload:
 - [ ] **Step 6: 运行测试确认 GREEN**
 
 ```bash
-python -m pytest app/backend/tests/test_config.py -v
+python -m pytest app/backend/tests/test_settings.py -v
 ```
 
 - [ ] **Step 7: 提交**
 
 ```bash
-git add app/backend/config.py app/config/default.yaml app/backend/tests/test_config.py
+git add app/backend/settings.py app/config/default.yaml app/backend/tests/test_settings.py
 git commit -m "feat: 新增上传配置项 max_upload_file_size_mb 和 min_quad_area_ratio"
 ```
 

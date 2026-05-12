@@ -1,3 +1,9 @@
+"""Backend settings loader.
+
+`app/config/` stores YAML templates and local configuration files. This module
+is backend code that loads, flattens, validates, and normalizes those settings.
+"""
+
 import os
 import yaml
 import logging

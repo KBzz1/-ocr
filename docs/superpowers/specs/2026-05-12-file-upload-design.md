@@ -108,7 +108,7 @@ app/backend/
 │   └── test_mobile_pages.py     # NEW API 集成测试
 app/config/
 └── default.yaml                 # MODIFIED 新增 upload 段
-app/backend/config.py            # MODIFIED 展平 max_upload_file_size_mb 和 min_quad_area_ratio
+app/backend/settings.py            # MODIFIED 展平 max_upload_file_size_mb 和 min_quad_area_ratio
 app/backend/errors.py            # MODIFIED 新增 INVALID_REQUEST_PARAMS
 docs/Shared/error-codes.md       # MODIFIED 新增 INVALID_REQUEST_PARAMS
 ```
@@ -166,7 +166,7 @@ upload:
   min_quad_area_ratio: 0.01
 ```
 
-`config.py` 变更：
+`settings.py` 变更：
 
 - `DEFAULT_CONFIG` 新增 `max_upload_file_size_mb: 10`、`min_quad_area_ratio: 0.01`
 - `_flatten_config` 新增对 `upload.max_file_size_mb`、`upload.min_quad_area_ratio` 的展平

@@ -5,7 +5,7 @@ from ipaddress import ip_address
 
 from flask import Flask
 
-from .config import load_config
+from .settings import load_config
 from .errors import register_error_handlers
 
 
