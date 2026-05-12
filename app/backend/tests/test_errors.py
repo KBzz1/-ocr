@@ -42,7 +42,10 @@ class TestErrorCode:
         assert "EXPORT_FAILED" in codes
         assert "REQUEST_NOT_FOUND" in codes
         assert "INTERNAL_SERVER_ERROR" in codes
-        assert len(codes) == 15
+        assert "ALGORITHM_MODULE_NOT_CONFIGURED" in codes
+        assert "ALGORITHM_MODULE_FAILED" in codes
+        assert "ALGORITHM_CONTRACT_INVALID" in codes
+        assert len(codes) == 18
 
 
 class TestAlgorithmErrorCode:
