@@ -12,6 +12,18 @@ class TestSchemaValidator:
         with pytest.raises(SchemaValidationError, match="候选字段列表为空"):
             validator.validate_candidates([])
 
+    def test_validate_non_list_candidates_raises(self):
+        validator = self._make_validator()
+        with pytest.raises(SchemaValidationError) as exc_info:
+            validator.validate_candidates({"field_key": "name"})
+        assert exc_info.value.code == "INVALID_LIST"
+
+    def test_validate_non_dict_candidate_raises(self):
+        validator = self._make_validator()
+        with pytest.raises(SchemaValidationError) as exc_info:
+            validator.validate_candidates(["name"])
+        assert exc_info.value.code == "INVALID_ITEM"
+
     def test_validate_unknown_field_key_raises(self):
         validator = self._make_validator()
         candidates = [{"field_key": "unknown_field", "value": "x"}]

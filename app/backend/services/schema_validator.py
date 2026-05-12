@@ -3,6 +3,8 @@ class SchemaValidationError(ValueError):
 
     code 属性供 BE-05 路由错误，避免对消息文本做字符串匹配：
     - EMPTY: 候选字段列表为空
+    - INVALID_LIST: 候选字段不是列表
+    - INVALID_ITEM: 候选字段项不是对象
     - UNKNOWN_KEY: 字段不在 schema 白名单中
     - DUPLICATE_KEY: 字段重复
     - MISSING_KEY: 候选字段缺少 field_key
@@ -24,11 +26,16 @@ class SchemaValidator:
         return self.validate_candidates(candidates)
 
     def validate_candidates(self, candidates: list[dict]) -> list[dict]:
+        if not isinstance(candidates, list):
+            raise SchemaValidationError("候选字段列表必须为 list", "INVALID_LIST")
         if not candidates:
             raise SchemaValidationError("候选字段列表为空", "EMPTY")
 
         seen_keys = set()
         for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise SchemaValidationError("候选字段项必须为 dict",
+                                            "INVALID_ITEM")
             field_key = candidate.get("field_key")
             if not field_key:
                 raise SchemaValidationError("候选字段缺少 field_key",

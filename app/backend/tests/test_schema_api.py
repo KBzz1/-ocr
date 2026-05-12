@@ -1,17 +1,14 @@
-import os
 import pytest
 import yaml
 from app.backend import create_backend_app
+from app.backend.services.schema_service import SchemaService
 
 
 @pytest.fixture
-def app(tmp_path, monkeypatch):
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
+def schema_path(tmp_path):
     schemas_dir = tmp_path / "schemas"
     schemas_dir.mkdir()
 
-    # 写入合法 schema 文件
     schema_data = {
         "version": "1.0.0",
         "document_type": "general_medical_record",
@@ -25,9 +22,16 @@ def app(tmp_path, monkeypatch):
             }
         ],
     }
-    schema_path = schemas_dir / "medical_record.v1.yaml"
-    with open(schema_path, "w", encoding="utf-8") as f:
+    path = schemas_dir / "medical_record.v1.yaml"
+    with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(schema_data, f)
+    return path
+
+
+@pytest.fixture
+def app(tmp_path, monkeypatch, schema_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
 
     (config_dir / "default.yaml").write_text(
         f"""
@@ -48,19 +52,9 @@ sessions:
     )
 
     monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
-    # 替换 SchemaService 的 schema_path 为临时测试文件
-    import app.backend.services.schema_service as svc_mod
-
-    original_init = svc_mod.SchemaService.__init__
-
-    def patched_init(self, path):
-        self._schema_path = str(schema_path)
-        self._cached = None
-
-    monkeypatch.setattr(svc_mod.SchemaService, "__init__", patched_init)
-
     app_instance = create_backend_app(config_dir=str(config_dir))
     app_instance.config["TESTING"] = True
+    app_instance.config["SCHEMA_SERVICE"] = SchemaService(str(schema_path))
     return app_instance
 
 
@@ -92,3 +86,16 @@ class TestSchemaAPI:
         resp = client.get("/api/schema/current")
         groups = resp.get_json()["data"]["field_groups"]
         assert groups[0]["group_key"] == "basic"
+
+    def test_invalid_schema_returns_500_without_path_details(self, client, app, tmp_path):
+        invalid_path = tmp_path / "invalid-schema.yaml"
+        invalid_path.write_text("version: '1.0.0'\nfield_groups: []\n", encoding="utf-8")
+        app.config["SCHEMA_SERVICE"] = SchemaService(str(invalid_path))
+
+        resp = client.get("/api/schema/current")
+
+        assert resp.status_code == 500
+        error = resp.get_json()["error"]
+        assert error["code"] == "INTERNAL_SERVER_ERROR"
+        assert str(tmp_path) not in error["message"]
+        assert str(tmp_path) not in str(error["details"])
