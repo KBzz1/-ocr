@@ -65,9 +65,9 @@
 }
 ```
 
-`upload_ref` 本阶段固定为 `null`。PR-BE-003 会把真实文件路径和采集元数据接入页面项或页面元数据文件。
+`upload_ref` 在创建占位页面时为 `null`，上传完成后由 PR-BE-003 写回真实页面元数据引用。
 
-PR-BE-003 上传成功后可通过 `SessionService.attach_page_upload(session_id, page_id, upload_ref)` 把页面元数据相对路径写回对应页面项。会话 `pages` 仍是唯一页序来源。
+PR-BE-003 上传成功后通过 `SessionService.attach_page_upload(session_id, page_id, upload_ref)` 把页面元数据相对路径写回对应页面项。会话 `pages` 仍是唯一页序来源，`finish` 只允许所有当前页面都已写回 `upload_ref` 的会话锁定。
 
 ### Task 桩 JSON
 
