@@ -4,29 +4,45 @@
 离线验收逻辑、全生命周期集成。
 """
 import os
-import json
 import time
-import threading
-import socket
 import pytest
+from flask import Flask
+
+from app.backend.routes.system import system_bp
+from app.backend.errors import register_error_handlers
+
+
+def _make_minimal_app(config_overrides=None, lan_addresses=None):
+    """构建最小 Flask app，挂载 system_bp。"""
+    overrides = config_overrides or {}
+    app = Flask(__name__)
+    app.config["BACKEND_CONFIG"] = {
+        "version": "0.1.0",
+        "port": 8081,
+        "bind_host": "0.0.0.0",
+        "local_host": "127.0.0.1",
+        **overrides,
+    }
+    app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
+    app.config["LAN_ADDRESSES"] = lan_addresses or []
+    register_error_handlers(app)
+    app.register_blueprint(system_bp)
+    return app
 
 
 class TestPidFile:
     """PID 文件写入与退出清理。"""
 
     def test_pid_file_path_is_logs_backend_pid(self):
-        """PID 文件路径为 logs/backend.pid。"""
         from app.backend.config import PROJECT_ROOT
         expected = os.path.join(PROJECT_ROOT, "logs", "backend.pid")
         assert expected.endswith(os.path.join("logs", "backend.pid"))
 
     def test_pid_file_created_on_startup(self, tmp_path):
-        """启动后 PID 文件存在且包含合法正整数 PID。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         pid = os.getpid()
         with open(pid_file, "w") as f:
             f.write(str(pid))
-
         assert os.path.exists(pid_file)
         with open(pid_file) as f:
             stored_pid = int(f.read().strip())
@@ -34,20 +50,17 @@ class TestPidFile:
         assert stored_pid > 0
 
     def test_pid_file_overwritten_on_restart(self, tmp_path):
-        """重复启动时 PID 文件被覆写为新 PID。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         with open(pid_file, "w") as f:
             f.write("99999")
         new_pid = os.getpid()
         with open(pid_file, "w") as f:
             f.write(str(new_pid))
-
         with open(pid_file) as f:
             stored_pid = int(f.read().strip())
         assert stored_pid == new_pid
 
     def test_pid_file_cleaned_on_exit(self, tmp_path):
-        """进程退出后 PID 文件被清理。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         with open(pid_file, "w") as f:
             f.write(str(os.getpid()))
@@ -55,7 +68,6 @@ class TestPidFile:
         assert not os.path.exists(pid_file)
 
     def test_pid_file_content_is_valid_int(self, tmp_path):
-        """PID 文件内容为有效整数，不含空格或换行尾。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         with open(pid_file, "w") as f:
             f.write("12345")
@@ -64,8 +76,7 @@ class TestPidFile:
         assert content == "12345"
         assert int(content) == 12345
 
-    def test_main_pid_functions_produce_backend_pid(self, tmp_path, monkeypatch):
-        """main.py 的 PID 函数写入 logs/backend.pid 并清理。"""
+    def test_main_pid_functions_produce_backend_pid(self, tmp_path):
         from app.backend.main import _pid_file_path, _write_pid_file, _cleanup_pid_file
 
         log_dir = str(tmp_path / "logs")
@@ -84,7 +95,6 @@ class TestPidFile:
         assert not os.path.exists(pid_file)
 
     def test_pid_dir_auto_created(self, tmp_path):
-        """PID 文件目录不存在时自动创建。"""
         from app.backend.main import _pid_file_path, _write_pid_file
 
         log_dir = str(tmp_path / "nonexistent_logs")
@@ -100,33 +110,28 @@ class TestStopBatch:
     """stop.bat 精准停止行为验证。"""
 
     def test_stop_uses_pid_file_not_port_indiscriminate(self):
-        """stop.bat 应基于 PID 文件，不含 netstat 批量杀端口逻辑。"""
         stop_content = open("stop.bat").read()
         assert "netstat" not in stop_content, (
             "stop.bat 不应使用 netstat 批量查找端口进程，应改用 PID 文件精准停止"
         )
 
     def test_stop_reads_logs_backend_pid(self, tmp_path):
-        """stop.bat 从 logs/backend.pid 读取 PID。"""
         pid_file = os.path.join(str(tmp_path), "logs", "backend.pid")
         os.makedirs(os.path.dirname(pid_file), exist_ok=True)
         test_pid = 12345
         with open(pid_file, "w") as f:
             f.write(str(test_pid))
-
         with open(pid_file) as f:
             stored_pid = f.read().strip()
         assert stored_pid == str(test_pid)
 
     def test_stop_handles_missing_pid_file_gracefully(self, tmp_path):
-        """PID 文件不存在时应优雅退出，不崩溃。"""
         pid_file = os.path.join(str(tmp_path), "nonexistent.pid")
         assert not os.path.exists(pid_file)
         result = "PID 文件不存在，后端可能未运行"
         assert "PID 文件不存在" in result
 
     def test_stop_cleans_pid_file_after_kill(self, tmp_path):
-        """停止成功后应清理 PID 文件。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         with open(pid_file, "w") as f:
             f.write("12345")
@@ -134,21 +139,18 @@ class TestStopBatch:
         assert not os.path.exists(pid_file)
 
     def test_stop_verifies_command_line_before_kill(self):
-        """stop.bat 应校验进程命令行包含 app.backend.main 才终止。"""
         stop_content = open("stop.bat").read()
         assert "app.backend.main" in stop_content or "app.backend" in stop_content, (
             "stop.bat 应校验进程命令行属于本项目（包含 app.backend.main）后才终止"
         )
 
     def test_stop_pid_file_empty_graceful(self, tmp_path):
-        """PID 文件为空时应清理文件并退出，不尝试杀进程。"""
         pid_file = os.path.join(str(tmp_path), "backend.pid")
         with open(pid_file, "w") as f:
             f.write("")
         with open(pid_file) as f:
             content = f.read().strip()
         assert content == ""
-        # 模拟 stop.bat 行为：空 PID 则清理文件
         os.remove(pid_file)
         assert not os.path.exists(pid_file)
 
@@ -157,7 +159,6 @@ class TestDirectoryCreation:
     """目录预创建逻辑验证 — run.bat 行为对应。"""
 
     def test_directories_auto_created_on_config_load(self, tmp_path):
-        """data/logs/exports 目录在配置加载时自动创建。"""
         from app.backend.config import load_config
 
         config_dir = str(tmp_path)
@@ -166,7 +167,6 @@ class TestDirectoryCreation:
             assert os.path.isdir(config[key]), f"{key} 目录应自动创建"
 
     def test_missing_dirs_created_before_backend_start(self, tmp_path):
-        """模拟 run.bat: 目录不存在时先创建。"""
         data = str(tmp_path / "data")
         logs = str(tmp_path / "logs")
         exports = str(tmp_path / "exports")
@@ -176,7 +176,6 @@ class TestDirectoryCreation:
             assert os.path.isdir(d)
 
     def test_log_file_append(self, tmp_path):
-        """日志文件以追加模式写入。"""
         log_file = str(tmp_path / "backend.log")
         with open(log_file, "a") as f:
             f.write("line 1\n")
@@ -193,8 +192,8 @@ class TestHealthCheckPolling:
     """健康检查轮询逻辑验证。"""
 
     def test_health_check_timeout_on_closed_port(self):
-        """未监听端口时连接被拒绝，轮询应超时。"""
         import urllib.request
+        import urllib.error
 
         port = 18081
         max_wait = 3
@@ -216,7 +215,6 @@ class TestHealthCheckPolling:
         assert waited == max_wait
 
     def test_health_check_success_returns_running(self, tmp_path):
-        """Flask test_client 验证 /api/system/status 返回 running。"""
         from app.backend import create_backend_app
 
         app = create_backend_app(str(tmp_path))
@@ -228,27 +226,10 @@ class TestHealthCheckPolling:
         assert data["data"]["status"] == "running"
 
     def test_health_check_response_has_required_fields(self):
-        """BE-SYS-001: 状态响应必须含 status/version/started_at/lan_addresses。"""
-        from app.backend.routes.system import system_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.config["BACKEND_CONFIG"] = {
-            "version": "0.1.0",
-            "port": 8081,
-            "bind_host": "0.0.0.0",
-            "local_host": "127.0.0.1",
-        }
-        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
-        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081"]
-        from app.backend.errors import register_error_handlers
-        register_error_handlers(app)
-        app.register_blueprint(system_bp)
-
+        app = _make_minimal_app(lan_addresses=["192.168.1.100:8081"])
         client = app.test_client()
         resp = client.get("/api/system/status")
         data = resp.get_json()
-
         assert data["success"] is True
         assert data["data"]["status"] == "running"
         assert "version" in data["data"]
@@ -256,31 +237,14 @@ class TestHealthCheckPolling:
         assert "lan_addresses" in data["data"]
 
     def test_lan_addresses_excludes_localhost(self):
-        """BE-SYS-005: lan_addresses 不含 127.0.0.1。"""
-        from app.backend.routes.system import system_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.config["BACKEND_CONFIG"] = {
-            "version": "0.1.0",
-            "port": 8081,
-            "bind_host": "0.0.0.0",
-            "local_host": "127.0.0.1",
-        }
-        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
-        app.config["LAN_ADDRESSES"] = [
+        app = _make_minimal_app(lan_addresses=[
             "192.168.1.100:8081",
             "127.0.0.1:8081",
             "10.0.0.5:8081",
-        ]
-        from app.backend.errors import register_error_handlers
-        register_error_handlers(app)
-        app.register_blueprint(system_bp)
-
+        ])
         client = app.test_client()
         resp = client.get("/api/system/status")
         data = resp.get_json()
-
         assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
         assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
@@ -290,7 +254,6 @@ class TestOfflineVerification:
     """离线验收关键逻辑验证。"""
 
     def test_config_missing_uses_defaults(self, tmp_path):
-        """配置目录缺失时使用安全默认值并继续启动。"""
         from app.backend.config import load_config
 
         nonexistent_dir = str(tmp_path / "nonexistent_config")
@@ -300,7 +263,6 @@ class TestOfflineVerification:
         assert config["version"] == "0.1.0"
 
     def test_directories_auto_created_on_startup(self, tmp_path):
-        """data/logs/exports 目录在配置加载时自动创建。"""
         from app.backend.config import load_config
 
         config_dir = str(tmp_path)
@@ -309,23 +271,7 @@ class TestOfflineVerification:
             assert os.path.isdir(config[key]), f"{key} 目录应自动创建"
 
     def test_no_external_network_on_status_check(self):
-        """GET /api/system/status 不发起外部网络请求。"""
-        from app.backend.routes.system import system_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.config["BACKEND_CONFIG"] = {
-            "version": "0.1.0",
-            "port": 8081,
-            "bind_host": "0.0.0.0",
-            "local_host": "127.0.0.1",
-        }
-        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
-        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081"]
-        from app.backend.errors import register_error_handlers
-        register_error_handlers(app)
-        app.register_blueprint(system_bp)
-
+        app = _make_minimal_app(lan_addresses=["192.168.1.100:8081"])
         client = app.test_client()
         resp = client.get("/api/system/status")
         assert resp.status_code == 200
@@ -338,18 +284,15 @@ class TestStartupShutdownIntegration:
     """启动 → 健康检查 → 停止 全周期集成测试。"""
 
     def test_full_lifecycle_directories_and_pid(self, tmp_path):
-        """完整启动流程：目录创建、PID 文件、健康检查。"""
         from app.backend import create_backend_app
 
         app = create_backend_app(str(tmp_path))
         config = app.config["BACKEND_CONFIG"]
 
-        # 验证目录
         assert os.path.isdir(config["data_dir"]), "data_dir 应已创建"
         assert os.path.isdir(config["log_dir"]), "log_dir 应已创建"
         assert os.path.isdir(config["export_dir"]), "export_dir 应已创建"
 
-        # 验证 Flask test_client 响应
         client = app.test_client()
         resp = client.get("/api/system/status")
         assert resp.status_code == 200
@@ -361,11 +304,9 @@ class TestStartupShutdownIntegration:
         assert "lan_addresses" in data["data"]
 
     def test_offline_startup_no_external_requests(self, tmp_path, monkeypatch):
-        """离线启动不发起任何外部网络请求。"""
         import socket as sock_module
 
         external_calls = []
-
         original_create_connection = sock_module.create_connection
 
         def tracked_create_connection(address, *args, **kwargs):
@@ -388,30 +329,17 @@ class TestStartupShutdownIntegration:
         )
 
     def test_status_contains_required_fields(self):
-        """BE-SYS-001: 状态响应必须包含 status/version/started_at/lan_addresses。"""
-        from app.backend.routes.system import system_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.config["BACKEND_CONFIG"] = {
-            "version": "0.1.0",
-            "port": 8081,
-            "bind_host": "0.0.0.0",
-            "local_host": "127.0.0.1",
-        }
-        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
-        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081", "127.0.0.1:8081", "10.0.0.5:8081"]
-        from app.backend.errors import register_error_handlers
-        register_error_handlers(app)
-        app.register_blueprint(system_bp)
-
+        app = _make_minimal_app(lan_addresses=[
+            "192.168.1.100:8081",
+            "127.0.0.1:8081",
+            "10.0.0.5:8081",
+        ])
         client = app.test_client()
         resp = client.get("/api/system/status")
         data = resp.get_json()
-
         assert data["data"]["status"] == "running"
         assert data["data"]["version"] == "0.1.0"
-        assert "T" in data["data"]["started_at"]  # ISO 8601 格式
+        assert "T" in data["data"]["started_at"]
         assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
         assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]

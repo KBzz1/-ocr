@@ -100,30 +100,26 @@ def check_backend_startup():
             cwd=PROJECT_ROOT,
         )
 
-    try:
-        waited = 0
-        ready = False
-        while waited < MAX_WAIT:
-            try:
-                resp = urllib.request.urlopen(HEALTH_URL, timeout=2)
-                if resp.status == 200:
-                    body = json.loads(resp.read().decode())
-                    if body.get("data", {}).get("status") == "running":
-                        ready = True
-                        print(f"  [PASS] 后端在 {waited} 秒内就绪")
-                        print(f"  状态响应: {json.dumps(body, ensure_ascii=False)}")
-                        break
-            except (urllib.error.URLError, OSError, json.JSONDecodeError):
-                pass
-            time.sleep(1)
-            waited += 1
+    waited = 0
+    ready = False
+    while waited < MAX_WAIT:
+        try:
+            resp = urllib.request.urlopen(HEALTH_URL, timeout=2)
+            if resp.status == 200:
+                body = json.loads(resp.read().decode())
+                if body.get("data", {}).get("status") == "running":
+                    ready = True
+                    print(f"  [PASS] 后端在 {waited} 秒内就绪")
+                    print(f"  状态响应: {json.dumps(body, ensure_ascii=False)}")
+                    break
+        except (urllib.error.URLError, OSError, json.JSONDecodeError):
+            pass
+        time.sleep(1)
+        waited += 1
 
-        if not ready:
-            print(f"  [FAIL] 后端启动超时（{MAX_WAIT} 秒）")
-            return False, proc
-    finally:
-        # 不要在这里终止，留给 check_backend_stop
-        pass
+    if not ready:
+        print(f"  [FAIL] 后端启动超时（{MAX_WAIT} 秒）")
+        return False, proc
 
     return ready, proc
 

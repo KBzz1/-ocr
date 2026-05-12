@@ -5,8 +5,7 @@ import os
 import signal
 import sys
 
-# 确保项目根在 sys.path 上
-_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.backend.config import PROJECT_ROOT as _project_root
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
@@ -14,29 +13,24 @@ from app.backend import create_backend_app
 
 
 def _pid_file_path(config):
-    """返回 PID 文件路径，位于 logs/ 目录。"""
     log_dir = config.get("log_dir", os.path.join(_project_root, "logs"))
     os.makedirs(log_dir, exist_ok=True)
     return os.path.join(log_dir, "backend.pid")
 
 
 def _write_pid_file(pid_file):
-    """写入当前进程 PID 到文件。"""
     with open(pid_file, "w") as f:
         f.write(str(os.getpid()))
 
 
 def _cleanup_pid_file(pid_file):
-    """删除 PID 文件（退出时调用）。"""
     try:
-        if os.path.exists(pid_file):
-            os.remove(pid_file)
-    except OSError:
+        os.remove(pid_file)
+    except FileNotFoundError:
         pass
 
 
 def _register_pid_cleanup(pid_file):
-    """注册 PID 文件清理：atexit + SIGTERM/SIGINT。"""
     atexit.register(_cleanup_pid_file, pid_file)
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
