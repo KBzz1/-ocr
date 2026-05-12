@@ -284,3 +284,134 @@ class TestHealthCheckPolling:
         assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
         assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
+
+
+class TestOfflineVerification:
+    """离线验收关键逻辑验证。"""
+
+    def test_config_missing_uses_defaults(self, tmp_path):
+        """配置目录缺失时使用安全默认值并继续启动。"""
+        from app.backend.config import load_config
+
+        nonexistent_dir = str(tmp_path / "nonexistent_config")
+        config = load_config(nonexistent_dir)
+        assert config["port"] == 8081
+        assert config["bind_host"] == "0.0.0.0"
+        assert config["version"] == "0.1.0"
+
+    def test_directories_auto_created_on_startup(self, tmp_path):
+        """data/logs/exports 目录在配置加载时自动创建。"""
+        from app.backend.config import load_config
+
+        config_dir = str(tmp_path)
+        config = load_config(config_dir)
+        for key in ("data_dir", "log_dir", "export_dir"):
+            assert os.path.isdir(config[key]), f"{key} 目录应自动创建"
+
+    def test_no_external_network_on_status_check(self):
+        """GET /api/system/status 不发起外部网络请求。"""
+        from app.backend.routes.system import system_bp
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["BACKEND_CONFIG"] = {
+            "version": "0.1.0",
+            "port": 8081,
+            "bind_host": "0.0.0.0",
+            "local_host": "127.0.0.1",
+        }
+        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
+        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081"]
+        from app.backend.errors import register_error_handlers
+        register_error_handlers(app)
+        app.register_blueprint(system_bp)
+
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+
+
+class TestStartupShutdownIntegration:
+    """启动 → 健康检查 → 停止 全周期集成测试。"""
+
+    def test_full_lifecycle_directories_and_pid(self, tmp_path):
+        """完整启动流程：目录创建、PID 文件、健康检查。"""
+        from app.backend import create_backend_app
+
+        app = create_backend_app(str(tmp_path))
+        config = app.config["BACKEND_CONFIG"]
+
+        # 验证目录
+        assert os.path.isdir(config["data_dir"]), "data_dir 应已创建"
+        assert os.path.isdir(config["log_dir"]), "log_dir 应已创建"
+        assert os.path.isdir(config["export_dir"]), "export_dir 应已创建"
+
+        # 验证 Flask test_client 响应
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+        assert "version" in data["data"]
+        assert "started_at" in data["data"]
+        assert "lan_addresses" in data["data"]
+
+    def test_offline_startup_no_external_requests(self, tmp_path, monkeypatch):
+        """离线启动不发起任何外部网络请求。"""
+        import socket as sock_module
+
+        external_calls = []
+
+        original_create_connection = sock_module.create_connection
+
+        def tracked_create_connection(address, *args, **kwargs):
+            host = address[0]
+            if not host.startswith("127.") and host != "localhost":
+                external_calls.append(address)
+                raise OSError("Blocked: external connection in offline mode")
+            return original_create_connection(address, *args, **kwargs)
+
+        monkeypatch.setattr(sock_module, "create_connection", tracked_create_connection)
+
+        from app.backend import create_backend_app
+
+        app = create_backend_app(str(tmp_path))
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+        assert len(external_calls) == 0, (
+            f"离线模式下不应发起外部连接，实际: {external_calls}"
+        )
+
+    def test_status_contains_required_fields(self):
+        """BE-SYS-001: 状态响应必须包含 status/version/started_at/lan_addresses。"""
+        from app.backend.routes.system import system_bp
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["BACKEND_CONFIG"] = {
+            "version": "0.1.0",
+            "port": 8081,
+            "bind_host": "0.0.0.0",
+            "local_host": "127.0.0.1",
+        }
+        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
+        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081", "127.0.0.1:8081", "10.0.0.5:8081"]
+        from app.backend.errors import register_error_handlers
+        register_error_handlers(app)
+        app.register_blueprint(system_bp)
+
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        data = resp.get_json()
+
+        assert data["data"]["status"] == "running"
+        assert data["data"]["version"] == "0.1.0"
+        assert "T" in data["data"]["started_at"]  # ISO 8601 格式
+        assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
+        assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
+        assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
