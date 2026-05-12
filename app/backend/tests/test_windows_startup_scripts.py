@@ -279,6 +279,24 @@ class TestOfflineVerification:
         assert data["success"] is True
         assert data["data"]["status"] == "running"
 
+    def test_offline_startup_check_only_uses_loopback_status(self):
+        content = open("scripts/offline_startup_check.py").read().lower()
+
+        assert "http://127.0.0.1:8081/api/system/status" in content
+        assert "8.8.8.8" not in content
+        assert "ping" not in content
+        assert "subprocess" not in content
+        assert "popen" not in content
+
+    def test_offline_startup_check_reports_required_directories(self, tmp_path, monkeypatch):
+        import scripts.offline_startup_check as check
+
+        monkeypatch.setattr(check, "PROJECT_ROOT", tmp_path)
+        for name in ("data", "exports", "logs"):
+            (tmp_path / name).mkdir()
+
+        check.check_directories()
+
 
 class TestStartupShutdownIntegration:
     """启动 → 健康检查 → 停止 全周期集成测试。"""

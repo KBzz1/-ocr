@@ -31,10 +31,14 @@ def _cleanup_pid_file(pid_file):
 
 
 def _register_pid_cleanup(pid_file):
+    def _handle_shutdown(signum, frame):
+        _cleanup_pid_file(pid_file)
+        raise SystemExit(0)
+
     atexit.register(_cleanup_pid_file, pid_file)
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
-            signal.signal(sig, lambda s, f, pf=pid_file: _cleanup_pid_file(pf))
+            signal.signal(sig, _handle_shutdown)
         except (ValueError, OSError):
             pass
 
