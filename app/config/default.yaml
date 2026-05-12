@@ -16,3 +16,7 @@ paths:
 
 sessions:
   capture_session_ttl_minutes: 30
+
+upload:
+  max_file_size_mb: 10
+  min_quad_area_ratio: 0.01
