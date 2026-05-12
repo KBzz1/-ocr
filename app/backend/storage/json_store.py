@@ -63,3 +63,16 @@ class JsonStore:
     def exists(self, relative_path: str) -> bool:
         filepath = self._resolve(relative_path)
         return os.path.isfile(filepath)
+
+    def list_json(self, relative_dir: str):
+        directory = self._resolve(relative_dir)
+        if not os.path.isdir(directory):
+            return []
+
+        items = []
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(relative_dir, name)
+            items.append(self.read(path))
+        return items
