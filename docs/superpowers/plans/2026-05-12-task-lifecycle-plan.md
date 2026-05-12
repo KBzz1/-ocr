@@ -866,3 +866,4 @@ If no code changed in Task 4, do not create an empty commit.
   - `TaskService` methods match the spec: `list_tasks`, `get_task`, `process`, `retry`, `mark_ready`, `mark_failed`, `mark_confirmed`, `mark_exported`.
   - Route endpoints match the spec paths.
   - Failure `error_code` is persisted as the string `ALGORITHM_MODULE_NOT_CONFIGURED`, not raised as an HTTP `ErrorCode`.
+
