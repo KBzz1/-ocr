@@ -57,6 +57,29 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.session_service import SessionService
 
     store = JsonStore(config["storage_dir"])
+
+    from .services.local_event_log import LocalEventLog
+    from .services.offline_check_service import OfflineCheckService
+
+    event_log = LocalEventLog(
+        config["log_dir"],
+        max_bytes=config["log_max_bytes"],
+        backup_count=config["log_backup_count"],
+    )
+    app.config["LOCAL_EVENT_LOG"] = event_log
+    app.config["OFFLINE_CHECK_SERVICE"] = OfflineCheckService(config)
+
+    from .services.cleanup_service import CleanupService
+
+    app.config["CLEANUP_SERVICE"] = CleanupService(config=config, store=store)
+
+    event_log.safe_write(
+        "system_started",
+        port=config["port"],
+        lan_addresses_count=len(app.config["LAN_ADDRESSES"]),
+    )
+    event_log.safe_write("algorithm_module_not_configured", level="WARNING", stage="image_processing")
+
     session_service = SessionService(
         store=store,
         lan_addresses=app.config["LAN_ADDRESSES"],
@@ -118,10 +141,12 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .routes.mobile import mobile_bp
     from .routes.task import task_bp
     from .routes.schema import schema_bp
+    from .routes.maintenance import maintenance_bp
     app.register_blueprint(capture_session_bp)
     app.register_blueprint(mobile_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(schema_bp)
+    app.register_blueprint(maintenance_bp)
 
     from .routes.review import review_bp
     app.register_blueprint(review_bp)

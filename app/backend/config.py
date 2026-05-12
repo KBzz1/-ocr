@@ -23,6 +23,8 @@ DEFAULT_CONFIG = {
     "capture_session_ttl_minutes": 30,
     "max_upload_file_size_mb": 10,
     "min_quad_area_ratio": 0.01,
+    "log_max_bytes": 10 * 1024 * 1024,
+    "log_backup_count": 5,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -109,6 +111,13 @@ def _validate_config(config: dict):
     ratio = config.get("min_quad_area_ratio")
     if not isinstance(ratio, (int, float)) or not (0 < ratio < 1):
         raise ValueError(f"min_quad_area_ratio 必须在 (0, 1) 区间内，当前值: {ratio}")
+
+    log_max_bytes = config.get("log_max_bytes")
+    if not isinstance(log_max_bytes, int) or log_max_bytes <= 0:
+        raise ValueError(f"log_max_bytes 必须为正整数，当前值: {log_max_bytes}")
+    log_backup_count = config.get("log_backup_count")
+    if not isinstance(log_backup_count, int) or log_backup_count < 0:
+        raise ValueError(f"log_backup_count 必须为非负整数，当前值: {log_backup_count}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

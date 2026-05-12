@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from ..responses import success
-from . import _get_session_service
+from . import _get_session_service, _safe_event
 
 capture_session_bp = Blueprint("capture_session", __name__)
 
@@ -9,6 +9,7 @@ capture_session_bp = Blueprint("capture_session", __name__)
 @capture_session_bp.route("/api/capture-sessions", methods=["POST"])
 def create_session():
     session = _get_session_service().create()
+    _safe_event("session_created", session_id=session["session_id"])
     return success(
         data={
             "session_id": session["session_id"],

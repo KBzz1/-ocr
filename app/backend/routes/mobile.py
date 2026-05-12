@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, request
 
 from ..errors import AppError, ErrorCode
 from ..responses import success
+from . import _safe_event
 
 mobile_bp = Blueprint("mobile", __name__)
 
@@ -17,6 +18,12 @@ def _page_service():
 @mobile_bp.route("/api/mobile/<session_id>/finish", methods=["POST"])
 def finish_session(session_id):
     session = _service().finish(session_id)
+    _safe_event(
+        "session_finished",
+        session_id=session_id,
+        task_id=session["task_id"],
+        page_count=len(session.get("pages", [])),
+    )
     return success(
         data={
             "session_id": session["session_id"],
@@ -61,4 +68,11 @@ def upload_page(session_id: str):
         quad_points_raw=quad_points_raw,
     )
 
+    _safe_event(
+        "page_uploaded",
+        session_id=session_id,
+        page_id=result["page_id"],
+        image_width=result.get("image_width"),
+        image_height=result.get("image_height"),
+    )
     return success(data=result, status=201)
