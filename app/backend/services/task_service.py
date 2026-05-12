@@ -6,6 +6,17 @@ from ..errors import ErrorCode, AppError
 from ..storage.json_store import JsonStore
 
 
+def _safe_event(event, level="INFO", **payload):
+    try:
+        from flask import current_app
+
+        log = current_app.config.get("LOCAL_EVENT_LOG")
+        if log is not None:
+            log.safe_write(event, level=level, **payload)
+    except RuntimeError:
+        return
+
+
 class TaskService:
     def __init__(
         self,
@@ -55,6 +66,7 @@ class TaskService:
         task = self._transition(task, TaskStatus.READY_FOR_REVIEW.value, "算法处理完成")
         task["ready_at"] = self._now()
         self._write_task(task)
+        _safe_event("task_ready_for_review", task_id=task_id, schema_version=task.get("schema_version"))
         return task
 
     def mark_failed(
@@ -72,6 +84,15 @@ class TaskService:
         task["failed_at"] = self._now()
         task["details"] = {"stage": stage, **(details or {})}
         self._write_task(task)
+        _safe_event(
+            "task_processing_failed",
+            level="ERROR",
+            task_id=task_id,
+            session_id=task.get("session_id"),
+            error_code=error_code,
+            stage=stage,
+            reason=error_message,
+        )
         return task
 
     def mark_confirmed(self, task_id: str) -> dict:
@@ -95,6 +116,7 @@ class TaskService:
         task["failed_at"] = None
         task.pop("details", None)
         self._write_task(task)
+        _safe_event("task_processing_started", task_id=task_id, session_id=task.get("session_id"))
         return task
 
     def _run_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
