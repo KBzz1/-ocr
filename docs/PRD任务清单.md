@@ -21,6 +21,11 @@
 | PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
 | PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；上传失败补偿 (BE-03-08) 延后 |
 | PR-BE-004 任务生命周期 | 已完成 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
+| PR-BE-005/006 外部算法端口 | 已完成 | `app/backend/services/algorithm_ports/`、`docs/superpowers/specs/2026-05-12-algorithm-ports-design.md` | 定义本地算法端口、编排、fixture、失败映射和结果持久化；不实现 OCR/LLM/图像算法 |
+| PR-BE-007 Schema 管理 | 已完成 | `app/config/schemas/medical_record.v1.yaml`、`app/backend/services/schema_service.py`、`docs/superpowers/specs/2026-05-12-schema-loader-design.md` | 加载当前 schema、记录版本、校验候选字段 key；schema 不生成字段值 |
+| BE-07 人工审核结果 | 进行中 | `docs/superpowers/specs/2026-05-12-review-results-design.md`（分支：`worktree-be07-review-results-spec`） | 依赖 BE-05/BE-06；读取自动候选并保存人工审核结果；不导出 |
+| BE-09 日志、隐私和部署 | 进行中 | `docs/superpowers/specs/2026-05-12-local-logs-privacy-design.md`（分支：`worktree-be09-local-logs-privacy-spec`） | 与 BE-07 并行；只做本地事件、隐私和离线检查；不实现真实算法 |
+| BE-01 Windows 启停与离线启动 | 进行中 | `docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md`（分支：`worktree-be01-windows-offline-startup-spec`） | 与业务 API 并行；聚焦 `run.bat`/`stop.bat` 和断网启动验收 |
 
 ## 后端任务
 
@@ -132,33 +137,33 @@
 
 ### BE-05 外部算法端口（PR-BE-005、PR-BE-006）
 
-- [ ] **BE-05-01 图像处理端口契约**
+- [x] **BE-05-01 图像处理端口契约**
   - 范围：输入原图路径和 quad，输出 processed 图像路径。
   - 边界：本仓库只定义端口和失败处理，不实现图像处理。
 
-- [ ] **BE-05-02 文档解析端口契约**
+- [x] **BE-05-02 文档解析端口契约**
   - 范围：输入 processed 图像列表，保存外部返回的 pages、blocks、tables、merged_text。
   - 边界：不改写 OCR/解析结果。
 
-- [ ] **BE-05-03 字段抽取端口契约**
+- [x] **BE-05-03 字段抽取端口契约**
   - 范围：输入解析结果和 schema，保存候选字段、证据、置信度。
   - 边界：不基于 schema 或 OCR 文本自行生成字段。
 
-- [ ] **BE-05-04 算法失败映射**
+- [x] **BE-05-04 算法失败映射**
   - 范围：未配置、异常、空结果、契约非法都进入 `failed`。
   - 边界：不得降级为人工补录或规则兜底。
 
 ### BE-06 Schema 管理（PR-BE-007）
 
-- [ ] **BE-06-01 通用病历 schema 文件**
+- [x] **BE-06-01 通用病历 schema 文件**
   - 范围：字段组、字段 key、显示名、版本号、文书类型。
   - 边界：schema 只定义字段范围，不生成字段值。
 
-- [ ] **BE-06-02 schema 加载和版本记录**
+- [x] **BE-06-02 schema 加载和版本记录**
   - 范围：任务记录使用的 schema 版本。
   - 边界：历史任务不受后续 schema 修改影响。
 
-- [ ] **BE-06-03 候选字段契约校验**
+- [x] **BE-06-03 候选字段契约校验**
   - 范围：字段 key 必须来自 schema，结构必须合法。
   - 边界：非法候选导致任务 failed。
 
@@ -351,10 +356,12 @@
 1. ~~完成 `BE-02` 采集会话管理。~~ ✅
 2. ~~并行完成 `BE-03` 图片上传与元数据，但必须等 `BE-02` 的会话 pages 契约稳定后合并。~~ ✅
 3. 开始 `FE-01` 和 `FE-02` 的基础页面，先接会话和上传 API。
-4. 完成 `BE-05` 算法端口失败契约，并把真实外部模块编排接入 BE-04 的 process/retry 入口。
-5. 完成 `BE-06` schema、`BE-07` 审核、`BE-08` 导出。
-6. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
-7. 做 `BE-10`、`FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
+4. ~~完成 `BE-05` 算法端口失败契约，并把外部模块编排接入 BE-04 的 process/retry 入口。~~ ✅
+5. ~~完成 `BE-06` schema 加载、版本记录和候选字段 key 校验。~~ ✅
+6. 并行推进 `BE-07` 审核结果、`BE-09` 日志/隐私/离线检查、`BE-01` Windows 启停与离线启动；三条线分别在独立分支/spec 下推进。
+7. 等 `BE-07` 审核数据结构稳定后，推进 `BE-08` 导出服务。
+8. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
+9. 做 `BE-10`、`FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
 
 ## 全局边界
 
