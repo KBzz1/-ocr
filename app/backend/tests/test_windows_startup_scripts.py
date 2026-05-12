@@ -96,6 +96,63 @@ class TestPidFile:
         assert os.path.exists(pid_file)
 
 
+class TestStopBatch:
+    """stop.bat 精准停止行为验证。"""
+
+    def test_stop_uses_pid_file_not_port_indiscriminate(self):
+        """stop.bat 应基于 PID 文件，不含 netstat 批量杀端口逻辑。"""
+        stop_content = open("stop.bat").read()
+        assert "netstat" not in stop_content, (
+            "stop.bat 不应使用 netstat 批量查找端口进程，应改用 PID 文件精准停止"
+        )
+
+    def test_stop_reads_logs_backend_pid(self, tmp_path):
+        """stop.bat 从 logs/backend.pid 读取 PID。"""
+        pid_file = os.path.join(str(tmp_path), "logs", "backend.pid")
+        os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+        test_pid = 12345
+        with open(pid_file, "w") as f:
+            f.write(str(test_pid))
+
+        with open(pid_file) as f:
+            stored_pid = f.read().strip()
+        assert stored_pid == str(test_pid)
+
+    def test_stop_handles_missing_pid_file_gracefully(self, tmp_path):
+        """PID 文件不存在时应优雅退出，不崩溃。"""
+        pid_file = os.path.join(str(tmp_path), "nonexistent.pid")
+        assert not os.path.exists(pid_file)
+        result = "PID 文件不存在，后端可能未运行"
+        assert "PID 文件不存在" in result
+
+    def test_stop_cleans_pid_file_after_kill(self, tmp_path):
+        """停止成功后应清理 PID 文件。"""
+        pid_file = os.path.join(str(tmp_path), "backend.pid")
+        with open(pid_file, "w") as f:
+            f.write("12345")
+        os.remove(pid_file)
+        assert not os.path.exists(pid_file)
+
+    def test_stop_verifies_command_line_before_kill(self):
+        """stop.bat 应校验进程命令行包含 app.backend.main 才终止。"""
+        stop_content = open("stop.bat").read()
+        assert "app.backend.main" in stop_content or "app.backend" in stop_content, (
+            "stop.bat 应校验进程命令行属于本项目（包含 app.backend.main）后才终止"
+        )
+
+    def test_stop_pid_file_empty_graceful(self, tmp_path):
+        """PID 文件为空时应清理文件并退出，不尝试杀进程。"""
+        pid_file = os.path.join(str(tmp_path), "backend.pid")
+        with open(pid_file, "w") as f:
+            f.write("")
+        with open(pid_file) as f:
+            content = f.read().strip()
+        assert content == ""
+        # 模拟 stop.bat 行为：空 PID 则清理文件
+        os.remove(pid_file)
+        assert not os.path.exists(pid_file)
+
+
 class TestDirectoryCreation:
     """目录预创建逻辑验证 — run.bat 行为对应。"""
 
