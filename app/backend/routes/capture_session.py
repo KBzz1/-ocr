@@ -1,17 +1,14 @@
-from flask import Blueprint, current_app, request
+from flask import Blueprint, request
 
 from ..responses import success
+from . import _get_session_service
 
 capture_session_bp = Blueprint("capture_session", __name__)
 
 
-def _service():
-    return current_app.config["SESSION_SERVICE"]
-
-
 @capture_session_bp.route("/api/capture-sessions", methods=["POST"])
 def create_session():
-    session = _service().create()
+    session = _get_session_service().create()
     return success(
         data={
             "session_id": session["session_id"],
@@ -27,21 +24,21 @@ def create_session():
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>", methods=["GET"])
 def get_session(session_id):
-    return success(data=_service().get(session_id))
+    return success(data=_get_session_service().get(session_id))
 
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>/pages", methods=["POST"])
 def add_page(session_id):
-    return success(data=_service().add_page(session_id), status=201)
+    return success(data=_get_session_service().add_page(session_id), status=201)
 
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>/pages/<page_id>", methods=["DELETE"])
 def delete_page(session_id, page_id):
-    return success(data=_service().delete_page(session_id, page_id))
+    return success(data=_get_session_service().delete_page(session_id, page_id))
 
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>/pages/order", methods=["PUT"])
 def reorder_pages(session_id):
     payload = request.get_json(silent=True) or {}
     page_ids = payload.get("page_ids", [])
-    return success(data=_service().reorder_pages(session_id, page_ids))
+    return success(data=_get_session_service().reorder_pages(session_id, page_ids))

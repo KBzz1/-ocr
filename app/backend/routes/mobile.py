@@ -1,17 +1,14 @@
-from flask import Blueprint, current_app
+from flask import Blueprint
 
 from ..responses import success
+from . import _get_session_service
 
 mobile_bp = Blueprint("mobile", __name__)
 
 
-def _service():
-    return current_app.config["SESSION_SERVICE"]
-
-
 @mobile_bp.route("/api/mobile/<session_id>/finish", methods=["POST"])
 def finish_session(session_id):
-    session = _service().finish(session_id)
+    session = _get_session_service().finish(session_id)
     return success(
         data={
             "session_id": session["session_id"],
