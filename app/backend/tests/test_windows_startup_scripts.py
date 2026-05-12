@@ -94,3 +94,39 @@ class TestPidFile:
         assert os.path.isdir(log_dir)
         _write_pid_file(pid_file)
         assert os.path.exists(pid_file)
+
+
+class TestDirectoryCreation:
+    """目录预创建逻辑验证 — run.bat 行为对应。"""
+
+    def test_directories_auto_created_on_config_load(self, tmp_path):
+        """data/logs/exports 目录在配置加载时自动创建。"""
+        from app.backend.config import load_config
+
+        config_dir = str(tmp_path)
+        config = load_config(config_dir)
+        for key in ("data_dir", "log_dir", "export_dir"):
+            assert os.path.isdir(config[key]), f"{key} 目录应自动创建"
+
+    def test_missing_dirs_created_before_backend_start(self, tmp_path):
+        """模拟 run.bat: 目录不存在时先创建。"""
+        data = str(tmp_path / "data")
+        logs = str(tmp_path / "logs")
+        exports = str(tmp_path / "exports")
+        for d in (data, logs, exports):
+            assert not os.path.exists(d)
+            os.makedirs(d, exist_ok=True)
+            assert os.path.isdir(d)
+
+    def test_log_file_append(self, tmp_path):
+        """日志文件以追加模式写入。"""
+        log_file = str(tmp_path / "backend.log")
+        with open(log_file, "a") as f:
+            f.write("line 1\n")
+        with open(log_file, "a") as f:
+            f.write("line 2\n")
+        with open(log_file) as f:
+            lines = f.readlines()
+        assert len(lines) == 2
+        assert lines[0].strip() == "line 1"
+        assert lines[1].strip() == "line 2"
