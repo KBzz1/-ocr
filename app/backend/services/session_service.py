@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from ..enums import SessionStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
 
@@ -21,7 +22,7 @@ class SessionService:
 
         session = {
             "session_id": session_id,
-            "status": "active",
+            "status": SessionStatus.ACTIVE.value,
             "created_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
             "qr_code_url": qr_code_url,
@@ -38,10 +39,10 @@ class SessionService:
         if session is None:
             raise AppError(ErrorCode.SESSION_NOT_FOUND)
 
-        if session["status"] == "active":
+        if session["status"] == SessionStatus.ACTIVE.value:
             expires_at = datetime.fromisoformat(session["expires_at"])
             if datetime.now(timezone.utc) > expires_at:
-                session["status"] = "expired"
+                session["status"] = SessionStatus.EXPIRED.value
                 self._store.write(f"sessions/{session_id}.json", session)
 
         return session
@@ -51,17 +52,16 @@ class SessionService:
         return session
 
     def _ensure_editable(self, session: dict) -> None:
-        if session["status"] == "expired":
-            raise AppError(ErrorCode.SESSION_EXPIRED)
-        if session["status"] == "locked":
-            raise AppError(ErrorCode.SESSION_LOCKED)
-        if session["status"] == "cancelled":
+        if session["status"] != SessionStatus.ACTIVE.value:
+            if session["status"] == SessionStatus.EXPIRED.value:
+                raise AppError(ErrorCode.SESSION_EXPIRED)
             raise AppError(ErrorCode.SESSION_LOCKED)
 
     def _renumber_pages(self, pages: list[dict]) -> list[dict]:
-        for index, page in enumerate(pages, start=1):
-            page["page_no"] = index
-        return pages
+        return [
+            {**page, "page_no": index}
+            for index, page in enumerate(pages, start=1)
+        ]
 
     def add_page(self, session_id: str, upload_ref=None) -> dict:
         session = self.get(session_id)
@@ -115,17 +115,22 @@ class SessionService:
     def finish(self, session_id: str) -> dict:
         session = self.get(session_id)
 
-        if session["status"] == "locked":
+        if session["status"] == SessionStatus.LOCKED.value:
             return session
 
         self._ensure_editable(session)
 
-        if not session["pages"] or any(not page.get("upload_ref") for page in session["pages"]):
+        now = datetime.now(timezone.utc)
+        page_order = []
+        for page in session["pages"]:
+            if not page.get("upload_ref"):
+                raise AppError(ErrorCode.SESSION_EMPTY)
+            page_order.append(page["page_id"])
+
+        if not page_order:
             raise AppError(ErrorCode.SESSION_EMPTY)
 
-        now = datetime.now(timezone.utc)
         task_id = str(uuid.uuid4())
-        page_order = [page["page_id"] for page in session["pages"]]
         task = {
             "task_id": task_id,
             "session_id": session_id,
@@ -137,7 +142,7 @@ class SessionService:
         }
         self._store.write(f"tasks/{task_id}.json", task)
 
-        session["status"] = "locked"
+        session["status"] = SessionStatus.LOCKED.value
         session["locked_at"] = now.isoformat()
         session["task_id"] = task_id
         session["page_count"] = len(session["pages"])
