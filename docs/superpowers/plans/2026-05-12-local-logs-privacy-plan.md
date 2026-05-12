@@ -34,6 +34,13 @@
 - Modify: `app/backend/__init__.py` instantiate services, log startup, register `maintenance_bp`
 - Modify: `app/backend/routes/capture_session.py`, `app/backend/routes/mobile.py`, `app/backend/services/task_service.py` add current business event summaries only
 
+## Parallel Merge Notes
+
+- BE-07 may also modify `app/backend/__init__.py` to register `REVIEW_SERVICE` and `review_bp`. Merge by preserving both BE-07 and BE-09 registrations; do not replace the app factory service block wholesale.
+- BE-07 may also modify `app/backend/services/task_service.py` to change `mark_confirmed(task_id, review_summary=None)`. Merge by keeping that BE-07 signature and only adding BE-09 event logging to `_start_processing()`, `mark_failed()`, and `mark_ready()` in this branch.
+- BE-09 must not add review logging by editing BE-07's `review_result.json` data structure. After BE-07 merges, review event logging should be a small follow-up that records `task_id`, `field_key`, and `status` only.
+- BE-01 owns `run.bat` and `stop.bat`; BE-09 must not change those files.
+
 ---
 
 ### Task 0: Baseline
