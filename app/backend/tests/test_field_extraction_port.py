@@ -31,3 +31,35 @@ def test_extra_fields_are_allowed():
     validate_field_candidates([
         {"field_key": "k", "original_value": "x", "unknown_external_attr": {"raw": True}},
     ])
+
+
+from app.backend.services.algorithm_ports.fixtures import FixtureFieldPort
+
+
+class TestFixtureFieldPort:
+    def test_fixture_preserves_preset_candidates(self):
+        candidates = [{"field_key": "chief_complaint", "original_value": "预置值", "evidence": None, "confidence": 0.9}]
+        port = FixtureFieldPort(candidates=candidates)
+        result = port.extract({"task_id": "t1", "document_result": {}, "schema": {"version": "v1"}})
+        assert result == candidates
+
+    def test_fixture_default_candidates(self):
+        port = FixtureFieldPort()
+        result = port.extract({"task_id": "t1", "document_result": {}, "schema": {"version": "v1"}})
+        assert len(result) == 1
+        assert result[0]["field_key"] == "chief_complaint"
+
+    def test_fixture_return_empty(self):
+        port = FixtureFieldPort(return_empty=True)
+        result = port.extract({"task_id": "t1", "document_result": {}, "schema": {"version": "v1"}})
+        assert result == []
+
+    def test_fixture_should_fail_raises(self):
+        port = FixtureFieldPort(should_fail=True)
+        with pytest.raises(RuntimeError, match="fixture field extraction failure"):
+            port.extract({"task_id": "t1", "document_result": {}, "schema": {"version": "v1"}})
+
+    def test_fixture_does_not_parse_schema_or_document(self):
+        port = FixtureFieldPort(candidates=[{"field_key": "fixed", "original_value": "fixed_val", "confidence": 0.5}])
+        result = port.extract({"task_id": "t1", "document_result": {"pages": []}, "schema": {"fields": []}})
+        assert result[0]["field_key"] == "fixed"
