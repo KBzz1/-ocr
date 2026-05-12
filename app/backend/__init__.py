@@ -101,6 +101,14 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
     )
 
+    from .services.review_service import ReviewService
+
+    app.config["REVIEW_SERVICE"] = ReviewService(
+        store=store,
+        task_service=app.config["TASK_SERVICE"],
+        schema_provider=schema_service.get_current,
+    )
+
     app.logger.warning("算法模块未配置")
 
     from .routes.system import system_bp
@@ -114,5 +122,8 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     app.register_blueprint(mobile_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(schema_bp)
+
+    from .routes.review import review_bp
+    app.register_blueprint(review_bp)
 
     return app

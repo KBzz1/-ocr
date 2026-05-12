@@ -7,3 +7,7 @@ def _get_session_service():
 
 def _get_task_service():
     return current_app.config["TASK_SERVICE"]
+
+
+def _get_review_service():
+    return current_app.config["REVIEW_SERVICE"]
