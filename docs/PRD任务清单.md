@@ -20,6 +20,7 @@
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
 | PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
 | PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；上传失败补偿 (BE-03-08) 延后 |
+| PR-BE-004 任务生命周期 | 已完成 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
 
 ## 后端任务
 
@@ -113,20 +114,20 @@
 
 ### BE-04 任务生命周期（PR-BE-004）
 
-- [ ] **BE-04-01 任务列表和详情**
+- [x] **BE-04-01 任务列表和详情**
   - 范围：查询任务编号、创建时间、页数、状态、异常信息。
   - 边界：不展示或生成结构化字段。
 
-- [ ] **BE-04-02 状态流转校验**
+- [x] **BE-04-02 状态流转校验**
   - 范围：created/uploading/uploaded/processing/ready_for_review/confirmed/exported/failed 合法流转。
   - 边界：非法流转返回 `INVALID_TASK_TRANSITION`。
 
-- [ ] **BE-04-03 触发处理与重试入口**
-  - 范围：uploaded 或 failed 任务进入 processing。
-  - 边界：只编排外部模块，不实现算法。
+- [x] **BE-04-03 触发处理与重试入口**
+  - 范围：uploaded 任务触发处理；failed 任务可重试；A-lite 因算法模块未配置进入 `failed`。
+  - 边界：只保留后续外部模块编排入口，不实现算法适配器。
 
-- [ ] **BE-04-04 失败任务信息保存**
-  - 范围：保存 error_code、error_message、中间产物引用。
+- [x] **BE-04-04 失败任务信息保存**
+  - 范围：保存 error_code、error_message、failed_at 和状态历史；中间产物引用留给 BE-05 接入算法端口后写入。
   - 边界：失败任务不得进入审核态，不提供人工降级补字段路径。
 
 ### BE-05 外部算法端口（PR-BE-005、PR-BE-006）
@@ -350,7 +351,7 @@
 1. ~~完成 `BE-02` 采集会话管理。~~ ✅
 2. ~~并行完成 `BE-03` 图片上传与元数据，但必须等 `BE-02` 的会话 pages 契约稳定后合并。~~ ✅
 3. 开始 `FE-01` 和 `FE-02` 的基础页面，先接会话和上传 API。
-4. 完成 `BE-04` 任务生命周期和 `BE-05` 算法端口失败契约。
+4. 完成 `BE-05` 算法端口失败契约，并把真实外部模块编排接入 BE-04 的 process/retry 入口。
 5. 完成 `BE-06` schema、`BE-07` 审核、`BE-08` 导出。
 6. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
 7. 做 `BE-10`、`FE-06` 和 `REL-*` 的 E2E、离线和发布验收。

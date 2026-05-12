@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from ..enums import TaskStatus
-from ..errors import AppError, ErrorCode
+from ..errors import AlgorithmErrorCode, AppError, ErrorCode
 from ..storage.json_store import JsonStore
 
 
@@ -36,7 +36,11 @@ class TaskService:
         task["error_message"] = None
         task["failed_at"] = None
         self._write_task(task)
-        return self.mark_failed(task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "算法模块未配置")
+        return self.mark_failed(
+            task_id,
+            AlgorithmErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.value,
+            "算法模块未配置",
+        )
 
     def retry(self, task_id: str) -> dict:
         task = self._read_task(task_id)
@@ -51,7 +55,11 @@ class TaskService:
         task["error_message"] = None
         task["failed_at"] = None
         self._write_task(task)
-        return self.mark_failed(task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "算法模块未配置")
+        return self.mark_failed(
+            task_id,
+            AlgorithmErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.value,
+            "算法模块未配置",
+        )
 
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
