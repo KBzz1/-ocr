@@ -103,3 +103,26 @@ class TestPathSecurity:
         store = JsonStore(str(tmp_path))
         with pytest.raises(ValueError, match="路径越权"):
             store.write("tasks/../../outside.json", {"bad": True})
+
+
+class TestJsonStoreListJson:
+    def test_list_json_returns_sorted_json_documents(self, tmp_path):
+        store = JsonStore(str(tmp_path))
+        store.write("tasks/b.json", {"task_id": "b"})
+        store.write("tasks/a.json", {"task_id": "a"})
+        (tmp_path / "tasks" / "note.txt").write_text("skip", encoding="utf-8")
+
+        result = store.list_json("tasks")
+
+        assert [item["task_id"] for item in result] == ["a", "b"]
+
+    def test_list_json_missing_directory_returns_empty_list(self, tmp_path):
+        store = JsonStore(str(tmp_path))
+
+        assert store.list_json("tasks") == []
+
+    def test_list_json_rejects_absolute_path(self, tmp_path):
+        store = JsonStore(str(tmp_path))
+
+        with pytest.raises(ValueError):
+            store.list_json(str(tmp_path / "tasks"))
