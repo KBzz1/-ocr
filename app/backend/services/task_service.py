@@ -40,6 +40,11 @@ class TaskService:
 
     def retry(self, task_id: str) -> dict:
         task = self._read_task(task_id)
+        if task["status"] != TaskStatus.FAILED.value:
+            raise AppError(
+                ErrorCode.INVALID_TASK_TRANSITION,
+                details={"current": task["status"], "target": TaskStatus.PROCESSING.value},
+            )
         task = self._transition(task, TaskStatus.PROCESSING.value, "失败任务重试")
         task["processing_at"] = self._now()
         task["error_code"] = None

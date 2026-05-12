@@ -80,6 +80,9 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     )
     app.config["PAGE_SERVICE"] = page_service
 
+    from .services.task_service import TaskService
+    app.config["TASK_SERVICE"] = TaskService(store=store)
+
     app.logger.warning("算法模块未配置")
 
     from .routes.system import system_bp
@@ -89,5 +92,8 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .routes.mobile import mobile_bp
     app.register_blueprint(capture_session_bp)
     app.register_blueprint(mobile_bp)
+
+    from .routes.task import task_bp
+    app.register_blueprint(task_bp)
 
     return app
