@@ -33,6 +33,7 @@ class TestErrorCode:
         assert "SESSION_EMPTY" in codes
         assert "UNSUPPORTED_FILE_TYPE" in codes
         assert "FILE_TOO_LARGE" in codes
+        assert "INVALID_REQUEST_PARAMS" in codes
         assert "INVALID_QUAD_POINTS" in codes
         assert "TASK_NOT_FOUND" in codes
         assert "INVALID_TASK_TRANSITION" in codes
@@ -41,7 +42,7 @@ class TestErrorCode:
         assert "EXPORT_FAILED" in codes
         assert "REQUEST_NOT_FOUND" in codes
         assert "INTERNAL_SERVER_ERROR" in codes
-        assert len(codes) == 14
+        assert len(codes) == 15
 
 
 class TestAlgorithmErrorCode:
@@ -78,6 +79,20 @@ class TestAppError:
     def test_exception_args_contains_message(self):
         err = AppError(ErrorCode.TASK_NOT_FOUND)
         assert err.args == ("任务不存在",)
+
+
+class TestInvalidRequestParams:
+    def test_invalid_request_params_error_code_exists(self):
+        assert hasattr(ErrorCode, "INVALID_REQUEST_PARAMS")
+        code = ErrorCode.INVALID_REQUEST_PARAMS
+        assert code.code == "INVALID_REQUEST_PARAMS"
+        assert code.http_status == 400
+        assert "参数" in code.default_message
+
+    def test_invalid_request_params_app_error_response(self):
+        error = AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="缺少必填字段 image")
+        assert error.http_status == 400
+        assert error.code == "INVALID_REQUEST_PARAMS"
 
 
 class TestAbort:

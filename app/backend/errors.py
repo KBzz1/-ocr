@@ -10,6 +10,7 @@ class ErrorCode(Enum):
     SESSION_EMPTY = ("SESSION_EMPTY", 400, "采集会话没有已上传页面")
     UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", 400, "不支持的文件类型")
     FILE_TOO_LARGE = ("FILE_TOO_LARGE", 400, "文件超过大小限制")
+    INVALID_REQUEST_PARAMS = ("INVALID_REQUEST_PARAMS", 400, "请求参数缺失、类型错误、格式错误或取值非法")
     INVALID_QUAD_POINTS = ("INVALID_QUAD_POINTS", 400, "框选坐标格式非法")
     TASK_NOT_FOUND = ("TASK_NOT_FOUND", 404, "任务不存在")
     INVALID_TASK_TRANSITION = ("INVALID_TASK_TRANSITION", 400, "非法任务状态流转")
