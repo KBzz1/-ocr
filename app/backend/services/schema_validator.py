@@ -1,6 +1,16 @@
 class SchemaValidationError(ValueError):
-    """SchemaValidator 白名单校验失败。由 BE-05 捕获并映射为任务 failed。"""
-    pass
+    """SchemaValidator 白名单校验失败。由 BE-05 捕获并映射为任务 failed。
+
+    code 属性供 BE-05 路由错误，避免对消息文本做字符串匹配：
+    - EMPTY: 候选字段列表为空
+    - UNKNOWN_KEY: 字段不在 schema 白名单中
+    - DUPLICATE_KEY: 字段重复
+    - MISSING_KEY: 候选字段缺少 field_key
+    """
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
 
 
 class SchemaValidator:
@@ -15,19 +25,20 @@ class SchemaValidator:
 
     def validate_candidates(self, candidates: list[dict]) -> list[dict]:
         if not candidates:
-            raise SchemaValidationError("候选字段列表为空")
+            raise SchemaValidationError("候选字段列表为空", "EMPTY")
 
         seen_keys = set()
         for candidate in candidates:
             field_key = candidate.get("field_key")
             if not field_key:
-                raise SchemaValidationError("候选字段缺少 field_key")
+                raise SchemaValidationError("候选字段缺少 field_key",
+                                            "MISSING_KEY")
             if field_key not in self._allowed:
                 raise SchemaValidationError(
-                    f"候选字段 {field_key} 不在 schema 中")
+                    f"候选字段 {field_key} 不在 schema 中", "UNKNOWN_KEY")
             if field_key in seen_keys:
                 raise SchemaValidationError(
-                    f"候选字段 {field_key} 重复")
+                    f"候选字段 {field_key} 重复", "DUPLICATE_KEY")
             seen_keys.add(field_key)
 
         return candidates

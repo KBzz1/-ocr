@@ -18,6 +18,7 @@ def get_current_schema():
                 "fields": [
                     {
                         "field_key": f["field_key"],
+                        # key 别名用于前端字段匹配，值始终等于 field_key
                         "key": f["field_key"],
                         "label": f["label"],
                         "type": f["type"],

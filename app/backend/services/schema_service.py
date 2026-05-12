@@ -20,19 +20,16 @@ class SchemaService:
     def get_current_version(self) -> str:
         return self.get_current()["version"]
 
-    def get_allowed_field_keys(self) -> set[str]:
-        keys = set()
+    def _iter_field_keys(self):
         for group in self.get_current()["field_groups"]:
             for field in group["fields"]:
-                keys.add(field["field_key"])
-        return keys
+                yield field["field_key"]
+
+    def get_allowed_field_keys(self) -> set[str]:
+        return set(self._iter_field_keys())
 
     def get_field_order(self) -> list[str]:
-        order = []
-        for group in self.get_current()["field_groups"]:
-            for field in group["fields"]:
-                order.append(field["field_key"])
-        return order
+        return list(self._iter_field_keys())
 
     def build_validator(self) -> SchemaValidator:
         return SchemaValidator(self.get_allowed_field_keys())

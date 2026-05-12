@@ -5,6 +5,10 @@ from ..errors import AppError, ErrorCode
 ALLOWED_FIELD_TYPES = {"string", "number", "date", "boolean"}
 
 
+def _is_blank(value) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
 def load_schema(path: str) -> dict:
     """加载并校验 YAML schema 文件。成功返回规范化 dict；失败抛 AppError。"""
 
@@ -26,21 +30,18 @@ def load_schema(path: str) -> dict:
                        message="Schema 必须为 YAML mapping",
                        details={"reason": "不是 YAML mapping"})
 
-    # version
     version = raw.get("version")
-    if not isinstance(version, str) or not version.strip():
+    if _is_blank(version):
         raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                        message="Schema 缺少 version 字段",
                        details={"reason": "缺少 version 字段"})
 
-    # document_type
     document_type = raw.get("document_type")
-    if not isinstance(document_type, str) or not document_type.strip():
+    if _is_blank(document_type):
         raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                        message="Schema 缺少 document_type 字段",
                        details={"reason": "缺少 document_type 字段"})
 
-    # field_groups
     field_groups = raw.get("field_groups")
     if not isinstance(field_groups, list) or len(field_groups) == 0:
         raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
@@ -58,13 +59,13 @@ def load_schema(path: str) -> dict:
                            details={"reason": "field_group 格式非法"})
 
         group_key = group.get("group_key")
-        if not isinstance(group_key, str) or not group_key.strip():
+        if _is_blank(group_key):
             raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                            message="field_group 缺少 group_key",
                            details={"reason": "缺少 group_key"})
 
         group_label = group.get("group_label")
-        if not isinstance(group_label, str) or not group_label.strip():
+        if _is_blank(group_label):
             raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                            message="field_group 缺少 group_label",
                            details={"reason": "缺少 group_label",
@@ -93,17 +94,18 @@ def load_schema(path: str) -> dict:
                                         "group_key": group_key})
 
             field_key = field.get("field_key")
-            if not isinstance(field_key, str) or not field_key.strip():
+            if _is_blank(field_key):
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                                message="field 缺少 field_key",
                                details={"reason": "缺少 field_key",
                                         "group_key": group_key})
 
             label = field.get("label")
-            if not isinstance(label, str) or not label.strip():
+            if _is_blank(label):
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                                message="field 缺少 label",
                                details={"reason": "缺少 label",
+                                        "group_key": group_key,
                                         "field_key": field_key})
 
             if field_key in seen_field_keys:
@@ -118,6 +120,7 @@ def load_schema(path: str) -> dict:
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                                message="field type 非法",
                                details={"reason": "type 非法",
+                                        "group_key": group_key,
                                         "field_key": field_key,
                                         "type": field_type})
 
@@ -126,6 +129,7 @@ def load_schema(path: str) -> dict:
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                                message="field required 必须为 boolean",
                                details={"reason": "required 非法",
+                                        "group_key": group_key,
                                         "field_key": field_key})
 
             hint = field.get("hint", "")
@@ -133,6 +137,7 @@ def load_schema(path: str) -> dict:
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
                                message="field hint 必须为 string",
                                details={"reason": "hint 非法",
+                                        "group_key": group_key,
                                         "field_key": field_key})
 
             normalized_fields.append({
