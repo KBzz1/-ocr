@@ -1,0 +1,156 @@
+version: "1.0.0"
+document_type: general_medical_record
+field_groups:
+  - group_key: patient_info
+    group_label: 患者基本信息
+    fields:
+      - field_key: name
+        label: 姓名
+        type: string
+      - field_key: gender
+        label: 性别
+        type: string
+      - field_key: age
+        label: 年龄
+        type: string
+      - field_key: patient_id
+        label: ID号
+        type: string
+      - field_key: inpatient_no
+        label: 住院号
+        type: string
+      - field_key: ward
+        label: 病区
+        type: string
+      - field_key: bed_no
+        label: 床号
+        type: string
+      - field_key: department
+        label: 科室
+        type: string
+
+  - group_key: admission_info
+    group_label: 入院/病程信息
+    fields:
+      - field_key: admission_time
+        label: 入院时间
+        type: date
+      - field_key: record_time
+        label: 记录时间
+        type: date
+      - field_key: chief_complaint
+        label: 主诉
+        type: string
+      - field_key: present_illness
+        label: 现病史
+        type: string
+      - field_key: past_history
+        label: 既往史
+        type: string
+      - field_key: personal_history
+        label: 个人史
+        type: string
+      - field_key: marital_history
+        label: 婚育史
+        type: string
+      - field_key: family_history
+        label: 家族史
+        type: string
+
+  - group_key: physical_exam
+    group_label: 体格检查
+    fields:
+      - field_key: temperature
+        label: 体温
+        type: string
+      - field_key: pulse
+        label: 脉搏
+        type: string
+      - field_key: respiration
+        label: 呼吸
+        type: string
+      - field_key: blood_pressure
+        label: 血压
+        type: string
+      - field_key: height
+        label: 身高
+        type: string
+      - field_key: weight
+        label: 体重
+        type: string
+      - field_key: bmi
+        label: BMI
+        type: string
+      - field_key: general_condition
+        label: 一般情况
+        type: string
+      - field_key: specialty_signs
+        label: 专科体征
+        type: string
+
+  - group_key: auxiliary_exam
+    group_label: 辅助检查
+    fields:
+      - field_key: exam_date
+        label: 检查日期
+        type: date
+      - field_key: exam_type
+        label: 检查类型
+        type: string
+      - field_key: exam_findings
+        label: 检查所见
+        type: string
+      - field_key: exam_conclusion
+        label: 检查结论
+        type: string
+      - field_key: key_lab_indicators
+        label: 关键检验指标
+        type: string
+
+  - group_key: diagnosis
+    group_label: 诊断相关
+    fields:
+      - field_key: primary_diagnosis
+        label: 初步诊断
+        type: string
+      - field_key: final_diagnosis
+        label: 最后诊断
+        type: string
+      - field_key: revised_diagnosis
+        label: 修正诊断
+        type: string
+      - field_key: diagnosis_list
+        label: 诊断列表
+        type: string
+
+  - group_key: treatment
+    group_label: 治疗相关
+    fields:
+      - field_key: main_treatment
+        label: 主要治疗
+        type: string
+      - field_key: medication_info
+        label: 用药信息
+        type: string
+      - field_key: treatment_opinion
+        label: 处理意见
+        type: string
+      - field_key: treatment_plan
+        label: 诊疗计划
+        type: string
+
+  - group_key: signature
+    group_label: 签名与时间
+    fields:
+      - field_key: recording_doctor
+        label: 记录医生
+        type: string
+      - field_key: superior_doctor
+        label: 上级医生
+        type: string
+      - field_key: signature_time
+        label: 签名时间
+        type: date
+      - field_key: discharge_or_admission_date
+        label: 出院/入院日期
+        type: date

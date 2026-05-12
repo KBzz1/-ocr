@@ -1,70 +1,11 @@
 import pytest
+
+from app.backend.services.algorithm_ports.fixtures import (
+    FixtureDocPort,
+    FixtureFieldPort,
+    FixtureImagePort,
+)
 from app.backend.storage.json_store import JsonStore
-
-
-class StubImagePort:
-    def __init__(self, should_fail=False, return_bad_path=False):
-        self._should_fail = should_fail
-        self._return_bad_path = return_bad_path
-        self.calls = []
-
-    def process(self, input):
-        self.calls.append(input)
-        if self._should_fail:
-            raise RuntimeError("stub image error")
-        if self._return_bad_path:
-            return {"processed_path": ""}
-        return {"processed_path": f"/tmp/processed/{input['page_id']}.jpg"}
-
-
-class StubDocPort:
-    def __init__(self, should_fail=False, return_empty=False, return_non_dict=False,
-                 partial_fail_page=None, return_missing_pages=False):
-        self._should_fail = should_fail
-        self._return_empty = return_empty
-        self._return_non_dict = return_non_dict
-        self._partial_fail_page = partial_fail_page
-        self._return_missing_pages = return_missing_pages
-        self.calls = []
-
-    def parse(self, input):
-        self.calls.append(input)
-        if self._should_fail:
-            raise RuntimeError("stub doc error")
-        if self._return_non_dict:
-            return "not a dict"
-        if self._return_missing_pages:
-            return {"merged_text": ""}
-        if self._return_empty:
-            return {"pages": [], "merged_text": ""}
-        pages = []
-        for p in input.get("pages", []):
-            status = "failed" if p["page_id"] == self._partial_fail_page else "success"
-            pages.append({"page_id": p["page_id"], "page_no": p["page_no"],
-                          "status": status, "text": f"text_{p['page_id']}", "blocks": [], "tables": []})
-        return {"pages": pages, "merged_text": "merged"}
-
-
-class StubFieldPort:
-    def __init__(self, should_fail=False, return_empty=False, return_non_list=False,
-                 return_bad_structure=False):
-        self._should_fail = should_fail
-        self._return_empty = return_empty
-        self._return_non_list = return_non_list
-        self._return_bad_structure = return_bad_structure
-        self.calls = []
-
-    def extract(self, input):
-        self.calls.append(input)
-        if self._should_fail:
-            raise RuntimeError("stub field error")
-        if self._return_non_list:
-            return {"not": "list"}
-        if self._return_empty:
-            return []
-        if self._return_bad_structure:
-            return [{"field_key": "k"}]
-        return [{"field_key": "test", "original_value": "val", "confidence": 0.9}]
 
 
 def _setup_task_and_session(store, task_id="task-001", session_id="session-001",
@@ -110,11 +51,14 @@ def _setup_task_and_session(store, task_id="task-001", session_id="session-001",
 
 def _make_orchestrator(tmp_path, image_port=None, doc_port=None, field_port=None, schema_validator=None):
     from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
+    from app.backend.services.session_service import SessionService
     from app.backend.services.task_service import TaskService
 
     store = JsonStore(str(tmp_path))
+    session_service = SessionService(store=store, lan_addresses=[], ttl_minutes=30)
     orchestrator = ProcessingOrchestrator(
-        store=store, image_port=image_port, doc_port=doc_port,
+        store=store, session_service=session_service,
+        image_port=image_port, doc_port=doc_port,
         field_port=field_port, schema_validator=schema_validator,
     )
     service = TaskService(store=store, orchestrator=orchestrator)
@@ -135,9 +79,9 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "module_not_configured"
 
     def test_image_exception_skips_later_ports(self, tmp_path):
-        img = StubImagePort(should_fail=True)
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort(should_fail=True)
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -152,7 +96,7 @@ class TestOrchestratorFailures:
         assert field.calls == []
 
     def test_image_bad_processed_path_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort(return_bad_path=True)
+        img = FixtureImagePort(return_bad_path=True)
         store, service = _make_orchestrator(tmp_path, image_port=img)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -165,7 +109,7 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "invalid_processed_path"
 
     def test_missing_page_metadata_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
+        img = FixtureImagePort()
         store, service = _make_orchestrator(tmp_path, image_port=img)
         _setup_task_and_session(store, page_data={})
         task = store.read("tasks/task-001.json")
@@ -177,9 +121,24 @@ class TestOrchestratorFailures:
         assert result["details"]["stage"] == "image_processing"
         assert result["details"]["reason"] == "page_metadata_missing"
 
+    def test_absolute_upload_ref_marks_contract_invalid(self, tmp_path):
+        img = FixtureImagePort()
+        store, service = _make_orchestrator(tmp_path, image_port=img)
+        _setup_task_and_session(store)
+        session = store.read("sessions/session-001.json")
+        session["pages"][0]["upload_ref"] = str(tmp_path / "pages" / "session-001" / "page-1.json")
+        store.write("sessions/session-001.json", session)
+        task = store.read("tasks/task-001.json")
+
+        result = service._orchestrator.run(task, service)
+
+        assert result["status"] == "failed"
+        assert result["error_code"] == "ALGORITHM_CONTRACT_INVALID"
+        assert result["details"]["reason"] == "page_metadata_missing"
+
     def test_document_empty_pages_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort(return_empty=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort(return_empty=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -192,8 +151,8 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "empty_pages"
 
     def test_document_non_dict_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort(return_non_dict=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort(return_non_dict=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -205,8 +164,8 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "invalid_document_result"
 
     def test_document_missing_pages_key_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort(return_missing_pages=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort(return_missing_pages=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -218,8 +177,8 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "invalid_document_result"
 
     def test_document_exception_marks_module_failed(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort(should_fail=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort(should_fail=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -231,8 +190,8 @@ class TestOrchestratorFailures:
         assert result["details"]["stage"] == "document_parsing"
 
     def test_document_partial_page_failure_marks_failed_and_persists(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort(partial_fail_page="page-1")
+        img = FixtureImagePort()
+        doc = FixtureDocPort(partial_fail_page_id="page-1")
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc)
         _setup_task_and_session(store, page_order=["page-1", "page-2"], page_data={
             "page-1": {"original_image_path": "/tmp/p1.jpg", "quad_points": None, "image_width": 1920, "image_height": 1080},
@@ -248,9 +207,9 @@ class TestOrchestratorFailures:
         assert store.exists("results/task-001/document_result.json")
 
     def test_field_empty_candidates_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort(return_empty=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort(return_empty=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -263,9 +222,9 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "empty_candidates"
 
     def test_field_non_list_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort(return_non_list=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort(return_non_list=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -277,9 +236,9 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "invalid_candidate_contract"
 
     def test_missing_schema_marks_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -293,9 +252,9 @@ class TestOrchestratorFailures:
         assert field.calls == []
 
     def test_schema_validator_failure_maps_contract_invalid(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         # validator that rejects candidates
         def reject_validator(candidates, schema):
             raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message="schema violation")
@@ -313,9 +272,9 @@ class TestOrchestratorFailures:
         assert result["details"]["reason"] == "schema_validation_failed"
 
     def test_field_exception_marks_module_failed(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort(should_fail=True)
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort(should_fail=True)
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -330,9 +289,9 @@ class TestOrchestratorFailures:
 
 class TestOrchestratorSuccess:
     def test_all_ports_configured_flow_to_ready(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")
@@ -346,9 +305,9 @@ class TestOrchestratorSuccess:
         assert store.exists("results/task-001/field_candidates.json")
 
     def test_multi_page_calls_image_port_per_page(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store, page_order=["page-1", "page-2"], page_data={
             "page-1": {"original_image_path": "/tmp/p1.jpg", "quad_points": None, "image_width": 1920, "image_height": 1080},
@@ -364,9 +323,9 @@ class TestOrchestratorSuccess:
         assert img.calls[1]["quad_points"] is not None
 
     def test_quad_points_null_is_accepted(self, tmp_path):
-        img = StubImagePort()
-        doc = StubDocPort()
-        field = StubFieldPort()
+        img = FixtureImagePort()
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
         store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
         _setup_task_and_session(store)
         task = store.read("tasks/task-001.json")

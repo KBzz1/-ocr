@@ -12,8 +12,8 @@ A-lite 阶段目标：任务状态机流转校验、任务列表/详情查询、
 - 合法状态转换校验，非法转换返回 `INVALID_TASK_TRANSITION`
 - `GET /api/tasks` 按 status 筛选
 - `GET /api/tasks/{taskId}` 返回任务基本信息、页面摘要、状态历史
-- `POST /api/tasks/{taskId}/process` 处理触发骨架（记录 `processing` 状态和 `processing_at`，不调算法；后续 BE-05 接入真实编排）
-- `POST /api/tasks/{taskId}/retry` 从 `failed` 回到 `processing`
+- `POST /api/tasks/{taskId}/process` 处理触发骨架（记录 `processing` 状态和 `processing_at`；A-lite 因算法模块未配置立即进入 `failed`）
+- `POST /api/tasks/{taskId}/retry` 从 `failed` 回到 `processing` 后，A-lite 因算法模块未配置再次进入 `failed`
 - 失败时保存 `error_code`、`error_message`、`failed_at`
 - 状态变更写入历史记录
 
@@ -28,7 +28,7 @@ A-lite 阶段目标：任务状态机流转校验、任务列表/详情查询、
 
 - 只实现状态机、查询、触发骨架和持久化；不实现任何算法行为。
 - 使用 JSON 文件持久化任务数据，与现有 `data/tasks/{task_id}.json` 一致。
-- 算法模块缺失时不自动降级；处理接口只做状态推进，不产生假数据。
+- 算法模块缺失时不自动降级；A-lite 处理接口记录 `processing` 后立即写入 `ALGORITHM_MODULE_NOT_CONFIGURED` 并进入 `failed`，不产生假数据。
 - 所有错误响应使用 `docs/Shared/error-codes.md` 统一结构。
 
 ## 技术选型
@@ -224,15 +224,18 @@ finish 创建 Task 桩（uploaded）
 
 **Request**：无请求体。
 
-**Response 200：**
+**Response 200（A-lite 算法模块未配置）：**
 
 ```json
 {
   "success": true,
   "data": {
     "task_id": "uuid4",
-    "status": "processing",
-    "processing_at": "2026-05-12T10:05:00+00:00"
+    "status": "failed",
+    "processing_at": "2026-05-12T10:05:00+00:00",
+    "failed_at": "2026-05-12T10:05:01+00:00",
+    "error_code": "ALGORITHM_MODULE_NOT_CONFIGURED",
+    "error_message": "算法模块未配置"
   }
 }
 ```
@@ -248,8 +251,8 @@ finish 创建 Task 桩（uploaded）
 
 - 仅允许 `uploaded` 或 `ready_for_review` 状态调用。
 - 写入 `processing_at`，追加 `status_history` 记录。
-- A-lite 阶段不调用任何算法模块。只做状态推进。
-- 本阶段 process 停在 `processing`，不自动推进到 `ready_for_review`。
+- A-lite 阶段不调用任何算法模块，也不实现适配器。
+- 本阶段因算法模块未配置，process 在记录 `processing` 后立即进入 `failed`，不自动推进到 `ready_for_review`。
 
 ### POST /api/tasks/{task_id}/retry
 
@@ -257,15 +260,18 @@ finish 创建 Task 桩（uploaded）
 
 **Request**：无请求体。
 
-**Response 200：**
+**Response 200（A-lite 算法模块未配置）：**
 
 ```json
 {
   "success": true,
   "data": {
     "task_id": "uuid4",
-    "status": "processing",
-    "processing_at": "2026-05-12T10:05:00+00:00"
+    "status": "failed",
+    "processing_at": "2026-05-12T10:05:00+00:00",
+    "failed_at": "2026-05-12T10:05:01+00:00",
+    "error_code": "ALGORITHM_MODULE_NOT_CONFIGURED",
+    "error_message": "算法模块未配置"
   }
 }
 ```
@@ -282,7 +288,7 @@ finish 创建 Task 桩（uploaded）
 - 仅允许 `failed` 状态调用。
 - 清除 `error_code`、`error_message`、`failed_at`。
 - 写入新的 `processing_at`，追加 `status_history`。
-- 本阶段 retry 停在 `processing`，不重新执行算法。
+- 本阶段 retry 清除旧失败信息并记录重试进入 `processing`，随后因算法模块未配置再次进入 `failed`。
 
 ## 模块职责
 
@@ -305,12 +311,12 @@ class TaskService:
         """返回任务详情。不存在时 raise AppError(ErrorCode.TASK_NOT_FOUND)。"""
 
     def process(self, task_id: str) -> dict:
-        """uploaded/ready_for_review → processing。
+        """uploaded/ready_for_review → processing → failed（A-lite 未配置算法）。
         非法状态 raise AppError(ErrorCode.INVALID_TASK_TRANSITION)。
         """
 
     def retry(self, task_id: str) -> dict:
-        """failed → processing。
+        """failed → processing → failed（A-lite 未配置算法）。
         非法状态 raise AppError(ErrorCode.INVALID_TASK_TRANSITION)。
         """
 
@@ -403,7 +409,7 @@ data/tasks/
 ### 自审结论
 
 - 无 OCR、LLM、图像处理、字段抽取实现要求。
-- 算法模块调用全部留空；process/retry 只做状态推进。
+- 算法模块调用全部留空；process/retry 只做状态推进和未配置失败落库，不生成解析或字段数据。
 - `created`/`uploading` 保留枚举值但本阶段不实现流入 API。
 - Task 数据模型扩展字段（error_code/error_message/failed_at/processing_at/ready_at/status_history）均与现有 Task 桩兼容。
 - 状态转换表覆盖所有 Shared/state-enums.md 定义的合法路径。

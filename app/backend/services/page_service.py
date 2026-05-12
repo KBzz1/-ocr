@@ -54,8 +54,6 @@ class PageService:
             f.write(image_data)
 
         meta_rel = self._file_validator.build_path(session_id, page_id, "json")
-        abs_meta_path = os.path.join(self._storage_dir, meta_rel)
-
         meta = {
             "page_id": page_id,
             "session_id": session_id,
@@ -70,6 +68,6 @@ class PageService:
 
         self._store.write(meta_rel, meta)
 
-        self._session_service.attach_page_upload(session_id, page_id, abs_meta_path)
+        self._session_service.attach_page_upload(session_id, page_id, meta_rel)
 
         return meta

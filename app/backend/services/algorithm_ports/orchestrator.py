@@ -1,11 +1,16 @@
+from ...errors import ErrorCode
 from ...storage.json_store import JsonStore
 from .field_extraction import validate_field_candidates
+from .results import AlgorithmResultStore
 
 
 class ProcessingOrchestrator:
-    def __init__(self, store: JsonStore, image_port=None, doc_port=None,
-                 field_port=None, schema_validator=None):
+    def __init__(self, store: JsonStore, session_service=None, result_store=None,
+                 image_port=None, doc_port=None, field_port=None,
+                 schema_validator=None):
         self._store = store
+        self._session_service = session_service
+        self._result_store = result_store or AlgorithmResultStore(store)
         self._image_port = image_port
         self._doc_port = doc_port
         self._field_port = field_port
@@ -17,7 +22,8 @@ class ProcessingOrchestrator:
         # -- image processing --
         if self._image_port is None:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "图像处理模块未配置",
+                task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "图像处理模块未配置",
                 stage="image_processing",
                 details={"stage": "image_processing", "reason": "module_not_configured"},
             )
@@ -25,7 +31,8 @@ class ProcessingOrchestrator:
         image_inputs = self._build_image_inputs(task)
         if image_inputs is None:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "页面元数据缺失",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "页面元数据缺失",
                 stage="image_processing",
                 details={"stage": "image_processing", "reason": "page_metadata_missing"},
             )
@@ -36,14 +43,16 @@ class ProcessingOrchestrator:
                 result = self._image_port.process(img_input)
             except Exception:
                 return task_service.mark_failed(
-                    task_id, "ALGORITHM_MODULE_FAILED", "图像处理模块异常",
+                    task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                    "图像处理模块异常",
                     stage="image_processing",
                     details={"stage": "image_processing", "reason": "module_exception"},
                 )
             proc_path = result.get("processed_path") if isinstance(result, dict) else None
             if not proc_path or not isinstance(proc_path, str):
                 return task_service.mark_failed(
-                    task_id, "ALGORITHM_CONTRACT_INVALID", "图像处理模块返回缺少非空 processed_path",
+                    task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                    "图像处理模块返回缺少非空 processed_path",
                     stage="image_processing",
                     details={"stage": "image_processing", "reason": "invalid_processed_path"},
                 )
@@ -53,17 +62,18 @@ class ProcessingOrchestrator:
                 "processed_path": proc_path,
             })
 
-        self._store.write(f"results/{task_id}/image_result.json", {
-            "task_id": task_id, "stage": "image_processing", "status": "success",
-            "pages": [{"page_id": p["page_id"], "original_path": img["original_path"],
-                        "processed_path": p["processed_path"]}
-                      for p, img in zip(processed_pages, image_inputs)],
-        })
+        self._result_store.write_image_result(
+            task_id,
+            [{"page_id": p["page_id"], "original_path": img["original_path"],
+              "processed_path": p["processed_path"]}
+             for p, img in zip(processed_pages, image_inputs)],
+        )
 
         # -- document parsing --
         if self._doc_port is None:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "文档解析模块未配置",
+                task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "文档解析模块未配置",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "module_not_configured"},
             )
@@ -78,14 +88,16 @@ class ProcessingOrchestrator:
             doc_result = self._doc_port.parse(doc_input)
         except Exception:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_FAILED", "文档解析模块异常",
+                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "文档解析模块异常",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "module_exception"},
             )
 
         if not isinstance(doc_result, dict) or "pages" not in doc_result or not isinstance(doc_result["pages"], list):
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "文档解析模块返回结构非法",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "文档解析模块返回结构非法",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "invalid_document_result"},
             )
@@ -93,21 +105,24 @@ class ProcessingOrchestrator:
         pages = doc_result["pages"]
         if not pages:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "文档解析结果为空",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "文档解析结果为空",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "empty_pages"},
             )
 
         has_failure = any(p.get("status") == "failed" for p in pages)
-        self._store.write(f"results/{task_id}/document_result.json", {
-            "task_id": task_id, "stage": "document_parsing",
-            "status": "success" if not has_failure else "partial_failure",
-            "pages": pages, "merged_text": doc_result.get("merged_text", ""),
-        })
+        self._result_store.write_document_result(
+            task_id,
+            pages,
+            doc_result.get("merged_text", ""),
+            has_failure=has_failure,
+        )
 
         if has_failure:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_FAILED", "部分页面解析失败",
+                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "部分页面解析失败",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "partial_page_failed"},
             )
@@ -115,14 +130,16 @@ class ProcessingOrchestrator:
         # -- field extraction --
         if self._field_port is None:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "字段抽取模块未配置",
+                task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "字段抽取模块未配置",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "module_not_configured"},
             )
 
         if not isinstance(schema, dict):
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "schema 缺失或非法",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "schema 缺失或非法",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "schema_missing_or_invalid"},
             )
@@ -132,20 +149,23 @@ class ProcessingOrchestrator:
             candidates = self._field_port.extract(field_input)
         except Exception:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_MODULE_FAILED", "字段抽取模块异常",
+                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "字段抽取模块异常",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "module_exception"},
             )
 
         if not isinstance(candidates, list):
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "字段候选必须是列表",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "字段候选必须是列表",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "invalid_candidate_contract"},
             )
         if not candidates:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "字段候选结果为空",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "字段候选结果为空",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "empty_candidates"},
             )
@@ -153,25 +173,27 @@ class ProcessingOrchestrator:
             validate_field_candidates(candidates)
         except Exception:
             return task_service.mark_failed(
-                task_id, "ALGORITHM_CONTRACT_INVALID", "字段候选结构非法",
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "字段候选结构非法",
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "invalid_candidate_contract"},
             )
 
         if self._schema_validator:
             try:
-                self._schema_validator(candidates, schema)
+                if hasattr(self._schema_validator, "validate"):
+                    self._schema_validator.validate(candidates, schema)
+                else:
+                    self._schema_validator(candidates, schema)
             except Exception:
                 return task_service.mark_failed(
-                    task_id, "ALGORITHM_CONTRACT_INVALID", "schema 校验失败",
+                    task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                    "schema 校验失败",
                     stage="field_extraction",
                     details={"stage": "field_extraction", "reason": "schema_validation_failed"},
                 )
 
-        self._store.write(f"results/{task_id}/field_candidates.json", {
-            "task_id": task_id, "stage": "field_extraction", "status": "success",
-            "candidates": candidates,
-        })
+        self._result_store.write_field_candidates(task_id, candidates)
 
         return task_service.mark_ready(task_id)
 
@@ -181,7 +203,13 @@ class ProcessingOrchestrator:
         if not session_id or not page_order:
             return None
 
-        session = self._store.read(f"sessions/{session_id}.json")
+        if self._session_service is None:
+            session = self._store.read(f"sessions/{session_id}.json")
+        else:
+            try:
+                session = self._session_service.get(session_id)
+            except Exception:
+                return None
         if session is None:
             return None
 
@@ -193,7 +221,10 @@ class ProcessingOrchestrator:
             if not session_page or not session_page.get("upload_ref"):
                 return None
 
-            meta = self._store.read(session_page["upload_ref"])
+            try:
+                meta = self._store.read(session_page["upload_ref"])
+            except ValueError:
+                return None
             if meta is None:
                 return None
 

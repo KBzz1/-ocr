@@ -1,11 +1,12 @@
 # app/backend/__init__.py
+import os
 import socket
 from datetime import datetime, timezone
 from ipaddress import ip_address
 
 from flask import Flask
 
-from .config import load_config
+from .config import PROJECT_ROOT, load_config
 from .errors import register_error_handlers
 
 
@@ -33,7 +34,6 @@ def _get_lan_addresses(port: int) -> list[str]:
         except OSError:
             continue
 
-    # 去重并保持顺序
     seen = set()
     unique = []
     for addr in addresses:
@@ -57,16 +57,16 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.session_service import SessionService
 
     store = JsonStore(config["storage_dir"])
-    app.config["SESSION_SERVICE"] = SessionService(
+    session_service = SessionService(
         store=store,
         lan_addresses=app.config["LAN_ADDRESSES"],
         ttl_minutes=config["capture_session_ttl_minutes"],
     )
+    app.config["SESSION_SERVICE"] = session_service
 
     from .services.file_validator import FileValidator
     from .services.page_service import PageService
 
-    session_service = app.config["SESSION_SERVICE"]
     file_validator = FileValidator(
         max_size_mb=config["max_upload_file_size_mb"],
         base_dir="pages",
@@ -80,11 +80,28 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     )
     app.config["PAGE_SERVICE"] = page_service
 
+    from .services.schema_service import SchemaService
+
+    schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
+                               "medical_record.v1.yaml")
+    schema_service = SchemaService(schema_path)
+    app.config["SCHEMA_SERVICE"] = schema_service
+
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
-    orchestrator = ProcessingOrchestrator(store=store)
-    app.config["TASK_SERVICE"] = TaskService(store=store, orchestrator=orchestrator)
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        session_service=session_service,
+        schema_validator=schema_service.build_validator(),
+    )
+    app.config["TASK_SERVICE"] = TaskService(
+        store=store,
+        orchestrator=orchestrator,
+        schema_provider=schema_service.get_current,
+    )
+
+    app.logger.warning("算法模块未配置")
 
     from .routes.system import system_bp
     app.register_blueprint(system_bp)
@@ -92,8 +109,10 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .routes.capture_session import capture_session_bp
     from .routes.mobile import mobile_bp
     from .routes.task import task_bp
+    from .routes.schema import schema_bp
     app.register_blueprint(capture_session_bp)
     app.register_blueprint(mobile_bp)
     app.register_blueprint(task_bp)
+    app.register_blueprint(schema_bp)
 
     return app

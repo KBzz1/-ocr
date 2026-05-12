@@ -1,14 +1,21 @@
 from datetime import datetime, timezone
+from typing import Callable
 
 from ..enums import TaskStatus
-from ..errors import AppError, ErrorCode
+from ..errors import ErrorCode, AppError
 from ..storage.json_store import JsonStore
 
 
 class TaskService:
-    def __init__(self, store: JsonStore, orchestrator=None):
+    def __init__(
+        self,
+        store: JsonStore,
+        orchestrator=None,
+        schema_provider: Callable[[], dict] | None = None,
+    ):
         self._store = store
         self._orchestrator = orchestrator
+        self._schema_provider = schema_provider
 
     def list_tasks(self, status: str | None = None) -> list[dict]:
         tasks = [self._normalize_task(task) for task in self._store.list_json("tasks")]
@@ -30,42 +37,18 @@ class TaskService:
         return self._normalize_task(task)
 
     def process(self, task_id: str, schema: dict | None = None) -> dict:
-        task = self._read_task(task_id)
-        task = self._transition(task, TaskStatus.PROCESSING.value, "触发任务处理")
-        task["processing_at"] = self._now()
-        task["error_code"] = None
-        task["error_message"] = None
-        task["failed_at"] = None
-        task.pop("details", None)
-        self._write_task(task)
-        if self._orchestrator:
-            return self._orchestrator.run(task, self, schema=schema)
-        return self.mark_failed(
-            task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "图像处理模块未配置",
-            stage="image_processing", details={"stage": "image_processing", "reason": "module_not_configured"},
-        )
+        task = self._start_processing(task_id, "触发任务处理")
+        return self._run_orchestrator(task, schema=schema)
 
     def retry(self, task_id: str, schema: dict | None = None) -> dict:
         task = self._read_task(task_id)
         if task["status"] != TaskStatus.FAILED.value:
             raise AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
-                message="仅 failed 状态可重试",
-                details={"current": task["status"]},
+                details={"current": task["status"], "target": TaskStatus.PROCESSING.value},
             )
-        task = self._transition(task, TaskStatus.PROCESSING.value, "失败任务重试")
-        task["processing_at"] = self._now()
-        task["error_code"] = None
-        task["error_message"] = None
-        task["failed_at"] = None
-        task.pop("details", None)
-        self._write_task(task)
-        if self._orchestrator:
-            return self._orchestrator.run(task, self, schema=schema)
-        return self.mark_failed(
-            task_id, "ALGORITHM_MODULE_NOT_CONFIGURED", "图像处理模块未配置",
-            stage="image_processing", details={"stage": "image_processing", "reason": "module_not_configured"},
-        )
+        task = self._start_processing(task_id, "失败任务重试")
+        return self._run_orchestrator(task, schema=schema)
 
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
@@ -74,12 +57,18 @@ class TaskService:
         self._write_task(task)
         return task
 
-    def mark_failed(self, task_id: str, error_code: str, message: str,
-                    stage: str = "processing", details: dict | None = None) -> dict:
+    def mark_failed(
+        self,
+        task_id: str,
+        error_code: str,
+        error_message: str,
+        stage: str = "processing",
+        details: dict | None = None,
+    ) -> dict:
         task = self._read_task(task_id)
-        task = self._transition(task, TaskStatus.FAILED.value, message)
+        task = self._transition(task, TaskStatus.FAILED.value, error_message)
         task["error_code"] = error_code
-        task["error_message"] = message
+        task["error_message"] = error_message
         task["failed_at"] = self._now()
         task["details"] = {"stage": stage, **(details or {})}
         self._write_task(task)
@@ -96,6 +85,37 @@ class TaskService:
         task = self._transition(task, TaskStatus.EXPORTED.value, "导出完成")
         self._write_task(task)
         return task
+
+    def _start_processing(self, task_id: str, reason: str) -> dict:
+        task = self._read_task(task_id)
+        task = self._transition(task, TaskStatus.PROCESSING.value, reason)
+        task["processing_at"] = self._now()
+        task["error_code"] = None
+        task["error_message"] = None
+        task["failed_at"] = None
+        task.pop("details", None)
+        self._write_task(task)
+        return task
+
+    def _run_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
+        if self._orchestrator is None:
+            return self.mark_failed(
+                task["task_id"],
+                ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "图像处理模块未配置",
+                stage="image_processing",
+                details={"stage": "image_processing", "reason": "module_not_configured"},
+            )
+
+        schema_for_run = schema
+        if schema_for_run is None and self._schema_provider is not None:
+            schema_for_run = self._schema_provider()
+        if isinstance(schema_for_run, dict):
+            task["schema_version"] = schema_for_run.get("version")
+            task["document_type"] = schema_for_run.get("document_type")
+            self._write_task(task)
+
+        return self._orchestrator.run(task, self, schema=schema_for_run)
 
     def _read_task(self, task_id: str) -> dict:
         task = self._store.read(f"tasks/{task_id}.json")

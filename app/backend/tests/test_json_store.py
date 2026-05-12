@@ -124,5 +124,12 @@ class TestJsonStoreListJson:
     def test_list_json_rejects_absolute_path(self, tmp_path):
         store = JsonStore(str(tmp_path))
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="路径越权"):
             store.list_json(str(tmp_path / "tasks"))
+
+    def test_list_json_skips_missing_json_file_race(self, tmp_path):
+        store = JsonStore(str(tmp_path))
+        store.write("tasks/a.json", {"task_id": "a"})
+        os.remove(tmp_path / "tasks" / "a.json")
+
+        assert store.list_json("tasks") == []
