@@ -53,9 +53,24 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     register_error_handlers(app)
 
+    from .storage.json_store import JsonStore
+    from .services.session_service import SessionService
+
+    store = JsonStore(config["storage_dir"])
+    app.config["SESSION_SERVICE"] = SessionService(
+        store=store,
+        lan_addresses=app.config["LAN_ADDRESSES"],
+        ttl_minutes=config["capture_session_ttl_minutes"],
+    )
+
     app.logger.warning("算法模块未配置")
 
     from .routes.system import system_bp
     app.register_blueprint(system_bp)
+
+    from .routes.capture_session import capture_session_bp
+    from .routes.mobile import mobile_bp
+    app.register_blueprint(capture_session_bp)
+    app.register_blueprint(mobile_bp)
 
     return app
