@@ -7,6 +7,7 @@
 | `SESSION_NOT_FOUND` | 404 | 会话不存在 |
 | `SESSION_EXPIRED` | 409 | 会话已过期 |
 | `SESSION_LOCKED` | 409 | 会话已完成采集，禁止编辑 |
+| `SESSION_EMPTY` | 400 | 会话没有已上传页面，不能完成采集 |
 | `UNSUPPORTED_FILE_TYPE` | 400 | 非图片文件 |
 | `FILE_TOO_LARGE` | 400 | 图片超过限制 |
 | `INVALID_QUAD_POINTS` | 400 | 框选坐标格式非法 |

@@ -7,6 +7,7 @@ class ErrorCode(Enum):
     SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", 404, "采集会话不存在")
     SESSION_EXPIRED = ("SESSION_EXPIRED", 409, "采集会话已过期")
     SESSION_LOCKED = ("SESSION_LOCKED", 409, "采集会话已完成采集，禁止编辑")
+    SESSION_EMPTY = ("SESSION_EMPTY", 400, "采集会话没有已上传页面")
     UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", 400, "不支持的文件类型")
     FILE_TOO_LARGE = ("FILE_TOO_LARGE", 400, "文件超过大小限制")
     INVALID_QUAD_POINTS = ("INVALID_QUAD_POINTS", 400, "框选坐标格式非法")
