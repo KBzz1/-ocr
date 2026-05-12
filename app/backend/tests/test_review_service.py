@@ -154,3 +154,106 @@ class TestReviewServiceRead:
             service.get_or_init("task-001")
 
         assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+class TestReviewServiceFieldActions:
+    def test_confirm_keeps_current_value_when_final_value_omitted(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        review = service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+
+        field = find_field(review, "chief_complaint")
+        assert field["status"] == "confirmed"
+        assert field["final_value"] == "头痛3天"
+        assert field["empty_accepted"] is False
+        assert field["history"][0]["action"] == "confirm"
+
+    def test_modify_updates_final_value_and_preserves_auto_value(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        review = service.update_field(
+            "task-001",
+            "chief_complaint",
+            {"action": "modify", "final_value": "头痛3天，加重1天", "review_note": "按原文修正"},
+        )
+
+        field = find_field(review, "chief_complaint")
+        assert field["status"] == "modified"
+        assert field["auto_value"] == "头痛3天"
+        assert field["final_value"] == "头痛3天，加重1天"
+        assert field["review_note"] == "按原文修正"
+        assert field["history"][0]["from_value"] == "头痛3天"
+        assert field["history"][0]["to_value"] == "头痛3天，加重1天"
+
+    def test_clear_then_accept_empty(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        cleared = service.update_field("task-001", "diagnosis", {"action": "clear"})
+        assert find_field(cleared, "diagnosis")["status"] == "empty"
+        assert find_field(cleared, "diagnosis")["final_value"] == ""
+        assert find_field(cleared, "diagnosis")["empty_accepted"] is False
+
+        accepted = service.update_field("task-001", "diagnosis", {"action": "accept_empty"})
+        assert find_field(accepted, "diagnosis")["status"] == "empty"
+        assert find_field(accepted, "diagnosis")["empty_accepted"] is True
+
+    def test_mark_suspicious_keeps_value_and_note(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        review = service.update_field("task-001", "diagnosis", {"action": "mark_suspicious", "review_note": "来源不清"})
+
+        field = find_field(review, "diagnosis")
+        assert field["status"] == "suspicious"
+        assert field["final_value"] == "上呼吸道感染"
+        assert field["review_note"] == "来源不清"
+
+    def test_multiple_changes_preserve_history_order(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        service.update_field("task-001", "chief_complaint", {"action": "modify", "final_value": "改1"})
+        service.update_field("task-001", "chief_complaint", {"action": "modify", "final_value": "改2"})
+        review = service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+
+        history = find_field(review, "chief_complaint")["history"]
+        assert [h["action"] for h in history] == ["modify", "modify", "confirm"]
+        assert history[0]["from_value"] == "头痛3天"
+        assert history[1]["from_value"] == "改1"
+        assert history[2]["to_value"] == "改2"
+
+    def test_invalid_action_returns_invalid_request_params(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+
+        with pytest.raises(AppError) as exc_info:
+            service.update_field("task-001", "chief_complaint", {"action": "delete"})
+
+        assert exc_info.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+
+    def test_processing_task_cannot_update_review(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        write_task(store, status="processing")
+
+        with pytest.raises(AppError) as exc_info:
+            service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+
+        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code

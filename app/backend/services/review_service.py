@@ -105,5 +105,70 @@ class ReviewService:
                 details={"current": task["status"]},
             )
 
+    def update_field(self, task_id: str, field_key: str, payload: dict) -> dict:
+        task = self._task_service.get_task(task_id)
+        self._ensure_writable(task)
+        review = self.get_or_init(task_id)
+
+        action = payload.get("action")
+        review_note = payload.get("review_note")
+        if review_note is not None and not isinstance(review_note, str):
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="review_note 必须是字符串或 null")
+
+        field = self._find_field(review, field_key)
+        old_value = field["final_value"]
+        now = self._now()
+
+        if action == "confirm":
+            if "final_value" in payload:
+                if not isinstance(payload["final_value"], str):
+                    raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="final_value 必须是字符串")
+                field["final_value"] = payload["final_value"]
+            field["status"] = "confirmed"
+            field["empty_accepted"] = False
+        elif action == "modify":
+            if not isinstance(payload.get("final_value"), str):
+                raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="modify 必须提供字符串 final_value")
+            field["final_value"] = payload["final_value"]
+            field["status"] = "modified"
+            field["empty_accepted"] = False
+        elif action == "clear":
+            field["final_value"] = ""
+            field["status"] = "empty"
+            field["empty_accepted"] = False
+        elif action == "accept_empty":
+            if field["status"] != "empty" or field["final_value"] != "":
+                raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="只有已清空字段可以接受空值")
+            field["status"] = "empty"
+            field["empty_accepted"] = True
+        elif action == "mark_suspicious":
+            field["status"] = "suspicious"
+            field["empty_accepted"] = False
+        else:
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message=f"未知审核动作: {action}")
+
+        field["review_note"] = review_note
+        field["reviewed_at"] = now
+        field["updated_at"] = now
+        field.setdefault("history", []).append(
+            {
+                "action": action,
+                "from_value": old_value,
+                "to_value": field["final_value"],
+                "review_note": review_note,
+                "changed_at": now,
+            }
+        )
+        review["updated_at"] = now
+        review["summary"] = self._build_summary(review["fields"])
+        self._store.write(f"results/{task_id}/review_result.json", review)
+        return review
+
+    def _find_field(self, review: dict, field_key: str) -> dict:
+        for field in review["fields"]:
+            if field["field_key"] == field_key:
+                return field
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message=f"字段 {field_key} 不在审核结果中")
+
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
