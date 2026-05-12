@@ -19,7 +19,7 @@
 |------|------|-------------|------|
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
 | PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
-| PR-BE-003/011 图片上传与元数据 | 进行中 | `docs/superpowers/specs/2026-05-12-file-upload-design.md`、`docs/superpowers/plans/2026-05-12-file-upload-plan.md` | 接入已合并的 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理 |
+| PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；上传失败补偿 (BE-03-08) 延后 |
 
 ## 后端任务
 
@@ -79,31 +79,31 @@
 
 ### BE-03 图片上传与文件管理（PR-BE-003、PR-BE-011）
 
-- [~] **BE-03-01 上传配置和参数错误码**
+- [x] **BE-03-01 上传配置和参数错误码**
   - 范围：文件大小、quad 最小面积配置；必要时新增 `INVALID_REQUEST_PARAMS`。
   - 边界：共享错误码变更必须同步 `docs/Shared/error-codes.md` 和测试。
 
-- [~] **BE-03-02 文件类型和大小校验**
+- [x] **BE-03-02 文件类型和大小校验**
   - 范围：jpg/jpeg/png/bmp magic bytes、大小限制、拒绝伪装文件。
   - 边界：不信任文件名和 Content-Type。
 
-- [~] **BE-03-03 路径和文件名安全**
+- [x] **BE-03-03 路径和文件名安全**
   - 范围：基于 page_id 生成文件名，拒绝路径穿越和危险字符。
   - 边界：不使用用户原始文件名作为保存路径。
 
-- [~] **BE-03-04 quad_points 校验**
+- [x] **BE-03-04 quad_points 校验**
   - 范围：四点、数值、范围、自相交、面积过小；缺失时保存 null。
   - 边界：不做裁剪、透视矫正或边界自动识别。
 
-- [~] **BE-03-05 上传 API**
+- [x] **BE-03-05 上传 API**
   - 范围：`POST /api/mobile/{session_id}/pages` 接收原图、图片尺寸、可选 quad。
   - 边界：必须调用 PR-BE-002 会话服务分配 page_id/page_no，不独立计算页序。
 
-- [~] **BE-03-06 页面元数据持久化**
+- [x] **BE-03-06 页面元数据持久化**
   - 范围：保存 `original_image_path`、`processed_image_path: null`、尺寸、quad、上传时间。
   - 边界：processed 路径由后续外部算法成功返回后再写入。
 
-- [~] **BE-03-07 upload_ref 回写**
+- [x] **BE-03-07 upload_ref 回写**
   - 范围：上传成功后把页面元数据相对路径写回会话 `pages[].upload_ref`。
   - 边界：会话 pages 是唯一页序来源。
 
@@ -347,8 +347,8 @@
 
 ## 建议执行顺序
 
-1. 完成 `BE-02` 采集会话管理。
-2. 并行完成 `BE-03` 图片上传与元数据，但必须等 `BE-02` 的会话 pages 契约稳定后合并。
+1. ~~完成 `BE-02` 采集会话管理。~~ ✅
+2. ~~并行完成 `BE-03` 图片上传与元数据，但必须等 `BE-02` 的会话 pages 契约稳定后合并。~~ ✅
 3. 开始 `FE-01` 和 `FE-02` 的基础页面，先接会话和上传 API。
 4. 完成 `BE-04` 任务生命周期和 `BE-05` 算法端口失败契约。
 5. 完成 `BE-06` schema、`BE-07` 审核、`BE-08` 导出。
