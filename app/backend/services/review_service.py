@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Callable
 
-from ..enums import TaskStatus
+from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
 
@@ -67,7 +67,7 @@ class ReviewService:
                     "evidence": item.get("evidence"),
                     "page_no": item.get("page_no"),
                     "confidence": item.get("confidence"),
-                    "status": "unreviewed",
+                    "status": FieldStatus.UNREVIEWED.value,
                     "empty_accepted": False,
                     "review_note": None,
                     "reviewed_at": None,
@@ -80,12 +80,12 @@ class ReviewService:
     def _build_summary(self, fields: list[dict]) -> dict:
         return {
             "total_count": len(fields),
-            "unreviewed_count": sum(1 for f in fields if f["status"] == "unreviewed"),
-            "confirmed_count": sum(1 for f in fields if f["status"] == "confirmed"),
-            "modified_count": sum(1 for f in fields if f["status"] == "modified"),
-            "suspicious_count": sum(1 for f in fields if f["status"] == "suspicious"),
-            "empty_count": sum(1 for f in fields if f["status"] == "empty"),
-            "empty_unaccepted_count": sum(1 for f in fields if f["status"] == "empty" and not f["empty_accepted"]),
+            "unreviewed_count": sum(1 for f in fields if f["status"] == FieldStatus.UNREVIEWED.value),
+            "confirmed_count": sum(1 for f in fields if f["status"] == FieldStatus.CONFIRMED.value),
+            "modified_count": sum(1 for f in fields if f["status"] == FieldStatus.MODIFIED.value),
+            "suspicious_count": sum(1 for f in fields if f["status"] == FieldStatus.SUSPICIOUS.value),
+            "empty_count": sum(1 for f in fields if f["status"] == FieldStatus.EMPTY.value),
+            "empty_unaccepted_count": sum(1 for f in fields if f["status"] == FieldStatus.EMPTY.value and not f["empty_accepted"]),
             "missing_evidence_count": sum(1 for f in fields if not f.get("evidence")),
         }
 
@@ -117,6 +117,22 @@ class ReviewService:
 
         field = self._find_field(review, field_key)
         old_value = field["final_value"]
+
+        # Guard: skip write when the action is a no-op
+        new_value = payload.get("final_value")
+        if action == "confirm" and field["status"] == FieldStatus.CONFIRMED.value and new_value is None:
+            return review
+        if action == "confirm" and field["status"] == FieldStatus.CONFIRMED.value and new_value == old_value:
+            return review
+        if action == "modify" and field["status"] == FieldStatus.MODIFIED.value and new_value == old_value:
+            return review
+        if action == "clear" and field["status"] == FieldStatus.EMPTY.value and old_value == "":
+            return review
+        if action == "accept_empty" and field["empty_accepted"]:
+            return review
+        if action == "mark_suspicious" and field["status"] == FieldStatus.SUSPICIOUS.value:
+            return review
+
         now = self._now()
 
         if action == "confirm":
@@ -124,25 +140,25 @@ class ReviewService:
                 if not isinstance(payload["final_value"], str):
                     raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="final_value 必须是字符串")
                 field["final_value"] = payload["final_value"]
-            field["status"] = "confirmed"
+            field["status"] = FieldStatus.CONFIRMED.value
             field["empty_accepted"] = False
         elif action == "modify":
             if not isinstance(payload.get("final_value"), str):
                 raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="modify 必须提供字符串 final_value")
             field["final_value"] = payload["final_value"]
-            field["status"] = "modified"
+            field["status"] = FieldStatus.MODIFIED.value
             field["empty_accepted"] = False
         elif action == "clear":
             field["final_value"] = ""
-            field["status"] = "empty"
+            field["status"] = FieldStatus.EMPTY.value
             field["empty_accepted"] = False
         elif action == "accept_empty":
-            if field["status"] != "empty" or field["final_value"] != "":
+            if field["status"] != FieldStatus.EMPTY.value or field["final_value"] != "":
                 raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="只有已清空字段可以接受空值")
-            field["status"] = "empty"
+            field["status"] = FieldStatus.EMPTY.value
             field["empty_accepted"] = True
         elif action == "mark_suspicious":
-            field["status"] = "suspicious"
+            field["status"] = FieldStatus.SUSPICIOUS.value
             field["empty_accepted"] = False
         else:
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message=f"未知审核动作: {action}")
@@ -170,25 +186,25 @@ class ReviewService:
         review = self.get_or_init(task_id)
         summary = self._build_summary(review["fields"])
 
-        unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == "unreviewed"]
-        suspicious = [f["field_key"] for f in review["fields"] if f["status"] == "suspicious"]
+        unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.UNREVIEWED.value]
+        suspicious = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.SUSPICIOUS.value]
         empty_unaccepted = [
             f["field_key"]
             for f in review["fields"]
-            if f["status"] == "empty" and not f["empty_accepted"]
+            if f["status"] == FieldStatus.EMPTY.value and not f["empty_accepted"]
         ]
         if not review["fields"] or unreviewed or suspicious or empty_unaccepted:
             raise AppError(
                 ErrorCode.REVIEW_VALIDATION_FAILED,
                 message="审核确认校验失败",
                 details={
-                    "unreviewed": unreviewed,
-                    "suspicious": suspicious,
+                    FieldStatus.UNREVIEWED.value: unreviewed,
+                    FieldStatus.SUSPICIOUS.value: suspicious,
                     "empty_unaccepted": empty_unaccepted,
                     "missing_evidence_count": summary["missing_evidence_count"],
                 },
             )
-        return self._task_service.mark_confirmed(task_id, review_summary=summary)
+        return self._task_service.mark_confirmed(task_id, review_summary=summary, task=task)
 
     def _find_field(self, review: dict, field_key: str) -> dict:
         for field in review["fields"]:

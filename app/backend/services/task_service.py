@@ -74,8 +74,8 @@ class TaskService:
         self._write_task(task)
         return task
 
-    def mark_confirmed(self, task_id: str, review_summary: dict | None = None) -> dict:
-        task = self._read_task(task_id)
+    def mark_confirmed(self, task_id: str, review_summary: dict | None = None, task: dict | None = None) -> dict:
+        task = task or self._read_task(task_id)
         task = self._transition(task, TaskStatus.CONFIRMED.value, "审核确认")
         task["confirmed_at"] = self._now()
         if review_summary is not None:
@@ -136,6 +136,7 @@ class TaskService:
         normalized.setdefault("failed_at", None)
         normalized.setdefault("processing_at", None)
         normalized.setdefault("ready_at", None)
+        normalized.setdefault("confirmed_at", None)
         normalized.setdefault(
             "status_history",
             [
