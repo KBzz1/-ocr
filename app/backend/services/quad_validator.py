@@ -1,6 +1,8 @@
 import json
 import math
 
+from ..errors import AppError, ErrorCode
+
 
 def validate_quad_points(
     quad_points_raw: str | None,
@@ -11,8 +13,6 @@ def validate_quad_points(
     """校验 quad_points。合法返回坐标列表，缺失返回 None，非法抛出 AppError。"""
     if quad_points_raw is None or quad_points_raw == "":
         return None
-
-    from ..errors import AppError, ErrorCode
 
     try:
         points = json.loads(quad_points_raw)

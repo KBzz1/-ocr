@@ -33,7 +33,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
 
         full = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
         assert os.path.isdir(full)
@@ -46,7 +46,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
 
         meta_dir = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
         meta_path = os.path.join(meta_dir, f"{page_id}.json")
@@ -63,7 +63,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
         assert result["page_id"] == page_id
         assert result["session_id"] == session["session_id"]
         assert result["page_no"] == 1
@@ -78,7 +78,7 @@ class TestPageService:
         updated = ss.add_page(session["session_id"])
         page2 = updated["pages"][-1]
 
-        result = ps.save(session["session_id"], page2["page_id"], _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page2["page_id"], page2["page_no"], _make_jpg(), 1920, 1080)
         assert result["page_no"] == page2["page_no"]
         assert result["page_no"] == 2
 
@@ -88,7 +88,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
 
         current = ss.get(session["session_id"])
         assert current["pages"][0]["upload_ref"] is not None
@@ -100,7 +100,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
         assert result["quad_points"] is None
 
     def test_quad_points_preserved_when_valid(self, tmp_path):
@@ -110,7 +110,7 @@ class TestPageService:
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
         quad = [[0, 0], [1920, 0], [1920, 1080], [0, 1080]]
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080,
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080,
                          quad_points_raw=json.dumps(quad))
         assert result["quad_points"] == quad
 
@@ -119,11 +119,11 @@ class TestPageService:
         ss = ps._session_service
         s1 = ss.create()
         p1 = ss.add_page(s1["session_id"])["pages"][0]["page_id"]
-        ps.save(s1["session_id"], p1, _make_jpg(), 1920, 1080)
+        ps.save(s1["session_id"], p1, 1, _make_jpg(), 1920, 1080)
 
         s2 = ss.create()
         p2 = ss.add_page(s2["session_id"])["pages"][0]["page_id"]
-        ps.save(s2["session_id"], p2, _make_jpg(), 1920, 1080)
+        ps.save(s2["session_id"], p2, 1, _make_jpg(), 1920, 1080)
 
         d1 = os.path.join(str(tmp_path), "data", "pages", s1["session_id"])
         d2 = os.path.join(str(tmp_path), "data", "pages", s2["session_id"])
@@ -137,7 +137,7 @@ class TestPageService:
         session = ss.create()
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
-        result = ps.save(session["session_id"], page_id, _make_jpg(), 1920, 1080)
+        result = ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
         assert result["processed_image_path"] is None
 
     def test_image_width_height_must_be_positive(self, tmp_path):
@@ -148,7 +148,7 @@ class TestPageService:
         page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
 
         with pytest.raises(AppError) as exc_info:
-            ps.save(session["session_id"], page_id, _make_jpg(), 0, 1080)
+            ps.save(session["session_id"], page_id, 1, _make_jpg(), 0, 1080)
         assert exc_info.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
 
     def test_file_save_failure_keeps_upload_ref_null(self, tmp_path):
@@ -160,7 +160,7 @@ class TestPageService:
 
         big = b'\xff\xd8\xff\xe0' + b'\x00' * (2 * 1024 * 1024)
         try:
-            ps.save(session["session_id"], page_id, big, 1920, 1080)
+            ps.save(session["session_id"], page_id, 1, big, 1920, 1080)
         except AppError:
             pass
 

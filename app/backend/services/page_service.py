@@ -27,6 +27,7 @@ class PageService:
         self,
         session_id: str,
         page_id: str,
+        page_no: int,
         image_data: bytes,
         image_width: int,
         image_height: int,
@@ -46,23 +47,19 @@ class PageService:
             quad_points_raw, image_width, image_height, self._min_quad_area_ratio
         )
 
-        # get page_no from session
-        session = self._session_service.get(session_id)
-        page = next(p for p in session["pages"] if p["page_id"] == page_id)
-
         rel_path = self._file_validator.build_path(session_id, page_id, ext)
-
-        # write file (absolute path from storage_dir + rel_path)
         abs_image_path = os.path.join(self._storage_dir, rel_path)
         os.makedirs(os.path.dirname(abs_image_path), exist_ok=True)
         with open(abs_image_path, "wb") as f:
             f.write(image_data)
 
-        # write metadata
+        meta_rel = self._file_validator.build_path(session_id, page_id, "json")
+        abs_meta_path = os.path.join(self._storage_dir, meta_rel)
+
         meta = {
             "page_id": page_id,
             "session_id": session_id,
-            "page_no": page["page_no"],
+            "page_no": page_no,
             "original_image_path": abs_image_path,
             "processed_image_path": None,
             "image_width": image_width,
@@ -71,12 +68,8 @@ class PageService:
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        meta_rel = self._file_validator.build_path(session_id, page_id, "json")
-        abs_meta_path = os.path.join(self._storage_dir, meta_rel)
-        with open(abs_meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
+        self._store.write(meta_rel, meta)
 
-        # write back upload_ref
         self._session_service.attach_page_upload(session_id, page_id, abs_meta_path)
 
         return meta

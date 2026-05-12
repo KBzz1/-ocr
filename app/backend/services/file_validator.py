@@ -1,6 +1,8 @@
 import os
 import re
 
+from ..errors import AppError, ErrorCode
+
 _MAGIC_BYTES = {
     b'\xff\xd8\xff': "jpg",
     b'\x89PNG': "png",
@@ -24,14 +26,11 @@ class FileValidator:
 
     def validate(self, data: bytes) -> dict:
         if len(data) == 0:
-            from ..errors import AppError, ErrorCode
             raise AppError(ErrorCode.UNSUPPORTED_FILE_TYPE)
         if len(data) > self._max_size_bytes:
-            from ..errors import AppError, ErrorCode
             raise AppError(ErrorCode.FILE_TOO_LARGE)
         header = data[:_MAX_HEADER_LEN]
         for magic, ext in _MAGIC_BYTES.items():
             if header.startswith(magic):
                 return {"ext": ext}
-        from ..errors import AppError, ErrorCode
         raise AppError(ErrorCode.UNSUPPORTED_FILE_TYPE)

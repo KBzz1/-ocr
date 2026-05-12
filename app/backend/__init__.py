@@ -69,7 +69,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     session_service = app.config["SESSION_SERVICE"]
     file_validator = FileValidator(
         max_size_mb=config["max_upload_file_size_mb"],
-        base_dir="data/pages",
+        base_dir="pages",
     )
     page_service = PageService(
         session_service=session_service,
