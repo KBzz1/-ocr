@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "model_dir": "./models",
     "storage_dir": "./data",
     "export_dir": "./exports",
+    "capture_session_ttl_minutes": 30,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,6 +54,11 @@ def _flatten_config(raw: dict) -> dict:
         flattened["storage_dir"] = paths_config["storage_dir"]
     if "export_dir" in paths_config:
         flattened["export_dir"] = paths_config["export_dir"]
+
+    sessions_config = raw.get("sessions", {})
+    if "capture_session_ttl_minutes" in sessions_config:
+        flattened["capture_session_ttl_minutes"] = sessions_config["capture_session_ttl_minutes"]
+
     return flattened
 
 
@@ -78,6 +84,10 @@ def _validate_config(config: dict):
             os.makedirs(path, exist_ok=True)
         except OSError:
             raise ValueError(f"路径不可写: {path}")
+
+    ttl = config["capture_session_ttl_minutes"]
+    if not isinstance(ttl, int) or ttl <= 0:
+        raise ValueError(f"采集会话 TTL 必须为正整数，当前值: {ttl}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

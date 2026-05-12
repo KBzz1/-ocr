@@ -135,3 +135,34 @@ class TestDeepMerge:
         config = load_config(str(tmp_path))
         assert "log_dir" in config
         assert "log" in config["log_dir"] or config["log_dir"] == ""
+
+
+class TestSessionConfig:
+    def test_default_capture_session_ttl(self):
+        config = load_config()
+        assert config["capture_session_ttl_minutes"] == 30
+
+    def test_capture_session_ttl_from_yaml(self, tmp_path):
+        import yaml
+
+        default_yaml = {
+            "sessions": {"capture_session_ttl_minutes": 15},
+        }
+        with open(tmp_path / "default.yaml", "w", encoding="utf-8") as f:
+            yaml.safe_dump(default_yaml, f)
+
+        config = load_config(str(tmp_path))
+        assert config["capture_session_ttl_minutes"] == 15
+
+    def test_capture_session_ttl_must_be_positive(self, tmp_path):
+        import yaml
+        import pytest
+
+        default_yaml = {
+            "sessions": {"capture_session_ttl_minutes": 0},
+        }
+        with open(tmp_path / "default.yaml", "w", encoding="utf-8") as f:
+            yaml.safe_dump(default_yaml, f)
+
+        with pytest.raises(ValueError, match="采集会话 TTL"):
+            load_config(str(tmp_path))
