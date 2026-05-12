@@ -15,6 +15,13 @@ class FileValidator:
         self._max_size_bytes = max_size_mb * 1024 * 1024
         self._base_dir = base_dir
 
+    def build_path(self, session_id: str, page_id: str, ext: str) -> str:
+        """生成安全保存路径，拒绝路径穿越字符。返回相对路径。"""
+        for value in (session_id, page_id, ext):
+            if not _SAFE_ID_PATTERN.match(value):
+                raise ValueError("非法路径字符")
+        return os.path.join(self._base_dir, session_id, f"{page_id}.{ext}")
+
     def validate(self, data: bytes) -> dict:
         if len(data) == 0:
             from ..errors import AppError, ErrorCode

@@ -55,6 +55,32 @@ class TestMagicBytesDetection:
         assert result["ext"] == "png"
 
 
+class TestPathSafety:
+    def test_rejects_path_traversal(self):
+        validator = make_validator()
+        dangerous = ["../etc/passwd", "..\\windows", "sess/../etc", "~/root"]
+        for sid in dangerous:
+            with pytest.raises(ValueError):
+                validator.build_path(sid, "abc123", "jpg")
+
+    def test_rejects_null_byte(self):
+        validator = make_validator()
+        with pytest.raises(ValueError):
+            validator.build_path("abc\x00def", "abc123", "jpg")
+
+    def test_accepts_valid_ids(self):
+        validator = make_validator()
+        path = validator.build_path("550e8400-e29b-41d4-a716-446655440000",
+                                     "660e8400-e29b-41d4-a716-446655440001", "jpg")
+        assert path.endswith(".jpg")
+        assert "550e8400" in path
+
+    def test_relative_path_stays_within_pages_dir(self):
+        validator = make_validator()
+        path = validator.build_path("sess-1", "page-1", "png")
+        assert ".." not in path
+
+
 class TestFileSizeValidation:
     def test_rejects_file_exceeding_size_limit(self):
         validator = make_validator(max_size_mb=1)
