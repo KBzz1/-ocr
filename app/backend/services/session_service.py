@@ -103,7 +103,28 @@ class SessionService:
 
     def finish(self, session_id: str) -> dict:
         session = self.get(session_id)
+
+        if session["status"] == "locked":
+            return session
+
         self._ensure_editable(session)
+
+        now = datetime.now(timezone.utc)
+        task_id = str(uuid.uuid4())
+        page_order = [page["page_id"] for page in session["pages"]]
+        task = {
+            "task_id": task_id,
+            "session_id": session_id,
+            "status": "uploaded",
+            "created_at": now.isoformat(),
+            "page_count": len(page_order),
+            "page_order": page_order,
+            "source": "capture_session",
+        }
+        self._store.write(f"tasks/{task_id}.json", task)
+
         session["status"] = "locked"
-        session["locked_at"] = datetime.now(timezone.utc).isoformat()
+        session["locked_at"] = now.isoformat()
+        session["task_id"] = task_id
+        session["page_count"] = len(session["pages"])
         return self._persist_session(session)

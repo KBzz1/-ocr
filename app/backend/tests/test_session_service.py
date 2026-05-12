@@ -182,3 +182,72 @@ class TestSessionPages:
             service.add_page(session["session_id"])
 
         assert exc_info.value.code == ErrorCode.SESSION_LOCKED.code
+
+
+class TestSessionFinish:
+    def test_finish_locks_active_session_and_sets_locked_at(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        finished = service.finish(session["session_id"])
+
+        assert finished["status"] == "locked"
+        assert finished["locked_at"] is not None
+
+    def test_finish_creates_task_stub_with_frozen_page_order(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"])
+        service.add_page(session["session_id"])
+        current = service.get(session["session_id"])
+        expected_order = [p["page_id"] for p in current["pages"]]
+
+        finished = service.finish(session["session_id"])
+
+        task = JsonStore(str(tmp_path)).read(f"tasks/{finished['task_id']}.json")
+        assert task["task_id"] == finished["task_id"]
+        assert task["session_id"] == session["session_id"]
+        assert task["status"] == "uploaded"
+        assert task["page_count"] == 2
+        assert task["page_order"] == expected_order
+        assert task["source"] == "capture_session"
+
+    def test_finish_persists_task_id_to_session(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        finished = service.finish(session["session_id"])
+        persisted = JsonStore(str(tmp_path)).read(f"sessions/{session['session_id']}.json")
+
+        assert persisted["task_id"] == finished["task_id"]
+
+    def test_finish_idempotent_on_locked_session(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"])
+
+        first = service.finish(session["session_id"])
+        second = service.finish(session["session_id"])
+
+        assert second["task_id"] == first["task_id"]
+        assert second["locked_at"] == first["locked_at"]
+        assert len(os.listdir(tmp_path / "tasks")) == 1
+
+    def test_finish_expired_session_raises_session_expired(self, tmp_path):
+        service = make_service(tmp_path, ttl_minutes=1)
+        session = service.create()
+        session["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        JsonStore(str(tmp_path)).write(f"sessions/{session['session_id']}.json", session)
+
+        with pytest.raises(AppError) as exc_info:
+            service.finish(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_EXPIRED.code
+
+    def test_finish_nonexistent_session_raises_session_not_found(self, tmp_path):
+        service = make_service(tmp_path)
+
+        with pytest.raises(AppError) as exc_info:
+            service.finish("missing")
+
+        assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
