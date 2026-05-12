@@ -10,6 +10,18 @@
 
 ---
 
+## 并行执行与合并边界
+
+BE-06 可以与 BE-05 外部算法端口并行执行，但必须按以下边界保持无缝合并：
+
+- BE-06 拥有 schema 文件、schema loader、`SchemaService`、`SchemaValidator` 和 `GET /api/schema/current`。
+- BE-06 不修改 BE-05 的 `app/backend/services/algorithm_ports/` 包，不实现图像处理、OCR、文档解析、LLM 字段抽取、规则抽取或字段值生成。
+- BE-05 只接收调用方显式传入的 schema dict；不得读取 `app/config/schemas/medical_record.v1.yaml`，不得构造默认 schema，schema 外字段校验必须委托 BE-06 的 `SchemaValidator`。
+- 两个分支都会修改 `app/backend/__init__.py`。合并时保留两块装配：`SCHEMA_SERVICE` 初始化和 schema route 注册来自 BE-06；`ProcessingOrchestrator`/`TASK_SERVICE` 装配来自 BE-05。不要用一方整文件覆盖另一方。
+- 推荐合并顺序：先合并 BE-06，再合并 BE-05。BE-05 合并时把 `SchemaService.get_current()` 的返回值传给处理入口，把 `SchemaService.build_validator()` 注入 orchestrator。
+- 如果必须先合并 BE-05，BE-05 必须继续使用测试显式传入的 schema dict；合并 BE-06 后再做装配层小补丁接入 `SchemaService`，不能在 BE-05 内临时复制 schema loader。
+- 并行执行期间只允许使用 conda 环境 `manzufei_ocr` 运行验证命令。
+
 ## 文件结构
 
 | 文件 | 操作 | 职责 |
@@ -826,6 +838,12 @@ class TestSchemaValidator:
         ]
         result = validator.validate_candidates(candidates)
         assert result == candidates
+
+    def test_validate_alias_accepts_be05_signature(self):
+        validator = self._make_validator()
+        candidates = [{"field_key": "name", "value": "张三"}]
+        result = validator.validate(candidates, {"version": "1.0.0"})
+        assert result == candidates
 ```
 
 - [ ] **Step 2: 运行测试确认 RED**
@@ -851,6 +869,10 @@ class SchemaValidator:
 
     def __init__(self, allowed_field_keys: set[str]):
         self._allowed = allowed_field_keys
+
+    def validate(self, candidates: list[dict], schema: dict | None = None) -> list[dict]:
+        """BE-05 orchestrator 注入调用入口；schema 参数只为签名兼容，不读取或改写。"""
+        return self.validate_candidates(candidates)
 
     def validate_candidates(self, candidates: list[dict]) -> list[dict]:
         if not candidates:
@@ -878,7 +900,7 @@ class SchemaValidator:
 conda run -n manzufei_ocr python -m pytest app/backend/tests/test_schema_validator.py -v
 ```
 
-预期: 5 tests PASS
+预期: 6 tests PASS
 
 - [ ] **Step 5: Commit**
 
@@ -937,7 +959,7 @@ def get_current_schema():
 
 - [ ] **Step 2: 修改 create_backend_app**
 
-在 `app/backend/__init__.py` 中，找到现有的服务初始化区域。在 `SESSION_SERVICE` 初始化之后追加：
+在 `app/backend/__init__.py` 中，找到现有的服务初始化区域。在 `SESSION_SERVICE` 初始化之后追加。若 BE-05 已经合并并在同一区域创建了 `TASK_SERVICE` 或 `ProcessingOrchestrator`，只追加 `SCHEMA_SERVICE`，不得覆盖 BE-05 的 orchestrator 装配：
 
 ```python
     # 初始化 SchemaService
@@ -955,6 +977,21 @@ def get_current_schema():
     from .routes.schema import schema_bp
     app.register_blueprint(schema_bp)
 ```
+
+如果 BE-05 已经合并，额外在 orchestrator 装配处使用当前 schema 和 validator：
+
+```python
+    schema_service = app.config["SCHEMA_SERVICE"]
+    processing_orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=DefaultImageProcessingPort(),
+        doc_port=DefaultDocumentParsingPort(),
+        field_port=DefaultFieldExtractionPort(),
+        schema_validator=schema_service.build_validator(),
+    )
+```
+
+`TaskService.process()`/`retry()` 调用时由路由或服务装配传入 `schema_service.get_current()`；BE-06 不在本任务中修改 BE-05 端口实现。
 
 - [ ] **Step 3: 冒烟测试确认可启动**
 
