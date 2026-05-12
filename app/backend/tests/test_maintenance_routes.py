@@ -30,7 +30,18 @@ upload:
     )
     schema_dir = tmp_path / "repo" / "app" / "config" / "schemas"
     schema_dir.mkdir(parents=True)
-    (schema_dir / "medical_record.v1.yaml").write_text("version: medical_record.v1\n", encoding="utf-8")
+    (schema_dir / "medical_record.v1.yaml").write_text(
+        "version: \"1.0.0\"\n"
+        "document_type: general_medical_record\n"
+        "field_groups:\n"
+        "  - group_key: basic\n"
+        "    group_label: 基本信息\n"
+        "    fields:\n"
+        "      - field_key: name\n"
+        "        label: 姓名\n"
+        "        type: string\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr("app.backend.config.PROJECT_ROOT", str(tmp_path / "repo"))
     app = create_backend_app(config_dir=str(config_dir))
     app.config["TESTING"] = True

@@ -20,7 +20,6 @@ def make_service(tmp_path):
 
 def test_cleanup_plan_lists_task_scoped_paths_only(tmp_path):
     service, store, _ = make_service(tmp_path)
-    store.write("tasks/task-001.json", {"task_id": "task-001", "session_id": "session-001"})
 
     plan = service.plan_task_cleanup("task-001")
 
@@ -28,12 +27,11 @@ def test_cleanup_plan_lists_task_scoped_paths_only(tmp_path):
     assert plan["requires_confirm"] is True
     assert "results/task-001" in plan["storage_paths"]
     assert "exports/task-001" in plan["export_paths"]
-    assert plan["log_cleanup"] == "日志按轮转策略处理，不按任务物理删除"
+    assert plan["log_cleanup_policy"] == "rotation"
 
 
 def test_cleanup_requires_confirm_true(tmp_path):
     service, store, _ = make_service(tmp_path)
-    store.write("tasks/task-001.json", {"task_id": "task-001", "session_id": "session-001"})
 
     with pytest.raises(AppError) as exc_info:
         service.cleanup_task("task-001", confirm=False)

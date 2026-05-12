@@ -2,14 +2,9 @@ from flask import Blueprint, current_app, request
 
 from ..errors import AppError, ErrorCode
 from ..responses import success
+from . import _safe_event
 
 mobile_bp = Blueprint("mobile", __name__)
-
-
-def _safe_event(event, level="INFO", **payload):
-    log = current_app.config.get("LOCAL_EVENT_LOG")
-    if log is not None:
-        log.safe_write(event, level=level, **payload)
 
 
 def _service():

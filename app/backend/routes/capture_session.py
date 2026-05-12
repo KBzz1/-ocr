@@ -1,17 +1,9 @@
 from flask import Blueprint, request
 
 from ..responses import success
-from . import _get_session_service
+from . import _get_session_service, _safe_event
 
 capture_session_bp = Blueprint("capture_session", __name__)
-
-
-def _safe_event(event, level="INFO", **payload):
-    from flask import current_app
-
-    log = current_app.config.get("LOCAL_EVENT_LOG")
-    if log is not None:
-        log.safe_write(event, level=level, **payload)
 
 
 @capture_session_bp.route("/api/capture-sessions", methods=["POST"])

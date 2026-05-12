@@ -3,18 +3,8 @@ from typing import Callable
 
 from ..enums import TaskStatus
 from ..errors import ErrorCode, AppError
+from ..routes import _safe_event
 from ..storage.json_store import JsonStore
-
-
-def _safe_event(event, level="INFO", **payload):
-    try:
-        from flask import current_app
-
-        log = current_app.config.get("LOCAL_EVENT_LOG")
-        if log is not None:
-            log.safe_write(event, level=level, **payload)
-    except RuntimeError:
-        return
 
 
 class TaskService:

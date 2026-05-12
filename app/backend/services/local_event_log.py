@@ -91,6 +91,7 @@ class LocalEventLog:
         self.backup_count = backup_count
         os.makedirs(self.log_dir, exist_ok=True)
         self.current_path = os.path.join(self.log_dir, "backend-events.jsonl")
+        self._write_count = 0
 
     def write(self, event: str, level: str = "INFO", **payload) -> None:
         if event not in ALLOWED_EVENTS:
@@ -106,6 +107,7 @@ class LocalEventLog:
         }
         with open(self.current_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._write_count += 1
 
     def safe_write(self, event: str, level: str = "INFO", **payload) -> None:
         try:
@@ -114,14 +116,28 @@ class LocalEventLog:
             return
 
     def _rotate_if_needed(self) -> None:
-        if not os.path.exists(self.current_path) or os.path.getsize(self.current_path) < self.max_bytes:
+        if self._write_count % 10 != 0:
+            return
+        try:
+            size = os.path.getsize(self.current_path)
+        except OSError:
+            return
+        if size < self.max_bytes:
             return
         for index in range(self.backup_count - 1, 0, -1):
             src = f"{self.current_path}.{index}"
             dst = f"{self.current_path}.{index + 1}"
-            if os.path.exists(src):
+            try:
                 os.replace(src, dst)
+            except OSError:
+                pass
         if self.backup_count > 0:
-            os.replace(self.current_path, f"{self.current_path}.1")
+            try:
+                os.replace(self.current_path, f"{self.current_path}.1")
+            except OSError:
+                pass
         else:
-            os.remove(self.current_path)
+            try:
+                os.remove(self.current_path)
+            except OSError:
+                pass

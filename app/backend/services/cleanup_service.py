@@ -11,15 +11,12 @@ class CleanupService:
         self._store = store
 
     def plan_task_cleanup(self, task_id: str) -> dict:
-        task = self._store.read(f"tasks/{task_id}.json")
-        session_id = task.get("session_id") if isinstance(task, dict) else None
         return {
             "task_id": task_id,
-            "session_id": session_id,
             "requires_confirm": True,
             "storage_paths": [f"results/{task_id}", f"tasks/{task_id}.json"],
             "export_paths": [f"exports/{task_id}"],
-            "log_cleanup": "日志按轮转策略处理，不按任务物理删除",
+            "log_cleanup_policy": "rotation",
         }
 
     def cleanup_task(self, task_id: str, confirm: bool) -> dict:
@@ -41,7 +38,7 @@ class CleanupService:
                 deleted.append(rel)
             except OSError:
                 failed.append(rel)
-        return {"task_id": task_id, "deleted": deleted, "failed": failed, "log_cleanup": plan["log_cleanup"]}
+        return {"task_id": task_id, "deleted": deleted, "failed": failed, "log_cleanup_policy": "rotation"}
 
     def _delete_under_root(self, root: str, relative_path: str) -> None:
         safe = self._safe_relative_path(relative_path)
