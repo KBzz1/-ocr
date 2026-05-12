@@ -21,6 +21,8 @@ DEFAULT_CONFIG = {
     "storage_dir": "./data",
     "export_dir": "./exports",
     "capture_session_ttl_minutes": 30,
+    "max_upload_file_size_mb": 10,
+    "min_quad_area_ratio": 0.01,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +67,12 @@ def _flatten_config(raw: dict) -> dict:
     if "capture_session_ttl_minutes" in sessions_config:
         flattened["capture_session_ttl_minutes"] = sessions_config["capture_session_ttl_minutes"]
 
+    upload_config = raw.get("upload", {})
+    if "max_file_size_mb" in upload_config:
+        flattened["max_upload_file_size_mb"] = upload_config["max_file_size_mb"]
+    if "min_quad_area_ratio" in upload_config:
+        flattened["min_quad_area_ratio"] = upload_config["min_quad_area_ratio"]
+
     return flattened
 
 
@@ -94,6 +102,13 @@ def _validate_config(config: dict):
     ttl = config["capture_session_ttl_minutes"]
     if not isinstance(ttl, int) or ttl <= 0:
         raise ValueError(f"采集会话 TTL 必须为正整数，当前值: {ttl}")
+
+    max_size = config.get("max_upload_file_size_mb")
+    if not isinstance(max_size, int) or max_size <= 0:
+        raise ValueError(f"max_upload_file_size_mb 必须为正整数，当前值: {max_size}")
+    ratio = config.get("min_quad_area_ratio")
+    if not isinstance(ratio, (int, float)) or not (0 < ratio < 1):
+        raise ValueError(f"min_quad_area_ratio 必须在 (0, 1) 区间内，当前值: {ratio}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

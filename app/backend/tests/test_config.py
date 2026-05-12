@@ -166,3 +166,49 @@ class TestSessionConfig:
 
         with pytest.raises(ValueError, match="采集会话 TTL"):
             load_config(str(tmp_path))
+
+
+def test_upload_max_file_size_mb_default(tmp_path):
+    from app.backend.config import load_config
+    config = load_config(str(tmp_path / "nonexistent"))
+    assert config["max_upload_file_size_mb"] == 10
+
+
+def test_upload_min_quad_area_ratio_default(tmp_path):
+    from app.backend.config import load_config
+    config = load_config(str(tmp_path / "nonexistent"))
+    assert config["min_quad_area_ratio"] == 0.01
+
+
+def test_flatten_upload_config(tmp_path):
+    from app.backend.config import load_config
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text("""
+upload:
+  max_file_size_mb: 20
+  min_quad_area_ratio: 0.02
+""", encoding="utf-8")
+    config = load_config(str(config_dir))
+    assert config["max_upload_file_size_mb"] == 20
+    assert config["min_quad_area_ratio"] == 0.02
+
+
+def test_max_upload_file_size_mb_must_be_positive(tmp_path):
+    import pytest
+    from app.backend.config import load_config
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text("upload:\n  max_file_size_mb: -5\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="max_upload_file_size_mb"):
+        load_config(str(config_dir))
+
+
+def test_min_quad_area_ratio_must_be_between_0_and_1(tmp_path):
+    import pytest
+    from app.backend.config import load_config
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text("upload:\n  min_quad_area_ratio: 2.0\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="min_quad_area_ratio"):
+        load_config(str(config_dir))

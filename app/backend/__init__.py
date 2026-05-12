@@ -5,7 +5,7 @@ from ipaddress import ip_address
 
 from flask import Flask
 
-from .settings import load_config
+from .config import load_config
 from .errors import register_error_handlers
 
 
@@ -62,6 +62,23 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         lan_addresses=app.config["LAN_ADDRESSES"],
         ttl_minutes=config["capture_session_ttl_minutes"],
     )
+
+    from .services.file_validator import FileValidator
+    from .services.page_service import PageService
+
+    session_service = app.config["SESSION_SERVICE"]
+    file_validator = FileValidator(
+        max_size_mb=config["max_upload_file_size_mb"],
+        base_dir="pages",
+    )
+    page_service = PageService(
+        session_service=session_service,
+        file_validator=file_validator,
+        store=store,
+        storage_dir=config["storage_dir"],
+        min_quad_area_ratio=config["min_quad_area_ratio"],
+    )
+    app.config["PAGE_SERVICE"] = page_service
 
     app.logger.warning("算法模块未配置")
 
