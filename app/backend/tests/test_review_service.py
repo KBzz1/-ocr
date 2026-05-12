@@ -155,6 +155,18 @@ class TestReviewServiceRead:
 
         assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
 
+    def test_existing_review_still_checks_current_task_status(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        write_task(store, status="failed")
+
+        with pytest.raises(AppError) as exc_info:
+            service.get_or_init("task-001")
+
+        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
 
 class TestReviewServiceFieldActions:
     def test_confirm_keeps_current_value_when_final_value_omitted(self, tmp_path):

@@ -13,12 +13,13 @@ class ReviewService:
         self._schema_provider = schema_provider
 
     def get_or_init(self, task_id: str) -> dict:
+        task = self._task_service.get_task(task_id)
+        self._ensure_readable(task)
+
         existing = self._store.read(f"results/{task_id}/review_result.json")
         if existing is not None:
             return existing
 
-        task = self._task_service.get_task(task_id)
-        self._ensure_readable(task)
         wrapper = self._store.read(f"results/{task_id}/field_candidates.json")
         candidates = wrapper.get("candidates") if isinstance(wrapper, dict) else None
         if not isinstance(candidates, list) or not candidates:
