@@ -60,4 +60,11 @@ Feature: 采集会话管理
     Given 会话 S001 已过期
     When 调用 POST /api/mobile/S001/finish
     Then 系统应返回 409 和错误码 SESSION_EXPIRED
+
+  Scenario: 无已上传页面时不可完成采集
+    Given 会话 S001 处于 active 状态
+    And 会话 S001 还没有任何已成功上传并写回 upload_ref 的页面
+    When 调用 POST /api/mobile/S001/finish
+    Then 系统应返回 400 和错误码 SESSION_EMPTY
+    And 不应创建病历任务
 ```

@@ -24,6 +24,7 @@
 - BE-SES-008：`POST /api/mobile/{session_id}/finish` 后会话变为 `locked`
 - BE-SES-009：`locked` 会话禁止新增、删除、排序页面，返回 `SESSION_LOCKED`
 - BE-SES-010：完成采集后页面顺序固化，Task 桩记录固化页序
+- BE-SES-011：没有已成功上传页面的会话不可完成采集，返回 `SESSION_EMPTY`
 
 本计划不覆盖：
 
@@ -65,6 +66,8 @@
 ```
 
 `upload_ref` 本阶段固定为 `null`。PR-BE-003 会把真实文件路径和采集元数据接入页面项或页面元数据文件。
+
+PR-BE-003 上传成功后可通过 `SessionService.attach_page_upload(session_id, page_id, upload_ref)` 把页面元数据相对路径写回对应页面项。会话 `pages` 仍是唯一页序来源。
 
 ### Task 桩 JSON
 
@@ -1130,6 +1133,14 @@ Expected: PASS。
 | 锁定后禁止编辑 | `test_locked_session_rejects_page_writes` |
 | 重复完成采集幂等 | `test_finish_idempotent_returns_same_task_id` |
 | 会话过期后不可完成采集 | `test_finish_expired_session_returns_409` |
+| 无已上传页面时不可完成采集 | `test_finish_empty_session_returns_400`、`test_finish_empty_session_raises_session_empty`、`test_finish_placeholder_page_without_upload_ref_returns_400`、`test_finish_placeholder_page_without_upload_ref_raises_session_empty` |
+
+同时确认 PR-BE-003 衔接测试存在：
+
+| 衔接点 | 覆盖测试 |
+|--------|----------|
+| 上传元数据回写页面项 | `test_attach_page_upload_updates_upload_ref` |
+| 锁定后禁止回写上传元数据 | `test_attach_upload_rejects_locked_session` |
 
 - [ ] **Step 5: 确认没有越界实现**
 
@@ -1164,4 +1175,4 @@ git commit -m "test: 验证采集会话 PR-BE-002 行为"
 
 - 所有测试命令使用 `conda run -n manzufei_ocr python -m pytest ...`。
 - 本计划完成后，可以进入 PR-BE-003 图片上传与文件管理：把真实图片文件和 `quad_points` 等采集元数据接入本计划中的页面清单。
-- 若实现中发现需要新增共享错误码，必须先修改 `docs/Shared/error-codes.md` 及相关 BDD/TDD；本计划当前只复用已有 `SESSION_NOT_FOUND`、`SESSION_EXPIRED`、`SESSION_LOCKED`。
+- 本计划新增共享错误码 `SESSION_EMPTY`，已同步 `docs/Shared/error-codes.md` 及相关 BDD/TDD；其余会话错误继续复用 `SESSION_NOT_FOUND`、`SESSION_EXPIRED`、`SESSION_LOCKED`。

@@ -11,14 +11,17 @@ class TestErrorCode:
         assert ErrorCode.SESSION_NOT_FOUND.code == "SESSION_NOT_FOUND"
         assert ErrorCode.TASK_NOT_FOUND.code == "TASK_NOT_FOUND"
         assert ErrorCode.SESSION_EXPIRED.code == "SESSION_EXPIRED"
+        assert ErrorCode.SESSION_EMPTY.code == "SESSION_EMPTY"
 
     def test_http_status_attribute(self):
         assert ErrorCode.SESSION_NOT_FOUND.http_status == 404
         assert ErrorCode.SESSION_EXPIRED.http_status == 409
+        assert ErrorCode.SESSION_EMPTY.http_status == 400
         assert ErrorCode.EXPORT_FAILED.http_status == 500
 
     def test_default_message_attribute(self):
         assert ErrorCode.SESSION_NOT_FOUND.default_message == "采集会话不存在"
+        assert ErrorCode.SESSION_EMPTY.default_message == "采集会话没有已上传页面"
         assert ErrorCode.TASK_NOT_FOUND.default_message == "任务不存在"
         assert ErrorCode.INVALID_TASK_TRANSITION.default_message == "非法任务状态流转"
 
@@ -27,6 +30,7 @@ class TestErrorCode:
         assert "SESSION_NOT_FOUND" in codes
         assert "SESSION_EXPIRED" in codes
         assert "SESSION_LOCKED" in codes
+        assert "SESSION_EMPTY" in codes
         assert "UNSUPPORTED_FILE_TYPE" in codes
         assert "FILE_TOO_LARGE" in codes
         assert "INVALID_QUAD_POINTS" in codes
@@ -37,7 +41,7 @@ class TestErrorCode:
         assert "EXPORT_FAILED" in codes
         assert "REQUEST_NOT_FOUND" in codes
         assert "INTERNAL_SERVER_ERROR" in codes
-        assert len(codes) == 13
+        assert len(codes) == 14
 
 
 class TestAlgorithmErrorCode:

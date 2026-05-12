@@ -47,6 +47,13 @@ def create_session(client):
     return resp.get_json()["data"]
 
 
+def add_uploaded_page(client, session_id):
+    service = client.application.config["SESSION_SERVICE"]
+    session = service.add_page(session_id)
+    page = session["pages"][-1]
+    service.attach_page_upload(session_id, page["page_id"], f"pages/{session_id}/{page['page_id']}.json")
+
+
 class TestCaptureSessionAPI:
     def test_create_session_returns_201_with_qr_url(self, client):
         data = create_session(client)
@@ -112,6 +119,7 @@ class TestCaptureSessionAPI:
 
     def test_finish_locks_session_and_returns_task_id(self, client):
         created = create_session(client)
+        add_uploaded_page(client, created["session_id"])
 
         resp = client.post(f"/api/mobile/{created['session_id']}/finish")
 
@@ -123,6 +131,7 @@ class TestCaptureSessionAPI:
 
     def test_finish_idempotent_returns_same_task_id(self, client):
         created = create_session(client)
+        add_uploaded_page(client, created["session_id"])
 
         first = client.post(f"/api/mobile/{created['session_id']}/finish").get_json()["data"]
         second = client.post(f"/api/mobile/{created['session_id']}/finish").get_json()["data"]
@@ -131,6 +140,7 @@ class TestCaptureSessionAPI:
 
     def test_locked_session_rejects_page_writes(self, client):
         created = create_session(client)
+        add_uploaded_page(client, created["session_id"])
         client.post(f"/api/mobile/{created['session_id']}/finish")
 
         resp = client.post(f"/api/capture-sessions/{created['session_id']}/pages")
@@ -163,3 +173,20 @@ class TestCaptureSessionAPI:
 
         assert resp.status_code == 409
         assert resp.get_json()["error"]["code"] == "SESSION_EXPIRED"
+
+    def test_finish_empty_session_returns_400(self, client):
+        created = create_session(client)
+
+        resp = client.post(f"/api/mobile/{created['session_id']}/finish")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "SESSION_EMPTY"
+
+    def test_finish_placeholder_page_without_upload_ref_returns_400(self, client):
+        created = create_session(client)
+        client.post(f"/api/capture-sessions/{created['session_id']}/pages")
+
+        resp = client.post(f"/api/mobile/{created['session_id']}/finish")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "SESSION_EMPTY"

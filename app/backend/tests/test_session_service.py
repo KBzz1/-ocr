@@ -176,10 +176,47 @@ class TestSessionPages:
     def test_locked_session_rejects_page_writes(self, tmp_path):
         service = make_service(tmp_path)
         session = service.create()
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
         service.finish(session["session_id"])
 
         with pytest.raises(AppError) as exc_info:
             service.add_page(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_LOCKED.code
+
+    def test_attach_page_upload_updates_upload_ref(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        current = service.add_page(session["session_id"])
+        page_id = current["pages"][0]["page_id"]
+
+        updated = service.attach_page_upload(
+            session["session_id"],
+            page_id,
+            f"pages/{session['session_id']}/{page_id}.json",
+        )
+
+        assert updated["pages"][0]["upload_ref"] == f"pages/{session['session_id']}/{page_id}.json"
+
+    def test_attach_missing_page_raises_session_not_found(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        with pytest.raises(AppError) as exc_info:
+            service.attach_page_upload(session["session_id"], "missing-page", "pages/x.json")
+
+        assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
+
+    def test_attach_upload_rejects_locked_session(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        current = service.add_page(session["session_id"])
+        page_id = current["pages"][0]["page_id"]
+        service.attach_page_upload(session["session_id"], page_id, "pages/existing.json")
+        service.finish(session["session_id"])
+
+        with pytest.raises(AppError) as exc_info:
+            service.attach_page_upload(session["session_id"], page_id, "pages/x.json")
 
         assert exc_info.value.code == ErrorCode.SESSION_LOCKED.code
 
@@ -188,6 +225,7 @@ class TestSessionFinish:
     def test_finish_locks_active_session_and_sets_locked_at(self, tmp_path):
         service = make_service(tmp_path)
         session = service.create()
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
 
         finished = service.finish(session["session_id"])
 
@@ -197,8 +235,8 @@ class TestSessionFinish:
     def test_finish_creates_task_stub_with_frozen_page_order(self, tmp_path):
         service = make_service(tmp_path)
         session = service.create()
-        service.add_page(session["session_id"])
-        service.add_page(session["session_id"])
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
+        service.add_page(session["session_id"], upload_ref="pages/page-2.json")
         current = service.get(session["session_id"])
         expected_order = [p["page_id"] for p in current["pages"]]
 
@@ -215,6 +253,7 @@ class TestSessionFinish:
     def test_finish_persists_task_id_to_session(self, tmp_path):
         service = make_service(tmp_path)
         session = service.create()
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
 
         finished = service.finish(session["session_id"])
         persisted = JsonStore(str(tmp_path)).read(f"sessions/{session['session_id']}.json")
@@ -224,7 +263,7 @@ class TestSessionFinish:
     def test_finish_idempotent_on_locked_session(self, tmp_path):
         service = make_service(tmp_path)
         session = service.create()
-        service.add_page(session["session_id"])
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
 
         first = service.finish(session["session_id"])
         second = service.finish(session["session_id"])
@@ -251,3 +290,23 @@ class TestSessionFinish:
             service.finish("missing")
 
         assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
+
+    def test_finish_empty_session_raises_session_empty(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+
+        with pytest.raises(AppError) as exc_info:
+            service.finish(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_EMPTY.code
+
+    def test_finish_placeholder_page_without_upload_ref_raises_session_empty(self, tmp_path):
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"])
+
+        with pytest.raises(AppError) as exc_info:
+            service.finish(session["session_id"])
+
+        assert exc_info.value.code == ErrorCode.SESSION_EMPTY.code
+        assert not (tmp_path / "tasks").exists()

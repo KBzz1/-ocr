@@ -15,3 +15,4 @@
 | BE-SES-008 | API | `POST /api/mobile/{sessionId}/finish` 后会话变为 `locked` | 状态未锁定 |
 | BE-SES-009 | API | `locked` 会话禁止新增、删除、排序页面，返回 `SESSION_LOCKED` | 完成后仍可编辑 |
 | BE-SES-010 | 集成 | 完成采集后页面顺序固化，后续任务处理使用固化顺序 | 处理顺序仍受临时列表影响 |
+| BE-SES-011 | API | 没有已成功上传页面的会话 `finish` 返回 `SESSION_EMPTY`，不创建任务 | 空任务或占位页面任务被创建 |

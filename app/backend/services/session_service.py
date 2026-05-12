@@ -77,6 +77,17 @@ class SessionService:
         session["page_count"] = len(session["pages"])
         return self._persist_session(session)
 
+    def attach_page_upload(self, session_id: str, page_id: str, upload_ref: str) -> dict:
+        session = self.get(session_id)
+        self._ensure_editable(session)
+
+        for page in session["pages"]:
+            if page["page_id"] == page_id:
+                page["upload_ref"] = upload_ref
+                return self._persist_session(session)
+
+        raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
     def delete_page(self, session_id: str, page_id: str) -> dict:
         session = self.get(session_id)
         self._ensure_editable(session)
@@ -108,6 +119,9 @@ class SessionService:
             return session
 
         self._ensure_editable(session)
+
+        if not session["pages"] or any(not page.get("upload_ref") for page in session["pages"]):
+            raise AppError(ErrorCode.SESSION_EMPTY)
 
         now = datetime.now(timezone.utc)
         task_id = str(uuid.uuid4())
