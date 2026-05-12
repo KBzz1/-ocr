@@ -257,3 +257,92 @@ class TestReviewServiceFieldActions:
             service.update_field("task-001", "chief_complaint", {"action": "confirm"})
 
         assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+class TestReviewServiceConfirm:
+    def test_confirm_blocks_unreviewed_fields(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+
+        with pytest.raises(AppError) as exc_info:
+            service.confirm("task-001")
+
+        assert exc_info.value.code == ErrorCode.REVIEW_VALIDATION_FAILED.code
+        assert exc_info.value.details["unreviewed"] == ["diagnosis"]
+
+    def test_confirm_blocks_suspicious_fields(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+        service.update_field("task-001", "diagnosis", {"action": "mark_suspicious"})
+
+        with pytest.raises(AppError) as exc_info:
+            service.confirm("task-001")
+
+        assert exc_info.value.details["suspicious"] == ["diagnosis"]
+
+    def test_confirm_blocks_unaccepted_empty_fields(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+        service.update_field("task-001", "diagnosis", {"action": "clear"})
+
+        with pytest.raises(AppError) as exc_info:
+            service.confirm("task-001")
+
+        assert exc_info.value.details["empty_unaccepted"] == ["diagnosis"]
+
+    def test_confirm_all_confirmed_updates_task(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+        service.update_field("task-001", "diagnosis", {"action": "modify", "final_value": "上感"})
+
+        task = service.confirm("task-001")
+
+        assert task["status"] == "confirmed"
+        assert task["confirmed_at"]
+        assert task["review_summary"]["unreviewed_count"] == 0
+        assert task["review_summary"]["modified_count"] == 1
+
+    def test_confirm_accepted_empty_passes(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        service.get_or_init("task-001")
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+        service.update_field("task-001", "diagnosis", {"action": "clear"})
+        service.update_field("task-001", "diagnosis", {"action": "accept_empty"})
+
+        task = service.confirm("task-001")
+
+        assert task["status"] == "confirmed"
+
+    def test_missing_evidence_is_counted_but_not_blocking(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(
+            store,
+            candidates=[
+                {"field_key": "chief_complaint", "original_value": "头痛", "evidence": "第1页", "confidence": 0.9},
+                {"field_key": "diagnosis", "original_value": "上感", "confidence": 0.8},
+            ],
+        )
+        review = service.get_or_init("task-001")
+        assert review["summary"]["missing_evidence_count"] == 1
+        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+        service.update_field("task-001", "diagnosis", {"action": "confirm"})
+
+        task = service.confirm("task-001")
+
+        assert task["status"] == "confirmed"
+        assert task["review_summary"]["missing_evidence_count"] == 1

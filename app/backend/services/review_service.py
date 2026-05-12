@@ -164,6 +164,32 @@ class ReviewService:
         self._store.write(f"results/{task_id}/review_result.json", review)
         return review
 
+    def confirm(self, task_id: str) -> dict:
+        task = self._task_service.get_task(task_id)
+        self._ensure_writable(task)
+        review = self.get_or_init(task_id)
+        summary = self._build_summary(review["fields"])
+
+        unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == "unreviewed"]
+        suspicious = [f["field_key"] for f in review["fields"] if f["status"] == "suspicious"]
+        empty_unaccepted = [
+            f["field_key"]
+            for f in review["fields"]
+            if f["status"] == "empty" and not f["empty_accepted"]
+        ]
+        if not review["fields"] or unreviewed or suspicious or empty_unaccepted:
+            raise AppError(
+                ErrorCode.REVIEW_VALIDATION_FAILED,
+                message="审核确认校验失败",
+                details={
+                    "unreviewed": unreviewed,
+                    "suspicious": suspicious,
+                    "empty_unaccepted": empty_unaccepted,
+                    "missing_evidence_count": summary["missing_evidence_count"],
+                },
+            )
+        return self._task_service.mark_confirmed(task_id, review_summary=summary)
+
     def _find_field(self, review: dict, field_key: str) -> dict:
         for field in review["fields"]:
             if field["field_key"] == field_key:

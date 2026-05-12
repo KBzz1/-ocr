@@ -74,9 +74,12 @@ class TaskService:
         self._write_task(task)
         return task
 
-    def mark_confirmed(self, task_id: str) -> dict:
+    def mark_confirmed(self, task_id: str, review_summary: dict | None = None) -> dict:
         task = self._read_task(task_id)
         task = self._transition(task, TaskStatus.CONFIRMED.value, "审核确认")
+        task["confirmed_at"] = self._now()
+        if review_summary is not None:
+            task["review_summary"] = review_summary
         self._write_task(task)
         return task
 
