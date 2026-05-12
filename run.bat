@@ -37,3 +37,27 @@ exit /b 1
 set /p BACKEND_PID=<"%PID_FILE%"
 echo [%date% %time%] 后端 PID: %BACKEND_PID% >> "%LOG_FILE%"
 echo 后端已启动 (PID: %BACKEND_PID%)
+
+:: ── 健康检查轮询 ──
+set "HEALTH_URL=http://127.0.0.1:8081/api/system/status"
+set "MAX_HEALTH_WAIT=30"
+set "HEALTH_WAITED=0"
+
+:health_check
+powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri '%HEALTH_URL%' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+if %ERRORLEVEL% EQU 0 goto health_ready
+timeout /t 1 /nobreak >nul
+set /a HEALTH_WAITED+=1
+if %HEALTH_WAITED% LSS %MAX_HEALTH_WAIT% goto health_check
+
+echo [%date% %time%] [错误] 健康检查超时 >> "%LOG_FILE%"
+echo 健康检查超时（%MAX_HEALTH_WAIT% 秒），请检查日志: %LOG_FILE%
+pause
+exit /b 1
+
+:health_ready
+echo [%date% %time%] 健康检查通过（耗时 %HEALTH_WAITED% 秒） >> "%LOG_FILE%"
+echo 后端服务已就绪 (http://127.0.0.1:8081)
+
+:: ── 打开本地入口 ──
+start "" "http://127.0.0.1:8081/api/system/status"

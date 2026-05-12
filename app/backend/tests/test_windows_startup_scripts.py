@@ -130,3 +130,100 @@ class TestDirectoryCreation:
         assert len(lines) == 2
         assert lines[0].strip() == "line 1"
         assert lines[1].strip() == "line 2"
+
+
+class TestHealthCheckPolling:
+    """健康检查轮询逻辑验证。"""
+
+    def test_health_check_timeout_on_closed_port(self):
+        """未监听端口时连接被拒绝，轮询应超时。"""
+        import urllib.request
+
+        port = 18081
+        max_wait = 3
+        url = f"http://127.0.0.1:{port}/api/system/status"
+        waited = 0
+        ready = False
+
+        while waited < max_wait:
+            try:
+                urllib.request.urlopen(url, timeout=1)
+                ready = True
+                break
+            except (urllib.error.URLError, OSError):
+                pass
+            time.sleep(1)
+            waited += 1
+
+        assert not ready
+        assert waited == max_wait
+
+    def test_health_check_success_returns_running(self, tmp_path):
+        """Flask test_client 验证 /api/system/status 返回 running。"""
+        from app.backend import create_backend_app
+
+        app = create_backend_app(str(tmp_path))
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+
+    def test_health_check_response_has_required_fields(self):
+        """BE-SYS-001: 状态响应必须含 status/version/started_at/lan_addresses。"""
+        from app.backend.routes.system import system_bp
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["BACKEND_CONFIG"] = {
+            "version": "0.1.0",
+            "port": 8081,
+            "bind_host": "0.0.0.0",
+            "local_host": "127.0.0.1",
+        }
+        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
+        app.config["LAN_ADDRESSES"] = ["192.168.1.100:8081"]
+        from app.backend.errors import register_error_handlers
+        register_error_handlers(app)
+        app.register_blueprint(system_bp)
+
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        data = resp.get_json()
+
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+        assert "version" in data["data"]
+        assert "started_at" in data["data"]
+        assert "lan_addresses" in data["data"]
+
+    def test_lan_addresses_excludes_localhost(self):
+        """BE-SYS-005: lan_addresses 不含 127.0.0.1。"""
+        from app.backend.routes.system import system_bp
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["BACKEND_CONFIG"] = {
+            "version": "0.1.0",
+            "port": 8081,
+            "bind_host": "0.0.0.0",
+            "local_host": "127.0.0.1",
+        }
+        app.config["STARTED_AT"] = "2026-05-12T00:00:00+00:00"
+        app.config["LAN_ADDRESSES"] = [
+            "192.168.1.100:8081",
+            "127.0.0.1:8081",
+            "10.0.0.5:8081",
+        ]
+        from app.backend.errors import register_error_handlers
+        register_error_handlers(app)
+        app.register_blueprint(system_bp)
+
+        client = app.test_client()
+        resp = client.get("/api/system/status")
+        data = resp.get_json()
+
+        assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
+        assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
+        assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
