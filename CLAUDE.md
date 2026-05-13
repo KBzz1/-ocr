@@ -57,3 +57,4 @@
 - 当前 PRD 进度以 `docs/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。
 - AGENTS.md 与 CLAUDE.md 成对维护：同目录内容保持一致，只替换标题行。
 - Git commit message 使用中文。
+- python环境使用的 conda 环境，名称为 manzufei_ocr ，运行时直接使用 conda run 
