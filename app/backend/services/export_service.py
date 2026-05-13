@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime, timezone
 from typing import Callable
@@ -133,6 +134,33 @@ class ExportService:
             "document_type": review.get("document_type") or task.get("document_type", ""),
             "fields": model_fields,
             "summary": summary,
+        }
+
+    def export_json(self, task_id: str) -> dict:
+        model = self._build_export_model(task_id)
+        filename = f"{task_id}.review.json"
+        relative_path = f"{task_id}/{filename}"
+        task_dir = os.path.join(self._export_dir, task_id)
+        filepath = os.path.join(task_dir, filename)
+
+        try:
+            os.makedirs(task_dir, exist_ok=True)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(model, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            raise AppError(
+                ErrorCode.EXPORT_FAILED,
+                message="导出文件写入失败",
+                details={"format": "json", "reason": str(e)},
+            )
+
+        self._task_service.mark_exported(task_id, format="json", relative_path=relative_path)
+
+        return {
+            "format": "json",
+            "path": filepath,
+            "relative_path": relative_path,
+            "filename": filename,
         }
 
     def _now(self) -> str:

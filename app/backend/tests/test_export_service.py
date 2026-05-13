@@ -1,3 +1,6 @@
+import json
+import os
+
 import pytest
 
 from app.backend.enums import FieldStatus, TaskStatus
@@ -264,3 +267,75 @@ class TestExportModel:
         assert diag["group_label"] == "诊断相关"
         # summary
         assert model["summary"]["total_count"] == 2
+
+
+class TestExportJson:
+    def test_export_json_writes_task_scoped_file(self, tmp_path):
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(svc._store)
+
+        info = svc.export_json("task-001")
+
+        assert os.path.exists(info["path"])
+        # Verify file is in exports/{task_id}/
+        assert f"exports{os.sep}task-001" in info["path"]
+        assert info["relative_path"] == "task-001/task-001.review.json"
+        assert info["filename"] == "task-001.review.json"
+
+        # Verify content
+        with open(info["path"], "r", encoding="utf-8") as f:
+            content = json.loads(f.read())
+        assert content["task_id"] == "task-001"
+        assert "exported_at" in content
+        assert [f["field_key"] for f in content["fields"]] == ["chief_complaint", "diagnosis"]
+        # final_value only, no auto_value
+        for field in content["fields"]:
+            assert "auto_value" not in field
+            assert "final_value" in field
+
+    def test_export_json_returns_relative_path_and_download_name(self, tmp_path):
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(svc._store)
+
+        info = svc.export_json("task-001")
+
+        assert info["format"] == "json"
+        assert info["relative_path"] == "task-001/task-001.review.json"
+        assert info["filename"] == "task-001.review.json"
+        assert os.path.isabs(info["path"])
+
+    def test_export_json_write_failure_keeps_task_confirmed_and_review_unchanged(self, tmp_path, monkeypatch):
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        review_before = _write_review_result(svc._store)
+
+        # Simulate write failure by making export_dir a path that can't be created
+        # (point it to a file instead of a directory, so makedirs fails)
+        bad_export = tmp_path / "not_a_dir"
+        bad_export.write_text("block")
+        monkeypatch.setattr(svc, "_export_dir", str(bad_export))
+
+        with pytest.raises(AppError) as exc_info:
+            svc.export_json("task-001")
+
+        assert exc_info.value.code == ErrorCode.EXPORT_FAILED.code
+        assert exc_info.value.details["format"] == "json"
+
+        # Task status must still be confirmed
+        task = svc._store.read("tasks/task-001.json")
+        assert task["status"] == "confirmed"
+
+        # review_result must be unchanged
+        review_after = svc._store.read("results/task-001/review_result.json")
+        assert review_after == review_before
