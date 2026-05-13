@@ -8,7 +8,7 @@
 - BE-10-02 成功 fixture 主流程
 - BE-10-03 失败 fixture 主流程
 
-本阶段目标是为当前后端主流程建立 E2E 和 API 契约回归网。此任务原则上只新增测试和 fixtures，不新增业务功能。若测试发现当前实现存在真实 bug，只允许做最小修复，并单独提交说明。
+本阶段目标是为当前后端主流程建立 E2E 和 API 契约回归网。此任务默认只新增测试和轻量 test fixtures，不新增业务功能。若测试发现当前实现存在真实 bug，先提交失败测试；修复必须最小化、单独提交，并在提交说明中标明不是新增功能。
 
 本阶段覆盖当前 master 已有能力：
 
@@ -58,9 +58,8 @@ app/backend/tests/
 ├── test_backend_e2e.py                 # NEW 后端主流程 E2E
 ├── test_api_contracts.py               # NEW 成功/错误响应契约
 ├── fixtures/
-│   ├── __init__.py                     # NEW fixture package
-│   ├── images.py                       # NEW 最小图片 bytes helpers
-│   └── algorithm.py                    # NEW 成功/失败算法 fixture helpers
+│   ├── __init__.py                     # NEW fixture package，仅测试 helper
+│   └── images.py                       # NEW 最小图片 bytes helpers
 └── conftest.py                         # OPTIONAL 仅当能减少重复且不破坏现有测试
 ```
 
@@ -74,6 +73,8 @@ app/backend/tests/
 
 - `app/backend/services/algorithm_ports/` 的真实端口契约以迎合测试。
 - `app/backend/services/review_service.py` 的数据结构。
+- `app/backend/services/export_service.py` 或导出路由；导出属于 BE-08。
+- `app/backend/services/session_service.py`、`page_service.py`、`routes/mobile.py` 的上传补偿逻辑；补偿属于 BE-03-08。
 - `run.bat` / `stop.bat`。
 - `app/frontend/`。
 
@@ -91,7 +92,7 @@ PDF_BYTES = b"%PDF-1.4 not image"
 
 ### 成功算法 fixture
 
-E2E 中可以直接注入当前 app 的 `TASK_SERVICE` 所依赖 orchestrator，或使用现有 `ProcessingOrchestrator` + fixture ports。成功 fixture 必须返回：
+优先复用现有 `app/backend/services/algorithm_ports/fixtures.py` 中的 `FixtureImagePort`、`FixtureDocPort`、`FixtureFieldPort`，不要在 `app/backend/tests/fixtures/algorithm.py` 重复实现端口。E2E 中直接构造 `ProcessingOrchestrator` 并注入测试 app 的 `TASK_SERVICE`。成功 fixture 必须返回：
 
 - image processing：每页 processed path。
 - document parsing：pages、blocks、tables、merged_text。
@@ -122,6 +123,8 @@ E2E 中可以直接注入当前 app 的 `TASK_SERVICE` 所依赖 orchestrator，
 - 非法字段 key：任务进入 `failed`。
 
 具体错误码以当前 `docs/Shared/error-codes.md` 和现有 BE-05 测试为准，不在 BE-10 中新增错误码。
+
+如果现有 fixture port 已能表达失败条件，直接复用其参数，例如 `should_fail=True`、`return_empty=True`、`return_bad_structure=True`；只有在现有 fixture 无法表达测试场景时，才在测试文件内定义局部小类。
 
 ## E2E 流程
 
@@ -207,9 +210,16 @@ E2E 只验证日志摘要：
 
 ## 与其他任务的边界
 
-- 与 BE-03-08 并行：如果 BE-03-08 尚未合并，BE-10 不强制新增上传失败补偿 E2E；可在 spec/plan 中列为合并后扩展。
+- 与 BE-03-08 并行：如果 BE-03-08 尚未合并，BE-10 不强制新增上传失败补偿 E2E，也不修改上传实现；BE-03 合并后再补失败上传不留空 page 的 E2E。
 - 与 BE-08 并行：BE-10 不实现导出，不要求导出 endpoint 存在；BE-08 合并后再补导出 E2E。
+- 与 BE-09：BE-10 只验证既有日志/离线检查契约，不新增日志事件、不改脱敏白名单。
 - 与前端任务无交集。
+
+并行冲突控制：
+
+- BE-10 主要新增 `test_backend_e2e.py`、`test_api_contracts.py`、`tests/fixtures/images.py`，避免修改 BE-03/BE-08 正在改的业务文件。
+- 如确需修复业务 bug，先确认不是 BE-03 或 BE-08 正在负责的能力；若属于其边界，只保留失败测试并在报告中说明阻塞。
+- `conftest.py` 只有在两个新测试文件出现重复 app 初始化超过三处时才新增；不得搬动现有测试 helper。
 
 ## 测试重点
 
