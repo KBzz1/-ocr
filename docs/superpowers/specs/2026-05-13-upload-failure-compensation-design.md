@@ -74,8 +74,8 @@ app/backend/
 ├── routes/
 │   └── mobile.py                       # MODIFIED 在上传失败时调用补偿
 ├── services/
-│   ├── session_service.py              # MODIFIED 增加 remove_page_if_unattached 或复用 delete_page
-│   └── page_service.py                 # MODIFIED 对半成品文件做局部清理，暴露本次路径
+│   ├── session_service.py              # MODIFIED 增加 remove_unuploaded_page
+│   └── page_service.py                 # MODIFIED 对半成品文件做局部清理
 └── tests/
     ├── test_mobile_pages.py            # MODIFIED API 补偿集成测试
     ├── test_page_service.py            # MODIFIED 文件/元数据失败清理测试
@@ -106,10 +106,10 @@ def remove_unuploaded_page(self, session_id: str, page_id: str) -> dict:
 - 只允许 active session。
 - 只移除指定 `page_id`。
 - 如果 page 不存在，幂等返回当前 session。
-- 如果 page 已有 `upload_ref`，返回 `SESSION_LOCKED` 或 `INVALID_REQUEST_PARAMS` 均可，计划阶段需固定一种错误码；建议 `INVALID_REQUEST_PARAMS`，message 为“页面已有上传引用，不能按失败上传撤销”。
+- 如果 page 已有 `upload_ref`，必须抛出 `INVALID_REQUEST_PARAMS`，message 为“页面已有上传引用，不能按失败上传撤销”。
 - 移除后保持剩余页面顺序稳定；是否重排 page_no 按现有 `delete_page()` 行为保持一致。
 
-如果现有 `delete_page()` 已满足 active guard 和页序重排，可在路由补偿中调用 `delete_page()`，但必须避免删除已有 `upload_ref` 的成功页面。若 `delete_page()` 不区分 upload_ref，应新增专用方法。
+不得直接在路由补偿中调用现有 `delete_page()`，因为它不区分 `upload_ref`，容易误删已成功上传页面。实现必须新增 `remove_unuploaded_page()`，并在该方法内复用现有页序重排逻辑。
 
 ### PageService
 
@@ -124,6 +124,13 @@ attach_page_upload 失败：删除图片文件和元数据文件
 ```
 
 `PageService.save()` 继续抛出原始 `AppError` 或异常，不把失败包装成成功。
+
+实现约束：
+
+- `PageService.save()` 内部只删除它自己本次已写出的 `image_path` 和 `metadata_path`，不得扫描或清理整个 session 目录。
+- 删除路径必须经由 `JsonStore`/配置 storage 根目录解析，确认位于 storage 根目录内后再删除。
+- `PageService.save()` 不调用 `SessionService.remove_unuploaded_page()`，避免服务层互相回滚；page 撤销只在路由层统一处理。
+- 路由层只在 `add_page()` 已成功并获得 `page_id` 后，对 `PageService.save()` 的失败调用 `remove_unuploaded_page()`。
 
 ## API 行为
 
@@ -179,9 +186,10 @@ attach_page_upload 失败：删除图片文件和元数据文件
 
 ## 与其他任务的边界
 
-- 与 BE-08 并行：无共享文件。BE-08 只读 review_result 并写 exports。
-- 与 BE-10 并行：BE-10 可增加 E2E 覆盖，但不在 BE-10 中实现补偿逻辑。
+- 与 BE-08 并行：无共享文件。BE-08 只读 review_result 并写 exports；本任务不读写 exports/review_result/task export_summary。
+- 与 BE-10 并行：BE-10 可增加当前主流程 E2E 覆盖，但不在 BE-10 中实现补偿逻辑；BE-03 合并后再补上传失败补偿 E2E。
 - 与 BE-09：不改日志结构。若当前 `_safe_event` 存在，上传失败日志不是本任务目标。
+- 潜在共享文件：`app/backend/tests/test_mobile_pages.py`。若 BE-10 也新增 API 契约测试，应优先让 BE-10 新建 `test_api_contracts.py`，本任务只在现有上传测试文件中补失败补偿断言。
 
 ## 验收标准
 
