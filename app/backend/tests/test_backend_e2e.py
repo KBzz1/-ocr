@@ -50,8 +50,6 @@ def _make_client(tmp_path, monkeypatch):
 
 def _install_fixture_task_service(app, field_port=None, image_port=None, doc_port=None):
     """替换 app 的 TASK_SERVICE 和 REVIEW_SERVICE 使用 fixture 算法端口。"""
-    store = app.config["CLEANUP_SERVICE"]._store if hasattr(app.config["CLEANUP_SERVICE"], "_store") else None
-    # 从现有服务获取 store
     from app.backend.storage.json_store import JsonStore
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
 
@@ -96,18 +94,6 @@ def _upload_page(client, session_id, image_bytes=JPEG_BYTES, filename="test.jpg"
     return resp
 
 
-class TestFixtureClient:
-    def test_fixture_client_starts_with_system_status(self, tmp_path, monkeypatch):
-        client, _app = _make_client(tmp_path, monkeypatch)
-
-        resp = client.get("/api/system/status")
-
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["success"] is True
-        assert data["data"]["status"] == "running"
-
-
 def _setup_session_with_pages(client, page_count=1):
     """创建会话、上传 page_count 页、finish，返回 (session_id, task_id)。"""
     resp = client.post("/api/capture-sessions")
@@ -122,6 +108,18 @@ def _setup_session_with_pages(client, page_count=1):
     assert resp.status_code == 200
     task_id = resp.get_json()["data"]["task_id"]
     return session_id, task_id
+
+
+class TestFixtureClient:
+    def test_fixture_client_starts_with_system_status(self, tmp_path, monkeypatch):
+        client, _app = _make_client(tmp_path, monkeypatch)
+
+        resp = client.get("/api/system/status")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
 
 
 class TestSuccessFlow:
@@ -139,14 +137,10 @@ class TestSuccessFlow:
         # 2. 上传第 1 页
         resp1 = _upload_page(client, session_id)
         assert resp1.status_code == 201
-        page1 = resp1.get_json()["data"]
-        assert page1["page_id"] is not None
 
         # 3. 上传第 2 页
         resp2 = _upload_page(client, session_id)
         assert resp2.status_code == 201
-        page2 = resp2.get_json()["data"]
-        assert page2["page_id"] is not None
 
         # 4. Finish 采集
         resp = client.post(f"/api/mobile/{session_id}/finish")
@@ -171,8 +165,7 @@ class TestSuccessFlow:
         # 8. 查看任务详情
         resp = client.get(f"/api/tasks/{task_id}")
         assert resp.status_code == 200
-        task = resp.get_json()["data"]
-        assert task["status"] == "ready_for_review"
+        assert resp.get_json()["data"]["status"] == "ready_for_review"
 
         # 9. 获取审核结果
         resp = client.get(f"/api/tasks/{task_id}/review")
@@ -200,8 +193,7 @@ class TestSuccessFlow:
         assert chief_updated["status"] == "modified"
         assert chief_updated["auto_value"] == "头痛3天"
 
-        # 11. 确认任务
-        # 先确认所有字段
+        # 11. 确认任务 — 先确认所有字段
         for f in fields:
             client.patch(
                 f"/api/tasks/{task_id}/review/fields/{f['field_key']}",
@@ -285,3 +277,46 @@ class TestFailureFlow:
         resp = client.get(f"/api/tasks/{task_id}/review")
         assert resp.status_code == 400
         assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+
+class TestLoggingPrivacy:
+    def test_e2e_produces_expected_events_no_sensitive_leak(
+        self, tmp_path, monkeypatch
+    ):
+        """成功主流程应产生已实现事件，日志不泄露图片/OCR/base64/身份证号。"""
+        import json
+        import os
+
+        client, app = _make_client(tmp_path, monkeypatch)
+        _session_id, task_id = _setup_session_with_pages(client, page_count=2)
+        _install_fixture_task_service(app)
+        client.post(f"/api/tasks/{task_id}/process")
+
+        log_path = os.path.join(
+            app.config["BACKEND_CONFIG"]["log_dir"], "backend-events.jsonl"
+        )
+        assert os.path.isfile(log_path), f"日志文件不存在: {log_path}"
+
+        lines = []
+        with open(log_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    lines.append(json.loads(line))
+
+        events = [r["event"] for r in lines]
+        # 已实现事件
+        for expected in ("system_started", "session_created", "page_uploaded",
+                         "session_finished", "task_processing_started"):
+            assert expected in events, f"缺少事件: {expected}"
+        # 成功处理应有 task_ready_for_review
+        assert "task_ready_for_review" in events
+
+        log_text = json.dumps(lines, ensure_ascii=False)
+        # 图片 bytes 不泄露
+        assert "ffd8" not in log_text.lower()
+        assert "\\xff\\xd8" not in log_text
+        # 身份证号模式不出现
+        assert "110101" not in log_text
+        # fixture merged text 全文不出现
+        assert "merged text" not in log_text

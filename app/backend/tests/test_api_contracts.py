@@ -214,3 +214,25 @@ class TestOfflineCheck:
         assert isinstance(data, dict)
         # 应包含本地资源状态
         assert "config" in data or "ok" in data or "checks" in data or "disk" in data
+
+    def test_offline_check_does_not_make_network_calls(self, tmp_path, monkeypatch):
+        """离线检查不应发起网络访问。"""
+        import socket
+
+        client = _make_client(tmp_path, monkeypatch)
+
+        # 在 app 创建后拦截 connect 调用
+        connect_calls = []
+        real_connect = socket.socket.connect
+
+        def _counting_connect(self_conn, target):
+            connect_calls.append(target)
+            return real_connect(self_conn, target)
+
+        monkeypatch.setattr(socket.socket, "connect", _counting_connect)
+
+        resp = client.get("/api/maintenance/offline-check")
+        assert resp.status_code == 200
+
+        # 离线检查本身不应调用 connect
+        assert len(connect_calls) == 0, f"offline-check 意外发起了网络连接: {connect_calls}"
