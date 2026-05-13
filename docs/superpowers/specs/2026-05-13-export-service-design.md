@@ -47,6 +47,7 @@
 - 文件路径只使用任务 ID 和固定文件名，拒绝用户输入参与路径。
 - 导出失败不改变 `review_result.json`，不把任务从 `confirmed` 错误推进到 `exported`。
 - 若 BE-09 本地事件日志存在，只记录导出摘要，不记录字段全文。
+- 不新增运行时依赖；当前 `requirements.txt` 仅包含 Flask、PyYAML、pytest，Excel 生成必须使用标准库最小实现。
 
 ## 文件边界
 
@@ -186,8 +187,10 @@ exports/{task_id}/
 
 Excel 实现选择：
 
-- 优先使用项目环境中已安装的 `openpyxl`。
-- 如果环境没有 Excel 库，计划阶段必须先确认依赖策略；不得运行时联网安装。
+- 本任务不得新增第三方依赖，不得运行时联网安装 Excel 库。
+- 使用项目内标准库最小 xlsx writer：通过 `zipfile` 写入 Office Open XML 必需文件，sheet 内容只覆盖本 spec 列出的表头和字段行。
+- xlsx writer 作为 `ExportService` 内部私有实现或 `services/export_service.py` 中的私有 helper，不暴露为通用 Excel 框架。
+- 测试不依赖 `openpyxl`；使用 `zipfile` 读取 `xl/workbook.xml`、`xl/worksheets/sheet*.xml`、`xl/sharedStrings.xml` 或 inlineStr 内容验证 sheet 名称、表头和 `final_value`。
 
 ## 状态流转
 
@@ -210,6 +213,13 @@ Excel 实现选择：
 }
 ```
 
+实现约束：
+
+- 保留现有 `mark_exported(task_id)` 调用方式，新增参数必须有默认值。
+- `formats` 按首次导出顺序追加，重复导出同一格式不重复追加。
+- `files` 同一格式重复导出时更新对应 `relative_path` 和时间，不累积重复条目。
+- `export_summary.files[].relative_path` 相对 `exports/`，形如 `task_001/task_001.review.json`，不得保存绝对路径。
+
 ## 错误处理
 
 - 完整性失败：`EXPORT_VALIDATION_FAILED`，details 中列出阻断字段 key。
@@ -219,8 +229,9 @@ Excel 实现选择：
 ## 与其他任务的边界
 
 - 与 BE-03-08 并行：无共享实现文件。BE-03-08 只改上传/补偿；BE-08 只读审核结果并写 exports。
-- 与 BE-10 并行：BE-10 只写 E2E 测试；如果 BE-10 发现导出 endpoint 不存在，应等 BE-08 合并后补测试，不在 BE-10 中实现导出。
-- 与 BE-09：可调用 `LOCAL_EVENT_LOG.safe_write("export_succeeded" / "export_failed", ...)`，但不得改变日志白名单或写入字段全文。
+- 与 BE-10 并行：BE-10 只写当前 master 已有能力的 E2E/API 测试；如果 BE-10 发现导出 endpoint 不存在，应等 BE-08 合并后补导出测试，不在 BE-10 中实现导出。
+- 与 BE-09：仅在事件名已存在时调用 `LOCAL_EVENT_LOG.safe_write("export_succeeded" / "export_failed", ...)`；不得改变日志白名单、日志脱敏规则或写入字段全文。
+- 潜在共享文件：`app/backend/services/task_service.py`。本任务只扩展 `mark_exported()` 与 export_summary 归一化，不修改 processing/review/cleanup 逻辑。若合并时 BE-09 已修改 task processing 日志，保留 BE-09 的 `_safe_event` 调用。
 
 ## 测试重点
 
