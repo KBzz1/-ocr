@@ -1,7 +1,9 @@
 import json
 import os
+import zipfile
 from datetime import datetime, timezone
 from typing import Callable
+from xml.sax.saxutils import escape
 
 from ..enums import FieldStatus
 from ..errors import AppError, ErrorCode
@@ -162,6 +164,182 @@ class ExportService:
             "relative_path": relative_path,
             "filename": filename,
         }
+
+    def export_excel(self, task_id: str) -> dict:
+        model = self._build_export_model(task_id)
+        filename = f"{task_id}.review.xlsx"
+        relative_path = f"{task_id}/{filename}"
+        task_dir = os.path.join(self._export_dir, task_id)
+        filepath = os.path.join(task_dir, filename)
+
+        try:
+            os.makedirs(task_dir, exist_ok=True)
+            self._write_xlsx(filepath, model)
+        except OSError as e:
+            raise AppError(
+                ErrorCode.EXPORT_FAILED,
+                message="导出文件写入失败",
+                details={"format": "excel", "reason": str(e)},
+            )
+
+        self._task_service.mark_exported(task_id, format="excel", relative_path=relative_path)
+
+        return {
+            "format": "excel",
+            "path": filepath,
+            "relative_path": relative_path,
+            "filename": filename,
+        }
+
+    # -- XLSX writer (minimal, standard-library only) --
+
+    _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    _HEADERS = ["字段 key", "字段名", "final_value", "状态", "来源页", "来源证据"]
+    _COL_LETTERS = ["A", "B", "C", "D", "E", "F"]
+
+    def _write_xlsx(self, path: str, model: dict) -> None:
+        # Group fields by group_key, preserving order
+        groups: dict[str, dict] = {}
+        for f in model["fields"]:
+            gk = f["group_key"]
+            if gk not in groups:
+                groups[gk] = {"group_label": f["group_label"], "fields": []}
+            groups[gk]["fields"].append(f)
+
+        # Build sheet names (dedup, sanitize)
+        sheet_names = self._build_sheet_names(groups)
+
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("[Content_Types].xml", self._content_types_xml(len(sheet_names)))
+            z.writestr("_rels/.rels", self._rels_xml())
+            z.writestr("xl/workbook.xml", self._workbook_xml(sheet_names))
+            z.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels_xml(sheet_names))
+
+            sheet_idx = 1
+            for group_key in groups:
+                sheet_xml = self._sheet_xml(groups[group_key]["fields"])
+                z.writestr(f"xl/worksheets/sheet{sheet_idx}.xml", sheet_xml)
+                sheet_idx += 1
+
+    def _build_sheet_names(self, groups: dict) -> list[str]:
+        names = []
+        seen = {}
+        for gk, g in groups.items():
+            label = g["group_label"]
+            sanitized = self._sanitize_sheet_name(label)
+            if sanitized in seen:
+                seen[sanitized] += 1
+                names.append(f"{sanitized}{seen[sanitized]}")
+            else:
+                seen[sanitized] = 0
+                names.append(sanitized)
+        return names
+
+    @staticmethod
+    def _sanitize_sheet_name(name: str) -> str:
+        result = name[:31]
+        for ch in r"[]:*?/\\":
+            result = result.replace(ch, "_")
+        return result
+
+    @staticmethod
+    def _content_types_xml(sheet_count: int) -> str:
+        types = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+            '<Default Extension="xml" ContentType="application/xml"/>',
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+        ]
+        for i in range(1, sheet_count + 1):
+            types.append(
+                f'<Override PartName="/xl/worksheets/sheet{i}.xml" '
+                f'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            )
+        types.append("</Types>")
+        return "\n".join(types)
+
+    @staticmethod
+    def _rels_xml() -> str:
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\n'
+            "</Relationships>"
+        )
+
+    @staticmethod
+    def _workbook_xml(sheet_names: list[str]) -> str:
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+            ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+            "<sheets>",
+        ]
+        for idx, name in enumerate(sheet_names, start=1):
+            escaped = escape(name)
+            lines.append(
+                f'<sheet name="{escaped}" sheetId="{idx}" r:id="rId{idx}"/>'
+            )
+        lines.append("</sheets>")
+        lines.append("</workbook>")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _workbook_rels_xml(sheet_names: list[str]) -> str:
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+        ]
+        for idx in range(1, len(sheet_names) + 1):
+            lines.append(
+                f'<Relationship Id="rId{idx}" '
+                f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+                f'Target="worksheets/sheet{idx}.xml"/>'
+            )
+        lines.append("</Relationships>")
+        return "\n".join(lines)
+
+    @classmethod
+    def _sheet_xml(cls, fields: list[dict]) -> str:
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+            "<sheetData>",
+        ]
+        # Header row
+        lines.append('<row r="1">')
+        for i, header in enumerate(cls._HEADERS):
+            letter = cls._COL_LETTERS[i]
+            escaped = escape(header)
+            lines.append(
+                f'<c r="{letter}1" t="inlineStr"><is><t>{escaped}</t></is></c>'
+            )
+        lines.append("</row>")
+
+        # Data rows
+        for row_idx, field in enumerate(fields, start=2):
+            lines.append(f'<row r="{row_idx}">')
+            values = [
+                field.get("field_key", ""),
+                field.get("field_name", ""),
+                field.get("final_value", ""),
+                field.get("status", ""),
+                str(field.get("page_no") or ""),
+                field.get("evidence") or "",
+            ]
+            for i, val in enumerate(values):
+                letter = cls._COL_LETTERS[i]
+                escaped = escape(val)
+                lines.append(
+                    f'<c r="{letter}{row_idx}" t="inlineStr"><is><t>{escaped}</t></is></c>'
+                )
+            lines.append("</row>")
+
+        lines.append("</sheetData>")
+        lines.append("</worksheet>")
+        return "\n".join(lines)
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()

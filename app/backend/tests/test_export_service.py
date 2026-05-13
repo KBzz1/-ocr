@@ -339,3 +339,101 @@ class TestExportJson:
         # review_result must be unchanged
         review_after = svc._store.read("results/task-001/review_result.json")
         assert review_after == review_before
+
+
+class TestExportExcel:
+    def test_export_excel_writes_valid_xlsx_zip(self, tmp_path):
+        import zipfile as zf
+
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(svc._store)
+
+        info = svc.export_excel("task-001")
+
+        assert os.path.exists(info["path"])
+        assert info["relative_path"] == "task-001/task-001.review.xlsx"
+        assert info["filename"] == "task-001.review.xlsx"
+
+        # Verify it's a valid ZIP with required XLSX files
+        with zf.ZipFile(info["path"], "r") as z:
+            names = z.namelist()
+            assert "[Content_Types].xml" in names
+            assert "xl/workbook.xml" in names
+            assert "xl/_rels/workbook.xml.rels" in names
+            assert any(n.startswith("xl/worksheets/sheet") for n in names)
+
+    def test_export_excel_groups_fields_by_schema_group(self, tmp_path):
+        import zipfile as zf
+
+        # Schema with two groups
+        schema = {
+            "version": "1.0.0",
+            "document_type": "general_medical_record",
+            "field_groups": [
+                {
+                    "group_key": "admission_info",
+                    "group_label": "入院/病程信息",
+                    "fields": [
+                        {"field_key": "chief_complaint", "label": "主诉", "type": "string"},
+                    ],
+                },
+                {
+                    "group_key": "diagnosis",
+                    "group_label": "诊断相关",
+                    "fields": [
+                        {"field_key": "diagnosis", "label": "诊断", "type": "string"},
+                    ],
+                },
+            ],
+        }
+        svc = _make_export_service(tmp_path, schema_provider=lambda: schema)
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(svc._store)
+
+        info = svc.export_excel("task-001")
+
+        with zf.ZipFile(info["path"], "r") as z:
+            # Two sheets for two groups
+            sheet_names = [
+                n for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ]
+            assert len(sheet_names) == 2
+
+            # workbook.xml should list both sheet names
+            wb_xml = z.read("xl/workbook.xml").decode("utf-8")
+            assert "入院_病程信息" in wb_xml
+            assert "诊断相关" in wb_xml
+
+    def test_export_excel_contains_final_value_not_auto_value(self, tmp_path):
+        import zipfile as zf
+
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(svc._store)
+
+        info = svc.export_excel("task-001")
+
+        with zf.ZipFile(info["path"], "r") as z:
+            # Read all sheet XMLs concatenated
+            sheet_xmls = []
+            for name in z.namelist():
+                if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"):
+                    sheet_xmls.append(z.read(name).decode("utf-8"))
+
+            all_sheet_text = "".join(sheet_xmls)
+
+            # final_value present
+            assert "头痛3天" in all_sheet_text
+            assert "上呼吸道感染" in all_sheet_text
+
+            # auto_value NEVER present in export
+            assert "auto_headache" not in all_sheet_text
+            assert "auto_diag" not in all_sheet_text
