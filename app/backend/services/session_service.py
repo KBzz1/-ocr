@@ -100,6 +100,24 @@ class SessionService:
         session["page_count"] = len(session["pages"])
         return self._persist_session(session)
 
+    def remove_unuploaded_page(self, session_id: str, page_id: str) -> dict:
+        """仅当 page.upload_ref 为空时移除 page，防止误删已成功上传页面。"""
+        session = self.get(session_id)
+        self._ensure_editable(session)
+        target = next((p for p in session["pages"] if p["page_id"] == page_id), None)
+        if target is None:
+            return session
+        if target.get("upload_ref"):
+            raise AppError(
+                ErrorCode.INVALID_REQUEST_PARAMS,
+                message="页面已有上传引用，不能按失败上传撤销",
+            )
+        session["pages"] = self._renumber_pages(
+            [p for p in session["pages"] if p["page_id"] != page_id]
+        )
+        session["page_count"] = len(session["pages"])
+        return self._persist_session(session)
+
     def reorder_pages(self, session_id: str, page_ids: list[str]) -> dict:
         session = self.get(session_id)
         self._ensure_editable(session)
