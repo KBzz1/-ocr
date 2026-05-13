@@ -234,3 +234,153 @@ class TestMobilePages:
             content_type="multipart/form-data",
         )
         assert resp.status_code == 409
+
+
+class TestUploadFailureCompensation:
+    """上传失败补偿：失败上传不应留下空 page。"""
+
+    def test_failed_upload_non_image_does_not_leave_empty_page(self, client):
+        """非图片上传失败后，session pages 中不存在空 page。"""
+        sid = _create_session(client)
+        data = {
+            "image": (io.BytesIO(b'%PDF-1.4 fake pdf'), "doc.pdf"),
+            "image_width": "1920",
+            "image_height": "1080",
+        }
+        resp = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+
+        info = client.get(f"/api/capture-sessions/{sid}")
+        pages = info.get_json()["data"]["pages"]
+        assert len(pages) == 0
+
+    def test_failed_upload_oversized_file_does_not_leave_empty_page(self, client):
+        """超大文件上传失败后，session pages 中不存在空 page。"""
+        sid = _create_session(client)
+        big = b'\xff\xd8\xff\xe0' + b'\x00' * (11 * 1024 * 1024)
+        data = {
+            "image": (io.BytesIO(big), "big.jpg"),
+            "image_width": "1920",
+            "image_height": "1080",
+        }
+        resp = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "FILE_TOO_LARGE"
+
+        info = client.get(f"/api/capture-sessions/{sid}")
+        pages = info.get_json()["data"]["pages"]
+        assert len(pages) == 0
+
+    def test_failed_upload_invalid_quad_does_not_leave_empty_page(self, client):
+        """非法 quad 上传失败后，session pages 中不存在空 page。"""
+        sid = _create_session(client)
+        data = {
+            "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+            "image_width": "1920",
+            "image_height": "1080",
+            "quad_points": "not json",
+        }
+        resp = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "INVALID_QUAD_POINTS"
+
+        info = client.get(f"/api/capture-sessions/{sid}")
+        pages = info.get_json()["data"]["pages"]
+        assert len(pages) == 0
+
+    def test_failed_upload_after_success_keeps_successful_page(self, client):
+        """一个成功上传后再失败，成功页面仍保留且 finish 可固化。"""
+        sid = _create_session(client)
+
+        # 第一个页面成功上传
+        data1 = {
+            "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+            "image_width": "1920",
+            "image_height": "1080",
+        }
+        resp1 = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data1,
+            content_type="multipart/form-data",
+        )
+        assert resp1.status_code == 201
+
+        # 第二个页面上传失败（非图片）
+        data2 = {
+            "image": (io.BytesIO(b'%PDF-1.4 fake pdf'), "doc.pdf"),
+            "image_width": "1920",
+            "image_height": "1080",
+        }
+        resp2 = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data2,
+            content_type="multipart/form-data",
+        )
+        assert resp2.status_code == 400
+
+        # session 中仍只有一个页面（成功的那一个）
+        info = client.get(f"/api/capture-sessions/{sid}")
+        pages = info.get_json()["data"]["pages"]
+        assert len(pages) == 1
+        assert pages[0]["upload_ref"] is not None
+
+        # finish 能返回 200
+        finish_resp = client.post(f"/api/mobile/{sid}/finish")
+        assert finish_resp.status_code == 200
+
+    def test_failed_upload_save_exception_does_not_leave_empty_page(self, client):
+        """PageService.save 抛异常时 session pages 不新增空 page。"""
+        sid = _create_session(client)
+
+        # 先用正常上传确认 session 有 1 页
+        data1 = {
+            "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+            "image_width": "1920",
+            "image_height": "1080",
+        }
+        resp1 = client.post(
+            f"/api/mobile/{sid}/pages",
+            data=data1,
+            content_type="multipart/form-data",
+        )
+        assert resp1.status_code == 201
+
+        # 模拟 PageService.save 抛异常
+        from unittest.mock import patch
+        from app.backend.errors import AppError, ErrorCode
+
+        with patch.object(
+            client.application.config["PAGE_SERVICE"],
+            "save",
+            side_effect=AppError(ErrorCode.INTERNAL_SERVER_ERROR),
+        ):
+            data2 = {
+                "image": (io.BytesIO(_make_jpg()), "test2.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+            }
+            resp2 = client.post(
+                f"/api/mobile/{sid}/pages",
+                data=data2,
+                content_type="multipart/form-data",
+            )
+            assert resp2.status_code == 500
+
+        # session 中仍有 1 个页面（第一个成功的）
+        info = client.get(f"/api/capture-sessions/{sid}")
+        pages = info.get_json()["data"]["pages"]
+        assert len(pages) == 1
+        assert pages[0]["upload_ref"] is not None
