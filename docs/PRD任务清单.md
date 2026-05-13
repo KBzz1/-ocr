@@ -19,13 +19,15 @@
 |------|------|-------------|------|
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
 | PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
-| PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；上传失败补偿 (BE-03-08) 延后 |
+| PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；失败上传已补偿空 page 和半成品文件 |
 | PR-BE-004 任务生命周期 | 已完成 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
 | PR-BE-005/006 外部算法端口 | 已完成 | `app/backend/services/algorithm_ports/`、`docs/superpowers/specs/2026-05-12-algorithm-ports-design.md` | 定义本地算法端口、编排、fixture、失败映射和结果持久化；不实现 OCR/LLM/图像算法 |
 | PR-BE-007 Schema 管理 | 已完成 | `app/config/schemas/medical_record.v1.yaml`、`app/backend/services/schema_service.py`、`docs/superpowers/specs/2026-05-12-schema-loader-design.md` | 加载当前 schema、记录版本、校验候选字段 key；schema 不生成字段值 |
-| BE-07 人工审核结果 | 进行中 | `docs/superpowers/specs/2026-05-12-review-results-design.md`（分支：`worktree-be07-review-results-spec`） | 依赖 BE-05/BE-06；读取自动候选并保存人工审核结果；不导出 |
-| BE-09 日志、隐私和部署 | 进行中 | `docs/superpowers/specs/2026-05-12-local-logs-privacy-design.md`（分支：`worktree-be09-local-logs-privacy-spec`） | 与 BE-07 并行；只做本地事件、隐私和离线检查；不实现真实算法 |
-| BE-01 Windows 启停与离线启动 | 进行中 | `docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md`（分支：`worktree-be01-windows-offline-startup-spec`） | 与业务 API 并行；聚焦 `run.bat`/`stop.bat` 和断网启动验收 |
+| BE-07 人工审核结果 | 已完成 | `app/backend/services/review_service.py`、`app/backend/routes/review.py`、`docs/superpowers/specs/2026-05-12-review-results-design.md` | 读取自动候选并保存人工审核结果；确认前校验未审核/存疑/不可接受空值；不导出 |
+| BE-08 导出服务 | 已完成 | `app/backend/services/export_service.py`、`app/backend/routes/export.py`、`docs/superpowers/specs/2026-05-13-export-service-design.md` | 基于人工 `final_value` 导出 JSON/Excel；导出前阻断未完成审核字段；不实现前端入口 |
+| BE-09 日志、隐私和部署 | 已完成 | `app/backend/services/local_event_log.py`、`app/backend/services/offline_check_service.py`、`app/backend/services/cleanup_service.py`、`docs/superpowers/specs/2026-05-12-local-logs-privacy-design.md` | 本地事件、隐私脱敏、离线检查和任务级清理；不实现真实算法 |
+| BE-10 API 契约和后端 E2E | 已完成 | `app/backend/tests/test_backend_e2e.py`、`app/backend/tests/test_api_contracts.py`、`docs/superpowers/specs/2026-05-13-backend-e2e-contracts-design.md` | 使用本地 fixtures 覆盖成功/失败主流程和 API 契约；不访问外网 |
+| BE-01 Windows 启停与离线启动 | 已完成 | `run.bat`、`stop.bat`、`scripts/offline_startup_check.py`、`docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md` | 聚焦 Windows 启停、PID、健康检查和断网启动验收；不实现业务 API |
 
 ## 后端任务
 
@@ -49,11 +51,11 @@
   - 范围：返回 `status`、`version`、`started_at`、`lan_addresses`。
   - 边界：不访问外网，不依赖云服务。
 
-- [ ] **BE-01-02 Windows 启停脚本联调**
+- [x] **BE-01-02 Windows 启停脚本联调**
   - 范围：`run.bat`、`stop.bat` 启动本地后端并打开工作台。
   - 边界：不要求 Docker、WSL、GPU 或开发环境。
 
-- [ ] **BE-01-03 离线启动验收**
+- [x] **BE-01-03 离线启动验收**
   - 范围：断网环境启动、工作台可访问、局域网地址可用于手机。
   - 边界：不得联网下载依赖、模型或前端资源。
 
@@ -113,7 +115,7 @@
   - 范围：上传成功后把页面元数据相对路径写回会话 `pages[].upload_ref`。
   - 边界：会话 pages 是唯一页序来源。
 
-- [ ] **BE-03-08 上传失败补偿**
+- [x] **BE-03-08 上传失败补偿**
   - 范围：文件或元数据保存失败时清理已创建的空页面项和临时文件。
   - 边界：不得留下 finish 可固化的空上传页。
 
@@ -169,57 +171,57 @@
 
 ### BE-07 人工审核结果（PR-BE-008）
 
-- [ ] **BE-07-01 审核结果读取**
+- [x] **BE-07-01 审核结果读取**
   - 范围：返回自动候选、人工结果、字段状态、来源证据。
   - 边界：failed 任务不可进入正常审核流。
 
-- [ ] **BE-07-02 字段编辑保存**
+- [x] **BE-07-02 字段编辑保存**
   - 范围：保存最终值、字段状态、审核时间、修改痕迹。
   - 边界：不覆盖自动抽取原值。
 
-- [ ] **BE-07-03 任务确认校验**
+- [x] **BE-07-03 任务确认校验**
   - 范围：未审核、存疑、不可接受空值阻断确认。
   - 边界：错误返回 `REVIEW_VALIDATION_FAILED`。
 
 ### BE-08 导出服务（PR-BE-009）
 
-- [ ] **BE-08-01 导出前完整性检查**
+- [x] **BE-08-01 导出前完整性检查**
   - 范围：统计未审核、存疑、空值字段。
   - 边界：不满足确认条件时阻断导出。
 
-- [ ] **BE-08-02 JSON 导出**
+- [x] **BE-08-02 JSON 导出**
   - 范围：导出人工审核后的最终结果、任务信息、字段状态。
   - 边界：不得导出未审核自动候选作为最终结果。
 
-- [ ] **BE-08-03 Excel 导出**
+- [x] **BE-08-03 Excel 导出**
   - 范围：按字段组组织 Excel，保存到 `exports/`。
   - 边界：导出失败返回 `EXPORT_FAILED`，不破坏审核数据。
 
 ### BE-09 日志、隐私和部署（PR-BE-010、PR-BE-001）
 
-- [ ] **BE-09-01 本地日志事件**
+- [x] **BE-09-01 本地日志事件**
   - 范围：启动、上传、处理、审核、导出、失败原因。
   - 边界：日志不包含完整病历原文、身份证号、图片 base64 或模型全文输出。
 
-- [ ] **BE-09-02 离线依赖和模型目录检查**
+- [x] **BE-09-02 离线依赖和模型目录检查**
   - 范围：检查本地依赖、模型路径、配置占位。
   - 边界：不联网下载依赖或模型。
 
-- [ ] **BE-09-03 数据清理策略**
+- [x] **BE-09-03 数据清理策略**
   - 范围：上传、结果、导出、日志的本地保留和手动清理入口。
   - 边界：不得误删其他任务目录或根目录。
 
 ### BE-10 API 契约和后端 E2E
 
-- [ ] **BE-10-01 API 全量契约测试**
+- [x] **BE-10-01 API 全量契约测试**
   - 范围：系统、会话、上传、任务、结果、审核、导出。
   - 边界：测试只使用本地 fixtures。
 
-- [ ] **BE-10-02 成功 fixture 主流程**
+- [x] **BE-10-02 成功 fixture 主流程**
   - 范围：采集多页 → 任务处理成功 → ready_for_review。
   - 边界：算法结果来自外部成功 fixture，不在仓库内推断。
 
-- [ ] **BE-10-03 失败 fixture 主流程**
+- [x] **BE-10-03 失败 fixture 主流程**
   - 范围：算法未配置/失败/空字段/契约非法全部进入 failed。
   - 边界：不得进入可审核或可导出状态。
 
@@ -358,10 +360,10 @@
 3. 开始 `FE-01` 和 `FE-02` 的基础页面，先接会话和上传 API。
 4. ~~完成 `BE-05` 算法端口失败契约，并把外部模块编排接入 BE-04 的 process/retry 入口。~~ ✅
 5. ~~完成 `BE-06` schema 加载、版本记录和候选字段 key 校验。~~ ✅
-6. 并行推进 `BE-07` 审核结果、`BE-09` 日志/隐私/离线检查、`BE-01` Windows 启停与离线启动；三条线分别在独立分支/spec 下推进。
-7. 等 `BE-07` 审核数据结构稳定后，推进 `BE-08` 导出服务。
+6. ~~并行推进 `BE-07` 审核结果、`BE-09` 日志/隐私/离线检查、`BE-01` Windows 启停与离线启动。~~ ✅
+7. ~~等 `BE-07` 审核数据结构稳定后，推进 `BE-08` 导出服务。~~ ✅
 8. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
-9. 做 `BE-10`、`FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
+9. 做 `FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
 
 ## 全局边界
 
