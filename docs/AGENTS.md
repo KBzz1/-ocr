@@ -20,6 +20,7 @@
 - `Shared/`：状态枚举、错误码、术语；修改 API、状态机、错误处理或测试断言前先读。
 - `Front/`：前端 BDD/TDD 文档；改电脑端/手机端交互、审核、导出、错误展示前先读。
 - `Backend/`：后端 BDD/TDD 文档；改本地服务、任务生命周期、算法端口、持久化、导出前先读。
+- 后端已落地的 API 行为以 `app/backend/tests/test_api_contracts.py` 和 `app/backend/tests/test_backend_e2e.py` 为可执行契约；文档与测试冲突时先说明并同步修正。
 
 ## 共享文档
 

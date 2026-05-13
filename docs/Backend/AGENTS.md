@@ -20,6 +20,7 @@
 - 改状态机、错误码或响应结构前，先读 `docs/Shared/state-enums.md` 和 `docs/Shared/error-codes.md`。
 - 改算法边界前，先读 `Backend_TDD/02-algorithm-ports.md` 和 `Backend_TDD/07-algorithm-failure-contracts.md`。
 - 写或调整测试设计时，再读 `Backend_TDD/` 中对应编号文件。
+- 审后端已实现行为时，同时看 `app/backend/tests/test_api_contracts.py`、`app/backend/tests/test_backend_e2e.py` 和相关服务/路由测试。
 
 ## 工作规则
 
