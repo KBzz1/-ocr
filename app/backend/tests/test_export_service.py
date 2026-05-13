@@ -340,6 +340,40 @@ class TestExportJson:
         review_after = svc._store.read("results/task-001/review_result.json")
         assert review_after == review_before
 
+    def test_export_json_rejects_blocking_fields(self, tmp_path):
+        svc = _make_export_service(
+            tmp_path,
+            schema_provider=lambda: _SAMPLE_SCHEMA,
+        )
+        _write_task(svc._store, status="confirmed")
+        _write_review_result(
+            svc._store,
+            fields=[
+                {
+                    "field_key": "chief_complaint",
+                    "field_name": "主诉",
+                    "auto_value": "auto_headache",
+                    "final_value": "头痛3天",
+                    "evidence": "第1页第2行",
+                    "page_no": 1,
+                    "confidence": 0.95,
+                    "status": FieldStatus.UNREVIEWED.value,
+                    "empty_accepted": False,
+                    "review_note": None,
+                    "reviewed_at": None,
+                    "updated_at": None,
+                    "history": [],
+                },
+            ],
+        )
+
+        with pytest.raises(AppError) as exc_info:
+            svc.export_json("task-001")
+
+        assert exc_info.value.code == ErrorCode.EXPORT_VALIDATION_FAILED.code
+        assert exc_info.value.details["blocking_fields"]["unreviewed"] == ["chief_complaint"]
+        assert not os.path.exists(tmp_path / "exports" / "task-001" / "task-001.review.json")
+
 
 class TestExportExcel:
     def test_export_excel_writes_valid_xlsx_zip(self, tmp_path):

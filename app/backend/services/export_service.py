@@ -27,22 +27,9 @@ class ExportService:
         task = self._task_service.get_task(task_id)
         status = task["status"]
 
-        if status not in (TaskStatus.CONFIRMED.value, TaskStatus.EXPORTED.value):
-            raise AppError(
-                ErrorCode.EXPORT_VALIDATION_FAILED,
-                message="任务尚未确认，不允许导出",
-                details={"current": status},
-            )
-
         review = self._store.read(f"results/{task_id}/review_result.json")
-        if review is None or not review.get("fields"):
-            raise AppError(
-                ErrorCode.EXPORT_VALIDATION_FAILED,
-                message="审核结果缺失或字段为空，无法导出",
-                details={"task_id": task_id},
-            )
+        fields = self._get_review_fields_for_export(task_id, status, review)
 
-        fields = review["fields"]
         unreviewed, suspicious, empty_unaccepted = self._compute_blocking_fields(fields)
         summary = self._compute_summary(fields)
 
@@ -62,12 +49,8 @@ class ExportService:
         if task is None:
             task = self._task_service.get_task(task_id)
         review = self._store.read(f"results/{task_id}/review_result.json")
-        if review is None or not isinstance(review.get("fields"), list):
-            raise AppError(
-                ErrorCode.EXPORT_VALIDATION_FAILED,
-                message="审核结果缺失或字段为空，无法导出",
-                details={"task_id": task_id},
-            )
+        fields = self._get_review_fields_for_export(task_id, task["status"], review)
+        self._ensure_no_blocking_fields(fields)
 
         schema = self._schema_provider() if self._schema_provider else {}
         schema_lookup: dict[str, dict[str, str]] = {}
@@ -81,7 +64,7 @@ class ExportService:
                 }
 
         model_fields = []
-        for f in review["fields"]:
+        for f in fields:
             fk = f["field_key"]
             lookup = schema_lookup.get(fk, {})
             model_fields.append({
@@ -140,6 +123,38 @@ class ExportService:
         }
 
     # -- shared helpers --
+
+    @staticmethod
+    def _get_review_fields_for_export(task_id: str, status: str, review: dict | None) -> list[dict]:
+        if status not in (TaskStatus.CONFIRMED.value, TaskStatus.EXPORTED.value):
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="任务尚未确认，不允许导出",
+                details={"current": status},
+            )
+        if review is None or not isinstance(review.get("fields"), list) or not review["fields"]:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="审核结果缺失或字段为空，无法导出",
+                details={"task_id": task_id},
+            )
+        return review["fields"]
+
+    @classmethod
+    def _ensure_no_blocking_fields(cls, fields: list[dict]) -> None:
+        unreviewed, suspicious, empty_unaccepted = cls._compute_blocking_fields(fields)
+        if unreviewed or suspicious or empty_unaccepted:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="审核结果存在未确认字段，无法导出",
+                details={
+                    "blocking_fields": {
+                        "unreviewed": unreviewed,
+                        "suspicious": suspicious,
+                        "empty_unaccepted": empty_unaccepted,
+                    }
+                },
+            )
 
     @staticmethod
     def _compute_summary(fields: list[dict]) -> dict:

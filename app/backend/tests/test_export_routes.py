@@ -170,6 +170,18 @@ class TestExportJsonRoute:
         assert chief["final_value"] == "头痛3天"
         assert "auto_value" not in chief
 
+    def test_export_json_route_rejects_blocking_fields(self, client, app):
+        _seed_confirmed_task(app)
+        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+        review = store.read("results/task-001/review_result.json")
+        review["fields"][0]["status"] = FieldStatus.UNREVIEWED.value
+        store.write("results/task-001/review_result.json", review)
+
+        resp = client.get("/api/tasks/task-001/export/json")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"
+
 
 class TestExportExcelRoute:
     def test_export_excel_route_returns_xlsx_download_headers(self, client, app):
