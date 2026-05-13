@@ -108,6 +108,22 @@ class TestFixtureClient:
         assert data["data"]["status"] == "running"
 
 
+def _setup_session_with_pages(client, page_count=1):
+    """创建会话、上传 page_count 页、finish，返回 (session_id, task_id)。"""
+    resp = client.post("/api/capture-sessions")
+    assert resp.status_code == 201
+    session_id = resp.get_json()["data"]["session_id"]
+
+    for _ in range(page_count):
+        resp = _upload_page(client, session_id)
+        assert resp.status_code == 201
+
+    resp = client.post(f"/api/mobile/{session_id}/finish")
+    assert resp.status_code == 200
+    task_id = resp.get_json()["data"]["task_id"]
+    return session_id, task_id
+
+
 class TestSuccessFlow:
     def test_capture_process_review_confirm_success_flow(self, tmp_path, monkeypatch):
         """成功主流程：多页上传 → finish → process → review → modify → confirm。"""
@@ -196,3 +212,76 @@ class TestSuccessFlow:
         confirmed_task = resp.get_json()["data"]
         assert confirmed_task["status"] == "confirmed"
         assert confirmed_task["confirmed_at"] is not None
+
+
+class TestFailureFlow:
+    def test_process_without_algorithm_marks_failed_and_review_is_rejected(
+        self, tmp_path, monkeypatch
+    ):
+        """默认 app（无算法端口）处理任务应进入 failed，review 入口应被拒绝。"""
+        client, app = _make_client(tmp_path, monkeypatch)
+        _session_id, task_id = _setup_session_with_pages(client)
+
+        # 使用默认 TASK_SERVICE（无算法端口）
+        resp = client.post(f"/api/tasks/{task_id}/process")
+        assert resp.status_code == 200
+        task = resp.get_json()["data"]
+        assert task["status"] == "failed"
+        assert task["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+        assert task["error_message"] is not None
+        assert task["failed_at"] is not None
+
+        # GET /api/tasks/{task_id} 也确认 failed
+        resp = client.get(f"/api/tasks/{task_id}")
+        assert resp.get_json()["data"]["status"] == "failed"
+
+        # review 入口应返回错误，不得初始化 review_result
+        resp = client.get(f"/api/tasks/{task_id}/review")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+    def test_process_empty_field_candidates_marks_failed(self, tmp_path, monkeypatch):
+        """空字段候选应导致 ALGORITHM_CONTRACT_INVALID 且不能进入审核。"""
+        client, app = _make_client(tmp_path, monkeypatch)
+        _session_id, task_id = _setup_session_with_pages(client)
+
+        _install_fixture_task_service(
+            app,
+            field_port=FixtureFieldPort(return_empty=True),
+        )
+
+        resp = client.post(f"/api/tasks/{task_id}/process")
+        assert resp.status_code == 200
+        task = resp.get_json()["data"]
+        assert task["status"] == "failed"
+        assert task["error_code"] == "ALGORITHM_CONTRACT_INVALID"
+        assert task["error_message"] is not None
+        assert task["failed_at"] is not None
+
+        resp = client.get(f"/api/tasks/{task_id}/review")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+    def test_process_bad_field_candidate_contract_marks_failed(
+        self, tmp_path, monkeypatch
+    ):
+        """非法字段结构应导致 ALGORITHM_CONTRACT_INVALID 且不能进入审核。"""
+        client, app = _make_client(tmp_path, monkeypatch)
+        _session_id, task_id = _setup_session_with_pages(client)
+
+        _install_fixture_task_service(
+            app,
+            field_port=FixtureFieldPort(return_bad_structure=True),
+        )
+
+        resp = client.post(f"/api/tasks/{task_id}/process")
+        assert resp.status_code == 200
+        task = resp.get_json()["data"]
+        assert task["status"] == "failed"
+        assert task["error_code"] == "ALGORITHM_CONTRACT_INVALID"
+        assert task["error_message"] is not None
+        assert task["failed_at"] is not None
+
+        resp = client.get(f"/api/tasks/{task_id}/review")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
