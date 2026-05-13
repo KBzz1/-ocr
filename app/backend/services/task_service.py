@@ -94,11 +94,31 @@ class TaskService:
         self._write_task(task)
         return task
 
-    def mark_exported(self, task_id: str) -> dict:
-        task = self._read_task(task_id)
-        task = self._transition(task, TaskStatus.EXPORTED.value, "导出完成")
+    def mark_exported(self, task_id: str, format: str | None = None, relative_path: str | None = None, task: dict | None = None) -> dict:
+        task = task or self._read_task(task_id)
+        # Only transition if not already exported
+        if task["status"] != TaskStatus.EXPORTED.value:
+            task = self._transition(task, TaskStatus.EXPORTED.value, "导出完成")
+        self._update_export_summary(task, format=format, relative_path=relative_path)
         self._write_task(task)
         return task
+
+    def _update_export_summary(self, task: dict, format: str | None, relative_path: str | None) -> None:
+        summary = task.setdefault("export_summary", {"last_exported_at": None, "formats": [], "files": []})
+        summary["last_exported_at"] = self._now()
+
+        if format is not None:
+            # Deduplicate formats list
+            if format not in summary["formats"]:
+                summary["formats"].append(format)
+
+            # Update or append files entry
+            files = summary.setdefault("files", [])
+            existing = next((f for f in files if f["format"] == format), None)
+            if existing is not None:
+                existing["relative_path"] = relative_path
+            else:
+                files.append({"format": format, "relative_path": relative_path})
 
     def _start_processing(self, task_id: str, reason: str) -> dict:
         task = self._read_task(task_id)
@@ -169,7 +189,7 @@ class TaskService:
             "review_summary",
             {"status": None, "unreviewed_count": None, "suspicious_count": None},
         )
-        normalized.setdefault("export_summary", {"last_exported_at": None, "formats": []})
+        normalized.setdefault("export_summary", {"last_exported_at": None, "formats": [], "files": []})
         return normalized
 
     def _transition(self, task: dict, target: str, reason: str) -> dict:
