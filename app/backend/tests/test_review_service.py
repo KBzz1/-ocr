@@ -167,6 +167,17 @@ class TestReviewServiceRead:
 
         assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
 
+    def test_exported_task_can_read_existing_review_result(self, tmp_path):
+        service, store = make_review_service(tmp_path)
+        write_task(store)
+        write_candidates(store)
+        review = service.get_or_init("task-001")
+        write_task(store, status="exported")
+
+        reopened = service.get_or_init("task-001")
+
+        assert reopened == review
+
 
 class TestReviewServiceFieldActions:
     def test_confirm_keeps_current_value_when_final_value_omitted(self, tmp_path):

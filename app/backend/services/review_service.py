@@ -91,7 +91,11 @@ class ReviewService:
         }
 
     def _ensure_readable(self, task: dict) -> None:
-        if task["status"] not in (TaskStatus.READY_FOR_REVIEW.value, TaskStatus.CONFIRMED.value):
+        if task["status"] not in (
+            TaskStatus.READY_FOR_REVIEW.value,
+            TaskStatus.CONFIRMED.value,
+            TaskStatus.EXPORTED.value,
+        ):
             raise AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
                 message=f"任务状态 {task['status']} 不允许读取审核结果",

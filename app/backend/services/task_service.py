@@ -29,6 +29,9 @@ class TaskService:
                 "status": task["status"],
                 "created_at": task["created_at"],
                 "page_count": task["page_count"],
+                "review_summary": task["review_summary"],
+                "export_summary": task["export_summary"],
+                "error_code": task["error_code"],
             }
             for task in sorted(tasks, key=lambda item: item["task_id"])
         ]

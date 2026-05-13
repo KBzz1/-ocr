@@ -138,3 +138,17 @@ class TestReviewRoutes:
 
         assert resp.status_code == 400
         assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+    def test_exported_task_can_reopen_review_result(self, client, app):
+        seed_reviewable_task(app)
+        client.get("/api/tasks/task-001/review")
+        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+        task = store.read("tasks/task-001.json")
+        task["status"] = "exported"
+        store.write("tasks/task-001.json", task)
+
+        resp = client.get("/api/tasks/task-001/review")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["status"] == "exported"
+        assert resp.get_json()["data"]["review_result"]["task_id"] == "task-001"

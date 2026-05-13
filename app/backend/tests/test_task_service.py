@@ -71,6 +71,13 @@ class TestTaskServiceQueries:
             "status": "uploaded",
             "created_at": "2026-05-12T10:00:00+00:00",
             "page_count": 2,
+            "review_summary": {
+                "status": None,
+                "unreviewed_count": None,
+                "suspicious_count": None,
+            },
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "error_code": None,
         }
 
     def test_list_tasks_filters_by_status(self, tmp_path):

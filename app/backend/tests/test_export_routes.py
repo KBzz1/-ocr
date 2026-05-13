@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.backend import create_backend_app
@@ -111,6 +113,11 @@ def _seed_confirmed_task(app):
     )
 
 
+def _events(app):
+    with open(app.config["LOCAL_EVENT_LOG"].current_path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 class TestExportCheckRoute:
     def test_export_check_route_success(self, client, app):
         _seed_confirmed_task(app)
@@ -170,6 +177,12 @@ class TestExportJsonRoute:
         assert chief["final_value"] == "头痛3天"
         assert "auto_value" not in chief
 
+        export_events = [item for item in _events(app) if item["event"] == "export_succeeded"]
+        assert export_events
+        assert export_events[-1]["task_id"] == "task-001"
+        assert export_events[-1]["format"] == "json"
+        assert export_events[-1]["relative_path"] == "task-001/task-001.review.json"
+
     def test_export_json_route_rejects_blocking_fields(self, client, app):
         _seed_confirmed_task(app)
         store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
@@ -181,6 +194,11 @@ class TestExportJsonRoute:
 
         assert resp.status_code == 400
         assert resp.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"
+        failed_events = [item for item in _events(app) if item["event"] == "export_failed"]
+        assert failed_events
+        assert failed_events[-1]["task_id"] == "task-001"
+        assert failed_events[-1]["format"] == "json"
+        assert failed_events[-1]["error_code"] == "EXPORT_VALIDATION_FAILED"
 
 
 class TestExportExcelRoute:

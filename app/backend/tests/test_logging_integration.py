@@ -112,3 +112,57 @@ def test_task_processing_failure_event_has_context_and_no_sensitive_text(client,
     assert "traceback" not in serialized.lower()
     assert "base64" not in serialized.lower()
     assert "110101199001011234" not in serialized
+
+
+def test_review_events_logged_without_field_values(client, app):
+    from app.backend.storage.json_store import JsonStore
+
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    store.write(
+        "tasks/task-review.json",
+        {
+            "task_id": "task-review",
+            "session_id": "session-001",
+            "status": "ready_for_review",
+            "created_at": "2026-05-12T10:00:00+00:00",
+            "page_count": 1,
+            "page_order": ["page-1"],
+            "source": "capture_session",
+            "schema_version": "1.0.0",
+            "document_type": "general_medical_record",
+        },
+    )
+    store.write(
+        "results/task-review/field_candidates.json",
+        {
+            "task_id": "task-review",
+            "stage": "field_extraction",
+            "status": "success",
+            "candidates": [
+                {
+                    "field_key": "name",
+                    "original_value": "张三",
+                    "evidence": "第1页",
+                    "page_no": 1,
+                    "confidence": 0.9,
+                }
+            ],
+        },
+    )
+
+    client.get("/api/tasks/task-review/review")
+    patch_resp = client.patch("/api/tasks/task-review/review/fields/name", json={"action": "confirm"})
+    assert patch_resp.status_code == 200
+    confirm_resp = client.post("/api/tasks/task-review/review/confirm")
+    assert confirm_resp.status_code == 200
+
+    records = events(app)
+    names = [item["event"] for item in records]
+    assert "review_field_saved" in names
+    assert "review_confirmed" in names
+
+    review_event = next(item for item in records if item["event"] == "review_field_saved")
+    assert review_event["task_id"] == "task-review"
+    assert review_event["field_key"] == "name"
+    assert review_event["status"] == "confirmed"
+    assert "张三" not in json.dumps(records, ensure_ascii=False)

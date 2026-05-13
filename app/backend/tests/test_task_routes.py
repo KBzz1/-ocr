@@ -52,7 +52,11 @@ class TestTaskRoutes:
         write_task(app, task_id="task-001", status="uploaded")
         resp = client.get("/api/tasks")
         assert resp.status_code == 200
-        assert resp.get_json()["data"]["tasks"][0]["task_id"] == "task-001"
+        task = resp.get_json()["data"]["tasks"][0]
+        assert task["task_id"] == "task-001"
+        assert task["review_summary"]["status"] is None
+        assert task["export_summary"]["formats"] == []
+        assert task["error_code"] is None
 
     def test_list_tasks_filter_by_status(self, client, app):
         write_task(app, task_id="task-001", status="uploaded")
