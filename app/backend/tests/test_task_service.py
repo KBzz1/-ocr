@@ -47,7 +47,7 @@ class TestTaskServiceQueries:
             "unreviewed_count": None,
             "suspicious_count": None,
         }
-        assert task["export_summary"] == {"last_exported_at": None, "formats": []}
+        assert task["export_summary"] == {"last_exported_at": None, "formats": [], "files": []}
         assert task["status_history"] == [
             {
                 "from_status": None,
@@ -261,3 +261,68 @@ class TestTaskServiceTransitions:
 
         assert confirmed["status"] == "confirmed"
         assert exported["status"] == "exported"
+
+
+class TestTaskServiceExportSummary:
+    def test_mark_exported_records_export_summary_file(self, tmp_path):
+        write_task(tmp_path, status="confirmed")
+        service = make_service(tmp_path)
+
+        result = service.mark_exported(
+            "task-001",
+            format="json",
+            relative_path="task-001/task-001.review.json",
+        )
+
+        assert result["status"] == "exported"
+        summary = result["export_summary"]
+        assert summary["last_exported_at"] is not None
+        assert summary["formats"] == ["json"]
+        assert len(summary["files"]) == 1
+        assert summary["files"][0]["format"] == "json"
+        assert summary["files"][0]["relative_path"] == "task-001/task-001.review.json"
+
+    def test_mark_exported_keeps_existing_call_compatible(self, tmp_path):
+        """mark_exported(task_id) without new params must still work."""
+        write_task(tmp_path, status="confirmed")
+        service = make_service(tmp_path)
+
+        result = service.mark_exported("task-001")
+
+        assert result["status"] == "exported"
+        summary = result["export_summary"]
+        assert summary["formats"] == []
+        assert summary["files"] == []
+
+    def test_mark_exported_deduplicates_format_on_repeat_export(self, tmp_path):
+        write_task(tmp_path, status="confirmed")
+        service = make_service(tmp_path)
+
+        # First export: json
+        service.mark_exported(
+            "task-001",
+            format="json",
+            relative_path="task-001/task-001.review.json",
+        )
+        # Export json again with different path — should update entry, not duplicate
+        result = service.mark_exported(
+            "task-001",
+            format="json",
+            relative_path="task-001/task-001.review.json",
+        )
+
+        assert result["export_summary"]["formats"] == ["json"]
+        assert len(result["export_summary"]["files"]) == 1
+
+        # Export excel — should append format, add new file entry
+        result2 = service.mark_exported(
+            "task-001",
+            format="excel",
+            relative_path="task-001/task-001.review.xlsx",
+        )
+
+        assert result2["export_summary"]["formats"] == ["json", "excel"]
+        assert len(result2["export_summary"]["files"]) == 2
+        file_formats = [f["format"] for f in result2["export_summary"]["files"]]
+        assert "json" in file_formats
+        assert "excel" in file_formats
