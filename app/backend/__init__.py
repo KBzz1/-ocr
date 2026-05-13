@@ -151,4 +151,16 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .routes.review import review_bp
     app.register_blueprint(review_bp)
 
+    from .services.export_service import ExportService
+
+    app.config["EXPORT_SERVICE"] = ExportService(
+        store=store,
+        export_dir=config["export_dir"],
+        task_service=app.config["TASK_SERVICE"],
+        schema_provider=schema_service.get_current,
+    )
+
+    from .routes.export import export_bp
+    app.register_blueprint(export_bp)
+
     return app
