@@ -106,3 +106,93 @@ class TestFixtureClient:
         data = resp.get_json()
         assert data["success"] is True
         assert data["data"]["status"] == "running"
+
+
+class TestSuccessFlow:
+    def test_capture_process_review_confirm_success_flow(self, tmp_path, monkeypatch):
+        """成功主流程：多页上传 → finish → process → review → modify → confirm。"""
+        client, app = _make_client(tmp_path, monkeypatch)
+
+        # 1. 创建采集会话
+        resp = client.post("/api/capture-sessions")
+        assert resp.status_code == 201
+        session_data = resp.get_json()["data"]
+        session_id = session_data["session_id"]
+        assert session_data["status"] == "active"
+
+        # 2. 上传第 1 页
+        resp1 = _upload_page(client, session_id)
+        assert resp1.status_code == 201
+        page1 = resp1.get_json()["data"]
+        assert page1["page_id"] is not None
+
+        # 3. 上传第 2 页
+        resp2 = _upload_page(client, session_id)
+        assert resp2.status_code == 201
+        page2 = resp2.get_json()["data"]
+        assert page2["page_id"] is not None
+
+        # 4. Finish 采集
+        resp = client.post(f"/api/mobile/{session_id}/finish")
+        assert resp.status_code == 200
+        finish_data = resp.get_json()["data"]
+        assert finish_data["status"] == "locked"
+        task_id = finish_data["task_id"]
+
+        # 5. session 变 locked
+        resp = client.get(f"/api/capture-sessions/{session_id}")
+        assert resp.get_json()["data"]["status"] == "locked"
+
+        # 6. 注入成功 fixture 算法端口
+        _install_fixture_task_service(app)
+
+        # 7. 触发处理
+        resp = client.post(f"/api/tasks/{task_id}/process")
+        assert resp.status_code == 200
+        task = resp.get_json()["data"]
+        assert task["status"] == "ready_for_review"
+
+        # 8. 查看任务详情
+        resp = client.get(f"/api/tasks/{task_id}")
+        assert resp.status_code == 200
+        task = resp.get_json()["data"]
+        assert task["status"] == "ready_for_review"
+
+        # 9. 获取审核结果
+        resp = client.get(f"/api/tasks/{task_id}/review")
+        assert resp.status_code == 200
+        review_data = resp.get_json()["data"]
+        assert review_data["task_id"] == task_id
+        fields = review_data["review_result"]["fields"]
+        assert len(fields) >= 1
+        # 确认字段来自 fixture port
+        chief = next(f for f in fields if f["field_key"] == "chief_complaint")
+        assert chief["auto_value"] == "头痛3天"
+        assert chief["status"] == "unreviewed"
+
+        # 10. 修改字段 final_value
+        resp = client.patch(
+            f"/api/tasks/{task_id}/review/fields/chief_complaint",
+            json={"action": "modify", "final_value": "头痛3天加重1天"},
+        )
+        assert resp.status_code == 200
+        chief_updated = next(
+            f for f in resp.get_json()["data"]["review_result"]["fields"]
+            if f["field_key"] == "chief_complaint"
+        )
+        assert chief_updated["final_value"] == "头痛3天加重1天"
+        assert chief_updated["status"] == "modified"
+        assert chief_updated["auto_value"] == "头痛3天"
+
+        # 11. 确认任务
+        # 先确认所有字段
+        for f in fields:
+            client.patch(
+                f"/api/tasks/{task_id}/review/fields/{f['field_key']}",
+                json={"action": "confirm"},
+            )
+        resp = client.post(f"/api/tasks/{task_id}/review/confirm")
+        assert resp.status_code == 200
+        confirmed_task = resp.get_json()["data"]
+        assert confirmed_task["status"] == "confirmed"
+        assert confirmed_task["confirmed_at"] is not None
