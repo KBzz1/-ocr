@@ -221,6 +221,78 @@ class TestSessionPages:
         assert exc_info.value.code == ErrorCode.SESSION_LOCKED.code
 
 
+class TestRemoveUnuploadedPage:
+    def test_removes_only_empty_page_and_renumbers(self, tmp_path):
+        """移除 upload_ref 为空的 page，保持剩余页面顺序。"""
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
+        current = service.add_page(session["session_id"])
+        empty_page_id = current["pages"][1]["page_id"]
+
+        updated = service.remove_unuploaded_page(session["session_id"], empty_page_id)
+
+        assert updated["page_count"] == 1
+        assert len(updated["pages"]) == 1
+        assert updated["pages"][0]["page_no"] == 1
+        assert updated["pages"][0]["upload_ref"] == "pages/page-1.json"
+        assert empty_page_id not in [p["page_id"] for p in updated["pages"]]
+
+    def test_is_idempotent_for_missing_page(self, tmp_path):
+        """page 不存在时幂等返回当前 session。"""
+        service = make_service(tmp_path)
+        session = service.create()
+        service.add_page(session["session_id"], upload_ref="pages/page-1.json")
+
+        updated = service.remove_unuploaded_page(session["session_id"], "nonexistent-page")
+
+        assert updated["page_count"] == 1
+        assert len(updated["pages"]) == 1
+
+    def test_rejects_page_with_upload_ref(self, tmp_path):
+        """已有 upload_ref 的 page 不能被补偿删除。"""
+        service = make_service(tmp_path)
+        session = service.create()
+        current = service.add_page(session["session_id"], upload_ref="pages/page-1.json")
+        page_id = current["pages"][0]["page_id"]
+
+        with pytest.raises(AppError) as exc_info:
+            service.remove_unuploaded_page(session["session_id"], page_id)
+
+        assert exc_info.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+        assert "已有上传引用" in exc_info.value.message
+        # page still exists
+        after = service.get(session["session_id"])
+        assert len(after["pages"]) == 1
+
+    def test_respects_expired_and_locked_guards(self, tmp_path):
+        """expired/locked session 保持现有 guard 行为。"""
+        service = make_service(tmp_path, ttl_minutes=1)
+        session = service.create()
+        service.add_page(session["session_id"])
+        current = service.get(session["session_id"])
+        page_id = current["pages"][0]["page_id"]
+
+        # expired
+        session["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        JsonStore(str(tmp_path)).write(f"sessions/{session['session_id']}.json", session)
+
+        with pytest.raises(AppError) as exc_info:
+            service.remove_unuploaded_page(session["session_id"], page_id)
+        assert exc_info.value.code == ErrorCode.SESSION_EXPIRED.code
+
+        # locked: recreate session, upload, finish
+        service2 = make_service(tmp_path)
+        s2 = service2.create()
+        c2 = service2.add_page(s2["session_id"], upload_ref="pages/page-x.json")
+        p2 = c2["pages"][0]["page_id"]
+        service2.finish(s2["session_id"])
+
+        with pytest.raises(AppError) as exc_info2:
+            service2.remove_unuploaded_page(s2["session_id"], p2)
+        assert exc_info2.value.code == ErrorCode.SESSION_LOCKED.code
+
+
 class TestSessionFinish:
     def test_finish_locks_active_session_and_sets_locked_at(self, tmp_path):
         service = make_service(tmp_path)

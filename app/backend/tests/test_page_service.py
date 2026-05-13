@@ -169,3 +169,119 @@ class TestPageService:
         page = current["pages"][0]
         assert page["page_id"] == page_id
         assert page["upload_ref"] is None
+
+
+class TestPageServiceSaveCleanup:
+    """失败上传时 PageService 应清理本次已写出的半成品文件。"""
+
+    def test_save_invalid_file_type_writes_no_files(self, tmp_path):
+        """文件类型非法时不会写入任何文件。"""
+        from app.backend.errors import AppError, ErrorCode
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
+
+        pdf_data = b'%PDF-1.4 fake pdf'
+        try:
+            ps.save(session["session_id"], page_id, 1, pdf_data, 1920, 1080)
+        except AppError as e:
+            assert e.code == ErrorCode.UNSUPPORTED_FILE_TYPE.code
+
+        base = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
+        if os.path.isdir(base):
+            files = os.listdir(base)
+            assert not files, f"不应写入任何文件，实际: {files}"
+
+    def test_save_invalid_quad_writes_no_files(self, tmp_path):
+        """quad 非法时不会写入任何文件。"""
+        from app.backend.errors import AppError, ErrorCode
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
+
+        try:
+            ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080,
+                    quad_points_raw="[[0,0],[2000,0]]")
+        except AppError as e:
+            assert e.code == ErrorCode.INVALID_QUAD_POINTS.code
+
+        base = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
+        if os.path.isdir(base):
+            files = os.listdir(base)
+            assert not files, f"不应写入任何文件，实际: {files}"
+
+    def test_save_metadata_write_failure_removes_image(self, tmp_path):
+        """元数据写入失败时删除已写出的图片文件。"""
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
+
+        original_write = ps._store.write
+        def fail_on_metadata(path, data):
+            if path.endswith(".json"):
+                raise OSError("disk full")
+            return original_write(path, data)
+
+        from unittest.mock import patch
+        with patch.object(ps._store, "write", side_effect=fail_on_metadata):
+            with pytest.raises(OSError, match="disk full"):
+                ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
+
+        base = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
+        files = os.listdir(base) if os.path.isdir(base) else []
+        jpg_files = [f for f in files if f.endswith(".jpg")]
+        assert not jpg_files, f"图片文件应已被删除，实际: {jpg_files}"
+
+    def test_save_attach_failure_removes_image_and_metadata(self, tmp_path):
+        """attach 失败时同时删除图片文件和元数据文件。"""
+        from app.backend.errors import AppError, ErrorCode
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page_id = ss.add_page(session["session_id"])["pages"][0]["page_id"]
+
+        from unittest.mock import patch
+        with patch.object(ps._session_service, "attach_page_upload",
+                          side_effect=AppError(ErrorCode.SESSION_NOT_FOUND)):
+            with pytest.raises(AppError) as exc_info:
+                ps.save(session["session_id"], page_id, 1, _make_jpg(), 1920, 1080)
+            assert exc_info.value.code == ErrorCode.SESSION_NOT_FOUND.code
+
+        base = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
+        if os.path.isdir(base):
+            files = os.listdir(base)
+            assert not files, f"图片和元数据文件应都被删除，实际: {files}"
+
+    def test_save_cleanup_does_not_remove_other_page_files(self, tmp_path):
+        """清理只删除本次 page 对应文件，不删除同 session 其他 page 的文件。"""
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+
+        # 第一个页面成功上传
+        updated1 = ss.add_page(session["session_id"])
+        page1 = updated1["pages"][0]
+        ps.save(session["session_id"], page1["page_id"], 1, _make_jpg(), 1920, 1080)
+
+        # 第二个页面上传时模拟 attach 失败
+        updated2 = ss.add_page(session["session_id"])
+        page2 = updated2["pages"][1]
+
+        from app.backend.errors import AppError, ErrorCode
+        from unittest.mock import patch
+        with patch.object(ps._session_service, "attach_page_upload",
+                          side_effect=AppError(ErrorCode.SESSION_NOT_FOUND)):
+            with pytest.raises(AppError):
+                ps.save(session["session_id"], page2["page_id"], 2, _make_jpg(), 1920, 1080)
+
+        # 第一个页面的文件仍然存在
+        base = os.path.join(str(tmp_path), "data", "pages", session["session_id"])
+        files = os.listdir(base)
+        assert f"{page1['page_id']}.jpg" in files
+        assert f"{page1['page_id']}.json" in files
+        # 第二个页面的文件已被清理
+        assert f"{page2['page_id']}.jpg" not in files
+        assert f"{page2['page_id']}.json" not in files

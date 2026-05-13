@@ -57,16 +57,24 @@ def upload_page(session_id: str):
 
     updated = _service().add_page(session_id, upload_ref=None)
     page = updated["pages"][-1]
+    created_page_id = page["page_id"]
 
-    result = _page_service().save(
-        session_id=session_id,
-        page_id=page["page_id"],
-        page_no=page["page_no"],
-        image_data=image_data,
-        image_width=image_width,
-        image_height=image_height,
-        quad_points_raw=quad_points_raw,
-    )
+    try:
+        result = _page_service().save(
+            session_id=session_id,
+            page_id=created_page_id,
+            page_no=page["page_no"],
+            image_data=image_data,
+            image_width=image_width,
+            image_height=image_height,
+            quad_points_raw=quad_points_raw,
+        )
+    except Exception:
+        try:
+            _service().remove_unuploaded_page(session_id, created_page_id)
+        except Exception:
+            pass
+        raise
 
     _safe_event(
         "page_uploaded",
