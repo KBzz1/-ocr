@@ -72,7 +72,49 @@ git add app/backend/services/export_service.py app/backend/tests/test_export_ser
 git commit -m "feat: 增加导出服务校验模型"
 ```
 
-## Task 2: JSON 导出和失败不污染状态
+## Task 2: TaskService 导出状态摘要
+
+Files:
+
+- `app/backend/services/task_service.py`
+- `app/backend/tests/test_task_service.py`
+
+RED:
+
+- [ ] 新增测试：
+  - `test_mark_exported_records_export_summary_file`
+  - `test_mark_exported_keeps_existing_call_compatible`
+  - `test_mark_exported_deduplicates_format_on_repeat_export`
+
+运行 RED：
+
+```bash
+python -m pytest app/backend/tests/test_task_service.py -q
+```
+
+GREEN:
+
+- [ ] 扩展 `mark_exported(self, task_id, format=None, relative_path=None, task=None)`，所有新增参数有默认值。
+- [ ] 保留现有 `mark_exported(task_id)` 调用方式，确保旧测试仍通过。
+- [ ] 允许 `confirmed -> exported`；`exported` 再次调用保持 `exported`。
+- [ ] `export_summary.last_exported_at` 更新为当前时间。
+- [ ] `formats` 去重追加；`files` 按 format 更新或追加，路径必须是相对 exports 的路径。
+- [ ] 不修改 processing、review、cleanup 相关逻辑。
+
+运行 GREEN：
+
+```bash
+python -m pytest app/backend/tests/test_task_service.py app/backend/tests/test_export_service.py -q
+```
+
+提交：
+
+```bash
+git add app/backend/services/task_service.py app/backend/tests/test_task_service.py
+git commit -m "feat: 记录任务导出摘要"
+```
+
+## Task 3: JSON 导出和失败不污染状态
 
 Files:
 
@@ -100,7 +142,7 @@ GREEN:
   - 返回 `{"format": "json", "path": absolute_path, "relative_path": f"{task_id}/{task_id}.review.json", "filename": ...}`。
   - 成功后调用 `task_service.mark_exported(task_id, format="json", relative_path=...)`。
 - [ ] 捕获文件写入异常并抛 `EXPORT_FAILED`，details 只包含 `format` 和简短 `reason`。
-- [ ] 不修改 `review_result.json`。
+- [ ] 写入失败时不调用 `mark_exported()`，不修改 `review_result.json`。
 
 运行 GREEN：
 
@@ -115,7 +157,7 @@ git add app/backend/services/export_service.py app/backend/tests/test_export_ser
 git commit -m "feat: 实现人工审核 JSON 导出"
 ```
 
-## Task 3: Excel 导出，不新增依赖
+## Task 4: Excel 导出，不新增依赖
 
 Files:
 
@@ -155,7 +197,7 @@ GREEN:
 运行 GREEN：
 
 ```bash
-python -m pytest app/backend/tests/test_export_service.py -q
+python -m pytest app/backend/tests/test_export_service.py app/backend/tests/test_task_service.py -q
 ```
 
 提交：
@@ -163,47 +205,6 @@ python -m pytest app/backend/tests/test_export_service.py -q
 ```bash
 git add app/backend/services/export_service.py app/backend/tests/test_export_service.py
 git commit -m "feat: 实现人工审核 Excel 导出"
-```
-
-## Task 4: TaskService 导出状态摘要
-
-Files:
-
-- `app/backend/services/task_service.py`
-- `app/backend/tests/test_task_service.py`
-
-RED:
-
-- [ ] 新增测试：
-  - `test_mark_exported_records_export_summary_file`
-  - `test_mark_exported_keeps_existing_call_compatible`
-  - `test_mark_exported_deduplicates_format_on_repeat_export`
-
-运行 RED：
-
-```bash
-python -m pytest app/backend/tests/test_task_service.py -q
-```
-
-GREEN:
-
-- [ ] 扩展 `mark_exported(self, task_id, format=None, relative_path=None, task=None)`，所有新增参数有默认值。
-- [ ] 允许 `confirmed -> exported`；`exported` 再次调用保持 `exported`。
-- [ ] `export_summary.last_exported_at` 更新为当前时间。
-- [ ] `formats` 去重追加；`files` 按 format 更新或追加，路径必须是相对 exports 的路径。
-- [ ] 不修改 processing、review、cleanup 相关逻辑。
-
-运行 GREEN：
-
-```bash
-python -m pytest app/backend/tests/test_task_service.py app/backend/tests/test_export_service.py -q
-```
-
-提交：
-
-```bash
-git add app/backend/services/task_service.py app/backend/tests/test_task_service.py
-git commit -m "feat: 记录任务导出摘要"
 ```
 
 ## Task 5: Export API 路由和应用注册
