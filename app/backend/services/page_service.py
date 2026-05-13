@@ -20,8 +20,20 @@ class PageService:
         self._session_service = session_service
         self._file_validator = file_validator
         self._store = store
-        self._storage_dir = storage_dir
+        self._storage_dir = os.path.realpath(storage_dir)
         self._min_quad_area_ratio = min_quad_area_ratio
+
+    def _safe_remove(self, path: str) -> None:
+        """安全删除文件：确认路径位于 storage_dir 内后再删除。"""
+        if not path:
+            return
+        real = os.path.realpath(path)
+        if not real.startswith(self._storage_dir + os.sep):
+            return
+        try:
+            os.remove(real)
+        except OSError:
+            pass
 
     def save(
         self,
@@ -66,8 +78,18 @@ class PageService:
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        self._store.write(meta_rel, meta)
+        try:
+            self._store.write(meta_rel, meta)
+        except Exception:
+            self._safe_remove(abs_image_path)
+            raise
 
-        self._session_service.attach_page_upload(session_id, page_id, meta_rel)
+        try:
+            self._session_service.attach_page_upload(session_id, page_id, meta_rel)
+        except Exception:
+            self._safe_remove(abs_image_path)
+            meta_abs = os.path.join(self._storage_dir, meta_rel)
+            self._safe_remove(meta_abs)
+            raise
 
         return meta
