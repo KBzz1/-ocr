@@ -28,6 +28,7 @@
 | BE-09 日志、隐私和部署 | 已完成 | `app/backend/services/local_event_log.py`、`app/backend/services/offline_check_service.py`、`app/backend/services/cleanup_service.py`、`docs/superpowers/specs/2026-05-12-local-logs-privacy-design.md` | 本地事件、隐私脱敏、离线检查和任务级清理；不实现真实算法 |
 | BE-10 API 契约和后端 E2E | 已完成 | `app/backend/tests/test_backend_e2e.py`、`app/backend/tests/test_api_contracts.py`、`docs/superpowers/specs/2026-05-13-backend-e2e-contracts-design.md` | 使用本地 fixtures 覆盖成功/失败主流程和 API 契约；不访问外网 |
 | BE-01 Windows 启停与离线启动 | 已完成 | `run.bat`、`stop.bat`、`scripts/offline_startup_check.py`、`docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md` | 聚焦 Windows 启停、PID、健康检查和断网启动验收；不实现业务 API |
+| FE-01 工作台首页第一阶段 | 已完成 | `app/frontend/`、`docs/Front/Design/`、`docs/superpowers/specs/2026-05-13-frontend-workstation-design.md`、`docs/superpowers/plans/2026-05-13-frontend-workstation-foundation-plan.md` | 已完成前端地基、首页、新建采集、二维码弹窗和会话状态；`npm run test`、`npm run typecheck`、`npm run build` 通过；Playwright 在当前沙箱卡住，作为 FE-06 质量门风险继续排查 |
 
 ## 后端任务
 
@@ -229,17 +230,29 @@
 
 ### FE-01 工作台（PR-FE-001）
 
-- [ ] **FE-01-01 工作台启动态**
-  - 范围：显示系统已启动、本地地址、局域网候选地址。
-  - 边界：不做营销页或复杂首页。
+- [x] **FE-01-01 前端地基和离线资源**
+  - 范围：建立 `app/frontend/` 工程结构；CSS、图标、字体和 logo 全部本地打包；定义 API、组件、样式、资产目录边界。
+  - 边界：不得使用 CDN、远程字体、远程图片、遥测或运行时联网下载。
 
-- [ ] **FE-01-02 新建采集入口**
-  - 范围：调用创建会话 API，展示二维码或手机访问 URL。
+- [x] **FE-01-02 工作台启动态**
+  - 范围：显示系统已启动、离线运行、手机采集可用等业务化状态。
+  - 边界：首页不直接展示本机访问地址、局域网访问地址、端口号或完整采集 URL；连接信息只在系统状态或帮助高级说明中展示。
+
+- [x] **FE-01-03 新建采集入口和二维码弹窗**
+  - 范围：调用 `POST /api/capture-sessions`，弹窗展示二维码、会话状态、剩余时间、已上传页数，并提供重新生成二维码、关闭、手机无法连接等操作。
   - 边界：二维码只指向本地局域网/热点地址。
 
-- [ ] **FE-01-03 空任务列表**
-  - 范围：任务为空时显示明确空状态。
+- [x] **FE-01-04 当前采集会话卡片**
+  - 范围：active 会话展示进行中状态、已上传页数、剩余时间，并支持重新打开二维码和结束会话入口占位。
+  - 边界：二维码按需展示，关闭弹窗后不常驻首页。
+
+- [x] **FE-01-05 首页任务概览和最近任务骨架**
+  - 范围：任务为空时显示明确空状态；有任务时按共享状态展示待审核、处理中、失败、已导出统计和最近任务操作。
   - 边界：不伪造示例任务。
+
+- [x] **FE-01-06 系统提醒和医生可理解文案**
+  - 范围：首页提醒区命名为“系统提醒”；失败任务展示“查看原因”“重新处理”等操作。
+  - 边界：不向医生展示“系统运行日志”“查看日志”或开发者堆栈信息。
 
 ### FE-02 手机采集页（PR-FE-002、PR-FE-009）
 
@@ -357,13 +370,14 @@
 
 1. ~~完成 `BE-02` 采集会话管理。~~ ✅
 2. ~~并行完成 `BE-03` 图片上传与元数据，但必须等 `BE-02` 的会话 pages 契约稳定后合并。~~ ✅
-3. 开始 `FE-01` 和 `FE-02` 的基础页面，先接会话和上传 API。
+3. ~~完成 `FE-01` 第一阶段：前端地基、本地资源打包、工作台首页、新建采集、二维码弹窗、当前会话状态，并接通 `GET /api/system/status`、`POST /api/capture-sessions`、`GET /api/capture-sessions/{session_id}`、`GET /api/tasks`。~~ ✅
 4. ~~完成 `BE-05` 算法端口失败契约，并把外部模块编排接入 BE-04 的 process/retry 入口。~~ ✅
 5. ~~完成 `BE-06` schema 加载、版本记录和候选字段 key 校验。~~ ✅
 6. ~~并行推进 `BE-07` 审核结果、`BE-09` 日志/隐私/离线检查、`BE-01` Windows 启停与离线启动。~~ ✅
 7. ~~等 `BE-07` 审核数据结构稳定后，推进 `BE-08` 导出服务。~~ ✅
-8. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
-9. 做 `FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
+8. 当前下一步按 `docs/superpowers/specs/2026-05-14-frontend-next-stage-orchestration-design.md` 推进：先串行收口共享契约和路由骨架，再实现 `FE-02` 手机采集页。
+9. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
+10. 做 `FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
 
 ## 全局边界
 

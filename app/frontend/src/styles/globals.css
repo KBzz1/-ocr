@@ -1,0 +1,73 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: var(--space-8);
+}
+
+.app-placeholder {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.app-kicker {
+  margin: 0 0 var(--space-2);
+  color: var(--color-accent-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.app-placeholder h1 {
+  margin: 0 0 var(--space-4);
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.app-placeholder p {
+  margin: 0 0 var(--space-6);
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+
+.app-placeholder ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-placeholder li {
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: #fbfcfd;
+}
