@@ -56,7 +56,7 @@ class TestSessionCreateGet:
         service = make_service(tmp_path, lan_addresses=["10.0.0.2:8081", "192.168.1.5:8081"])
         session = service.create()
 
-        assert session["qr_code_url"] == f"http://10.0.0.2:8081/mobile/{session['session_id']}"
+        assert session["qr_code_url"] == f"http://10.0.0.2:8081/mobile/sessions/{session['session_id']}"
 
     def test_create_qr_code_url_is_none_without_lan_address(self, tmp_path):
         service = make_service(tmp_path, lan_addresses=[])
