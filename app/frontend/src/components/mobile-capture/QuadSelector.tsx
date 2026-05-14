@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useRef } from 'react';
 
 import type { QuadPoint } from '../../api/captureSessions';
 
@@ -58,13 +58,66 @@ export function QuadSelector({ width, height, points, onChange }: QuadSelectorPr
     [points]
   );
 
+  const svgRef = useRef<SVGSVGElement>(null);
+  const activeCornerRef = useRef<QuadCorner | null>(null);
+
+  function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function eventToPoint(event: React.PointerEvent<SVGSVGElement>) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+    return {
+      x: clamp(Math.round(((event.clientX - rect.left) / rect.width) * width), 0, width),
+      y: clamp(Math.round(((event.clientY - rect.top) / rect.height) * height), 0, height)
+    };
+  }
+
+  function nearestCorner(point: { x: number; y: number }) {
+    return cornerOrder.reduce((nearest, corner) => {
+      const current = points[corner];
+      const nearestPoint = points[nearest];
+      const currentDistance = (current.x - point.x) ** 2 + (current.y - point.y) ** 2;
+      const nearestDistance = (nearestPoint.x - point.x) ** 2 + (nearestPoint.y - point.y) ** 2;
+      return currentDistance < nearestDistance ? corner : nearest;
+    }, cornerOrder[0]);
+  }
+
+  function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    const point = eventToPoint(event);
+    if (!point) return;
+    const corner = nearestCorner(point);
+    activeCornerRef.current = corner;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (!activeCornerRef.current) return;
+    const point = eventToPoint(event);
+    if (!point) return;
+    onChange({ ...points, [activeCornerRef.current]: point });
+  }
+
+  function handlePointerEnd(event: React.PointerEvent<SVGSVGElement>) {
+    if (activeCornerRef.current) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    activeCornerRef.current = null;
+  }
+
   return (
     <div className="quad-selector" aria-label="四边形框选区域">
       <svg
+        ref={svgRef}
         className="quad-selector__overlay"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label="四边形框选叠加层"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
       >
         <defs>
           <mask id={maskId}>
