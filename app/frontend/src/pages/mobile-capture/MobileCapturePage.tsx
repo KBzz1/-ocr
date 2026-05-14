@@ -21,7 +21,7 @@ import {
   quadToArray,
   type QuadPointsByCorner
 } from '../../components/mobile-capture/QuadSelector';
-import { CapturePhotoButton } from './CapturePhotoButton';
+import { CapturePhotoButton, type CapturePhotoButtonHandle } from './CapturePhotoButton';
 import { CapturePageList } from './CapturePageList';
 import { CaptureQuadScreen } from './CaptureQuadScreen';
 import { CaptureFooter } from './CaptureFooter';
@@ -115,7 +115,7 @@ export function MobileCapturePage() {
   const [selectedPage, setSelectedPage] = useState<CapturePageItem | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const photoButtonRef = useRef<CapturePhotoButtonHandle>(null);
   const [editingPage, setEditingPage] = useState<CapturePageItem | null>(null);
   const [editMode, setEditMode] = useState<'new' | 'replace' | 'quad' | null>(null);
 
@@ -141,15 +141,10 @@ export function MobileCapturePage() {
     };
   }, [sessionId]);
 
-  useEffect(
-    () => () => {
-      pages.forEach((page) => revokePreviewUrl(page.previewUrl));
-      if (selectedPage && !pages.some((page) => page.localId === selectedPage.localId)) {
-        revokePreviewUrl(selectedPage.previewUrl);
-      }
-    },
-    [pages, selectedPage]
-  );
+  useEffect(() => () => {
+    pages.forEach((page) => revokePreviewUrl(page.previewUrl));
+    if (selectedPage) revokePreviewUrl(selectedPage.previewUrl);
+  }, []);
 
   const isReadOnly = sessionStatus !== 'active';
   const uploadedCount = pages.filter((page) => page.status === 'uploaded').length;
@@ -197,7 +192,7 @@ export function MobileCapturePage() {
     if (isReadOnly) return;
     setEditingPage(page);
     setEditMode('replace');
-    cameraInputRef.current?.click();
+    photoButtonRef.current?.trigger();
   }
 
   function startRequadPage(page: CapturePageItem) {
@@ -282,9 +277,7 @@ export function MobileCapturePage() {
         setError(getErrorMessage(err, '框选更新失败'));
         return;
       }
-      setSelectedPage(null);
-      setEditingPage(null);
-      setEditMode(null);
+      resetEditState();
       return;
     }
 
@@ -319,9 +312,7 @@ export function MobileCapturePage() {
         setError(getErrorMessage(err, '替换失败，请重试'));
         return;
       }
-      setSelectedPage(null);
-      setEditingPage(null);
-      setEditMode(null);
+      resetEditState();
       return;
     }
 
@@ -338,10 +329,12 @@ export function MobileCapturePage() {
   async function deletePage(page: CapturePageItem) {
     if (isReadOnly || !window.confirm(`确认删除第 ${page.pageNo} 页？`)) return;
     if (page.pageId) {
-      await deleteCapturePage(sessionId, page.pageId).catch(() => {
+      try {
+        await deleteCapturePage(sessionId, page.pageId);
+      } catch {
         setError('删除失败，请重试');
-        throw new Error('delete failed');
-      });
+        return;
+      }
     }
 
     setPages((current) => renumberPages(current.filter((item) => item.localId !== page.localId)));
@@ -367,12 +360,16 @@ export function MobileCapturePage() {
     }
   }
 
-  function handleSupplement(page: CapturePageItem) {
-    startReplacePage(page);
+  function getConfirmLabel() {
+    if (editMode === 'quad') return '确认框选';
+    if (editMode === 'replace') return '确认替换';
+    return '确认上传';
   }
 
-  function handleRequad(page: CapturePageItem) {
-    startRequadPage(page);
+  function resetEditState() {
+    setSelectedPage(null);
+    setEditingPage(null);
+    setEditMode(null);
   }
 
   async function finishCapture() {
@@ -432,36 +429,17 @@ export function MobileCapturePage() {
           </section>
         ) : null}
 
-        <input
-          ref={cameraInputRef}
-          className="visually-hidden-input"
-          aria-label="拍照"
-          type="file"
-          accept="image/jpeg,image/png,image/bmp"
-          capture="environment"
-          disabled={isReadOnly}
-          onChange={(event) => handleFileSelected(event.currentTarget.files?.[0])}
-        />
-
         {selectedPage ? (
           <CaptureQuadScreen
-            previewUrl={selectedPage?.previewUrl}
-            quad={selectedPage?.quad ?? createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT)}
-            width={selectedPage?.width ?? PREVIEW_WIDTH}
-            height={selectedPage?.height ?? PREVIEW_HEIGHT}
-            isUploading={selectedPage?.status === 'uploading'}
-            confirmLabel={
-              editMode === 'quad' ? '确认框选' :
-              editMode === 'replace' ? '确认替换' :
-              '确认上传'
-            }
-            onChangeQuad={(quad) => selectedPage && setSelectedPage({ ...selectedPage, quad })}
-            onResetQuad={() => selectedPage && setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
-            onCancel={() => {
-              setSelectedPage(null);
-              setEditingPage(null);
-              setEditMode(null);
-            }}
+            previewUrl={selectedPage.previewUrl}
+            quad={selectedPage.quad}
+            width={selectedPage.width}
+            height={selectedPage.height}
+            isUploading={selectedPage.status === 'uploading'}
+            confirmLabel={getConfirmLabel()}
+            onChangeQuad={(quad) => setSelectedPage({ ...selectedPage, quad })}
+            onResetQuad={() => setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
+            onCancel={resetEditState}
             onConfirm={handleConfirm}
           />
         ) : (
@@ -475,7 +453,8 @@ export function MobileCapturePage() {
                 <span>页</span>
               </div>
               <div className="capture-actions">
-                <CapturePhotoButton
+            <CapturePhotoButton
+                  ref={photoButtonRef}
                   disabled={isReadOnly}
                   onFileSelected={handleFileSelected}
                   onClick={startNewPage}
@@ -488,8 +467,8 @@ export function MobileCapturePage() {
               isReadOnly={isReadOnly}
               onDelete={deletePage}
               onRetry={retryUpload}
-              onSupplement={handleSupplement}
-              onRequad={handleRequad}
+              onSupplement={startReplacePage}
+              onRequad={startRequadPage}
               onReorder={reorderPages}
             />
           </>
@@ -499,10 +478,9 @@ export function MobileCapturePage() {
       <CaptureFooter
         disabled={isReadOnly}
         isFinishing={isFinishing}
-        canFinish={true}
         onCaptureNext={() => {
           startNewPage();
-          cameraInputRef.current?.click();
+          photoButtonRef.current?.trigger();
         }}
         onFinish={finishCapture}
       />

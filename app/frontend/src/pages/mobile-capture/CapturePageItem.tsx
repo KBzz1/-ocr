@@ -55,7 +55,7 @@ export function CapturePageItem({
         <span className={`page-item__status is-${page.status}`}>
           {isFailed ? '上传失败' : isUploading ? '上传中' : '已上传'}
         </span>
-        {page.pageId ? <span hidden>{page.pageId}</span> : null}
+        {page.pageId ? <span data-page-id={page.pageId} hidden>{page.pageId}</span> : null}
         {!isReadOnly ? (
           <div className="page-item__actions">
             {isFailed ? (

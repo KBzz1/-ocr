@@ -1,7 +1,6 @@
 interface CaptureFooterProps {
   disabled: boolean;
   isFinishing: boolean;
-  canFinish: boolean;
   onCaptureNext: () => void;
   onFinish: () => void;
 }
@@ -9,7 +8,6 @@ interface CaptureFooterProps {
 export function CaptureFooter({
   disabled,
   isFinishing,
-  canFinish,
   onCaptureNext,
   onFinish
 }: CaptureFooterProps) {
@@ -21,7 +19,7 @@ export function CaptureFooter({
       <button
         className="mobile-button"
         type="button"
-        disabled={disabled || isFinishing || !canFinish}
+        disabled={disabled || isFinishing}
         onClick={onFinish}
       >
         {isFinishing ? '提交中' : '完成采集'}

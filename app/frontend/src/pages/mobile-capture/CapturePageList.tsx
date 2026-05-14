@@ -35,25 +35,6 @@ export function CapturePageList({
     setDragIndex(null);
   }
 
-  if (pages.length === 0) {
-    return (
-      <section className="page-list" aria-label="已采集页面列表">
-        <div className="page-list__header">
-          <div>
-            <h2>页面列表</h2>
-            <p>长按拖拽调整顺序</p>
-          </div>
-        </div>
-        <div className="page-list__empty">
-          <div>
-            <strong>暂未上传页面</strong>
-            <p>上传后可在这里查看、删除或调整顺序</p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="page-list" aria-label="已采集页面列表">
       <div className="page-list__header">
@@ -62,24 +43,33 @@ export function CapturePageList({
           <p>长按拖拽调整顺序</p>
         </div>
       </div>
-      <ol className="page-list__items">
-        {pages.map((page, index) => (
-          <CapturePageItem
-            key={page.localId}
-            page={page}
-            index={index}
-            isReadOnly={isReadOnly}
-            dragDisabled={dragDisabled}
-            onDelete={onDelete}
-            onRetry={onRetry}
-            onSupplement={onSupplement}
-            onRequad={onRequad}
-            onDragStart={setDragIndex}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-          />
-        ))}
-      </ol>
+      {pages.length === 0 ? (
+        <div className="page-list__empty">
+          <div>
+            <strong>暂未上传页面</strong>
+            <p>上传后可在这里查看、删除或调整顺序</p>
+          </div>
+        </div>
+      ) : (
+        <ol className="page-list__items">
+          {pages.map((page, index) => (
+            <CapturePageItem
+              key={page.localId}
+              page={page}
+              index={index}
+              isReadOnly={isReadOnly}
+              dragDisabled={dragDisabled}
+              onDelete={onDelete}
+              onRetry={onRetry}
+              onSupplement={onSupplement}
+              onRequad={onRequad}
+              onDragStart={setDragIndex}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            />
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

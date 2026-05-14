@@ -280,7 +280,7 @@ describe('MobileCapturePage', () => {
 
     // Supplement via inline button (replaces current page image)
     await userEvent.setup().click(screen.getByRole('button', { name: '补拍第 1 页' }));
-    await selectImage('拍照', makeImageFile('supplement.jpg'));
+    await selectImage('拍摄/选择图片', makeImageFile('supplement.jpg'));
     await userEvent.setup().click(screen.getByRole('button', { name: '确认替换' }));
     await waitFor(() => expect(screen.getAllByText('已上传')).toHaveLength(1));
     expect(screen.getByText('第 1 页')).toBeTruthy();
