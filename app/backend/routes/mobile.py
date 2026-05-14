@@ -84,6 +84,13 @@ def upload_page(session_id: str):
 
     image_width, image_height = _parse_dimensions()
     quad_points_raw = request.form.get("quad_points")
+    if quad_points_raw:
+        try:
+            quad_points_parsed = json.loads(quad_points_raw)
+        except (json.JSONDecodeError, TypeError):
+            raise AppError(ErrorCode.INVALID_QUAD_POINTS)
+        quad_points_normalized = _normalize_quad_points(quad_points_parsed)
+        quad_points_raw = json.dumps(quad_points_normalized)
 
     updated = _service().add_page(session_id, upload_ref=None)
     page = updated["pages"][-1]

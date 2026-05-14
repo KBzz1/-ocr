@@ -47,6 +47,25 @@ class SessionService:
 
         return session
 
+    def _with_safe_page_metadata(self, session: dict) -> dict:
+        pages = []
+        for page in session.get("pages", []):
+            enriched = dict(page)
+            upload_ref = page.get("upload_ref")
+            if upload_ref:
+                meta = self._store.read(upload_ref)
+                if isinstance(meta, dict):
+                    if "image_width" in meta:
+                        enriched["image_width"] = meta["image_width"]
+                    if "image_height" in meta:
+                        enriched["image_height"] = meta["image_height"]
+                    if "quad_points" in meta and meta["quad_points"] is not None:
+                        enriched["quad_points"] = [
+                            {"x": pt[0], "y": pt[1]} for pt in meta["quad_points"]
+                        ]
+            pages.append(enriched)
+        return {**session, "pages": pages}
+
     def _persist_session(self, session: dict) -> dict:
         self._store.write(f"sessions/{session['session_id']}.json", session)
         return session

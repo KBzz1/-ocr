@@ -25,7 +25,9 @@ def create_session():
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>", methods=["GET"])
 def get_session(session_id):
-    return success(data=_get_session_service().get(session_id))
+    service = _get_session_service()
+    session = service.get(session_id)
+    return success(data=service._with_safe_page_metadata(session))
 
 
 @capture_session_bp.route("/api/capture-sessions/<session_id>/pages", methods=["POST"])

@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -190,3 +192,51 @@ class TestCaptureSessionAPI:
 
         assert resp.status_code == 400
         assert resp.get_json()["error"]["code"] == "SESSION_EMPTY"
+
+    def test_get_session_includes_safe_page_quad_metadata(self, client):
+        created = create_session(client)
+        sid = created["session_id"]
+        upload = client.post(
+            f"/api/mobile/{sid}/pages",
+            data={
+                "image": (io.BytesIO(b"\xff\xd8\xff\xe0" + b"\x00" * 100), "test.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+                "quad_points": json.dumps([
+                    {"x": 100, "y": 100},
+                    {"x": 1800, "y": 100},
+                    {"x": 1800, "y": 900},
+                    {"x": 100, "y": 900},
+                ]),
+            },
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 201
+
+        resp = client.get(f"/api/capture-sessions/{sid}")
+
+        assert resp.status_code == 200
+        page = resp.get_json()["data"]["pages"][0]
+        assert page["image_width"] == 1920
+        assert page["image_height"] == 1080
+        assert page["quad_points"] == [
+            {"x": 100, "y": 100},
+            {"x": 1800, "y": 100},
+            {"x": 1800, "y": 900},
+            {"x": 100, "y": 900},
+        ]
+        assert "original_image_path" not in page
+
+    def test_get_session_tolerates_missing_page_metadata(self, client):
+        created_session = create_session(client)
+        sid = created_session["session_id"]
+        created = client.post(f"/api/capture-sessions/{sid}/pages")
+        assert created.status_code == 201
+
+        resp = client.get(f"/api/capture-sessions/{sid}")
+
+        assert resp.status_code == 200
+        page = resp.get_json()["data"]["pages"][0]
+        assert page["page_id"]
+        assert "image_width" not in page
+        assert "original_image_path" not in page
