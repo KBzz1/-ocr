@@ -341,3 +341,76 @@ class TestPageServiceQuadUpdate:
         meta = ps._store.read(f"data/pages/{session['session_id']}/{page['page_id']}.json")
         assert meta["quad_points"] == original["quad_points"]
         assert "quad_updated_at" not in meta
+
+
+class TestPageServiceReplaceImage:
+    def test_replace_image_preserves_page_id_and_page_no(self, tmp_path):
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page = ss.add_page(session["session_id"])["pages"][0]
+        original = ps.save(session["session_id"], page["page_id"], page["page_no"], _make_jpg(), 1920, 1080)
+
+        replacement_quad = json.dumps([
+            [50, 60],
+            [950, 60],
+            [950, 1260],
+            [50, 1260],
+        ])
+
+        updated = ps.replace_image(
+            session["session_id"],
+            page["page_id"],
+            b"\xff\xd8\xff\xe0" + b"\x11" * 120,
+            1000,
+            1400,
+            replacement_quad,
+        )
+
+        assert updated["page_id"] == original["page_id"]
+        assert updated["page_no"] == original["page_no"]
+        assert updated["image_width"] == 1000
+        assert updated["image_height"] == 1400
+        assert updated["quad_points"] == [
+            [50, 60],
+            [950, 60],
+            [950, 1260],
+            [50, 1260],
+        ]
+        assert updated["uploaded_at"] is not None
+        assert updated["quad_updated_at"] is not None
+        assert ss.get(session["session_id"])["pages"][0]["page_id"] == page["page_id"]
+
+    def test_replace_image_failure_keeps_previous_metadata(self, tmp_path):
+        from app.backend.errors import AppError, ErrorCode
+
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page = ss.add_page(session["session_id"])["pages"][0]
+        original = ps.save(
+            session["session_id"],
+            page["page_id"],
+            page["page_no"],
+            _make_jpg(),
+            1920,
+            1080,
+            quad_points_raw=json.dumps([[0, 0], [1920, 0], [1920, 1080], [0, 1080]]),
+        )
+
+        with pytest.raises(AppError) as exc_info:
+            ps.replace_image(
+                session["session_id"],
+                page["page_id"],
+                b"%PDF-1.4 fake pdf",
+                1000,
+                1400,
+                json.dumps([[0, 0], [1000, 0], [1000, 1400], [0, 1400]]),
+            )
+
+        assert exc_info.value.code == ErrorCode.UNSUPPORTED_FILE_TYPE.code
+        meta = ps._store.read(f"data/pages/{session['session_id']}/{page['page_id']}.json")
+        assert meta["original_image_path"] == original["original_image_path"]
+        assert meta["image_width"] == 1920
+        assert meta["image_height"] == 1080
+        assert meta["quad_points"] == original["quad_points"]

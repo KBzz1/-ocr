@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from datetime import datetime, timezone
 
 from .file_validator import FileValidator
@@ -119,3 +120,83 @@ class PageService:
         meta["quad_updated_at"] = datetime.now(timezone.utc).isoformat()
         self._store.write(page["upload_ref"], meta)
         return meta
+
+    def replace_image(
+        self,
+        session_id: str,
+        page_id: str,
+        image_data: bytes,
+        image_width: int,
+        image_height: int,
+        quad_points_raw: str | None = None,
+    ) -> dict:
+        if not isinstance(image_width, int) or image_width <= 0:
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="image_width 必须为正整数")
+        if not isinstance(image_height, int) or image_height <= 0:
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="image_height 必须为正整数")
+
+        session = self._session_service.get(session_id)
+        page = next((p for p in session.get("pages", []) if p.get("page_id") == page_id), None)
+        if page is None or not page.get("upload_ref"):
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        previous_meta = self._store.read(page["upload_ref"])
+        if previous_meta is None:
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        validation = self._file_validator.validate(image_data)
+        quad_points = validate_quad_points(
+            quad_points_raw,
+            image_width,
+            image_height,
+            self._min_quad_area_ratio,
+        )
+        ext = validation["ext"]
+        rel_path = self._file_validator.build_path(session_id, page_id, ext)
+        abs_image_path = os.path.join(self._storage_dir, rel_path)
+        os.makedirs(os.path.dirname(abs_image_path), exist_ok=True)
+
+        previous_image_path = previous_meta.get("original_image_path")
+        new_meta = {
+            **previous_meta,
+            "page_id": page_id,
+            "session_id": session_id,
+            "page_no": page["page_no"],
+            "original_image_path": abs_image_path,
+            "processed_image_path": None,
+            "image_width": image_width,
+            "image_height": image_height,
+            "quad_points": quad_points,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "quad_updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        tmp_path = abs_image_path + ".tmp"
+        backup_path = abs_image_path + ".bak"
+        made_backup = False
+
+        try:
+            if previous_image_path == abs_image_path and os.path.isfile(abs_image_path):
+                shutil.copy2(abs_image_path, backup_path)
+                made_backup = True
+
+            with open(tmp_path, "wb") as f:
+                f.write(image_data)
+            os.replace(tmp_path, abs_image_path)
+            self._store.write(page["upload_ref"], new_meta)
+        except Exception:
+            self._safe_remove(tmp_path)
+            if made_backup and os.path.isfile(backup_path):
+                os.replace(backup_path, abs_image_path)
+            self._store.write(page["upload_ref"], previous_meta)
+            if abs_image_path != previous_image_path:
+                self._safe_remove(abs_image_path)
+            raise
+        finally:
+            self._safe_remove(tmp_path)
+            self._safe_remove(backup_path)
+
+        if previous_image_path and previous_image_path != abs_image_path:
+            self._safe_remove(previous_image_path)
+
+        return new_meta
