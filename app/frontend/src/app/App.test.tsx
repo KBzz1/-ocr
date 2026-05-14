@@ -2,13 +2,20 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import { mockCreateCaptureSession, mockCreateCaptureSessionError } from '../../tests/fixtures/sessions';
+import {
+  activeSession,
+  mockCreateCaptureSession,
+  mockCreateCaptureSessionError,
+  mockGetCaptureSession
+} from '../../tests/fixtures/sessions';
 import { mockSystemStatus, mockSystemStatusError } from '../../tests/fixtures/system';
 import { mockTasks, taskFixtures } from '../../tests/fixtures/tasks';
 import { server } from '../../tests/setupTests';
+import { buildMobileSessionPath } from './routes';
 import { App } from './App';
 
 function renderWorkstation() {
+  window.history.pushState({}, '', '/');
   server.use(mockSystemStatus(), mockTasks());
   return render(<App />);
 }
@@ -38,6 +45,19 @@ function expectBodyNotToContain(pattern: RegExp | string) {
 }
 
 describe('Workstation data integration', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('renders mobile capture page for scanned QR mobile paths', async () => {
+    server.use(mockGetCaptureSession({ ...activeSession, page_count: 0, pages: [] }));
+    window.history.pushState({}, '', buildMobileSessionPath('sess_001'));
+    render(<App />);
+
+    expect(await screen.findByText('采集会话进行中')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /新建采集/ })).toBeNull();
+  });
+
   it('renders business system status without exposing addresses on the homepage', async () => {
     renderWorkstation();
 
@@ -109,7 +129,7 @@ describe('Workstation data integration', () => {
     expectPresent(within(dialog).getByText(/已上传页数 2 页/));
     expect(screen.queryByRole('button', { name: '结束会话' })).toBeNull();
     expectBodyNotToContain(/192\.168\.1\.5:8081\/mobile\/sess_001/);
-    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:5173/mobile/sessions/sess_001');
+    expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:5173/mobile/sessions/sess_001');
   });
 
   it('shows connection help and copyable mobile link only after request', async () => {
@@ -125,7 +145,7 @@ describe('Workstation data integration', () => {
 
     expectPresent(within(dialog).getByText('手机访问链接'));
     expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
-      'http://192.168.1.5:5173/mobile/sessions/sess_001'
+      'http://127.0.0.1:5173/mobile/sessions/sess_001'
     );
   });
 
