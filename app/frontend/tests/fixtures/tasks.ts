@@ -63,14 +63,17 @@ export function mockTaskDetail(task = taskFixtures[0]) {
   );
 }
 
-export function mockRetryTaskProcessing(taskId = 'task-failed') {
+export function mockRetryTaskProcessing(
+  taskId = 'task-failed',
+  resolve: () => { task_id: string; status: string } = () => ({
+    task_id: taskId,
+    status: 'processing'
+  })
+) {
   return http.post(`*/api/tasks/${taskId}/retry`, () =>
     HttpResponse.json({
       success: true,
-      data: {
-        task_id: taskId,
-        status: 'processing'
-      }
+      data: resolve()
     })
   );
 }

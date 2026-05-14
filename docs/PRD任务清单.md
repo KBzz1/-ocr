@@ -29,6 +29,7 @@
 | BE-10 API 契约和后端 E2E | 已完成 | `app/backend/tests/test_backend_e2e.py`、`app/backend/tests/test_api_contracts.py`、`docs/superpowers/specs/2026-05-13-backend-e2e-contracts-design.md` | 使用本地 fixtures 覆盖成功/失败主流程和 API 契约；不访问外网 |
 | BE-01 Windows 启停与离线启动 | 已完成 | `run.bat`、`stop.bat`、`scripts/offline_startup_check.py`、`docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md` | 聚焦 Windows 启停、PID、健康检查和断网启动验收；不实现业务 API |
 | FE-01 工作台首页第一阶段 | 已完成 | `app/frontend/`、`docs/Front/Design/`、`docs/superpowers/specs/2026-05-13-frontend-workstation-design.md`、`docs/superpowers/plans/2026-05-13-frontend-workstation-foundation-plan.md` | 已完成前端地基、首页、新建采集、二维码弹窗和会话状态；`npm run test`、`npm run typecheck`、`npm run build` 通过；Playwright 在当前沙箱卡住，作为 FE-06 质量门风险继续排查 |
+| FE-S1/S2 共享契约和路由骨架 | 已完成 | `app/frontend/src/api/`、`app/frontend/src/app/routes.tsx`、`app/frontend/src/styles/status.ts`、`app/frontend/tests/fixtures/`、`docs/superpowers/plans/2026-05-14-frontend-shared-contracts-routing-plan.md` | 已完成手机采集、任务、审核、导出 API 边界，状态文案、错误归一化、路由常量和占位入口；`npm run test`、`npm run typecheck`、`npm run build` 通过；当前沙箱 Playwright 30 秒超时 |
 
 ## 后端任务
 
@@ -375,9 +376,10 @@
 5. ~~完成 `BE-06` schema 加载、版本记录和候选字段 key 校验。~~ ✅
 6. ~~并行推进 `BE-07` 审核结果、`BE-09` 日志/隐私/离线检查、`BE-01` Windows 启停与离线启动。~~ ✅
 7. ~~等 `BE-07` 审核数据结构稳定后，推进 `BE-08` 导出服务。~~ ✅
-8. 当前下一步按 `docs/superpowers/specs/2026-05-14-frontend-next-stage-orchestration-design.md` 推进：先串行收口共享契约和路由骨架，再实现 `FE-02` 手机采集页。
-9. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
-10. 做 `FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
+8. ~~按 `docs/superpowers/specs/2026-05-14-frontend-next-stage-orchestration-design.md` 串行收口共享契约和路由骨架。~~ ✅
+9. 当前下一步实现 `FE-02` 手机采集页。
+10. 完成 `FE-03` 到 `FE-05` 的任务列表、审核和导出交互。
+11. 做 `FE-06` 和 `REL-*` 的 E2E、离线和发布验收。
 
 ## 全局边界
 

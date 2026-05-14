@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw';
 
-export const activeSession = {
+import type { CaptureSession } from '../../src/api/captureSessions';
+
+export const activeSession: CaptureSession = {
   session_id: 'sess_001',
   status: 'active',
   created_at: '2026-05-13T10:00:00+08:00',
@@ -35,7 +37,7 @@ export function mockGetCaptureSession(session = activeSession) {
 }
 
 export function mockUploadCapturePage(sessionId = activeSession.session_id) {
-  return http.post(`*/api/capture-sessions/${sessionId}/pages`, () =>
+  return http.post(`*/api/mobile/${sessionId}/pages`, () =>
     HttpResponse.json({
       success: true,
       data: {
@@ -48,7 +50,7 @@ export function mockUploadCapturePage(sessionId = activeSession.session_id) {
 }
 
 export function mockFinishCaptureSession(sessionId = activeSession.session_id) {
-  return http.post(`*/api/capture-sessions/${sessionId}/finish`, () =>
+  return http.post(`*/api/mobile/${sessionId}/finish`, () =>
     HttpResponse.json({
       success: true,
       data: {

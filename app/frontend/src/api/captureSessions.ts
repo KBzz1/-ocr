@@ -56,25 +56,28 @@ export function getCaptureSession(sessionId: string) {
   return apiRequest<CaptureSession>(`/api/capture-sessions/${encodeURIComponent(sessionId)}`);
 }
 
-export function uploadCapturePage(sessionId: string, input: CapturePageUploadInput) {
+export function buildCapturePageFormData(input: CapturePageUploadInput) {
   const formData = new FormData();
-  formData.set('file', input.file);
-  formData.set('width', String(input.width));
-  formData.set('height', String(input.height));
+  formData.set('image', input.file);
+  formData.set('image_width', String(input.width));
+  formData.set('image_height', String(input.height));
   formData.set('quad_points', JSON.stringify(input.quad_points));
+  return formData;
+}
 
+export function uploadCapturePage(sessionId: string, input: CapturePageUploadInput) {
   return apiRequest<CapturePageUploadResult>(
-    `/api/capture-sessions/${encodeURIComponent(sessionId)}/pages`,
+    `/api/mobile/${encodeURIComponent(sessionId)}/pages`,
     {
       method: 'POST',
-      body: formData
+      body: buildCapturePageFormData(input)
     }
   );
 }
 
 export function finishCaptureSession(sessionId: string) {
   return apiRequest<FinishCaptureSessionResult>(
-    `/api/capture-sessions/${encodeURIComponent(sessionId)}/finish`,
+    `/api/mobile/${encodeURIComponent(sessionId)}/finish`,
     { method: 'POST' }
   );
 }

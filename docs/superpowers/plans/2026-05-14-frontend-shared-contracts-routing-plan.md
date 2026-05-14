@@ -34,7 +34,7 @@ This plan intentionally does not implement mobile capture UI, task list UI, revi
 
 ## Task 1: Add Shared Contract Tests
 
-- [ ] **Step 1: Create `app/frontend/src/api/shared-contracts.test.ts`**
+- [x] **Step 1: Create `app/frontend/src/api/shared-contracts.test.ts`**
 
 Add tests that assert the next-stage contract surface without building pages:
 
@@ -249,7 +249,7 @@ describe('shared frontend contracts', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -262,11 +262,11 @@ Expected: fails because `review.ts`, `export.ts`, `errors.ts`, extended capture 
 
 ## Task 2: Implement Shared API And Status Contracts
 
-- [ ] **Step 1: Extend `app/frontend/src/styles/status.ts`**
+- [x] **Step 1: Extend `app/frontend/src/styles/status.ts`**
 
 Define `taskStatusMeta`, `sessionStatusMeta`, `fieldStatusMeta`, and `exportStatusMeta`. Keep existing exports used by FE-01.
 
-- [ ] **Step 2: Extend `app/frontend/src/api/captureSessions.ts`**
+- [x] **Step 2: Extend `app/frontend/src/api/captureSessions.ts`**
 
 Add:
 
@@ -276,7 +276,7 @@ Add:
 
 Use `FormData` for uploads. Serialize `quad_points` exactly with `JSON.stringify(input.quad_points)`.
 
-- [ ] **Step 3: Extend `app/frontend/src/api/tasks.ts`**
+- [x] **Step 3: Extend `app/frontend/src/api/tasks.ts`**
 
 Add:
 
@@ -285,7 +285,7 @@ Add:
 
 Do not invent task states outside `TaskStatus`.
 
-- [ ] **Step 4: Add `app/frontend/src/api/review.ts`**
+- [x] **Step 4: Add `app/frontend/src/api/review.ts`**
 
 Add:
 
@@ -295,7 +295,7 @@ Add:
 
 The types must preserve candidate value and final value separately.
 
-- [ ] **Step 5: Add `app/frontend/src/api/export.ts`**
+- [x] **Step 5: Add `app/frontend/src/api/export.ts`**
 
 Add:
 
@@ -304,11 +304,11 @@ Add:
 
 Use `fetch` directly or a new client helper because existing `apiRequest` expects JSON. Do not create Excel content in the frontend.
 
-- [ ] **Step 6: Add `app/frontend/src/api/errors.ts`**
+- [x] **Step 6: Add `app/frontend/src/api/errors.ts`**
 
 Add `normalizeApiError(error)` that maps known codes to safe Chinese messages and never returns stack traces, raw OCR text, image base64, or model output.
 
-- [ ] **Step 7: Run the focused test and verify GREEN**
+- [x] **Step 7: Run the focused test and verify GREEN**
 
 Run:
 
@@ -321,7 +321,7 @@ Expected: `shared-contracts.test.ts` passes.
 
 ## Task 3: Add Route Skeleton Tests
 
-- [ ] **Step 1: Create `app/frontend/src/app/routes.test.ts`**
+- [x] **Step 1: Create `app/frontend/src/app/routes.test.ts`**
 
 Add:
 
@@ -352,7 +352,7 @@ describe('frontend route skeleton', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -365,7 +365,7 @@ Expected: fails because these route exports do not exist yet.
 
 ## Task 4: Implement Route Skeleton
 
-- [ ] **Step 1: Update `app/frontend/src/app/routes.tsx`**
+- [x] **Step 1: Update `app/frontend/src/app/routes.tsx`**
 
 Add route metadata and path builders for:
 
@@ -375,7 +375,7 @@ Add route metadata and path builders for:
 - `/tasks/:taskId/review`
 - `/tasks/:taskId/export`
 
-- [ ] **Step 2: Add placeholder pages**
+- [x] **Step 2: Add placeholder pages**
 
 Create:
 
@@ -394,7 +394,7 @@ export function MobileCapturePlaceholder() {
 
 Use matching labels/text for each page. Do not add real UI workflows.
 
-- [ ] **Step 3: Run route tests and verify GREEN**
+- [x] **Step 3: Run route tests and verify GREEN**
 
 Run:
 
@@ -407,7 +407,7 @@ Expected: route skeleton tests pass.
 
 ## Task 5: Update Fixtures And README
 
-- [ ] **Step 1: Add fixture files**
+- [x] **Step 1: Add fixture files**
 
 Create or extend:
 
@@ -418,7 +418,7 @@ Create or extend:
 
 Fixtures must use synthetic data only. Do not include full medical record text, ID numbers, image base64, raw model output, or real patient data.
 
-- [ ] **Step 2: Update `app/frontend/README.md`**
+- [x] **Step 2: Update `app/frontend/README.md`**
 
 Add a short “下一阶段契约层” section:
 
@@ -430,7 +430,7 @@ Add a short “下一阶段契约层” section:
 - 页面实现仍按 FE-02 到 FE-05 分阶段推进；契约层不实现 OCR、图像处理、字段推断或前端 Excel 生成。
 ```
 
-- [ ] **Step 3: Run full component test suite**
+- [x] **Step 3: Run full component test suite**
 
 Run:
 
@@ -443,7 +443,7 @@ Expected: all Vitest tests pass.
 
 ## Task 6: Final Verification And Commit
 
-- [ ] **Step 1: Run quality gates**
+- [x] **Step 1: Run quality gates**
 
 Run:
 
@@ -460,7 +460,7 @@ Expected:
 - TypeScript emits no errors.
 - Vite build completes.
 
-- [ ] **Step 2: Run static offline scan**
+- [x] **Step 2: Run static offline scan**
 
 Run:
 
@@ -471,7 +471,7 @@ rg -n "https?://|cdn|unpkg|telemetry|analytics|fonts.googleapis|fonts.gstatic" a
 
 Expected: only local test/config loopback URLs, if any. No CDN, remote font, telemetry, analytics, or public API URL.
 
-- [ ] **Step 3: Record E2E status**
+- [x] **Step 3: Record E2E status**
 
 Run:
 
@@ -482,7 +482,7 @@ timeout 30s npm run test:e2e
 
 Expected in current Codex sandbox: exit code `124` with no Playwright test output. If it passes in a different environment, update README and PRD task notes with the exact result.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Run:
 

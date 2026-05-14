@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 
 import {
+  buildCapturePageFormData,
   finishCaptureSession,
   getCaptureSession,
   uploadCapturePage
@@ -34,6 +35,24 @@ describe('shared frontend contracts', () => {
 
   it('loads capture session, uploads page metadata and finishes capture', async () => {
     let uploadEndpointWasCalled = false;
+    const uploadInput = {
+      file: new File(['image'], 'page.jpg', { type: 'image/jpeg' }),
+      width: 1200,
+      height: 1600,
+      quad_points: [
+        { x: 0, y: 0 },
+        { x: 1200, y: 0 },
+        { x: 1200, y: 1600 },
+        { x: 0, y: 1600 }
+      ]
+    };
+    const formData = buildCapturePageFormData(uploadInput);
+
+    expect(formData.get('image')).toBe(uploadInput.file);
+    expect(formData.get('image_width')).toBe('1200');
+    expect(formData.get('image_height')).toBe('1600');
+    expect(formData.get('quad_points')).toBe(JSON.stringify(uploadInput.quad_points));
+
     server.use(
       http.get('*/api/capture-sessions/sess_001', () =>
         HttpResponse.json({
@@ -48,7 +67,7 @@ describe('shared frontend contracts', () => {
           }
         })
       ),
-      http.post('*/api/capture-sessions/sess_001/pages', () => {
+      http.post('*/api/mobile/sess_001/pages', () => {
         uploadEndpointWasCalled = true;
         return HttpResponse.json({
           success: true,
@@ -59,7 +78,7 @@ describe('shared frontend contracts', () => {
           }
         });
       }),
-      http.post('*/api/capture-sessions/sess_001/finish', () =>
+      http.post('*/api/mobile/sess_001/finish', () =>
         HttpResponse.json({
           success: true,
           data: {
@@ -72,19 +91,7 @@ describe('shared frontend contracts', () => {
     );
 
     await expect(getCaptureSession('sess_001')).resolves.toMatchObject({ session_id: 'sess_001' });
-    await expect(
-      uploadCapturePage('sess_001', {
-        file: new File(['image'], 'page.jpg', { type: 'image/jpeg' }),
-        width: 1200,
-        height: 1600,
-        quad_points: [
-          { x: 0, y: 0 },
-          { x: 1200, y: 0 },
-          { x: 1200, y: 1600 },
-          { x: 0, y: 1600 }
-        ]
-      })
-    ).resolves.toMatchObject({ page_id: 'page_001' });
+    await expect(uploadCapturePage('sess_001', uploadInput)).resolves.toMatchObject({ page_id: 'page_001' });
     expect(uploadEndpointWasCalled).toBe(true);
     await expect(finishCaptureSession('sess_001')).resolves.toMatchObject({ task_id: 'task_001' });
   });
