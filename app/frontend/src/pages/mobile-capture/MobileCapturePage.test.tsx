@@ -20,6 +20,10 @@ afterEach(() => {
   cleanup();
 });
 
+function jsonOk(data: unknown) {
+  return HttpResponse.json({ success: true, data });
+}
+
 function renderMobileCapture(path = '/mobile/sessions/sess_001') {
   window.history.pushState({}, '', path);
   return render(<MobileCapturePage />);
@@ -209,11 +213,11 @@ describe('MobileCapturePage', () => {
         ]
       }),
       mockUploadCapturePageSuccess(),
-      http.delete('*/api/mobile/sess_001/pages/:pageId', () =>
-        HttpResponse.json({ success: true, data: { ok: true } })
+      http.delete('*/api/capture-sessions/sess_001/pages/:pageId', () =>
+        jsonOk({ ok: true })
       ),
-      http.post('*/api/mobile/sess_001/pages/reorder', () =>
-        HttpResponse.json({ success: true, data: { ok: true } })
+      http.put('*/api/capture-sessions/sess_001/pages/order', () =>
+        jsonOk({ ok: true })
       ),
       http.post('*/api/mobile/sess_001/finish', () => {
         finishCalls += 1;
@@ -266,5 +270,42 @@ describe('MobileCapturePage', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: '完成采集' }));
     expect(screen.getByText('请至少采集一页病历')).toBeTruthy();
     expect(finishCalls).toBe(0);
+  });
+
+  it('uses capture-session routes for delete and reorder', async () => {
+    const calls: string[] = [];
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    server.use(
+      mockGetCaptureSession({
+        ...activeSession,
+        page_count: 2,
+        pages: [
+          { page_id: 'page_a', page_no: 1 },
+          { page_id: 'page_b', page_no: 2 }
+        ]
+      }),
+      http.delete('*/api/capture-sessions/sess_001/pages/:pageId', ({ request }) => {
+        calls.push(new URL(request.url).pathname);
+        return jsonOk({ ok: true });
+      }),
+      http.put('*/api/capture-sessions/sess_001/pages/order', async ({ request }) => {
+        calls.push(new URL(request.url).pathname);
+        expect(await request.json()).toEqual({ page_ids: ['page_b', 'page_a'] });
+        return jsonOk({ ok: true });
+      })
+    );
+
+    renderMobileCapture();
+    await screen.findByText('第 1 页');
+    // 点击下移 → 触发排序
+    await userEvent.setup().click(screen.getByRole('button', { name: '下移第 1 页' }));
+    // 点击删除
+    await userEvent.setup().click(screen.getByRole('button', { name: '删除第 1 页' }));
+
+    await waitFor(() => expect(calls).toEqual([
+      '/api/capture-sessions/sess_001/pages/order',
+      '/api/capture-sessions/sess_001/pages/page_b',
+    ]));
+    confirmSpy.mockRestore();
   });
 });

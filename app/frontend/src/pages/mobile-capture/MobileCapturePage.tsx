@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiError, apiRequest } from '../../api/client';
+import { ApiError } from '../../api/client';
+import {
+  deleteCapturePage,
+  reorderCapturePages
+} from './mobileCaptureApi';
 import {
   finishCaptureSession,
   getCaptureSession,
@@ -107,24 +111,6 @@ function buildLocalPage(file: File, insertAt: number): CapturePageItem {
     height: PREVIEW_HEIGHT,
     quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT)
   };
-}
-
-async function deleteCapturePage(sessionId: string, pageId: string) {
-  await apiRequest<{ ok: boolean }>(
-    `/api/mobile/${encodeURIComponent(sessionId)}/pages/${encodeURIComponent(pageId)}`,
-    { method: 'DELETE' }
-  );
-}
-
-async function reorderCapturePages(sessionId: string, pageIds: string[]) {
-  await apiRequest<{ ok: boolean }>(
-    `/api/mobile/${encodeURIComponent(sessionId)}/pages/reorder`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page_ids: pageIds })
-    }
-  );
 }
 
 export function MobileCapturePage() {
