@@ -20,6 +20,7 @@ import {
   type QuadPointsByCorner
 } from '../../components/mobile-capture/QuadSelector';
 import { CapturePhotoButton } from './CapturePhotoButton';
+import { CapturePageList } from './CapturePageList';
 import { CaptureQuadScreen } from './CaptureQuadScreen';
 import { CaptureFooter } from './CaptureFooter';
 import './mobile-capture.css';
@@ -111,7 +112,6 @@ export function MobileCapturePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedPage, setSelectedPage] = useState<CapturePageItem | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
-  const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -163,8 +163,7 @@ export function MobileCapturePage() {
       return;
     }
 
-    const targetIndex = insertIndex ?? pages.length;
-    const page = buildLocalPage(file, targetIndex);
+    const page = buildLocalPage(file, pages.length);
     setSelectedPage(page);
     setError(null);
   }
@@ -204,15 +203,10 @@ export function MobileCapturePage() {
         const next =
           existingIndex >= 0
             ? current.map((item) => (item.localId === uploaded.localId ? uploaded : item))
-            : [
-                ...current.slice(0, insertIndex ?? current.length),
-                uploaded,
-                ...current.slice(insertIndex ?? current.length)
-              ];
+            : [...current, uploaded];
         return renumberPages(next);
       });
       setSelectedPage(null);
-      setInsertIndex(null);
     } catch (uploadError) {
       const failed = { ...uploadingPage, status: 'failed' as const };
       setPages((current) => {
@@ -244,15 +238,12 @@ export function MobileCapturePage() {
     setPages((current) => renumberPages(current.filter((item) => item.localId !== page.localId)));
   }
 
-  async function movePage(index: number, direction: -1 | 1) {
+  async function reorderPages(fromIndex: number, toIndex: number) {
     if (isReadOnly) return;
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= pages.length) return;
-
     const previous = pages;
     const next = [...pages];
-    const [moved] = next.splice(index, 1);
-    next.splice(targetIndex, 0, moved);
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
     const renumbered = renumberPages(next);
     setPages(renumbered);
 
@@ -267,10 +258,15 @@ export function MobileCapturePage() {
     }
   }
 
-  function supplementPage(index: number | null = null) {
+  function handleSupplement(page: CapturePageItem) {
     if (isReadOnly) return;
-    setInsertIndex(index);
+    // 补拍将在 Task 8 中实现替换逻辑，目前先触发新的拍照
     cameraInputRef.current?.click();
+  }
+
+  function handleRequad(page: CapturePageItem) {
+    if (isReadOnly) return;
+    // 重新框选将在后续任务中实现
   }
 
   async function finishCapture() {
@@ -372,27 +368,15 @@ export function MobileCapturePage() {
               </div>
             </section>
 
-            <PageList
+            <CapturePageList
               pages={pages}
               isReadOnly={isReadOnly}
               onDelete={deletePage}
-              onMove={movePage}
               onRetry={retryUpload}
-              onSupplement={supplementPage}
+              onSupplement={handleSupplement}
+              onRequad={handleRequad}
+              onReorder={reorderPages}
             />
-
-            <section className="supplement-card">
-              <h2>补拍页面</h2>
-              <p>若页面模糊、缺失或拍摄不完整，可补拍后替换该页。</p>
-              <button
-                className="mobile-button secondary"
-                type="button"
-                disabled={isReadOnly}
-                onClick={() => supplementPage(pages.length)}
-              >
-                补拍页面
-              </button>
-            </section>
           </>
         )}
       </section>
@@ -405,96 +389,5 @@ export function MobileCapturePage() {
         onFinish={finishCapture}
       />
     </main>
-  );
-}
-
-interface PageListProps {
-  pages: CapturePageItem[];
-  isReadOnly: boolean;
-  onDelete: (page: CapturePageItem) => void;
-  onMove: (index: number, direction: -1 | 1) => void;
-  onRetry: (page: CapturePageItem) => void;
-  onSupplement: (index: number) => void;
-}
-
-function PageList({ pages, isReadOnly, onDelete, onMove, onRetry, onSupplement }: PageListProps) {
-  return (
-    <section className="page-list" aria-label="已采集页面列表">
-      <div className="page-list__header">
-        <div>
-          <h2>已采集页面列表</h2>
-          <p>上传后可在这里查看、删除或调整顺序</p>
-        </div>
-      </div>
-
-      {pages.length === 0 ? (
-        <div className="page-list__empty">
-          <div>
-            <strong>暂未上传页面</strong>
-            <p>上传后可在这里查看、删除或调整顺序</p>
-          </div>
-        </div>
-      ) : (
-        <ol className="page-list__items">
-          {pages.map((page, index) => (
-            <li
-              className="page-item"
-              key={page.localId}
-              aria-label={`第 ${index + 1} 页 ${page.status === 'failed' ? '上传失败' : '已上传'}`}
-            >
-              <div className="page-item__thumb">
-                {page.previewUrl ? <img src={page.previewUrl} alt={`第 ${index + 1} 页缩略图`} /> : '缩略图'}
-              </div>
-              <div>
-                <h3>第 {index + 1} 页</h3>
-                <span className={`page-item__status is-${page.status}`}>
-                  {page.status === 'failed'
-                    ? '上传失败，请重试'
-                    : page.status === 'uploading'
-                      ? '上传中'
-                      : '已上传'}
-                </span>
-                {page.pageId ? <span hidden>{page.pageId}</span> : null}
-                {!isReadOnly ? (
-                  <div className="page-item__actions">
-                    {page.status === 'failed' ? (
-                      <button type="button" onClick={() => onRetry(page)} aria-label={`重试第 ${index + 1} 页`}>
-                        重试
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => onDelete(page)}
-                      aria-label={`删除第 ${index + 1} 页`}
-                    >
-                      删除
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => onMove(index, -1)}
-                      aria-label={`上移第 ${index + 1} 页`}
-                    >
-                      上移
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === pages.length - 1}
-                      onClick={() => onMove(index, 1)}
-                      aria-label={`下移第 ${index + 1} 页`}
-                    >
-                      下移
-                    </button>
-                    <button type="button" onClick={() => onSupplement(index + 1)}>
-                      补拍
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
   );
 }

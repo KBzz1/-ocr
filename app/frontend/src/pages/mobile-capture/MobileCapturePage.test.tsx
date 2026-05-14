@@ -1,5 +1,5 @@
 import { afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
@@ -41,6 +41,30 @@ async function selectImage(label = '选择已有图片', file = makeImageFile())
   const user = userEvent.setup();
   await user.upload(fileInput(label), file);
   return user;
+}
+
+/** Create a drag event compatible with jsdom (polyfills DragEvent if absent). */
+function createDragEvent(type: string) {
+  if (typeof DragEvent === 'function') {
+    return new DragEvent(type, { bubbles: true });
+  }
+  // Fallback for jsdom without DragEvent
+  const event = new Event(type, { bubbles: true }) as DragEvent;
+  Object.defineProperty(event, 'dataTransfer', {
+    value: {
+      setData: () => {},
+      getData: () => '',
+      clearData: () => {},
+      effectAllowed: 'move',
+      dropEffect: 'move',
+      items: [],
+      types: [],
+      files: [],
+      setDragImage: () => {}
+    },
+    writable: false
+  });
+  return event;
 }
 
 describe('MobileCapturePage', () => {
@@ -101,6 +125,9 @@ describe('MobileCapturePage', () => {
     renderMobileCapture();
     expect(await screen.findByText('采集已完成，请在电脑端查看')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '删除第 1 页' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /上移/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /下移/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: '补拍页面' })).toBeNull();
   });
 
   it('previews selected images, blocks invalid files and uploads quad metadata once', async () => {
@@ -231,19 +258,30 @@ describe('MobileCapturePage', () => {
     renderMobileCapture();
 
     await screen.findByText('第 1 页');
-    await userEvent.setup().click(screen.getByRole('button', { name: '下移第 1 页' }));
-    expect(screen.getAllByText(/第 [12] 页/)[0].textContent).toBe('第 1 页');
 
+    // Old move buttons should not exist
+    expect(screen.queryByRole('button', { name: /上移/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /下移/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: '补拍页面' })).toBeNull();
+
+    // New inline buttons should exist
+    expect(screen.getByRole('button', { name: /补拍第 1 页/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /重新框选第 1 页/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /删除第 1 页/ })).toBeTruthy();
+
+    // Delete a page
     await userEvent.setup().click(screen.getByRole('button', { name: '删除第 1 页' }));
     expect(confirmSpy).toHaveBeenCalled();
     await waitFor(() => expect(screen.getAllByText('已上传')).toHaveLength(1));
     expect(screen.getByText('已采集 1 页')).toBeTruthy();
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '补拍页面' }));
+    // Supplement via inline button
+    await userEvent.setup().click(screen.getByRole('button', { name: '补拍第 1 页' }));
     await selectImage('拍照', makeImageFile('supplement.jpg'));
     await userEvent.setup().click(screen.getByRole('button', { name: '确认上传' }));
     expect(await screen.findByText('第 2 页')).toBeTruthy();
 
+    // Finish
     const finishButton = screen.getByRole('button', { name: '完成采集' });
     await userEvent.setup().dblClick(finishButton);
     await waitFor(() => expect(finishCalls).toBe(1));
@@ -273,6 +311,43 @@ describe('MobileCapturePage', () => {
     expect(finishCalls).toBe(0);
   });
 
+  it('reorders uploaded pages with drag handle', async () => {
+    const calls: string[][] = [];
+    server.use(
+      mockGetCaptureSession({
+        ...activeSession,
+        page_count: 2,
+        pages: [
+          { page_id: 'page_a', page_no: 1 },
+          { page_id: 'page_b', page_no: 2 }
+        ]
+      }),
+      http.put('*/api/capture-sessions/sess_001/pages/order', async ({ request }) => {
+        const body = await request.json() as { page_ids: string[] };
+        calls.push(body.page_ids);
+        return HttpResponse.json({ success: true, data: { ok: true } });
+      })
+    );
+
+    renderMobileCapture();
+    await screen.findByText('第 1 页');
+    const source = screen.getByLabelText('拖拽第 2 页');
+    const target = screen.getByLabelText('第 1 页 已上传');
+
+    // Dispatch drag events with act to flush React state between events
+    await act(() => {
+      source.dispatchEvent(createDragEvent('dragstart'));
+    });
+    await act(() => {
+      target.dispatchEvent(createDragEvent('dragover'));
+    });
+    await act(() => {
+      target.dispatchEvent(createDragEvent('drop'));
+    });
+
+    await waitFor(() => expect(calls).toEqual([['page_b', 'page_a']]));
+  });
+
   it('uses capture-session routes for delete and reorder', async () => {
     const calls: string[] = [];
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -298,9 +373,22 @@ describe('MobileCapturePage', () => {
 
     renderMobileCapture();
     await screen.findByText('第 1 页');
-    // 点击下移 → 触发排序
-    await userEvent.setup().click(screen.getByRole('button', { name: '下移第 1 页' }));
-    // 点击删除
+
+    // Drag page 2 to page 1 position
+    const source = screen.getByLabelText('拖拽第 2 页');
+    const target = screen.getByLabelText('第 1 页 已上传');
+
+    await act(() => {
+      source.dispatchEvent(createDragEvent('dragstart'));
+    });
+    await act(() => {
+      target.dispatchEvent(createDragEvent('dragover'));
+    });
+    await act(() => {
+      target.dispatchEvent(createDragEvent('drop'));
+    });
+
+    // Click delete on the now-first page (was page_b after reorder)
     await userEvent.setup().click(screen.getByRole('button', { name: '删除第 1 页' }));
 
     await waitFor(() => expect(calls).toEqual([
