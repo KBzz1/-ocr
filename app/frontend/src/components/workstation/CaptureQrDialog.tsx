@@ -87,7 +87,12 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
               手机需与电脑处于同一网络环境，无法连接时请查看帮助说明。
             </div>
             {qrSvgDataUrl ? (
-              <img className="qr-code-image" src={qrSvgDataUrl} alt="采集二维码" />
+              <img
+                className="qr-code-image"
+                src={qrSvgDataUrl}
+                alt="采集二维码"
+                data-qr-value={session?.qrCodeValue}
+              />
             ) : (
               <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
             )}

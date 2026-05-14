@@ -46,10 +46,23 @@ function assertMobileQrUrl(session: CaptureSession) {
   }
 }
 
+function buildFrontendMobileUrl(session: CaptureSession) {
+  const backendUrl = new URL(session.qr_code_url);
+  const frontendUrl = new URL(window.location.href);
+  frontendUrl.hostname = backendUrl.hostname;
+  frontendUrl.pathname = `/mobile/sessions/${encodeURIComponent(session.session_id)}`;
+  frontendUrl.search = '';
+  frontendUrl.hash = '';
+  return frontendUrl.toString();
+}
+
 export async function createCaptureSession() {
   const session = await apiRequest<CaptureSession>('/api/capture-sessions', { method: 'POST' });
   assertMobileQrUrl(session);
-  return session;
+  return {
+    ...session,
+    qr_code_url: buildFrontendMobileUrl(session)
+  };
 }
 
 export function getCaptureSession(sessionId: string) {
