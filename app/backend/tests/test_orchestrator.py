@@ -334,3 +334,25 @@ class TestOrchestratorSuccess:
 
         assert result["status"] == "ready_for_review"
         assert img.calls[0]["quad_points"] is None
+
+    def test_document_parser_uses_processed_images_after_image_processing(self, tmp_path):
+        img = FixtureImagePort(processed_dir="/tmp/denoised")
+        doc = FixtureDocPort()
+        field = FixtureFieldPort()
+        store, service = _make_orchestrator(tmp_path, image_port=img, doc_port=doc, field_port=field)
+        _setup_task_and_session(store, page_data={
+            "page-1": {
+                "original_image_path": "/tmp/original/page-1.jpg",
+                "quad_points": None,
+                "image_width": 1920,
+                "image_height": 1080,
+            },
+        })
+        task = store.read("tasks/task-001.json")
+
+        result = service._orchestrator.run(task, service, schema={"version": "v1"})
+
+        assert result["status"] == "ready_for_review"
+        assert doc.calls[0]["image_paths"] == ["/tmp/denoised/page-1_processed.jpg"]
+        assert doc.calls[0]["pages"][0]["source_image_path"] == "/tmp/original/page-1.jpg"
+        assert doc.calls[0]["pages"][0]["processed_path"] == "/tmp/denoised/page-1_processed.jpg"

@@ -16,8 +16,27 @@ import {
 import { server } from '../../../tests/setupTests';
 import { MobileCapturePlaceholder as MobileCapturePage } from './MobileCapturePlaceholder';
 
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
+
 afterEach(() => {
   cleanup();
+  if (originalCreateObjectURL) {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: originalCreateObjectURL
+    });
+  } else {
+    Reflect.deleteProperty(URL, 'createObjectURL');
+  }
+  if (originalRevokeObjectURL) {
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectURL
+    });
+  } else {
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+  }
 });
 
 function jsonOk(data: unknown) {
@@ -35,6 +54,24 @@ function fileInput(label: string) {
 
 function expectButtonDisabled(name: string, disabled: boolean) {
   expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(disabled);
+}
+
+function stubBlobUrls() {
+  let counter = 0;
+  const createObjectURL = vi.fn(() => {
+    counter += 1;
+    return `blob:preview-${counter}`;
+  });
+  const revokeObjectURL = vi.fn();
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: createObjectURL
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: revokeObjectURL
+  });
+  return { createObjectURL, revokeObjectURL };
 }
 
 async function selectImage(label = '选择已有图片', file = makeImageFile()) {
@@ -76,7 +113,7 @@ describe('MobileCapturePage', () => {
 
     await screen.findByText('采集会话进行中');
     await user.click(screen.getByRole('button', { name: '帮助' }));
-    expect(screen.getByText('拍照或选择图片后，请确认四个角点覆盖病历页面。')).toBeTruthy();
+    expect(screen.getByText('拍摄或选择图片后，请确认四个角点覆盖病历页面。')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '返回' }));
     expect(backSpy).toHaveBeenCalledTimes(1);
@@ -95,7 +132,7 @@ describe('MobileCapturePage', () => {
     server.use(mockGetCaptureSession({ ...activeSession, page_count: 0 }));
     const { unmount } = renderMobileCapture();
     expect(await screen.findByText('采集会话进行中')).toBeTruthy();
-    expect(screen.getByText('已采集 0 页')).toBeTruthy();
+    expect(screen.getByText('请拍摄病历文书页面，完成后回到电脑端审核')).toBeTruthy();
     expectButtonDisabled('拍摄/选择图片', false);
     unmount();
     cleanup();
@@ -131,6 +168,7 @@ describe('MobileCapturePage', () => {
   });
 
   it('previews selected images, blocks invalid files and uploads quad metadata once', async () => {
+    stubBlobUrls();
     const formDataSet = vi.spyOn(FormData.prototype, 'set');
     let uploadCalls = 0;
     server.use(
@@ -154,6 +192,7 @@ describe('MobileCapturePage', () => {
     await selectImage('拍摄/选择图片');
     expect(screen.getByAltText('待上传病历页面预览')).toBeTruthy();
     expect(screen.getByLabelText('四边形框选区域')).toBeTruthy();
+    expect(screen.queryByRole('contentinfo')).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();
     expect(screen.queryByLabelText(/坐标/)).toBeNull();
 
@@ -276,7 +315,7 @@ describe('MobileCapturePage', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: '删除第 1 页' }));
     expect(confirmSpy).toHaveBeenCalled();
     await waitFor(() => expect(screen.getAllByText('已上传')).toHaveLength(1));
-    expect(screen.getByText('已采集 1 页')).toBeTruthy();
+    expect(screen.getByText('已采集 1 页，可删除、调整页序或补拍')).toBeTruthy();
 
     // Supplement via inline button (replaces current page image)
     await userEvent.setup().click(screen.getByRole('button', { name: '补拍第 1 页' }));
@@ -309,7 +348,8 @@ describe('MobileCapturePage', () => {
     );
     renderMobileCapture();
 
-    await screen.findByText('已采集 0 页');
+    await screen.findByText('请拍摄病历文书页面，完成后回到电脑端审核');
+    expectButtonDisabled('完成采集', false);
     await userEvent.setup().click(screen.getByRole('button', { name: '完成采集' }));
     expect(screen.getByText('请至少采集一页病历')).toBeTruthy();
     expect(finishCalls).toBe(0);
@@ -426,6 +466,10 @@ describe('MobileCapturePage', () => {
     renderMobileCapture();
     await screen.findByText('第 1 页');
     await userEvent.setup().click(screen.getByRole('button', { name: '重新框选第 1 页' }));
+    expect(screen.getByRole('img', { name: '暂无缩略图' })).toBeTruthy();
+    expect(screen.queryByAltText('待上传病历页面预览')).toBeNull();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重拍' })).toBeNull();
     await userEvent.setup().click(screen.getByRole('button', { name: '确认框选' }));
 
     await waitFor(() => expect(quadUpdates).toBe(1));
@@ -433,6 +477,7 @@ describe('MobileCapturePage', () => {
   });
 
   it('replaces the current page image when supplementing an uploaded page', async () => {
+    stubBlobUrls();
     let replaceCalls = 0;
     server.use(
       mockGetCaptureSession({
@@ -465,5 +510,24 @@ describe('MobileCapturePage', () => {
     const footer = screen.getByRole('contentinfo');
     expect(footer.className).toContain('capture-footer');
     expect(footer.className).not.toContain('mobile-capture__footer');
+  });
+
+  it('revokes current page and selected preview blob urls on unmount', async () => {
+    const { createObjectURL, revokeObjectURL } = stubBlobUrls();
+    server.use(mockGetCaptureSession({ ...activeSession, page_count: 0, pages: [] }));
+    const { unmount } = renderMobileCapture();
+
+    await screen.findByText('采集会话进行中');
+    await selectImage('拍摄/选择图片', makeImageFile('first.jpg'));
+    await userEvent.setup().click(screen.getByRole('button', { name: '确认上传' }));
+    await screen.findByLabelText('第 1 页 上传失败');
+    await selectImage('拍摄/选择图片', makeImageFile('second.jpg'));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    unmount();
+
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview-1');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview-2');
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2);
   });
 });

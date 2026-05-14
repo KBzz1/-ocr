@@ -59,6 +59,7 @@ class ProcessingOrchestrator:
             processed_pages.append({
                 "page_id": img_input["page_id"],
                 "page_no": img_input["page_no"],
+                "original_path": img_input["original_path"],
                 "processed_path": proc_path,
             })
 
@@ -82,6 +83,7 @@ class ProcessingOrchestrator:
             "task_id": task_id,
             "image_paths": [p["processed_path"] for p in processed_pages],
             "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
+                        "source_image_path": p["original_path"],
                         "processed_path": p["processed_path"]} for p in processed_pages],
         }
         try:

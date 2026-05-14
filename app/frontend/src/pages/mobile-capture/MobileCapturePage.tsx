@@ -47,6 +47,12 @@ function getStatusCopy(status: CaptureSessionStatus | 'invalid' | 'loading') {
   return '无效的采集链接，请重新扫描二维码';
 }
 
+function getStatusDetail(uploadedCount: number, hasSelectedPage: boolean) {
+  if (hasSelectedPage) return '将上传原图与框选坐标';
+  if (uploadedCount > 0) return `已采集 ${uploadedCount} 页，可删除、调整页序或补拍`;
+  return '请拍摄病历文书页面，完成后回到电脑端审核';
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
@@ -118,6 +124,8 @@ export function MobileCapturePage() {
   const photoButtonRef = useRef<CapturePhotoButtonHandle>(null);
   const [editingPage, setEditingPage] = useState<CapturePageItem | null>(null);
   const [editMode, setEditMode] = useState<'new' | 'replace' | 'quad' | null>(null);
+  const pagesRef = useRef<CapturePageItem[]>([]);
+  const selectedPageRef = useRef<CapturePageItem | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -141,9 +149,20 @@ export function MobileCapturePage() {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    pagesRef.current = pages;
+    selectedPageRef.current = selectedPage;
+  }, [pages, selectedPage]);
+
   useEffect(() => () => {
-    pages.forEach((page) => revokePreviewUrl(page.previewUrl));
-    if (selectedPage) revokePreviewUrl(selectedPage.previewUrl);
+    const previewUrls = new Set<string>();
+    pagesRef.current.forEach((page) => {
+      if (page.previewUrl) previewUrls.add(page.previewUrl);
+    });
+    if (selectedPageRef.current?.previewUrl) {
+      previewUrls.add(selectedPageRef.current.previewUrl);
+    }
+    previewUrls.forEach(revokePreviewUrl);
   }, []);
 
   const isReadOnly = sessionStatus !== 'active';
@@ -413,7 +432,9 @@ export function MobileCapturePage() {
       <section className="mobile-capture__body">
         <div className="mobile-capture__status-row">
           <span className={`mobile-capture__status-pill is-${sessionStatus}`}>{statusCopy}</span>
-          <span>已采集 {uploadedCount} 页</span>
+          <span className="mobile-capture__status-detail">
+            {getStatusDetail(uploadedCount, Boolean(selectedPage))}
+          </span>
         </div>
 
         {sessionStatus === 'locked' ? (
@@ -424,7 +445,7 @@ export function MobileCapturePage() {
 
         {isHelpOpen ? (
           <section className="mobile-capture__help" aria-label="采集帮助">
-            <p>拍照或选择图片后，请确认四个角点覆盖病历页面。</p>
+            <p>拍摄或选择图片后，请确认四个角点覆盖病历页面。</p>
             <p>请保持页面清晰、完整，避免反光和遮挡；采集完成后回到电脑端继续审核。</p>
           </section>
         ) : null}
@@ -437,6 +458,7 @@ export function MobileCapturePage() {
             height={selectedPage.height}
             isUploading={selectedPage.status === 'uploading'}
             confirmLabel={getConfirmLabel()}
+            cancelLabel={editMode === 'quad' ? '取消' : '重拍'}
             onChangeQuad={(quad) => setSelectedPage({ ...selectedPage, quad })}
             onResetQuad={() => setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
             onCancel={resetEditState}
@@ -446,14 +468,14 @@ export function MobileCapturePage() {
           <>
             <section className="capture-card" aria-label="采集入口">
               <h2>请拍摄病历文书页面</h2>
-              <p>确保证件完整、清晰、无反光，拍摄完成后上传。</p>
+              <p>确保病历页面完整、清晰、无反光，拍摄完成后上传。</p>
               <div className="capture-card__count">
                 <span>已采集</span>
                 <strong>{uploadedCount}</strong>
                 <span>页</span>
               </div>
               <div className="capture-actions">
-            <CapturePhotoButton
+                <CapturePhotoButton
                   ref={photoButtonRef}
                   disabled={isReadOnly}
                   onFileSelected={handleFileSelected}
@@ -475,15 +497,17 @@ export function MobileCapturePage() {
         )}
       </section>
 
-      <CaptureFooter
-        disabled={isReadOnly}
-        isFinishing={isFinishing}
-        onCaptureNext={() => {
-          startNewPage();
-          photoButtonRef.current?.trigger();
-        }}
-        onFinish={finishCapture}
-      />
+      {!selectedPage ? (
+        <CaptureFooter
+          disabled={isReadOnly}
+          isFinishing={isFinishing}
+          onCaptureNext={() => {
+            startNewPage();
+            photoButtonRef.current?.trigger();
+          }}
+          onFinish={finishCapture}
+        />
+      ) : null}
     </main>
   );
 }

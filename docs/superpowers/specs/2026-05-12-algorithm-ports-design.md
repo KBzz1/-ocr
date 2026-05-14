@@ -130,10 +130,12 @@ class AlgorithmContractInvalid(Exception):
 ```json
 {
   "task_id": "uuid4",
+  "image_paths": ["results/{task_id}/processed/page_id_1.png"],
   "pages": [
     {
       "page_id": "page_id_1",
       "page_no": 1,
+      "source_image_path": "pages/{session_id}/{page_id}.jpg",
       "processed_image_path": "results/{task_id}/processed/page_id_1.png"
     }
   ]
@@ -167,6 +169,7 @@ class AlgorithmContractInvalid(Exception):
 - 只要任一页 `status == "failed"`，整体任务进入 `failed`，但文档解析结果仍保存供排查。
 - 空 `pages`、缺字段、非法 `status` 映射为 `ALGORITHM_CONTRACT_INVALID`。
 - 后端不修改 `plain_text`、`blocks`、`tables`、`merged_text`。
+- 文档解析默认使用图像处理端口返回的 `processed_image_path` 作为 `image_paths`；`source_image_path` 仅用于保留原图追踪信息。
 
 ### 字段抽取端口
 
@@ -258,7 +261,7 @@ ImageProcessingPort.process(each page)
     ↓
 保存 image-processing.json，回写 processed_image_path
     ↓
-DocumentParsingPort.parse(processed pages)
+DocumentParsingPort.parse(processed images with original image metadata)
     ↓
 保存 document-result.json
     ↓

@@ -10,6 +10,7 @@ interface CaptureQuadScreenProps {
   height: number;
   isUploading: boolean;
   confirmLabel: string;
+  cancelLabel?: string;
   onChangeQuad: (quad: QuadPointsByCorner) => void;
   onResetQuad: () => void;
   onCancel: () => void;
@@ -23,6 +24,7 @@ export function CaptureQuadScreen({
   height,
   isUploading,
   confirmLabel,
+  cancelLabel = '重拍',
   onChangeQuad,
   onResetQuad,
   onCancel,
@@ -34,12 +36,18 @@ export function CaptureQuadScreen({
         请框选病历正文区域，排除屏幕边缘、灰色背景和工具栏
       </p>
       <div className="preview-panel__image-wrap">
-        <img src={previewUrl ?? ''} alt="待上传病历页面预览" />
+        {previewUrl ? (
+          <img src={previewUrl} alt="待上传病历页面预览" />
+        ) : (
+          <div className="preview-panel__placeholder" role="img" aria-label="暂无缩略图">
+            缩略图
+          </div>
+        )}
         <QuadSelector width={width} height={height} points={quad} onChange={onChangeQuad} />
       </div>
       <div className="capture-actions capture-actions--split">
         <button className="mobile-button ghost" type="button" onClick={onCancel}>
-          重拍
+          {cancelLabel}
         </button>
         <button className="mobile-button secondary" type="button" onClick={onResetQuad}>
           重置框选
