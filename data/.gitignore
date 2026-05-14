@@ -1,6 +1,8 @@
 uploads/*
 results/*
 temp/*
+sessions/*
 !uploads/README.md
 !results/README.md
 !temp/README.md
+!sessions/README.md

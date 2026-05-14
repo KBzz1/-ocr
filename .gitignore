@@ -25,11 +25,13 @@ node_modules/
 data/uploads/*
 data/results/*
 data/temp/*
+data/sessions/*
 exports/*
 logs/*
 !data/uploads/README.md
 !data/results/README.md
 !data/temp/README.md
+!data/sessions/README.md
 !exports/README.md
 !logs/README.md
 
