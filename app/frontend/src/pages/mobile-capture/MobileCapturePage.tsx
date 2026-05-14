@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiError } from '../../api/client';
+import type { CapturePageItem } from './mobileCapture.types';
 import {
   deleteCapturePage,
   reorderCapturePages
@@ -15,29 +16,17 @@ import {
 import {
   createDefaultQuad,
   isValidQuad,
-  QuadSelector,
   quadToArray,
   type QuadPointsByCorner
 } from '../../components/mobile-capture/QuadSelector';
+import { CapturePhotoButton } from './CapturePhotoButton';
+import { CaptureQuadScreen } from './CaptureQuadScreen';
+import { CaptureFooter } from './CaptureFooter';
 import './mobile-capture.css';
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const PREVIEW_WIDTH = 1000;
 const PREVIEW_HEIGHT = 1400;
-
-type PageStatus = 'uploaded' | 'uploading' | 'failed';
-
-interface CapturePageItem {
-  localId: string;
-  pageId?: string;
-  pageNo: number;
-  status: PageStatus;
-  previewUrl?: string;
-  file?: File;
-  width: number;
-  height: number;
-  quad: QuadPointsByCorner;
-}
 
 function getSessionIdFromLocation() {
   const querySession = new URLSearchParams(window.location.search).get('session');
@@ -125,7 +114,6 @@ export function MobileCapturePage() {
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const libraryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -163,16 +151,6 @@ export function MobileCapturePage() {
   const uploadedCount = pages.filter((page) => page.status === 'uploaded').length;
   const statusCopy = getStatusCopy(sessionStatus);
   const title = selectedPage ? '调整识别范围' : uploadedCount > 0 ? '已采集页面' : '病历文书采集';
-
-  function pickFile(source: 'camera' | 'library') {
-    if (isReadOnly) return;
-    setError(null);
-    if (source === 'camera') {
-      cameraInputRef.current?.click();
-      return;
-    }
-    libraryInputRef.current?.click();
-  }
 
   function handleFileSelected(file: File | undefined) {
     if (!file) return;
@@ -292,7 +270,7 @@ export function MobileCapturePage() {
   function supplementPage(index: number | null = null) {
     if (isReadOnly) return;
     setInsertIndex(index);
-    libraryInputRef.current?.click();
+    cameraInputRef.current?.click();
   }
 
   async function finishCapture() {
@@ -362,51 +340,20 @@ export function MobileCapturePage() {
           disabled={isReadOnly}
           onChange={(event) => handleFileSelected(event.currentTarget.files?.[0])}
         />
-        <input
-          ref={libraryInputRef}
-          className="visually-hidden-input"
-          aria-label="选择已有图片"
-          type="file"
-          accept="image/jpeg,image/png,image/bmp"
-          disabled={isReadOnly}
-          onChange={(event) => handleFileSelected(event.currentTarget.files?.[0])}
-        />
 
         {selectedPage ? (
-          <section className="preview-panel" aria-label="上传预览">
-            <p className="mobile-capture__hint">
-              请框选病历正文区域，排除屏幕边缘、灰色背景和工具栏
-            </p>
-            <div className="preview-panel__image-wrap">
-              <img src={selectedPage.previewUrl} alt="待上传病历页面预览" />
-              <QuadSelector
-                width={selectedPage.width}
-                height={selectedPage.height}
-                points={selectedPage.quad}
-                onChange={(quad) => setSelectedPage({ ...selectedPage, quad })}
-              />
-            </div>
-            <div className="capture-actions">
-              <button className="mobile-button ghost" type="button" onClick={() => setSelectedPage(null)}>
-                重拍
-              </button>
-              <button
-                className="mobile-button secondary"
-                type="button"
-                onClick={() => setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
-              >
-                重新框选
-              </button>
-              <button
-                className="mobile-button"
-                type="button"
-                disabled={selectedPage.status === 'uploading'}
-                onClick={() => uploadPage(selectedPage)}
-              >
-                {selectedPage.status === 'uploading' ? '上传中' : '确认上传'}
-              </button>
-            </div>
-          </section>
+          <CaptureQuadScreen
+            previewUrl={selectedPage?.previewUrl}
+            quad={selectedPage?.quad ?? createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT)}
+            width={selectedPage?.width ?? PREVIEW_WIDTH}
+            height={selectedPage?.height ?? PREVIEW_HEIGHT}
+            isUploading={selectedPage?.status === 'uploading'}
+            confirmLabel="确认上传"
+            onChangeQuad={(quad) => selectedPage && setSelectedPage({ ...selectedPage, quad })}
+            onResetQuad={() => selectedPage && setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
+            onCancel={() => setSelectedPage(null)}
+            onConfirm={() => selectedPage && uploadPage(selectedPage)}
+          />
         ) : (
           <>
             <section className="capture-card" aria-label="采集入口">
@@ -418,22 +365,10 @@ export function MobileCapturePage() {
                 <span>页</span>
               </div>
               <div className="capture-actions">
-                <button
-                  className="mobile-button"
-                  type="button"
+                <CapturePhotoButton
                   disabled={isReadOnly}
-                  onClick={() => pickFile('camera')}
-                >
-                  拍照
-                </button>
-                <button
-                  className="mobile-button secondary"
-                  type="button"
-                  disabled={isReadOnly}
-                  onClick={() => pickFile('library')}
-                >
-                  选择已有图片
-                </button>
+                  onFileSelected={handleFileSelected}
+                />
               </div>
             </section>
 
@@ -462,26 +397,13 @@ export function MobileCapturePage() {
         )}
       </section>
 
-      <footer className="mobile-capture__footer">
-        <div className="mobile-capture__footer-inner">
-          <button
-            className="mobile-button secondary"
-            type="button"
-            disabled={isReadOnly}
-            onClick={() => pickFile('camera')}
-          >
-            继续拍下一页
-          </button>
-          <button
-            className="mobile-button"
-            type="button"
-            disabled={isReadOnly || isFinishing}
-            onClick={finishCapture}
-          >
-            {isFinishing ? '提交中' : '完成采集'}
-          </button>
-        </div>
-      </footer>
+      <CaptureFooter
+        disabled={isReadOnly}
+        isFinishing={isFinishing}
+        canFinish={true}
+        onCaptureNext={() => cameraInputRef.current?.click()}
+        onFinish={finishCapture}
+      />
     </main>
   );
 }

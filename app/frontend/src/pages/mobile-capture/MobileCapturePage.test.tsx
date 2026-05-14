@@ -72,14 +72,14 @@ describe('MobileCapturePage', () => {
     const { unmount } = renderMobileCapture();
     expect(await screen.findByText('采集会话进行中')).toBeTruthy();
     expect(screen.getByText('已采集 0 页')).toBeTruthy();
-    expectButtonDisabled('拍照', false);
+    expectButtonDisabled('拍摄/选择图片', false);
     unmount();
     cleanup();
 
     server.use(mockGetCaptureSession(expired));
     const expiredRender = renderMobileCapture();
     expect(await screen.findByText('采集会话已过期')).toBeTruthy();
-    expectButtonDisabled('拍照', true);
+    expectButtonDisabled('拍摄/选择图片', true);
     expiredRender.unmount();
     cleanup();
 
@@ -93,7 +93,7 @@ describe('MobileCapturePage', () => {
     );
     const invalidRender = renderMobileCapture('/mobile/sessions/sess_invalid');
     expect(await screen.findByText('无效的采集链接，请重新扫描二维码')).toBeTruthy();
-    expectButtonDisabled('选择已有图片', true);
+    expectButtonDisabled('拍摄/选择图片', true);
     invalidRender.unmount();
     cleanup();
 
@@ -116,15 +116,15 @@ describe('MobileCapturePage', () => {
 
     await screen.findByText('采集会话进行中');
     await userEvent.setup({ applyAccept: false }).upload(
-      fileInput('选择已有图片'),
+      fileInput('拍摄/选择图片'),
       new File(['pdf'], 'record.pdf', { type: 'application/pdf' })
     );
     expect(screen.getByText('不支持的文件类型')).toBeTruthy();
 
-    await userEvent.setup().upload(fileInput('选择已有图片'), makeLargeImageFile());
+    await userEvent.setup().upload(fileInput('拍摄/选择图片'), makeLargeImageFile());
     expect(screen.getByText('图片过大（最大 20MB）')).toBeTruthy();
 
-    await selectImage();
+    await selectImage('拍摄/选择图片');
     expect(screen.getByAltText('待上传病历页面预览')).toBeTruthy();
     expect(screen.getByLabelText('四边形框选区域')).toBeTruthy();
     expect(screen.queryByRole('slider')).toBeNull();
@@ -188,7 +188,7 @@ describe('MobileCapturePage', () => {
     renderMobileCapture();
 
     await screen.findByText('第 1 页');
-    await selectImage();
+    await selectImage('拍摄/选择图片');
     await userEvent.setup().click(screen.getByRole('button', { name: '确认上传' }));
 
     expect((await screen.findAllByText('上传失败，请重试')).length).toBeGreaterThan(0);
@@ -240,7 +240,7 @@ describe('MobileCapturePage', () => {
     expect(screen.getByText('已采集 1 页')).toBeTruthy();
 
     await userEvent.setup().click(screen.getByRole('button', { name: '补拍页面' }));
-    await selectImage('选择已有图片', makeImageFile('supplement.jpg'));
+    await selectImage('拍照', makeImageFile('supplement.jpg'));
     await userEvent.setup().click(screen.getByRole('button', { name: '确认上传' }));
     expect(await screen.findByText('第 2 页')).toBeTruthy();
 
@@ -248,7 +248,7 @@ describe('MobileCapturePage', () => {
     await userEvent.setup().dblClick(finishButton);
     await waitFor(() => expect(finishCalls).toBe(1));
     expect(screen.getByText('采集完成，请在电脑端继续审核')).toBeTruthy();
-    expectButtonDisabled('拍照', true);
+    expectButtonDisabled('拍摄/选择图片', true);
     expect(screen.queryByRole('button', { name: /删除第/ })).toBeNull();
     confirmSpy.mockRestore();
   });
