@@ -1,4 +1,5 @@
 import type { TaskStatus, TaskSummary } from '../../pages/workstation/workstation.types';
+import { appRoutes } from '../../app/routes';
 
 const overviewItems: Array<{
   status: TaskStatus;
@@ -22,11 +23,15 @@ export function TaskOverview({ tasks }: TaskOverviewProps) {
         const count = tasks.filter((task) => task.status === item.status).length;
 
         return (
-          <button className={`overview-card overview-card--${item.status}`} key={item.status} type="button">
+          <a
+            className={`overview-card overview-card--${item.status}`}
+            href={`${appRoutes.tasks.path}?status=${item.status}`}
+            key={item.status}
+          >
             <span className="overview-card__label">{item.title}</span>
             <strong>{count}</strong>
             <span className="overview-card__hint">{item.hint}</span>
-          </button>
+          </a>
         );
       })}
     </section>

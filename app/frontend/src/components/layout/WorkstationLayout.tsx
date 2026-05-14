@@ -2,15 +2,12 @@ import type { ReactNode } from 'react';
 
 import chongqingLogo from '../../assets/logos/chongqing-university-logo.webp';
 import xinqiaoLogo from '../../assets/logos/xinqiao-hospital-logo.jpg';
+import { appRoutes } from '../../app/routes';
 import { IconButton } from '../common/IconButton';
 
 const navigationItems = [
-  '工作台总览',
-  '任务管理',
-  '人工审核',
-  '导出记录',
-  '系统状态',
-  '设置'
+  { label: '工作台总览', href: appRoutes.workstation.path },
+  { label: '任务管理', href: appRoutes.tasks.path }
 ];
 
 type WorkstationLayoutProps = {
@@ -34,14 +31,14 @@ export function WorkstationLayout({ children }: WorkstationLayoutProps) {
 
           <nav className="workstation-nav" aria-label="主要模块">
             {navigationItems.map((item) => (
-              <button
-                className={`workstation-nav__item${item === '工作台总览' ? ' is-active' : ''}`}
-                key={item}
-                type="button"
+              <a
+                className={`workstation-nav__item${item.href === appRoutes.workstation.path ? ' is-active' : ''}`}
+                href={item.href}
+                key={item.href}
               >
                 <span className="workstation-nav__icon" aria-hidden="true" />
-                <span>{item}</span>
-              </button>
+                <span>{item.label}</span>
+              </a>
             ))}
           </nav>
         </div>

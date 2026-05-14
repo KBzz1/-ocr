@@ -137,6 +137,7 @@ export function MobileCapturePage() {
   const [selectedPage, setSelectedPage] = useState<CapturePageItem | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
 
@@ -331,11 +332,17 @@ export function MobileCapturePage() {
   return (
     <main className="mobile-capture" aria-label="手机采集页">
       <header className="mobile-capture__topbar">
-        <button className="mobile-capture__icon-button" type="button" aria-label="返回">
+        <button className="mobile-capture__icon-button" type="button" aria-label="返回" onClick={() => window.history.back()}>
           ‹
         </button>
         <h1>{title}</h1>
-        <button className="mobile-capture__icon-button" type="button" aria-label="帮助">
+        <button
+          className="mobile-capture__icon-button"
+          type="button"
+          aria-label="帮助"
+          aria-expanded={isHelpOpen}
+          onClick={() => setIsHelpOpen((value) => !value)}
+        >
           ?
         </button>
       </header>
@@ -351,6 +358,13 @@ export function MobileCapturePage() {
         ) : null}
 
         {error ? <div className="mobile-capture__error">{error}</div> : null}
+
+        {isHelpOpen ? (
+          <section className="mobile-capture__help" aria-label="采集帮助">
+            <p>拍照或选择图片后，请确认四个角点覆盖病历页面。</p>
+            <p>请保持页面清晰、完整，避免反光和遮挡；采集完成后回到电脑端继续审核。</p>
+          </section>
+        ) : null}
 
         <input
           ref={cameraInputRef}

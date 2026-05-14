@@ -109,9 +109,6 @@ export function WorkstationHero({
               <button className="secondary-action" type="button" onClick={onViewQr}>
                 查看二维码
               </button>
-              <button className="ghost-action" type="button">
-                结束会话
-              </button>
             </div>
           </div>
         ) : (

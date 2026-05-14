@@ -40,6 +40,21 @@ async function selectImage(label = '选择已有图片', file = makeImageFile())
 }
 
 describe('MobileCapturePage', () => {
+  it('wires topbar back and help actions', async () => {
+    const user = userEvent.setup();
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    server.use(mockGetCaptureSession({ ...activeSession, page_count: 0 }));
+    renderMobileCapture();
+
+    await screen.findByText('采集会话进行中');
+    await user.click(screen.getByRole('button', { name: '帮助' }));
+    expect(screen.getByText('拍照或选择图片后，请确认四个角点覆盖病历页面。')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '返回' }));
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    backSpy.mockRestore();
+  });
+
   it('loads active, expired, missing and locked session states', async () => {
     const expired = { ...activeSession, status: 'expired' as const, page_count: 0 };
     const locked = {

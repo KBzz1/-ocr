@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+
 import type { CaptureSessionSummary } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
@@ -9,7 +12,54 @@ type CaptureQrDialogProps = {
 };
 
 export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: CaptureQrDialogProps) {
+  const [qrSvgDataUrl, setQrSvgDataUrl] = useState<string | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setQrSvgDataUrl(null);
+
+    if (!isOpen || !session?.qrCodeValue) return undefined;
+
+    QRCode.toString(session.qrCodeValue, {
+      type: 'svg',
+      margin: 1,
+      width: 192,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    }).then((svg) => {
+      if (isCurrent) {
+        setQrSvgDataUrl(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`);
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isOpen, session?.qrCodeValue]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsHelpOpen(false);
+      setCopyStatus(null);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  async function handleCopyLink() {
+    if (!session?.qrCodeValue) return;
+
+    try {
+      await navigator.clipboard?.writeText(session.qrCodeValue);
+      setCopyStatus('已复制');
+    } catch {
+      setCopyStatus('复制失败，请手动选择链接');
+    }
+  }
 
   return (
     <div className="qr-dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -36,13 +86,11 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
             <div className="qr-dialog__notice">
               手机需与电脑处于同一网络环境，无法连接时请查看帮助说明。
             </div>
-            <div className="qr-placeholder" role="img" aria-label="采集二维码">
-              <span className="qr-placeholder__scanline" aria-hidden="true" />
-              <svg viewBox="0 0 100 100" aria-hidden="true">
-                <path d="M10 10h28v28H10zM16 16v16h16V16zM62 10h28v28H62zM68 16v16h16V16zM10 62h28v28H10zM16 68v16h16V68z" />
-                <path d="M47 10h7v18h-7zM47 35h7v12h-7zM10 47h20v7H10zM36 47h20v7H36zM63 47h27v7H63zM47 57h7v23h-7zM60 60h16v7H60zM82 60h8v7h-8zM60 72h7v18h-7zM72 72h18v7H72zM72 84h7v6h-7zM84 82h6v8h-6z" />
-              </svg>
-            </div>
+            {qrSvgDataUrl ? (
+              <img className="qr-code-image" src={qrSvgDataUrl} alt="采集二维码" />
+            ) : (
+              <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
+            )}
             <button className="secondary-action" type="button" onClick={onRegenerate}>
               重新生成二维码
             </button>
@@ -65,7 +113,20 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
         </div>
 
         <footer className="qr-dialog__footer">
-          <button className="link-action" type="button">
+          {isHelpOpen && session?.qrCodeValue ? (
+            <div className="qr-help-panel">
+              <label htmlFor="mobile-capture-url">手机访问链接</label>
+              <div className="qr-help-panel__copy-row">
+                <input id="mobile-capture-url" value={session.qrCodeValue} readOnly />
+                <button className="secondary-action" type="button" onClick={() => void handleCopyLink()}>
+                  复制链接
+                </button>
+              </div>
+              <p>请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。</p>
+              {copyStatus ? <span role="status">{copyStatus}</span> : null}
+            </div>
+          ) : null}
+          <button className="link-action" type="button" onClick={() => setIsHelpOpen((value) => !value)}>
             手机无法连接？
           </button>
           <button className="secondary-action" type="button" onClick={onClose}>

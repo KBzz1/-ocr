@@ -1,4 +1,5 @@
 import type { SystemReminder } from '../../pages/workstation/workstation.types';
+import { appRoutes } from '../../app/routes';
 
 type SystemRemindersProps = {
   reminders: SystemReminder[];
@@ -9,9 +10,9 @@ export function SystemReminders({ reminders }: SystemRemindersProps) {
     <section className="system-reminders" aria-labelledby="system-reminders-title">
       <div className="panel-title-row system-reminders__header">
         <h2 id="system-reminders-title">系统提醒</h2>
-        <button className="link-action link-action--muted" type="button">
+        <a className="link-action link-action--muted" href={appRoutes.tasks.path}>
           查看全部
-        </button>
+        </a>
       </div>
 
       <div className="system-reminders__list">
@@ -25,9 +26,9 @@ export function SystemReminders({ reminders }: SystemRemindersProps) {
               </div>
               <p>{reminder.message}</p>
               {reminder.actionLabel ? (
-                <button className="link-action" type="button">
+                <a className="link-action" href={appRoutes.tasks.path}>
                   {reminder.actionLabel}
-                </button>
+                </a>
               ) : null}
             </div>
           </article>

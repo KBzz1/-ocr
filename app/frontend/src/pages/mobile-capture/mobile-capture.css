@@ -80,7 +80,8 @@
 .capture-card,
 .page-list,
 .supplement-card,
-.mobile-capture__notice {
+.mobile-capture__notice,
+.mobile-capture__help {
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #ffffff;
@@ -332,9 +333,20 @@
 }
 
 .supplement-card,
-.mobile-capture__notice {
+.mobile-capture__notice,
+.mobile-capture__help {
   margin-top: 18px;
   padding: 18px;
+}
+
+.mobile-capture__help p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.mobile-capture__help p + p {
+  margin-top: 6px;
 }
 
 .mobile-capture__error {

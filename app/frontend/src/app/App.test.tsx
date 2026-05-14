@@ -20,7 +20,7 @@ async function expectTextPresent(text: string) {
 
 function expectOverviewCount(label: string, count: string) {
   const overview = screen.getByLabelText('任务概览');
-  const card = within(overview).getByText(label).closest('button');
+  const card = within(overview).getByText(label).closest('a');
   expect(card).not.toBeNull();
   expect((card as HTMLElement).textContent).toContain(count);
 }
@@ -74,6 +74,17 @@ describe('Workstation data integration', () => {
     expectBodyNotToContain('查看日志');
   });
 
+  it('renders workstation navigation and task actions as connected links', async () => {
+    renderWorkstation();
+
+    await expectTextPresent('系统已启动');
+    expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
+    expect(screen.getByRole('link', { name: /待审核/ }).getAttribute('href')).toBe('/tasks?status=ready_for_review');
+    expect(screen.getByRole('link', { name: '全部任务' }).getAttribute('href')).toBe('/tasks');
+    expect(screen.getByRole('link', { name: '开始审核' }).getAttribute('href')).toBe('/tasks/task-ready/review');
+    expect(screen.getByRole('link', { name: '导出结果' }).getAttribute('href')).toBe('/tasks/task-exported/export');
+  });
+
   it('shows empty task copy when the task API returns no records', async () => {
     server.use(mockSystemStatus(), mockTasks([]));
     render(<App />);
@@ -91,10 +102,30 @@ describe('Workstation data integration', () => {
     await user.click(screen.getByRole('button', { name: /新建采集/ }));
 
     const dialog = await screen.findByRole('dialog', { name: '采集二维码' });
-    expectPresent(within(dialog).getByRole('img', { name: '采集二维码' }));
+    const qrImage = (await within(dialog).findByRole('img', { name: '采集二维码' })) as HTMLImageElement;
+    expect(qrImage.tagName).toBe('IMG');
+    expect(qrImage.src).toMatch(/^data:image\/svg\+xml/);
     expectPresent(within(dialog).getByText('等待设备扫码'));
     expectPresent(within(dialog).getByText(/已上传页数 2 页/));
+    expect(screen.queryByRole('button', { name: '结束会话' })).toBeNull();
     expectBodyNotToContain(/192\.168\.1\.5:8081\/mobile\/sess_001/);
+  });
+
+  it('shows connection help and copyable mobile link only after request', async () => {
+    const user = userEvent.setup();
+    server.use(mockSystemStatus(), mockTasks([]), mockCreateCaptureSession());
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /新建采集/ }));
+    const dialog = await screen.findByRole('dialog', { name: '采集二维码' });
+
+    expect(within(dialog).queryByText('手机访问链接')).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
+
+    expectPresent(within(dialog).getByText('手机访问链接'));
+    expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
+      'http://192.168.1.5:8081/mobile/sess_001'
+    );
   });
 
   it('rejects loopback QR URLs for mobile capture', async () => {

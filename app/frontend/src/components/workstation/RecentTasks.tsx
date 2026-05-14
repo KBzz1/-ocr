@@ -1,14 +1,23 @@
-import type { TaskStatus, TaskSummary } from '../../pages/workstation/workstation.types';
+import type { TaskSummary } from '../../pages/workstation/workstation.types';
+import { appRoutes, buildReviewPath, buildTaskExportPath } from '../../app/routes';
 import { StatusBadge } from '../common/StatusBadge';
 
-function getTaskActions(status: TaskStatus) {
-  if (status === 'ready_for_review') return ['开始审核'];
-  if (status === 'processing' || status === 'created' || status === 'uploading' || status === 'uploaded') {
-    return ['查看进度'];
+function getTaskActions(task: TaskSummary) {
+  const taskListPath = appRoutes.tasks.path;
+  const failedPath = `${taskListPath}?status=failed`;
+
+  if (task.status === 'ready_for_review') return [{ label: '开始审核', href: buildReviewPath(task.id) }];
+  if (task.status === 'processing' || task.status === 'created' || task.status === 'uploading' || task.status === 'uploaded') {
+    return [{ label: '查看进度', href: taskListPath }];
   }
-  if (status === 'failed') return ['查看原因', '重新处理'];
-  if (status === 'confirmed') return ['导出结果'];
-  return ['查看结果'];
+  if (task.status === 'failed') {
+    return [
+      { label: '查看原因', href: failedPath },
+      { label: '重新处理', href: failedPath }
+    ];
+  }
+  if (task.status === 'confirmed') return [{ label: '导出结果', href: buildTaskExportPath(task.id) }];
+  return [{ label: '导出结果', href: buildTaskExportPath(task.id) }];
 }
 
 type RecentTasksProps = {
@@ -20,9 +29,9 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
     <section className="recent-tasks" aria-labelledby="recent-tasks-title">
       <div className="panel-title-row recent-tasks__header">
         <h2 id="recent-tasks-title">最近任务</h2>
-        <button className="link-action" type="button">
+        <a className="link-action" href={appRoutes.tasks.path}>
           全部任务
-        </button>
+        </a>
       </div>
 
       {tasks.length === 0 ? (
@@ -68,14 +77,14 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
                     </td>
                     <td>
                       <div className="task-actions">
-                        {getTaskActions(task.status).map((label) => (
-                          <button
+                        {getTaskActions(task).map((action) => (
+                          <a
                             className={task.status === 'failed' ? 'warning-action' : 'secondary-action'}
-                            key={label}
-                            type="button"
+                            href={action.href}
+                            key={action.label}
                           >
-                            {label}
-                          </button>
+                            {action.label}
+                          </a>
                         ))}
                       </div>
                     </td>
