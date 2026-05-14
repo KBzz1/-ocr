@@ -42,9 +42,9 @@ describe('buildQrCodeUrl', () => {
       qr_code_url: 'http://192.168.1.5:8081/mobile/sessions/abc/123?x=1',
     };
     const result = buildQrCodeUrl(session, {
-      isDev: false,
-      currentHref: 'http://localhost:8081/',
+      isDev: true,
+      currentHref: 'http://10.0.0.99:3000/some-page',
     });
-    expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc/123?x=1');
+    expect(result).toBe('http://10.0.0.99:3000/mobile/sessions/abc%2F123%3Fx%3D1');
   });
 });
