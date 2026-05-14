@@ -202,43 +202,6 @@
   height: 100%;
 }
 
-.quad-selector__controls {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.quad-selector fieldset {
-  min-width: 0;
-  margin: 0;
-  border: 1px solid rgba(255, 255, 255, 0.52);
-  border-radius: 8px;
-  padding: 6px;
-  background: rgba(15, 23, 42, 0.72);
-  color: #ffffff;
-}
-
-.quad-selector legend {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.quad-selector label {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-}
-
-.quad-selector input[type="number"] {
-  width: 100%;
-}
-
 .page-list {
   padding: 20px;
 }

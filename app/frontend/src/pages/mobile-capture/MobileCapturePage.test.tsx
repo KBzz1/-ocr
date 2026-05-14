@@ -127,7 +127,8 @@ describe('MobileCapturePage', () => {
     await selectImage();
     expect(screen.getByAltText('待上传病历页面预览')).toBeTruthy();
     expect(screen.getByLabelText('四边形框选区域')).toBeTruthy();
-    expect(screen.getAllByRole('slider')).toHaveLength(4);
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.queryByLabelText(/坐标/)).toBeNull();
 
     const uploadButton = screen.getByRole('button', { name: '确认上传' });
     await userEvent.setup().dblClick(uploadButton);

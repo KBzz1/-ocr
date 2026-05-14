@@ -4,13 +4,6 @@ import type { QuadPoint } from '../../api/captureSessions';
 
 export type QuadCorner = 'tl' | 'tr' | 'br' | 'bl';
 
-const cornerLabels: Record<QuadCorner, string> = {
-  tl: '左上角',
-  tr: '右上角',
-  br: '右下角',
-  bl: '左下角'
-};
-
 const cornerOrder: QuadCorner[] = ['tl', 'tr', 'br', 'bl'];
 
 export type QuadPointsByCorner = Record<QuadCorner, QuadPoint>;
@@ -51,10 +44,6 @@ export function isValidQuad(points: QuadPointsByCorner) {
   );
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 interface QuadSelectorProps {
   width: number;
   height: number;
@@ -68,16 +57,6 @@ export function QuadSelector({ width, height, points, onChange }: QuadSelectorPr
     () => quadToArray(points).map((point) => `${point.x},${point.y}`).join(' '),
     [points]
   );
-
-  function updateCorner(corner: QuadCorner, axis: 'x' | 'y', value: number) {
-    onChange({
-      ...points,
-      [corner]: {
-        ...points[corner],
-        [axis]: clamp(value, 0, axis === 'x' ? width : height)
-      }
-    });
-  }
 
   return (
     <div className="quad-selector" aria-label="四边形框选区域">
@@ -112,36 +91,6 @@ export function QuadSelector({ width, height, points, onChange }: QuadSelectorPr
           />
         ))}
       </svg>
-
-      <div className="quad-selector__controls" aria-label="角点坐标">
-        {cornerOrder.map((corner) => (
-          <fieldset key={corner}>
-            <legend>{cornerLabels[corner]}</legend>
-            <label>
-              X
-              <input
-                type="range"
-                min="0"
-                max={width}
-                value={points[corner].x}
-                aria-label={`${cornerLabels[corner]} X 坐标`}
-                onChange={(event) => updateCorner(corner, 'x', Number(event.currentTarget.value))}
-              />
-            </label>
-            <label>
-              Y
-              <input
-                type="number"
-                min="0"
-                max={height}
-                value={points[corner].y}
-                aria-label={`${cornerLabels[corner]} Y 坐标`}
-                onChange={(event) => updateCorner(corner, 'y', Number(event.currentTarget.value))}
-              />
-            </label>
-          </fieldset>
-        ))}
-      </div>
     </div>
   );
 }
