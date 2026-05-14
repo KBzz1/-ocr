@@ -247,6 +247,9 @@ describe('MobileCapturePage', () => {
       http.put('*/api/capture-sessions/sess_001/pages/order', () =>
         jsonOk({ ok: true })
       ),
+      http.put('*/api/mobile/sess_001/pages/:pageId/image', ({ params }) =>
+        jsonOk({ page_id: String(params.pageId), page_index: 1, status: 'uploaded' })
+      ),
       http.post('*/api/mobile/sess_001/finish', () => {
         finishCalls += 1;
         return HttpResponse.json({
@@ -275,11 +278,12 @@ describe('MobileCapturePage', () => {
     await waitFor(() => expect(screen.getAllByText('已上传')).toHaveLength(1));
     expect(screen.getByText('已采集 1 页')).toBeTruthy();
 
-    // Supplement via inline button
+    // Supplement via inline button (replaces current page image)
     await userEvent.setup().click(screen.getByRole('button', { name: '补拍第 1 页' }));
     await selectImage('拍照', makeImageFile('supplement.jpg'));
-    await userEvent.setup().click(screen.getByRole('button', { name: '确认上传' }));
-    expect(await screen.findByText('第 2 页')).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole('button', { name: '确认替换' }));
+    await waitFor(() => expect(screen.getAllByText('已上传')).toHaveLength(1));
+    expect(screen.getByText('第 1 页')).toBeTruthy();
 
     // Finish
     const finishButton = screen.getByRole('button', { name: '完成采集' });
@@ -396,5 +400,60 @@ describe('MobileCapturePage', () => {
       '/api/capture-sessions/sess_001/pages/page_b',
     ]));
     confirmSpy.mockRestore();
+  });
+
+  it('updates an uploaded page quad without re-uploading the image', async () => {
+    let postUploads = 0;
+    let quadUpdates = 0;
+    server.use(
+      mockGetCaptureSession({
+        ...activeSession,
+        page_count: 1,
+        pages: [{ page_id: 'page_a', page_no: 1 }]
+      }),
+      http.post('*/api/mobile/sess_001/pages', () => {
+        postUploads += 1;
+        return HttpResponse.json({ success: true, data: { page_id: 'unexpected', page_index: 2, status: 'uploaded' } });
+      }),
+      http.put('*/api/mobile/sess_001/pages/page_a/quad', async ({ request }) => {
+        quadUpdates += 1;
+        const body = await request.json() as { quad_points: Array<{ x: number; y: number }> };
+        expect(body.quad_points).toHaveLength(4);
+        return HttpResponse.json({ success: true, data: { page_id: 'page_a', page_no: 1, quad_points: body.quad_points } });
+      })
+    );
+
+    renderMobileCapture();
+    await screen.findByText('第 1 页');
+    await userEvent.setup().click(screen.getByRole('button', { name: '重新框选第 1 页' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '确认框选' }));
+
+    await waitFor(() => expect(quadUpdates).toBe(1));
+    expect(postUploads).toBe(0);
+  });
+
+  it('replaces the current page image when supplementing an uploaded page', async () => {
+    let replaceCalls = 0;
+    server.use(
+      mockGetCaptureSession({
+        ...activeSession,
+        page_count: 1,
+        pages: [{ page_id: 'page_a', page_no: 1 }]
+      }),
+      http.put('*/api/mobile/sess_001/pages/page_a/image', () => {
+        replaceCalls += 1;
+        return HttpResponse.json({ success: true, data: { page_id: 'page_a', page_index: 1, status: 'uploaded' } });
+      })
+    );
+
+    renderMobileCapture();
+    await screen.findByText('第 1 页');
+    await userEvent.setup().click(screen.getByRole('button', { name: '补拍第 1 页' }));
+    await selectImage('拍摄/选择图片', makeImageFile('replacement.jpg'));
+    await userEvent.setup().click(screen.getByRole('button', { name: '确认替换' }));
+
+    await waitFor(() => expect(replaceCalls).toBe(1));
+    expect(screen.getAllByText('已上传')).toHaveLength(1);
+    expect(screen.getByText('第 1 页')).toBeTruthy();
   });
 });

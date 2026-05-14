@@ -36,6 +36,46 @@ export function mockUploadCapturePageSuccess(
   });
 }
 
+export function mockUpdateCapturePageQuad(sessionId = activeSession.session_id) {
+  return http.put('*/api/mobile/:sessionId/pages/:pageId/quad', async ({ params, request }) => {
+    if (params.sessionId !== sessionId) {
+      return HttpResponse.json(
+        { error: { code: 'NOT_FOUND', message: '会话不存在', details: {} } },
+        { status: 404 }
+      );
+    }
+    const body = await request.json() as { quad_points: Array<{ x: number; y: number }> };
+    return HttpResponse.json({
+      success: true,
+      data: {
+        page_id: params.pageId,
+        page_no: 1,
+        quad_points: body.quad_points,
+        quad_updated_at: '2026-05-14T08:05:00+00:00'
+      }
+    });
+  });
+}
+
+export function mockReplaceCapturePageImage(sessionId = activeSession.session_id) {
+  return http.put('*/api/mobile/:sessionId/pages/:pageId/image', ({ params }) => {
+    if (params.sessionId !== sessionId) {
+      return HttpResponse.json(
+        { error: { code: 'NOT_FOUND', message: '会话不存在', details: {} } },
+        { status: 404 }
+      );
+    }
+    return HttpResponse.json({
+      success: true,
+      data: {
+        page_id: params.pageId,
+        page_index: 1,
+        status: 'uploaded'
+      }
+    });
+  });
+}
+
 export function mockUploadCapturePageError(sessionId = activeSession.session_id) {
   return http.post('*/api/mobile/:sessionId/pages', ({ params }) => {
     if (params.sessionId !== sessionId) {

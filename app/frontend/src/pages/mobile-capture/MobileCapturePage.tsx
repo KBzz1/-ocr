@@ -4,7 +4,9 @@ import { ApiError } from '../../api/client';
 import type { CapturePageItem } from './mobileCapture.types';
 import {
   deleteCapturePage,
-  reorderCapturePages
+  reorderCapturePages,
+  updateCapturePageQuad,
+  replaceCapturePageImage
 } from './mobileCaptureApi';
 import {
   finishCaptureSession,
@@ -114,6 +116,8 @@ export function MobileCapturePage() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [editingPage, setEditingPage] = useState<CapturePageItem | null>(null);
+  const [editMode, setEditMode] = useState<'new' | 'replace' | 'quad' | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -163,9 +167,44 @@ export function MobileCapturePage() {
       return;
     }
 
-    const page = buildLocalPage(file, pages.length);
-    setSelectedPage(page);
+    if (editMode === 'replace' && editingPage) {
+      const page: CapturePageItem = {
+        localId: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        pageId: editingPage.pageId,
+        pageNo: editingPage.pageNo,
+        status: 'failed',
+        previewUrl: createPreviewUrl(file),
+        file,
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT)
+      };
+      setSelectedPage(page);
+    } else {
+      const page = buildLocalPage(file, pages.length);
+      setSelectedPage(page);
+    }
     setError(null);
+  }
+
+  function startNewPage() {
+    if (isReadOnly) return;
+    setEditingPage(null);
+    setEditMode('new');
+  }
+
+  function startReplacePage(page: CapturePageItem) {
+    if (isReadOnly) return;
+    setEditingPage(page);
+    setEditMode('replace');
+    cameraInputRef.current?.click();
+  }
+
+  function startRequadPage(page: CapturePageItem) {
+    if (isReadOnly || !page.pageId) return;
+    setEditingPage(page);
+    setSelectedPage(page);
+    setEditMode('quad');
   }
 
   async function uploadPage(page: CapturePageItem) {
@@ -222,6 +261,76 @@ export function MobileCapturePage() {
     }
   }
 
+  async function handleConfirm() {
+    if (!selectedPage) return;
+
+    if (editMode === 'quad' && editingPage?.pageId) {
+      if (!isValidQuad(selectedPage.quad)) {
+        setError('框选区域无效，请重新调整');
+        return;
+      }
+      setError(null);
+      try {
+        await updateCapturePageQuad(sessionId, editingPage.pageId, quadToArray(selectedPage.quad));
+        setPages(current =>
+          current.map(p => p.pageId === editingPage.pageId
+            ? { ...p, quad: selectedPage.quad }
+            : p
+          )
+        );
+      } catch (err) {
+        setError(getErrorMessage(err, '框选更新失败'));
+        return;
+      }
+      setSelectedPage(null);
+      setEditingPage(null);
+      setEditMode(null);
+      return;
+    }
+
+    if (editMode === 'replace' && editingPage?.pageId && selectedPage.file) {
+      if (!isValidQuad(selectedPage.quad)) {
+        setError('框选区域无效，请重新调整');
+        return;
+      }
+      setError(null);
+      try {
+        const result = await replaceCapturePageImage(sessionId, editingPage.pageId, {
+          file: selectedPage.file,
+          width: selectedPage.width,
+          height: selectedPage.height,
+          quad_points: quadToArray(selectedPage.quad)
+        });
+        const uploaded: CapturePageItem = {
+          ...selectedPage,
+          pageId: result.page_id,
+          pageNo: editingPage.pageNo,
+          status: 'uploaded'
+        };
+        setPages(current => {
+          const next = current.map(p =>
+            (p.pageId === editingPage.pageId || p.localId === editingPage.localId)
+              ? uploaded
+              : p
+          );
+          return renumberPages(next);
+        });
+      } catch (err) {
+        setError(getErrorMessage(err, '替换失败，请重试'));
+        return;
+      }
+      setSelectedPage(null);
+      setEditingPage(null);
+      setEditMode(null);
+      return;
+    }
+
+    // Default: new upload
+    await uploadPage(selectedPage);
+    setEditingPage(null);
+    setEditMode(null);
+  }
+
   async function retryUpload(page: CapturePageItem) {
     await uploadPage(page);
   }
@@ -259,14 +368,11 @@ export function MobileCapturePage() {
   }
 
   function handleSupplement(page: CapturePageItem) {
-    if (isReadOnly) return;
-    // 补拍将在 Task 8 中实现替换逻辑，目前先触发新的拍照
-    cameraInputRef.current?.click();
+    startReplacePage(page);
   }
 
   function handleRequad(page: CapturePageItem) {
-    if (isReadOnly) return;
-    // 重新框选将在后续任务中实现
+    startRequadPage(page);
   }
 
   async function finishCapture() {
@@ -344,11 +450,19 @@ export function MobileCapturePage() {
             width={selectedPage?.width ?? PREVIEW_WIDTH}
             height={selectedPage?.height ?? PREVIEW_HEIGHT}
             isUploading={selectedPage?.status === 'uploading'}
-            confirmLabel="确认上传"
+            confirmLabel={
+              editMode === 'quad' ? '确认框选' :
+              editMode === 'replace' ? '确认替换' :
+              '确认上传'
+            }
             onChangeQuad={(quad) => selectedPage && setSelectedPage({ ...selectedPage, quad })}
             onResetQuad={() => selectedPage && setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
-            onCancel={() => setSelectedPage(null)}
-            onConfirm={() => selectedPage && uploadPage(selectedPage)}
+            onCancel={() => {
+              setSelectedPage(null);
+              setEditingPage(null);
+              setEditMode(null);
+            }}
+            onConfirm={handleConfirm}
           />
         ) : (
           <>
@@ -364,6 +478,7 @@ export function MobileCapturePage() {
                 <CapturePhotoButton
                   disabled={isReadOnly}
                   onFileSelected={handleFileSelected}
+                  onClick={startNewPage}
                 />
               </div>
             </section>
@@ -385,7 +500,10 @@ export function MobileCapturePage() {
         disabled={isReadOnly}
         isFinishing={isFinishing}
         canFinish={true}
-        onCaptureNext={() => cameraInputRef.current?.click()}
+        onCaptureNext={() => {
+          startNewPage();
+          cameraInputRef.current?.click();
+        }}
         onFinish={finishCapture}
       />
     </main>

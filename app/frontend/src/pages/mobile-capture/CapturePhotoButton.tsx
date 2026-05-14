@@ -4,12 +4,14 @@ interface CapturePhotoButtonProps {
   disabled: boolean;
   label?: string;
   onFileSelected: (file: File) => void;
+  onClick?: () => void;
 }
 
 export function CapturePhotoButton({
   disabled,
   label = '拍摄/选择图片',
-  onFileSelected
+  onFileSelected,
+  onClick
 }: CapturePhotoButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -33,7 +35,10 @@ export function CapturePhotoButton({
         className="mobile-button capture-photo-btn"
         type="button"
         disabled={disabled}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          onClick?.();
+          inputRef.current?.click();
+        }}
       >
         拍摄/选择图片
       </button>
