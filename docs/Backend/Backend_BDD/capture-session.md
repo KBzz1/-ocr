@@ -34,19 +34,22 @@ Feature: 采集会话管理
     And 剩余页面应保持原有顺序
     When 采集人将第 3 页调整为第 1 页
     Then 系统应更新页序
-    When 采集人补拍并上传新页面
-    Then 新页面应追加到页面列表末尾
+    When 采集人补拍第 1 页并上传新图片
+    Then 系统应替换第 1 页的图片和框选元数据，页序保持不变
+    When 采集人重新框选第 1 页
+    Then 系统应更新第 1 页的 quad_points，且不重新上传原图
 
   Scenario: 完成采集后会话锁定
     Given 会话 S001 处于 active 状态，已有顺序固化的 5 页图片
     When 采集人点击 "完成采集" POST /api/mobile/S001/finish
     Then 会话状态应变更为 locked
     And 当前页面列表顺序应被固化为任务处理顺序
+    And 当前页面的框选元数据应被固化为任务处理输入
     And 系统应根据页面列表创建或更新对应的病历任务
 
   Scenario: 锁定后禁止编辑
     Given 会话 S001 已锁定
-    When 尝试新增、删除或调整页面顺序
+    When 尝试新增、删除、调整页面顺序、补拍或重新框选
     Then 系统应返回 409 和错误码 SESSION_LOCKED
     And 错误信息应包含 "采集已完成，不可编辑"
 

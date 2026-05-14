@@ -20,12 +20,14 @@ export const routes: AppRoute[] = [
   appRoutes.export
 ];
 
+export const MOBILE_SESSION_PREFIX = '/mobile/sessions/';
+
 function encodeSegment(value: string) {
   return encodeURIComponent(value);
 }
 
 export function buildMobileSessionPath(sessionId: string) {
-  return `/mobile/sessions/${encodeSegment(sessionId)}`;
+  return `${MOBILE_SESSION_PREFIX}${encodeSegment(sessionId)}`;
 }
 
 export function buildReviewPath(taskId: string) {

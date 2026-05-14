@@ -19,7 +19,7 @@
 |------|------|-------------|------|
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
 | PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
-| PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md` | 已接入 PR-BE-002 会话 pages；保存原图和 quad 元数据；不独立维护页序，不做算法处理；失败上传已补偿空 page 和半成品文件 |
+| PR-BE-003/011 图片上传与元数据 | 进行中 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md`、`docs/superpowers/2026-05-14-mobile-capture-ux-redesign.md` | 已接入上传保存原图和 quad 元数据；新增重新框选要求后待补 `PUT /api/mobile/{session_id}/pages/{page_id}/quad`；不独立维护页序，不做算法处理 |
 | PR-BE-004 任务生命周期 | 已完成 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
 | PR-BE-005/006 外部算法端口 | 已完成 | `app/backend/services/algorithm_ports/`、`docs/superpowers/specs/2026-05-12-algorithm-ports-design.md` | 定义本地算法端口、编排、fixture、失败映射和结果持久化；不实现 OCR/LLM/图像算法 |
 | PR-BE-007 Schema 管理 | 已完成 | `app/config/schemas/medical_record.v1.yaml`、`app/backend/services/schema_service.py`、`docs/superpowers/specs/2026-05-12-schema-loader-design.md` | 加载当前 schema、记录版本、校验候选字段 key；schema 不生成字段值 |
@@ -30,6 +30,7 @@
 | BE-01 Windows 启停与离线启动 | 已完成 | `run.bat`、`stop.bat`、`scripts/offline_startup_check.py`、`docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md` | 聚焦 Windows 启停、PID、健康检查和断网启动验收；不实现业务 API |
 | FE-01 工作台首页第一阶段 | 已完成 | `app/frontend/`、`docs/Front/Design/`、`docs/superpowers/specs/2026-05-13-frontend-workstation-design.md`、`docs/superpowers/plans/2026-05-13-frontend-workstation-foundation-plan.md` | 已完成前端地基、首页、新建采集、二维码弹窗和会话状态；`npm run test`、`npm run typecheck`、`npm run build` 通过；Playwright 在当前沙箱卡住，作为 FE-06 质量门风险继续排查 |
 | FE-S1/S2 共享契约和路由骨架 | 已完成 | `app/frontend/src/api/`、`app/frontend/src/app/routes.tsx`、`app/frontend/src/styles/status.ts`、`app/frontend/tests/fixtures/`、`docs/superpowers/plans/2026-05-14-frontend-shared-contracts-routing-plan.md` | 已完成手机采集、任务、审核、导出 API 边界，状态文案、错误归一化、路由常量和占位入口；`npm run test`、`npm run typecheck`、`npm run build` 通过；当前沙箱 Playwright 30 秒超时 |
+| FE-02 手机采集页 UX 重构 | 进行中 | `docs/superpowers/2026-05-14-mobile-capture-ux-redesign.md`、`docs/Front/Design/图片设计稿/` | 已固化单入口拍摄/选择、简化框选、行内页面操作、拖拽排序、底部内容流和重新框选契约；待实现 |
 
 ## 后端任务
 
@@ -120,6 +121,10 @@
 - [x] **BE-03-08 上传失败补偿**
   - 范围：文件或元数据保存失败时清理已创建的空页面项和临时文件。
   - 边界：不得留下 finish 可固化的空上传页。
+
+- [ ] **BE-03-09 已上传页面框选坐标更新**
+  - 范围：`PUT /api/mobile/{session_id}/pages/{page_id}/quad` 保存新的 `quad_points`，复用坐标校验和会话写 guard。
+  - 边界：不重新上传原图，不改变页序，不做裁剪、透视矫正或图像质量判断。
 
 ### BE-04 任务生命周期（PR-BE-004）
 
@@ -262,19 +267,19 @@
   - 边界：手机端不做复杂审核。
 
 - [ ] **FE-02-02 拍照和选择图片**
-  - 范围：支持拍摄或选择本地图片，生成上传预览。
+  - 范围：单个"拍摄/选择图片"入口支持拍摄或选择本地图片，进入框选页生成上传预览。
   - 边界：不使用第三方云上传。
 
 - [ ] **FE-02-03 四边形框选 UI**
-  - 范围：四个角点拖动，默认范围可用，异常可重拍。
+  - 范围：四个角点拖动，默认范围可直接确认，框选页不展示像素输入和坐标滑块，异常可重拍。
   - 边界：前端只收集用户确认的坐标，不做裁剪/透视矫正算法。
 
 - [ ] **FE-02-04 页面上传状态**
-  - 范围：上传原图、尺寸、quad_points；显示成功、失败、重试。
+  - 范围：上传原图、尺寸、quad_points；成功回到列表；失败页只显示重试和删除。
   - 边界：上传失败不丢失当前待上传页面。
 
 - [ ] **FE-02-05 页面列表管理**
-  - 范围：完成采集前查看、删除、排序、补拍。
+  - 范围：完成采集前查看、删除、拖拽排序、补拍当前页、重新框选已上传页，行内按钮触控高度不小于 44px。
   - 边界：locked 后禁止编辑。
 
 - [ ] **FE-02-06 完成采集**

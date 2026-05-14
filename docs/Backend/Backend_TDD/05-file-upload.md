@@ -16,3 +16,7 @@
 | BE-FILE-010 | 集成 | 上传阶段只保存原图和元数据，不调用或伪造图像处理结果 | 测试发现本项目执行了图像处理 |
 | BE-FILE-011 | 集成 | 若外部 fixture 图像处理适配器返回 processed 路径，系统只记录该路径，不验证像素效果 | 后端试图判断图像质量 |
 | BE-FILE-012 | 集成 | 删除任务时只清理该任务目录，不能删除根目录或其他任务目录 | 清理范围过宽 |
+| BE-FILE-013 | API | `PUT /api/mobile/{sessionId}/pages/{pageId}/quad` 保存新的 `quad_points` 和更新时间，不要求重新上传原图 | 重新框选无法保存或错误要求文件 |
+| BE-FILE-014 | API | 更新 `quad_points` 时复用上传坐标校验，非法坐标返回 `INVALID_QUAD_POINTS` | 非法坐标被接受 |
+| BE-FILE-015 | API | `locked` 或 `expired` 会话拒绝更新 `quad_points`，返回对应会话错误码 | 锁定或过期后仍可编辑 |
+| BE-FILE-016 | API | 更新不存在页面的 `quad_points` 返回 404，不影响其他页面 | 错误更新或污染页面 |

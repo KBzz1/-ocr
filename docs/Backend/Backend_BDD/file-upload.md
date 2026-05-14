@@ -22,6 +22,21 @@ Feature: 图片上传与文件管理
     And 系统应保存四个角点坐标、图片尺寸和上传时间
     And 系统不应在前端或后端自行执行裁剪或透视矫正
 
+  Scenario: 更新已上传页面的框选元数据
+    Given 会话 S001 处于 active 状态
+    And 页面 P001 已成功上传
+    When 手机端调用 PUT /api/mobile/S001/pages/P001/quad
+    And 请求体包含新的 quad_points
+    Then 系统应更新页面 P001 的四个角点坐标和更新时间
+    And 系统不应要求重新上传原图
+    And 页面 P001 的 page_no 不应变化
+
+  Scenario: 拒绝锁定会话的框选坐标更新
+    Given 会话 S001 已锁定
+    And 页面 P001 已成功上传
+    When 手机端调用 PUT /api/mobile/S001/pages/P001/quad
+    Then 系统应返回 409 和错误码 SESSION_LOCKED
+
   Scenario: 缺少框选坐标时不阻断上传
     Given 会话 S001 处于 active 状态
     When 上传请求不包含 quad_points
@@ -41,6 +56,12 @@ Feature: 图片上传与文件管理
   Scenario: 拒绝非法框选坐标
     Given 会话 S001 处于 active 状态
     When 上传请求的 quad_points 缺角点、包含非数字值、或坐标自相交
+    Then 系统应返回 400 和错误码 INVALID_QUAD_POINTS
+
+  Scenario: 更新框选坐标时拒绝非法坐标
+    Given 会话 S001 处于 active 状态
+    And 页面 P001 已成功上传
+    When PUT /api/mobile/S001/pages/P001/quad 的请求体包含缺角点、非数字值、越界或自相交的 quad_points
     Then 系统应返回 400 和错误码 INVALID_QUAD_POINTS
 
   Scenario: 文件存储按任务隔离

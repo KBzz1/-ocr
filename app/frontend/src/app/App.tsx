@@ -10,6 +10,8 @@ import {
   formatRemainingTime,
   sortRecentTasks
 } from '../state/workstationStore';
+import { MOBILE_SESSION_PREFIX } from './routes';
+import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
 import { WorkstationPage } from '../pages/workstation/WorkstationPage';
 import type {
   CaptureSessionSummary,
@@ -111,7 +113,7 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-export function App() {
+function WorkstationApp() {
   const [systemStatus, setSystemStatus] = useState<ApiSystemStatus | null>(null);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ApiTaskSummary[]>([]);
@@ -193,4 +195,12 @@ export function App() {
       onRegenerateQr={handleCreateSession}
     />
   );
+}
+
+export function App() {
+  if (window.location.pathname.startsWith(MOBILE_SESSION_PREFIX)) {
+    return <MobileCapturePage />;
+  }
+
+  return <WorkstationApp />;
 }

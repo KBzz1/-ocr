@@ -5,14 +5,15 @@
 ```gherkin
 Feature: 四边形框选交互
   作为 采集人
-  我想要 在拍照后调整四边形框选范围
+  我想要 在拍摄或选择图片后调整四边形框选范围
   以便 排除屏幕背景、工具栏等非病历内容
 
-  Scenario: 拍照后默认显示四边形 overlay
-    Given 我已完成拍照并看到预览
+  Scenario: 拍摄或选择图片后默认显示四边形 overlay
+    Given 我已完成拍摄或选择图片并看到预览
     Then 图片上应该叠加一个四边形 overlay
     And 四边形的四个角点应该显示可拖动手柄
     And 默认角点应大约覆盖图片中心 80% 区域
+    And 页面不应该展示 X/Y 像素值输入框、坐标数值面板或滑块
 
   Scenario: 拖动左上角点后坐标和 overlay 同步更新
     Given 图片预览上显示了四边形 overlay
@@ -33,11 +34,26 @@ Feature: 四边形框选交互
     And 我应该看到 "框选区域无效，请重新调整" 的提示
 
   Scenario: 不做任何调整直接确认上传使用默认范围
-    Given 拍照后显示了默认四边形 overlay
+    Given 拍摄或选择图片后显示了默认四边形 overlay
     And 我没有拖动任何角点
     When 我直接点击 "确认上传"
     Then 上传请求体应该包含默认的 quad_points
     And 图片应该被成功上传
+
+  Scenario: 已上传页面可重新框选并保存新坐标
+    Given 我已成功上传第 1 页
+    When 我在页面列表中点击第 1 页的 "重新框选"
+    Then 我应该进入 "调整识别范围" 页面
+    And 图片上应该显示该页当前保存的四边形 overlay
+    When 我拖动角点后点击 "确认上传"
+    Then 系统应该调用 PUT /api/mobile/sess_001/pages/page_001/quad
+    And 请求体应该包含我调整后的 quad_points
+    And 页面列表中第 1 页仍保持原页序
+
+  Scenario: 锁定后不可重新框选
+    Given 采集会话 "sess_001" 状态为 locked
+    When 我查看已上传页面列表
+    Then "重新框选" 按钮应该不可见或禁用
 
   Scenario: 手动调整后提交的坐标以手动值为准
     Given 外部模块返回了自动识别的边界坐标
