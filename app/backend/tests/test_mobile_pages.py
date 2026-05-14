@@ -289,6 +289,24 @@ class TestMobilePages:
         assert resp.status_code == 409
         assert resp.get_json()["error"]["code"] == "SESSION_LOCKED"
 
+    def test_update_quad_route_rejects_missing_quad_points(self, client):
+        sid = _create_session(client)
+        upload = client.post(
+            f"/api/mobile/{sid}/pages",
+            data={
+                "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+            },
+            content_type="multipart/form-data",
+        )
+        page_id = upload.get_json()["data"]["page_id"]
+
+        resp = client.put(f"/api/mobile/{sid}/pages/{page_id}/quad", json={})
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "INVALID_QUAD_POINTS"
+
     def test_replace_image_route_preserves_page_identity(self, client):
         sid = _create_session(client)
         upload = client.post(

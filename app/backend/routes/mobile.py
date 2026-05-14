@@ -121,11 +121,13 @@ def update_page_quad(session_id: str, page_id: str):
     _service()._ensure_editable(_service().get(session_id))
     payload = request.get_json(silent=True) or {}
     quad_points = payload.get("quad_points")
+    if quad_points is None:
+        raise AppError(ErrorCode.INVALID_QUAD_POINTS)
     quad_points_normalized = _normalize_quad_points(quad_points)
     result = _page_service().update_quad(
         session_id=session_id,
         page_id=page_id,
-        quad_points_raw=json.dumps(quad_points_normalized) if quad_points_normalized else None,
+        quad_points_raw=json.dumps(quad_points_normalized),
     )
     return success(
         data={
