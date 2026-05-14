@@ -285,3 +285,59 @@ class TestPageServiceSaveCleanup:
         # 第二个页面的文件已被清理
         assert f"{page2['page_id']}.jpg" not in files
         assert f"{page2['page_id']}.json" not in files
+
+
+class TestPageServiceQuadUpdate:
+    def test_update_quad_preserves_image_and_page_order(self, tmp_path):
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page = ss.add_page(session["session_id"])["pages"][0]
+        ps.save(session["session_id"], page["page_id"], page["page_no"], _make_jpg(), 1920, 1080)
+
+        new_quad = json.dumps([
+            [100, 100],
+            [1800, 100],
+            [1800, 900],
+            [100, 900],
+        ])
+
+        updated = ps.update_quad(session["session_id"], page["page_id"], new_quad)
+
+        assert updated["page_id"] == page["page_id"]
+        assert updated["page_no"] == 1
+        assert updated["quad_points"] == [
+            [100, 100],
+            [1800, 100],
+            [1800, 900],
+            [100, 900],
+        ]
+        assert updated["quad_updated_at"] is not None
+        current = ss.get(session["session_id"])
+        assert current["pages"][0]["page_id"] == page["page_id"]
+        assert current["pages"][0]["page_no"] == 1
+
+    def test_update_quad_rejects_invalid_points_without_changing_metadata(self, tmp_path):
+        from app.backend.errors import AppError, ErrorCode
+
+        ps = make_page_service(tmp_path)
+        ss = ps._session_service
+        session = ss.create()
+        page = ss.add_page(session["session_id"])["pages"][0]
+        original = ps.save(
+            session["session_id"],
+            page["page_id"],
+            page["page_no"],
+            _make_jpg(),
+            1920,
+            1080,
+            quad_points_raw=json.dumps([[0, 0], [1920, 0], [1920, 1080], [0, 1080]]),
+        )
+
+        with pytest.raises(AppError) as exc_info:
+            ps.update_quad(session["session_id"], page["page_id"], "not json")
+
+        assert exc_info.value.code == ErrorCode.INVALID_QUAD_POINTS.code
+        meta = ps._store.read(f"data/pages/{session['session_id']}/{page['page_id']}.json")
+        assert meta["quad_points"] == original["quad_points"]
+        assert "quad_updated_at" not in meta

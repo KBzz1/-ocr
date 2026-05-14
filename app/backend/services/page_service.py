@@ -93,3 +93,29 @@ class PageService:
             raise
 
         return meta
+
+    def update_quad(
+        self,
+        session_id: str,
+        page_id: str,
+        quad_points_raw: str | None,
+    ) -> dict:
+        session = self._session_service.get(session_id)
+        page = next((p for p in session.get("pages", []) if p.get("page_id") == page_id), None)
+        if page is None or not page.get("upload_ref"):
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        meta = self._store.read(page["upload_ref"])
+        if meta is None:
+            raise AppError(ErrorCode.SESSION_NOT_FOUND, message="页面不存在")
+
+        quad_points = validate_quad_points(
+            quad_points_raw,
+            int(meta["image_width"]),
+            int(meta["image_height"]),
+            self._min_quad_area_ratio,
+        )
+        meta["quad_points"] = quad_points
+        meta["quad_updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._store.write(page["upload_ref"], meta)
+        return meta
