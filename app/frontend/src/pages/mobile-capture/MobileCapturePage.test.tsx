@@ -456,4 +456,14 @@ describe('MobileCapturePage', () => {
     expect(screen.getAllByText('已上传')).toHaveLength(1);
     expect(screen.getByText('第 1 页')).toBeTruthy();
   });
+
+  it('keeps footer actions in normal content flow', async () => {
+    server.use(mockGetCaptureSession({ ...activeSession, page_count: 0, pages: [] }));
+    renderMobileCapture();
+
+    await screen.findByText('采集会话进行中');
+    const footer = screen.getByRole('contentinfo');
+    expect(footer.className).toContain('capture-footer');
+    expect(footer.className).not.toContain('mobile-capture__footer');
+  });
 });

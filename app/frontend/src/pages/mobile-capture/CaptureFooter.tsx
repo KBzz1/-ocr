@@ -14,7 +14,7 @@ export function CaptureFooter({
   onFinish
 }: CaptureFooterProps) {
   return (
-    <footer className="capture-footer">
+    <footer className="capture-footer" role="contentinfo">
       <button className="mobile-button secondary" type="button" disabled={disabled} onClick={onCaptureNext}>
         继续拍下一页
       </button>

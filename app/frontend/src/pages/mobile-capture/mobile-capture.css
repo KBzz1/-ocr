@@ -37,7 +37,7 @@
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
-  padding: 18px 16px 116px;
+  padding: 18px 16px 32px;
 }
 
 .mobile-capture__status-row {
@@ -79,7 +79,6 @@
 
 .capture-card,
 .page-list,
-.supplement-card,
 .mobile-capture__notice,
 .mobile-capture__help {
   border: 1px solid #dbe3ef;
@@ -95,8 +94,7 @@
 }
 
 .capture-card h2,
-.page-list h2,
-.supplement-card h2 {
+.page-list h2 {
   margin: 0;
   font-size: 22px;
   letter-spacing: 0;
@@ -104,7 +102,6 @@
 
 .capture-card p,
 .page-list p,
-.supplement-card p,
 .mobile-capture__hint {
   color: #64748b;
   line-height: 1.7;
@@ -295,7 +292,6 @@
   color: #1167f2;
 }
 
-.supplement-card,
 .mobile-capture__notice,
 .mobile-capture__help {
   margin-top: 18px;
@@ -321,24 +317,6 @@
   font-weight: 700;
 }
 
-.mobile-capture__footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-top: 1px solid #dbe3ef;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 12px 16px;
-}
-
-.mobile-capture__footer-inner {
-  max-width: 520px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  margin: 0 auto;
-}
-
 @media (max-width: 420px) {
   .mobile-capture__body {
     padding-inline: 12px;
@@ -348,8 +326,67 @@
   .page-list {
     padding: 16px;
   }
+}
 
-  .mobile-capture__footer-inner {
-    grid-template-columns: 1fr;
-  }
+/* ── Footer in normal content flow ── */
+.capture-footer {
+  width: 100%;
+  max-width: 520px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 18px auto 0;
+  padding: 0 16px 24px;
+}
+
+/* ── Page item with drag handle ── */
+.page-item {
+  grid-template-columns: 44px 96px 1fr;
+  align-items: center;
+}
+
+.page-item__drag {
+  width: 44px;
+  min-height: 96px;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 24px;
+  cursor: grab;
+}
+
+.page-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.page-action {
+  min-height: 44px;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.page-action.is-primary {
+  border: 1px solid #1167f2;
+  background: #1167f2;
+  color: #ffffff;
+}
+
+.page-action.is-blue {
+  border: 1px solid #1167f2;
+  color: #1167f2;
+}
+
+.page-action.is-orange {
+  border: 1px solid #f97316;
+  color: #f97316;
+}
+
+.page-action.is-delete {
+  border: 1px solid #94a3b8;
+  color: #dc2626;
 }
