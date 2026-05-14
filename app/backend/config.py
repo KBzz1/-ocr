@@ -20,6 +20,7 @@ DEFAULT_CONFIG = {
     "model_dir": "./models",
     "storage_dir": "./data",
     "export_dir": "./exports",
+    "static_dir": "./app/frontend/dist",
     "capture_session_ttl_minutes": 30,
     "max_upload_file_size_mb": 10,
     "min_quad_area_ratio": 0.01,
@@ -64,6 +65,8 @@ def _flatten_config(raw: dict) -> dict:
         flattened["storage_dir"] = paths_config["storage_dir"]
     if "export_dir" in paths_config:
         flattened["export_dir"] = paths_config["export_dir"]
+    if "static_dir" in paths_config:
+        flattened["static_dir"] = paths_config["static_dir"]
 
     sessions_config = raw.get("sessions", {})
     if "capture_session_ttl_minutes" in sessions_config:
@@ -80,7 +83,7 @@ def _flatten_config(raw: dict) -> dict:
 
 def _normalize_paths(config: dict) -> dict:
     """将相对路径转为基于 PROJECT_ROOT 的绝对路径。"""
-    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir"):
+    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir"):
         path = config[key]
         if not os.path.isabs(path):
             path = os.path.join(PROJECT_ROOT, path)

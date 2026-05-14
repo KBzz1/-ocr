@@ -4,7 +4,9 @@ import socket
 from datetime import datetime, timezone
 from ipaddress import ip_address
 
-from flask import Flask
+from flask import Flask, request, send_file, send_from_directory
+from werkzeug.exceptions import NotFound
+from werkzeug.utils import safe_join
 
 from .config import PROJECT_ROOT, load_config
 from .errors import register_error_handlers
@@ -43,6 +45,33 @@ def _get_lan_addresses(port: int) -> list[str]:
     return unique
 
 
+def _register_static_serve(app: Flask, static_dir: str) -> None:
+    """注册静态文件服务 + SPA fallback。"""
+    from .errors import AppError, ErrorCode
+    from .responses import error_response
+
+    @app.before_request
+    def _serve_spa():
+        if request.path.startswith("/api/"):
+            return None
+
+        relative_path = request.path.lstrip("/") or "index.html"
+        file_path = safe_join(static_dir, relative_path)
+        if file_path is None:
+            raise NotFound()
+
+        if os.path.splitext(request.path)[1]:
+            if os.path.isfile(file_path):
+                return send_from_directory(static_dir, relative_path)
+            raise NotFound()
+
+        index_path = safe_join(static_dir, "index.html")
+        if index_path and os.path.isfile(index_path):
+            return send_file(index_path)
+
+        return error_response(AppError(ErrorCode.REQUEST_NOT_FOUND))
+
+
 def create_backend_app(config_dir: str | None = None) -> Flask:
     config = load_config(config_dir)
 
@@ -52,6 +81,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     app.config["LAN_ADDRESSES"] = _get_lan_addresses(config["port"])
 
     register_error_handlers(app)
+    _register_static_serve(app, config["static_dir"])
 
     from .storage.json_store import JsonStore
     from .services.session_service import SessionService

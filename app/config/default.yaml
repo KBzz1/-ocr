@@ -13,6 +13,7 @@ paths:
   log_dir: "./logs"
   export_dir: "./exports"
   model_dir: "./models"
+  static_dir: "./app/frontend/dist"
 
 sessions:
   capture_session_ttl_minutes: 30

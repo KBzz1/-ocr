@@ -60,7 +60,7 @@ class TestCaptureSessionAPI:
 
         assert data["status"] == "active"
         assert data["page_count"] == 0
-        assert data["qr_code_url"].startswith("http://192.168.1.5:8081/mobile/")
+        assert data["qr_code_url"].startswith("http://192.168.1.5:8081/mobile/sessions/")
         assert "created_at" in data
         assert "expires_at" in data
 

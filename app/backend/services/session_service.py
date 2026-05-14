@@ -18,7 +18,7 @@ class SessionService:
         expires_at = now + timedelta(minutes=self._ttl_minutes)
         qr_code_url = None
         if self._lan_addresses:
-            qr_code_url = f"http://{self._lan_addresses[0]}/mobile/{session_id}"
+            qr_code_url = f"http://{self._lan_addresses[0]}/mobile/sessions/{session_id}"
 
         session = {
             "session_id": session_id,

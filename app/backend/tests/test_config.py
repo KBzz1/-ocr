@@ -212,3 +212,34 @@ def test_min_quad_area_ratio_must_be_between_0_and_1(tmp_path):
     (config_dir / "default.yaml").write_text("upload:\n  min_quad_area_ratio: 2.0\n", encoding="utf-8")
     with pytest.raises(ValueError, match="min_quad_area_ratio"):
         load_config(str(config_dir))
+
+
+def test_static_dir_default_normalized(tmp_path):
+    """static_dir 默认值归一化为项目内 app/frontend/dist。"""
+    from app.backend.config import load_config
+
+    config = load_config(str(tmp_path / "nonexistent"))
+
+    assert "static_dir" in config
+    assert os.path.isabs(config["static_dir"])
+    assert config["static_dir"].endswith(os.path.join("app", "frontend", "dist"))
+
+
+def test_static_dir_overridable_via_local_yaml(tmp_path):
+    """paths.static_dir 可通过 local.yaml 覆盖。"""
+    import yaml
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    default = {"paths": {"static_dir": "./app/frontend/dist"}}
+    local = {"paths": {"static_dir": "./custom_dist"}}
+    with open(config_dir / "default.yaml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(default, f)
+    with open(config_dir / "local.yaml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(local, f)
+
+    config = load_config(str(config_dir))
+
+    assert os.path.isabs(config["static_dir"])
+    assert config["static_dir"].endswith("custom_dist")
