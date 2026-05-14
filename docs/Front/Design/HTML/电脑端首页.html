@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>病历文书结构化采集工作站</title>
+    <!-- 草稿说明：正式实现必须使用本地打包后的 CSS、图标和字体，不得依赖 CDN。 -->
+    <script src="./vendor/tailwindcss.local.js"></script>
+    <script src="./vendor/phosphor-icons.local.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Inter"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#2563EB', 
+                        primaryHover: '#1D4ED8',
+                        surface: '#F8FAFC', 
+                        border: '#E2E8F0',
+                        textMain: '#0F172A',
+                        textSub: '#64748B',
+                        success: '#10B981',
+                        warning: '#F59E0B',
+                        danger: '#EF4444',
+                        processing: '#8B5CF6'
+                    },
+                    boxShadow: {
+                        'sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        'card': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+                        'modal': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #F8FAFC; -webkit-font-smoothing: antialiased; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background-color: #CBD5E1; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background-color: transparent; }
+        .hidden-modal { display: none !important; }
+        
+        /* 弹窗渐现动画 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.97) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-animate {
+            animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* 二维码扫描线动画 */
+        @keyframes scanBar {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .animate-scan-bar {
+            animation: scanBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden text-sm text-textMain selection:bg-blue-100 selection:text-blue-900">
+
+    <aside class="w-64 bg-white border-r border-border flex flex-col justify-between h-full flex-shrink-0 z-20">
+        <div>
+            <div class="h-16 px-6 flex items-center border-b border-border/50">
+                <div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white mr-3 shadow-sm">
+                    <i class="ph-bold ph-file-text text-lg"></i>
+                </div>
+                <div class="flex flex-col">
+                    <h1 class="font-semibold text-[15px] leading-tight text-gray-900">病历采集工作站</h1>
+                    <span class="text-[11px] text-gray-500 font-medium mt-0.5">本地化部署版</span>
+                </div>
+            </div>
+
+            <nav class="mt-4 px-3 flex flex-col gap-1">
+                <a href="#" class="flex items-center px-3 py-2.5 bg-blue-50 text-blue-700 rounded-md relative group">
+                    <div class="absolute left-0 top-1.5 bottom-1.5 w-1 bg-blue-600 rounded-r"></div>
+                    <i class="ph ph-squares-four text-xl mr-3"></i>
+                    <span class="font-medium text-[14px]">工作台总览</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-md transition-colors">
+                    <i class="ph ph-list-checks text-xl mr-3 text-gray-400"></i>
+                    <span class="font-medium text-[14px]">任务管理</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-md transition-colors">
+                    <i class="ph ph-user-focus text-xl mr-3 text-gray-400"></i>
+                    <span class="font-medium text-[14px]">人工审核</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-md transition-colors">
+                    <i class="ph ph-export text-xl mr-3 text-gray-400"></i>
+                    <span class="font-medium text-[14px]">导出记录</span>
+                </a>
+                
+                <div class="my-2 border-t border-gray-100 mx-2"></div>
+                
+                <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-md transition-colors">
+                    <i class="ph ph-hard-drives text-xl mr-3 text-gray-400"></i>
+                    <span class="font-medium text-[14px]">系统状态</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-md transition-colors">
+                    <i class="ph ph-gear text-xl mr-3 text-gray-400"></i>
+                    <span class="font-medium text-[14px]">设置</span>
+                </a>
+            </nav>
+        </div>
+
+        <div class="p-4 border-t border-border/50 bg-gray-50/50">
+            <div class="flex items-center gap-3 px-2">
+                <div class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </div>
+                <div>
+                    <div class="text-[13px] font-medium text-gray-700 leading-tight">系统运行正常</div>
+                    <div class="text-[11px] text-gray-500 mt-0.5">本地离线环境</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-full overflow-y-auto relative bg-[#F8FAFC]">
+        
+        <header class="h-16 px-8 flex justify-between items-center bg-white border-b border-border/50 sticky top-0 z-10 shadow-sm">
+            <h2 class="text-[18px] font-semibold text-gray-800 tracking-wide">工作台总览</h2>
+            
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-6 border-r border-gray-200 pr-6 h-8">
+                    <img src="重庆大学logo.webp" alt="重庆大学" class="h-9 object-contain mix-blend-multiply opacity-90">
+                    <img src="新桥医院logo.jpg" alt="新桥医院" class="h-9 object-contain mix-blend-multiply opacity-90">
+                </div>
+                
+                <button class="flex items-center gap-1.5 text-gray-500 hover:text-blue-600 transition text-[14px]">
+                    <i class="ph ph-question text-lg"></i>
+                    <span>帮助中心</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="p-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col gap-6">
+            
+            <div class="flex gap-6">
+                <div class="flex-1 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl text-white p-8 relative overflow-hidden shadow-card flex justify-between items-center h-[180px] group hover:shadow-lg transition-shadow">
+                    <div class="absolute right-0 top-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 group-hover:scale-110 transition-transform duration-700"></div>
+                    <div class="absolute left-1/2 bottom-0 w-48 h-48 bg-blue-400 opacity-20 rounded-full blur-2xl translate-y-1/2"></div>
+                    
+                    <div class="z-10 flex gap-8 items-center w-full">
+                        <div class="flex-1 pl-2">
+                            <h3 class="text-2xl font-semibold mb-2 tracking-wide">开始新的病历采集</h3>
+                            <p class="text-blue-100 mb-6 text-[14px] leading-relaxed">使用手机扫码拍摄病历文书页面，完成后系统将自动进行结构化解析。</p>
+                            <button id="btn-new-capture" class="bg-white text-blue-600 font-medium text-[14px] px-6 py-2.5 rounded shadow-sm hover:shadow hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2">
+                                <i class="ph-bold ph-plus text-base"></i> 新建采集任务
+                            </button>
+                        </div>
+                        
+                        <div class="hidden md:flex items-center justify-center w-32 h-32 relative mr-8 opacity-90 group-hover:rotate-3 transition-transform duration-500">
+                            <div class="absolute inset-0 border border-white/30 rounded-2xl rotate-6"></div>
+                            <div class="absolute inset-0 border border-white/40 rounded-2xl -rotate-3 bg-white/5 backdrop-blur-sm flex items-center justify-center">
+                                <i class="ph ph-qr-code text-5xl text-white"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-[380px] bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex flex-col h-[180px]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-semibold text-gray-800 text-[15px]">当前扫码会话</h3>
+                        <span class="w-2 h-2 rounded-full bg-gray-300"></span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center justify-center text-center">
+                        <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-3 border border-gray-100">
+                            <i class="ph ph-device-mobile text-2xl text-gray-400"></i>
+                        </div>
+                        <p class="text-gray-800 font-medium text-[14px]">暂无连接中的设备</p>
+                        <p class="text-gray-500 text-[12px] mt-1">新建采集后，可在此查看上传进度</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-4 gap-6">
+                <div class="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-blue-50 text-blue-700 border border-blue-100 mb-3">待人工审核</span>
+                            <div class="text-3xl font-bold text-gray-900 mb-1">12</div>
+                            <div class="text-[13px] text-gray-500">笔待处理任务</div>
+                        </div>
+                        <div class="p-2.5 rounded-lg bg-blue-50 text-blue-600 group-hover:scale-110 transition-transform">
+                            <i class="ph-fill ph-clipboard-text text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-purple-300 hover:shadow-md transition-all cursor-pointer group">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-purple-50 text-purple-700 border border-purple-100 mb-3">算法处理中</span>
+                            <div class="text-3xl font-bold text-gray-900 mb-1">8</div>
+                            <div class="text-[13px] text-gray-500">文档解析抽取中</div>
+                        </div>
+                        <div class="p-2.5 rounded-lg bg-purple-50 text-purple-600 group-hover:scale-110 transition-transform">
+                            <i class="ph-fill ph-cpu text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-orange-300 hover:shadow-md transition-all cursor-pointer group">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-orange-50 text-orange-700 border border-orange-100 mb-3">解析异常</span>
+                            <div class="text-3xl font-bold text-gray-900 mb-1">3</div>
+                            <div class="text-[13px] text-gray-500">需重新处理图像</div>
+                        </div>
+                        <div class="p-2.5 rounded-lg bg-orange-50 text-orange-600 group-hover:scale-110 transition-transform">
+                            <i class="ph-fill ph-warning-circle text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-green-300 hover:shadow-md transition-all cursor-pointer group">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-green-50 text-green-700 border border-green-100 mb-3">完成采集</span>
+                            <div class="text-3xl font-bold text-gray-900 mb-1">25</div>
+                            <div class="text-[13px] text-gray-500">结构化数据已导出</div>
+                        </div>
+                        <div class="p-2.5 rounded-lg bg-green-50 text-green-600 group-hover:scale-110 transition-transform">
+                            <i class="ph-fill ph-check-circle text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-6 pb-6 flex-1 min-h-[300px]">
+                
+                <div class="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white">
+                        <h3 class="font-semibold text-gray-800 text-[15px]">最近任务记录</h3>
+                        <a href="#" class="text-blue-600 text-[13px] hover:text-blue-800 font-medium flex items-center gap-1">全部任务 <i class="ph ph-caret-right"></i></a>
+                    </div>
+                    <div class="flex-1 overflow-auto">
+                        <table class="w-full text-left border-collapse whitespace-nowrap">
+                            <thead class="bg-gray-50 sticky top-0 z-10">
+                                <tr class="text-gray-500 text-[13px] border-b border-gray-200">
+                                    <th class="py-3 px-6 font-medium w-[22%]">任务编号</th>
+                                    <th class="py-3 px-6 font-medium w-[20%]">上传时间</th>
+                                    <th class="py-3 px-6 font-medium w-[10%]">文档页数</th>
+                                    <th class="py-3 px-6 font-medium w-[15%]">当前状态</th>
+                                    <th class="py-3 px-6 font-medium w-[18%]">核验进度</th>
+                                    <th class="py-3 px-6 font-medium w-[15%] text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-[13px] text-gray-700 divide-y divide-gray-100">
+                                <tr class="hover:bg-blue-50/30 transition-colors group">
+                                    <td class="py-3.5 px-6 font-medium text-gray-900">TASK-20240520-001</td>
+                                    <td class="py-3.5 px-6 text-gray-500 font-mono text-[12px]">2024-05-20 14:30</td>
+                                    <td class="py-3.5 px-6">18 页</td>
+                                    <td class="py-3.5 px-6">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-blue-50 text-blue-700 border border-blue-100">待审核</span>
+                                    </td>
+                                    <td class="py-3.5 px-6">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div class="h-full bg-blue-600 rounded-full" style="width: 83%"></div>
+                                            </div>
+                                            <span class="text-[12px] text-gray-500 font-mono">15/18</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-6 text-right flex justify-end items-center gap-2">
+                                        <button class="px-3 py-1.5 border border-blue-200 text-blue-600 bg-white rounded flex items-center gap-1 hover:bg-blue-50 hover:border-blue-300 transition-colors text-[12px] font-medium shadow-sm">
+                                            开始审核
+                                        </button>
+                                        <button class="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition">
+                                            <i class="ph-bold ph-dots-three-vertical text-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="hover:bg-blue-50/30 transition-colors group">
+                                    <td class="py-3.5 px-6 font-medium text-gray-900">TASK-20240520-002</td>
+                                    <td class="py-3.5 px-6 text-gray-500 font-mono text-[12px]">2024-05-20 13:15</td>
+                                    <td class="py-3.5 px-6">24 页</td>
+                                    <td class="py-3.5 px-6">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-purple-50 text-purple-700 border border-purple-100">处理中</span>
+                                    </td>
+                                    <td class="py-3.5 px-6">
+                                        <div class="flex items-center gap-3 text-gray-400">
+                                            <div class="w-20 h-1.5 bg-gray-100 rounded-full"></div>
+                                            <span class="text-[12px] font-mono">—/—</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-6 text-right flex justify-end items-center gap-2">
+                                        <button class="px-3 py-1.5 border border-gray-200 text-gray-600 bg-white rounded flex items-center gap-1 hover:bg-gray-50 hover:border-gray-300 transition-colors text-[12px] font-medium shadow-sm">
+                                            查看进度
+                                        </button>
+                                        <button class="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition">
+                                            <i class="ph-bold ph-dots-three-vertical text-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="hover:bg-blue-50/30 transition-colors group">
+                                    <td class="py-3.5 px-6 font-medium text-gray-900">TASK-20240520-003</td>
+                                    <td class="py-3.5 px-6 text-gray-500 font-mono text-[12px]">2024-05-20 11:20</td>
+                                    <td class="py-3.5 px-6">12 页</td>
+                                    <td class="py-3.5 px-6">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-orange-50 text-orange-700 border border-orange-100">处理失败</span>
+                                    </td>
+                                    <td class="py-3.5 px-6">
+                                         <div class="flex items-center gap-3 text-gray-400">
+                                            <div class="w-20 h-1.5 bg-gray-100 rounded-full"></div>
+                                            <span class="text-[12px] font-mono">—/—</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-6 text-right flex justify-end items-center gap-2">
+                                        <button class="px-3 py-1.5 border border-orange-200 text-orange-600 bg-white rounded flex items-center gap-1 hover:bg-orange-50 hover:border-orange-300 transition-colors text-[12px] font-medium shadow-sm">
+                                            查看原因
+                                        </button>
+                                        <button class="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition">
+                                            <i class="ph-bold ph-dots-three-vertical text-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="hover:bg-blue-50/30 transition-colors group">
+                                    <td class="py-3.5 px-6 font-medium text-gray-900">TASK-20240520-004</td>
+                                    <td class="py-3.5 px-6 text-gray-500 font-mono text-[12px]">2024-05-20 10:05</td>
+                                    <td class="py-3.5 px-6">16 页</td>
+                                    <td class="py-3.5 px-6">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium bg-green-50 text-green-700 border border-green-100">已确认</span>
+                                    </td>
+                                    <td class="py-3.5 px-6">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div class="h-full bg-green-500 rounded-full" style="width: 100%"></div>
+                                            </div>
+                                            <span class="text-[12px] text-gray-500 font-mono">16/16</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-6 text-right flex justify-end items-center gap-2">
+                                        <button class="px-3 py-1.5 border border-green-200 text-green-600 bg-white rounded flex items-center gap-1 hover:bg-green-50 hover:border-green-300 transition-colors text-[12px] font-medium shadow-sm">
+                                            导出结果
+                                        </button>
+                                        <button class="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition">
+                                            <i class="ph-bold ph-dots-three-vertical text-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="w-[340px] bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col flex-shrink-0">
+                    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white">
+                        <h3 class="font-semibold text-gray-800 text-[15px]">系统提醒</h3>
+                        <a href="#" class="text-gray-500 text-[13px] hover:text-gray-800 font-medium">查看全部</a>
+                    </div>
+                    <div class="flex-1 p-6 flex flex-col gap-6 overflow-y-auto">
+                        <div class="flex gap-3 relative">
+                            <div class="mt-0.5 flex-shrink-0 w-2 h-2 rounded-full bg-orange-500 ring-4 ring-orange-50"></div>
+                            <div class="-mt-1.5 flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <h4 class="font-medium text-gray-800 text-[13px]">解析引擎异常</h4>
+                                    <span class="text-[11px] text-gray-400 font-mono">11:20</span>
+                                </div>
+                                <p class="text-[12px] text-gray-500 leading-relaxed">任务 TASK-20240520-003 图片预处理失败，请重试。</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-3 relative">
+                            <div class="mt-0.5 flex-shrink-0 w-2 h-2 rounded-full bg-blue-500 ring-4 ring-blue-50"></div>
+                            <div class="-mt-1.5 flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <h4 class="font-medium text-gray-800 text-[13px]">设备断开连接</h4>
+                                    <span class="text-[11px] text-gray-400 font-mono">10:30</span>
+                                </div>
+                                <p class="text-[12px] text-gray-500 leading-relaxed">局域网通信中断，请确保手机未息屏断网。</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 relative">
+                            <div class="mt-0.5 flex-shrink-0 w-2 h-2 rounded-full bg-green-500 ring-4 ring-green-50"></div>
+                            <div class="-mt-1.5 flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <h4 class="font-medium text-gray-800 text-[13px]">数据成功导出</h4>
+                                    <span class="text-[11px] text-gray-400 font-mono">10:15</span>
+                                </div>
+                                <p class="text-[12px] text-gray-500 leading-relaxed">任务 TASK-20240520-004 结构化 JSON 导出完成。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="capture-modal" class="hidden-modal fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-modal w-[760px] flex flex-col relative modal-animate">
+            
+            <div class="px-8 py-5 flex justify-between items-center border-b border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-900">使用移动设备采集文档</h3>
+                <button id="btn-close-modal" class="text-gray-400 hover:text-gray-700 transition p-1.5 rounded bg-gray-50 hover:bg-gray-100"><i class="ph ph-x text-lg"></i></button>
+            </div>
+
+            <div class="p-8 flex gap-10">
+                <div class="flex-1 flex flex-col items-center">
+                    
+                    <p class="text-[14px] text-gray-600 mb-3 text-center leading-relaxed">
+                        请使用手机浏览器扫描下方二维码进行拍照
+                    </p>
+
+                    <div class="w-full max-w-[280px] bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2.5 items-start mb-6 shadow-sm">
+                        <i class="ph-fill ph-warning-circle text-amber-500 text-[20px] mt-0.5 shrink-0 animate-pulse"></i>
+                        <div class="text-[13px] text-amber-800 leading-snug">
+                            必须确保手机与电脑连接 <span class="font-bold text-amber-900">同一局域网(Wi-Fi)</span>，否则无法传输图像。
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-center gap-6 mb-8 w-full">
+                        <div class="relative p-2.5 bg-white rounded-lg w-[160px] h-[160px] border border-gray-200 shadow-sm shrink-0 overflow-hidden">
+                            <div class="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-blue-600 rounded-tl -m-[1px]"></div>
+                            <div class="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-blue-600 rounded-tr -m-[1px]"></div>
+                            <div class="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-blue-600 rounded-bl -m-[1px]"></div>
+                            <div class="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-blue-600 rounded-br -m-[1px]"></div>
+                            
+                            <div class="absolute left-0 w-full h-[2px] bg-blue-500 shadow-[0_0_8px_3px_rgba(59,130,246,0.5)] z-10 animate-scan-bar"></div>
+
+                            <svg width="100%" height="100%" viewBox="0 0 100 100" fill="#0F172A" xmlns="http://www.w3.org/2000/svg" class="opacity-90 relative z-0">
+                                <path fill-rule="evenodd" d="M10 10H40V40H10V10ZM15 15V35H35V15H15ZM20 20H30V30H20V20Z"/>
+                                <path fill-rule="evenodd" d="M60 10H90V40H60V10ZM65 15V35H85V15H65ZM70 20H80V30H70V20Z"/>
+                                <path fill-rule="evenodd" d="M10 60H40V90H10V60ZM15 65V85H35V65H15ZM20 70H30V80H20V70Z"/>
+                                <rect x="50" y="10" width="5" height="15"/><rect x="50" y="30" width="5" height="10"/>
+                                <rect x="10" y="45" width="20" height="5"/><rect x="35" y="45" width="25" height="5"/><rect x="65" y="45" width="25" height="5"/>
+                                <rect x="50" y="55" width="5" height="20"/><rect x="60" y="55" width="15" height="5"/><rect x="80" y="55" width="10" height="5"/>
+                                <rect x="60" y="65" width="5" height="25"/><rect x="70" y="65" width="20" height="5"/><rect x="70" y="75" width="5" height="15"/><rect x="80" y="75" width="10" height="15"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <button class="flex items-center justify-center gap-2 px-5 py-2 border border-gray-200 text-gray-600 rounded-md text-[13px] hover:bg-gray-50 transition shadow-sm font-medium">
+                        <i class="ph ph-arrows-clockwise text-base"></i> 刷新二维码
+                    </button>
+                </div>
+
+                <div class="w-[280px] flex flex-col gap-3 pt-2">
+                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-100 flex gap-3 items-center shadow-sm">
+                        <div class="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">
+                            <i class="ph-bold ph-check text-base"></i>
+                        </div>
+                        <div>
+                            <div class="text-[13px] font-semibold text-gray-800">服务已就绪</div>
+                            <div class="text-[11px] text-gray-500 font-mono mt-0.5">14:31:05 建立本地连接</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50/50 rounded-lg p-4 border border-blue-200 flex gap-3 items-center shadow-sm">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                            <i class="ph-bold ph-hourglass-high text-base"></i>
+                        </div>
+                        <div>
+                            <div class="text-[13px] font-semibold text-gray-800">等待设备扫码...</div>
+                            <div class="text-[11px] text-gray-500 mt-0.5">剩余有效时间 <span class="text-blue-600 font-mono font-bold">29:45</span></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 flex gap-3 items-center opacity-50">
+                        <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shrink-0 border border-gray-200">
+                            <i class="ph-bold ph-upload-simple text-base"></i>
+                        </div>
+                        <div>
+                            <div class="text-[13px] font-semibold text-gray-800">图像传输中</div>
+                            <div class="text-[11px] text-gray-500 mt-0.5">已接收 0 页病历文书</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-8 py-4 bg-gray-50 flex justify-between items-center border-t border-gray-200 rounded-b-xl">
+                <a href="#" class="text-blue-600 text-[13px] flex items-center gap-1.5 hover:underline font-medium"><i class="ph ph-question text-base"></i> 无法建立连接？</a>
+                <div class="flex gap-3">
+                    <button id="btn-cancel" class="px-6 py-2 bg-white border border-gray-300 text-gray-700 font-medium text-[13px] rounded shadow-sm hover:bg-gray-50 transition">取消并关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('capture-modal');
+            const btnNewCapture = document.getElementById('btn-new-capture');
+            const btnCloseModal = document.getElementById('btn-close-modal');
+            const btnCancel = document.getElementById('btn-cancel');
+
+            function showModal() { 
+                modal.classList.remove('hidden-modal'); 
+            }
+            function hideModal() { 
+                modal.classList.add('hidden-modal'); 
+            }
+
+            btnNewCapture.addEventListener('click', showModal);
+            btnCloseModal.addEventListener('click', hideModal);
+            btnCancel.addEventListener('click', hideModal);
+
+            modal.addEventListener('click', (e) => {
+                if(e.target === modal) hideModal();
+            });
+        });
+    </script>
+</body>
+</html>

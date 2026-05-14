@@ -8,7 +8,7 @@
 
 - `Front_BDD/`：前端用户旅程和可观察行为场景，覆盖电脑端工作台、手机采集、任务列表、人工审核、导出和错误恢复。
 - `Front_TDD/`：前端技术测试设计，覆盖组件、交互、API mock、E2E 路径、fixtures 和实施顺序。
-- `Design/`：用户提供的草稿设计和素材，包括 HTML 草稿、图片设计稿和 logo；作为视觉参考，不替代 PRD、BDD、TDD 或后端 API 契约。
+- `Design/`：用户提供的草稿设计和素材，包括 HTML 草稿、图片设计稿和 logo；素材清单和使用边界见 `Design/README.md`，作为视觉参考，不替代 PRD、BDD、TDD 或后端 API 契约。
 
 ## 子目录规则
 
