@@ -361,3 +361,16 @@ class TestStartupShutdownIntegration:
         assert "127.0.0.1:8081" not in data["data"]["lan_addresses"]
         assert "192.168.1.100:8081" in data["data"]["lan_addresses"]
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
+
+
+def test_run_bat_opens_localhost_root_not_health_check():
+    """WIN-NW-001: run.bat 打开 http://127.0.0.1:8081/ 而不是健康检查 JSON"""
+    content = open("run.bat").read()
+    assert 'start "" "http://127.0.0.1:8081/"' in content
+    assert 'start "" "http://127.0.0.1:8081/api/system/status"' not in content
+
+
+def test_run_bat_health_check_still_uses_status_endpoint():
+    """WIN-NW-002: run.bat 健康检查仍使用 /api/system/status"""
+    content = open("run.bat").read()
+    assert "http://127.0.0.1:8081/api/system/status" in content

@@ -60,4 +60,4 @@ echo [%date% %time%] 健康检查通过（耗时 %HEALTH_WAITED% 秒） >> "%LOG
 echo 后端服务已就绪 (http://127.0.0.1:8081)
 
 :: ── 打开本地入口 ──
-start "" "http://127.0.0.1:8081/api/system/status"
+start "" "http://127.0.0.1:8081/"
