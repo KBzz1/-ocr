@@ -46,22 +46,16 @@ function assertMobileQrUrl(session: CaptureSession) {
   }
 }
 
-function buildFrontendMobileUrl(session: CaptureSession) {
-  const backendUrl = new URL(session.qr_code_url);
-  const frontendUrl = new URL(window.location.href);
-  frontendUrl.hostname = backendUrl.hostname;
-  frontendUrl.pathname = `/mobile/sessions/${encodeURIComponent(session.session_id)}`;
-  frontendUrl.search = '';
-  frontendUrl.hash = '';
-  return frontendUrl.toString();
-}
 
 export async function createCaptureSession() {
   const session = await apiRequest<CaptureSession>('/api/capture-sessions', { method: 'POST' });
   assertMobileQrUrl(session);
   return {
     ...session,
-    qr_code_url: buildFrontendMobileUrl(session)
+    qr_code_url: buildQrCodeUrl(session, {
+      isDev: import.meta.env.DEV,
+      currentHref: window.location.href
+    })
   };
 }
 
@@ -86,6 +80,25 @@ export function uploadCapturePage(sessionId: string, input: CapturePageUploadInp
       body: buildCapturePageFormData(input)
     }
   );
+}
+
+export interface BuildQrCodeUrlOptions {
+  isDev: boolean;
+  currentHref: string;
+}
+
+export function buildQrCodeUrl(
+  session: CaptureSession,
+  options: BuildQrCodeUrlOptions
+): string {
+  if (options.isDev) {
+    const frontendUrl = new URL(options.currentHref);
+    frontendUrl.pathname = `/mobile/sessions/${encodeURIComponent(session.session_id)}`;
+    frontendUrl.search = '';
+    frontendUrl.hash = '';
+    return frontendUrl.toString();
+  }
+  return session.qr_code_url;
 }
 
 export function finishCaptureSession(sessionId: string) {
