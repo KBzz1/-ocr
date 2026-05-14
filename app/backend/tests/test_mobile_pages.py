@@ -235,6 +235,96 @@ class TestMobilePages:
         )
         assert resp.status_code == 409
 
+    def test_update_quad_route_returns_stable_page_data(self, client):
+        sid = _create_session(client)
+        upload = client.post(
+            f"/api/mobile/{sid}/pages",
+            data={
+                "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+            },
+            content_type="multipart/form-data",
+        )
+        page_id = upload.get_json()["data"]["page_id"]
+
+        resp = client.put(
+            f"/api/mobile/{sid}/pages/{page_id}/quad",
+            json={
+                "quad_points": [
+                    {"x": 100, "y": 100},
+                    {"x": 1800, "y": 100},
+                    {"x": 1800, "y": 900},
+                    {"x": 100, "y": 900},
+                ]
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["page_id"] == page_id
+        assert data["page_no"] == 1
+        assert data["quad_points"][0] == {"x": 100, "y": 100}
+        assert data["quad_updated_at"] is not None
+
+    def test_update_quad_route_rejects_locked_session(self, client):
+        sid = _create_session(client)
+        upload = client.post(
+            f"/api/mobile/{sid}/pages",
+            data={
+                "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+            },
+            content_type="multipart/form-data",
+        )
+        page_id = upload.get_json()["data"]["page_id"]
+        client.post(f"/api/mobile/{sid}/finish")
+
+        resp = client.put(
+            f"/api/mobile/{sid}/pages/{page_id}/quad",
+            json={"quad_points": [{"x": 0, "y": 0}]},
+        )
+
+        assert resp.status_code == 409
+        assert resp.get_json()["error"]["code"] == "SESSION_LOCKED"
+
+    def test_replace_image_route_preserves_page_identity(self, client):
+        sid = _create_session(client)
+        upload = client.post(
+            f"/api/mobile/{sid}/pages",
+            data={
+                "image": (io.BytesIO(_make_jpg()), "test.jpg"),
+                "image_width": "1920",
+                "image_height": "1080",
+            },
+            content_type="multipart/form-data",
+        )
+        page_id = upload.get_json()["data"]["page_id"]
+
+        resp = client.put(
+            f"/api/mobile/{sid}/pages/{page_id}/image",
+            data={
+                "image": (io.BytesIO(_make_jpg()), "replacement.jpg"),
+                "image_width": "1000",
+                "image_height": "1400",
+                "quad_points": json.dumps([
+                    {"x": 50, "y": 60},
+                    {"x": 950, "y": 60},
+                    {"x": 950, "y": 1260},
+                    {"x": 50, "y": 1260},
+                ]),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["page_id"] == page_id
+        assert data["page_no"] == 1
+        assert data["image_width"] == 1000
+        assert data["image_height"] == 1400
+
 
 class TestUploadFailureCompensation:
     """上传失败补偿：失败上传不应留下空 page。"""
