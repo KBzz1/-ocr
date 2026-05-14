@@ -28,6 +28,25 @@ export interface TaskSummary {
   };
 }
 
+export type TaskDetail = TaskSummary & {
+  pages?: Array<{
+    page_id: string;
+    page_no?: number;
+    page_index?: number;
+    status?: string;
+  }>;
+  status_history?: Array<{
+    status: TaskStatus;
+    changed_at: string;
+    message?: string;
+  }>;
+};
+
+export interface TaskRetryResult {
+  task_id: string;
+  status: TaskStatus;
+}
+
 interface TaskListResponse {
   tasks: TaskSummary[];
 }
@@ -35,4 +54,14 @@ interface TaskListResponse {
 export async function getTasks() {
   const data = await apiRequest<TaskListResponse>('/api/tasks');
   return data.tasks;
+}
+
+export function getTaskDetail(taskId: string) {
+  return apiRequest<TaskDetail>(`/api/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function retryTaskProcessing(taskId: string) {
+  return apiRequest<TaskRetryResult>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, {
+    method: 'POST'
+  });
 }

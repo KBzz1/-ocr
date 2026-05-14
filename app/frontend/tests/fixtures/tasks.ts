@@ -50,3 +50,27 @@ export const taskFixtures = [
 export function mockTasks(tasks = taskFixtures) {
   return http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks } }));
 }
+
+export function mockTaskDetail(task = taskFixtures[0]) {
+  return http.get(`*/api/tasks/${task.task_id}`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        ...task,
+        pages: [{ page_id: 'page_001', page_no: 1, status: 'uploaded' }]
+      }
+    })
+  );
+}
+
+export function mockRetryTaskProcessing(taskId = 'task-failed') {
+  return http.post(`*/api/tasks/${taskId}/retry`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        task_id: taskId,
+        status: 'processing'
+      }
+    })
+  );
+}

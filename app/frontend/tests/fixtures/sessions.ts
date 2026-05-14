@@ -27,3 +27,35 @@ export function mockCreateCaptureSessionError() {
     )
   );
 }
+
+export function mockGetCaptureSession(session = activeSession) {
+  return http.get(`*/api/capture-sessions/${session.session_id}`, () =>
+    HttpResponse.json({ success: true, data: session })
+  );
+}
+
+export function mockUploadCapturePage(sessionId = activeSession.session_id) {
+  return http.post(`*/api/capture-sessions/${sessionId}/pages`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        page_id: 'page_001',
+        page_index: 1,
+        status: 'uploaded'
+      }
+    })
+  );
+}
+
+export function mockFinishCaptureSession(sessionId = activeSession.session_id) {
+  return http.post(`*/api/capture-sessions/${sessionId}/finish`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        session_id: sessionId,
+        status: 'locked',
+        task_id: 'task_001'
+      }
+    })
+  );
+}
