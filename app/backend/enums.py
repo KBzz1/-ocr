@@ -2,27 +2,25 @@ from enum import Enum
 
 
 TASK_STATUS_TRANSITIONS = {
-    "created": ["uploading", "failed"],
-    "uploading": ["uploaded", "failed"],
-    "uploaded": ["processing", "failed"],
+    "capturing": ["uploaded", "failed"],
+    "uploaded": ["processing", "capturing", "failed"],
     "processing": ["ready_for_review", "failed"],
-    "ready_for_review": ["confirmed", "processing", "failed"],
-    "confirmed": ["exported"],
-    "exported": [],
-    "failed": ["processing"],
+    "ready_for_review": ["confirmed", "processing", "capturing", "failed"],
+    "confirmed": ["exported", "capturing"],
+    "exported": ["capturing"],
+    "failed": ["processing", "capturing"],
 }
 
 SESSION_STATUS_TRANSITIONS = {
     "active": ["locked", "cancelled", "expired"],
+    "locked": ["active"],
     "expired": [],
-    "locked": [],
     "cancelled": [],
 }
 
 
 class TaskStatus(Enum):
-    CREATED = "created"
-    UPLOADING = "uploading"
+    CAPTURING = "capturing"
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     READY_FOR_REVIEW = "ready_for_review"
@@ -78,3 +76,4 @@ class FieldStatus(Enum):
     MODIFIED = "modified"
     SUSPICIOUS = "suspicious"
     EMPTY = "empty"
+    CONFIRMED_EMPTY = "confirmed_empty"

@@ -25,11 +25,21 @@ class TestErrorCode:
         assert ErrorCode.TASK_NOT_FOUND.default_message == "任务不存在"
         assert ErrorCode.INVALID_TASK_TRANSITION.default_message == "非法任务状态流转"
 
+    def test_session_cancelled_error_contract(self):
+        assert ErrorCode.SESSION_CANCELLED.code == "SESSION_CANCELLED"
+        assert ErrorCode.SESSION_CANCELLED.http_status == 409
+
+    def test_session_unlock_not_allowed_error_contract(self):
+        assert ErrorCode.SESSION_UNLOCK_NOT_ALLOWED.code == "SESSION_UNLOCK_NOT_ALLOWED"
+        assert ErrorCode.SESSION_UNLOCK_NOT_ALLOWED.http_status == 409
+
     def test_all_codes_defined(self):
         codes = {e.code for e in ErrorCode}
         assert "SESSION_NOT_FOUND" in codes
         assert "SESSION_EXPIRED" in codes
         assert "SESSION_LOCKED" in codes
+        assert "SESSION_CANCELLED" in codes
+        assert "SESSION_UNLOCK_NOT_ALLOWED" in codes
         assert "SESSION_EMPTY" in codes
         assert "UNSUPPORTED_FILE_TYPE" in codes
         assert "FILE_TOO_LARGE" in codes
@@ -45,7 +55,7 @@ class TestErrorCode:
         assert "ALGORITHM_MODULE_NOT_CONFIGURED" in codes
         assert "ALGORITHM_MODULE_FAILED" in codes
         assert "ALGORITHM_CONTRACT_INVALID" in codes
-        assert len(codes) == 18
+        assert len(codes) == 20
 
 
 class TestAlgorithmErrorCode:
