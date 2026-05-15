@@ -94,14 +94,12 @@ export function buildQrCodeUrl(
   session: CaptureSession,
   options: BuildQrCodeUrlOptions
 ): string {
-  if (options.isDev) {
-    const frontendUrl = new URL(options.currentHref);
-    frontendUrl.pathname = `/mobile/sessions/${encodeURIComponent(session.session_id)}`;
-    frontendUrl.search = '';
-    frontendUrl.hash = '';
-    return frontendUrl.toString();
-  }
-  return session.qr_code_url;
+  void options;
+  const backendUrl = new URL(session.qr_code_url);
+  backendUrl.pathname = `/mobile/sessions/${encodeURIComponent(session.session_id)}`;
+  backendUrl.search = '';
+  backendUrl.hash = '';
+  return backendUrl.toString();
 }
 
 export function finishCaptureSession(sessionId: string) {

@@ -363,10 +363,12 @@ class TestStartupShutdownIntegration:
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
 
 
-def test_run_bat_opens_localhost_root_not_health_check():
-    """WIN-NW-001: run.bat 打开 http://127.0.0.1:8081/ 而不是健康检查 JSON"""
+def test_run_bat_opens_frontend_workstation_not_health_check():
+    """run.bat 打开后端托管的工作台入口，而不是健康检查 JSON 或 Vite。"""
     content = open("run.bat").read()
-    assert 'start "" "http://127.0.0.1:8081/"' in content
+    assert "WORKSTATION_URL=http://127.0.0.1:8081/" in content
+    assert 'start "" "%WORKSTATION_URL%"' in content
+    assert "127.0.0.1:5173" not in content
     assert 'start "" "http://127.0.0.1:8081/api/system/status"' not in content
 
 

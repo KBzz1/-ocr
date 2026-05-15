@@ -129,7 +129,7 @@ describe('Workstation data integration', () => {
     expectPresent(within(dialog).getByText('等待设备扫码'));
     expectPresent(within(dialog).getByText(/已上传页数 2 页/));
     expectBodyNotToContain(/192\.168\.1\.5:8081\/mobile\/sess_001/);
-    expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:5173/mobile/sessions/sess_001');
+    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/sessions/sess_001');
   });
 
   it('shows connection help and copyable mobile link only after request', async () => {
@@ -145,7 +145,7 @@ describe('Workstation data integration', () => {
 
     expectPresent(within(dialog).getByText('手机访问链接'));
     expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
-      'http://127.0.0.1:5173/mobile/sessions/sess_001'
+      'http://192.168.1.5:8081/mobile/sessions/sess_001'
     );
   });
 

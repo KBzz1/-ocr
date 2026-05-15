@@ -19,20 +19,28 @@ describe('buildQrCodeUrl', () => {
     expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc-123');
   });
 
-  it('FE-NW-002: 开发模式将端口转为 Vite origin', () => {
+  it('FE-NW-002: 开发模式仍使用后端局域网 URL，避免手机依赖 Vite 端口', () => {
     const result = buildQrCodeUrl(baseSession, {
       isDev: true,
       currentHref: 'http://192.168.1.5:5173/',
     });
-    expect(result).toBe('http://192.168.1.5:5173/mobile/sessions/abc-123');
+    expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc-123');
   });
 
-  it('开发模式保留当前 origin 的 hostname 和 port', () => {
+  it('开发模式不使用当前 origin 的 hostname 和 port', () => {
     const result = buildQrCodeUrl(baseSession, {
       isDev: true,
       currentHref: 'http://10.0.0.99:3000/some-page',
     });
-    expect(result).toBe('http://10.0.0.99:3000/mobile/sessions/abc-123');
+    expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc-123');
+  });
+
+  it('开发模式当前页面是回环地址时仍使用后端局域网 URL', () => {
+    const result = buildQrCodeUrl(baseSession, {
+      isDev: true,
+      currentHref: 'http://127.0.0.1:5173/',
+    });
+    expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc-123');
   });
 
   it('session_id 含特殊字符时正确编码', () => {
@@ -45,6 +53,6 @@ describe('buildQrCodeUrl', () => {
       isDev: true,
       currentHref: 'http://10.0.0.99:3000/some-page',
     });
-    expect(result).toBe('http://10.0.0.99:3000/mobile/sessions/abc%2F123%3Fx%3D1');
+    expect(result).toBe('http://192.168.1.5:8081/mobile/sessions/abc%2F123%3Fx%3D1');
   });
 });
