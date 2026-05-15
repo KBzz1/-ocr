@@ -512,6 +512,47 @@ describe('MobileCapturePage', () => {
     expect(footer.className).not.toContain('mobile-capture__footer');
   });
 
+  it('opens re-quad with saved backend quad points', async () => {
+    let updatedQuad: Array<{ x: number; y: number }> | null = null;
+    server.use(
+      mockGetCaptureSession({
+        ...activeSession,
+        page_count: 1,
+        pages: [
+          {
+            page_id: 'page_a',
+            page_no: 1,
+            image_width: 1000,
+            image_height: 1400,
+            quad_points: [
+              { x: 10, y: 20 },
+              { x: 990, y: 30 },
+              { x: 980, y: 1380 },
+              { x: 20, y: 1370 }
+            ]
+          }
+        ]
+      }),
+      http.put('*/api/mobile/sess_001/pages/page_a/quad', async ({ request }) => {
+        const body = await request.json() as { quad_points: Array<{ x: number; y: number }> };
+        updatedQuad = body.quad_points;
+        return HttpResponse.json({ success: true, data: { page_id: 'page_a', page_no: 1, quad_points: body.quad_points } });
+      })
+    );
+
+    renderMobileCapture();
+    await screen.findByText('第 1 页');
+    await userEvent.setup().click(screen.getByRole('button', { name: '重新框选第 1 页' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '确认框选' }));
+
+    await waitFor(() => expect(updatedQuad).toEqual([
+      { x: 10, y: 20 },
+      { x: 990, y: 30 },
+      { x: 980, y: 1380 },
+      { x: 20, y: 1370 }
+    ]));
+  });
+
   it('revokes current page and selected preview blob urls on unmount', async () => {
     const { createObjectURL, revokeObjectURL } = stubBlobUrls();
     server.use(mockGetCaptureSession({ ...activeSession, page_count: 0, pages: [] }));

@@ -12,6 +12,9 @@ export interface CaptureSession {
   pages?: Array<{
     page_id: string;
     page_no: number;
+    image_width?: number;
+    image_height?: number;
+    quad_points?: QuadPoint[] | null;
   }>;
 }
 

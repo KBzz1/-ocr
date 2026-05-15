@@ -82,16 +82,31 @@ function revokePreviewUrl(url?: string) {
   }
 }
 
+function arrayToQuadByCorner(points: Array<{ x: number; y: number }> | null | undefined, width: number, height: number): QuadPointsByCorner {
+  if (!Array.isArray(points) || points.length !== 4) {
+    return createDefaultQuad(width, height);
+  }
+  const [tl, tr, br, bl] = points;
+  if (![tl, tr, br, bl].every((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))) {
+    return createDefaultQuad(width, height);
+  }
+  return { tl, tr, br, bl };
+}
+
 function toInitialPages(session: CaptureSession): CapturePageItem[] {
-  return (session.pages ?? []).map((page, index) => ({
-    localId: page.page_id,
-    pageId: page.page_id,
-    pageNo: index + 1,
-    status: 'uploaded',
-    width: PREVIEW_WIDTH,
-    height: PREVIEW_HEIGHT,
-    quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT)
-  }));
+  return (session.pages ?? []).map((page, index) => {
+    const width = page.image_width ?? PREVIEW_WIDTH;
+    const height = page.image_height ?? PREVIEW_HEIGHT;
+    return {
+      localId: page.page_id,
+      pageId: page.page_id,
+      pageNo: index + 1,
+      status: 'uploaded',
+      width,
+      height,
+      quad: arrayToQuadByCorner(page.quad_points, width, height)
+    };
+  });
 }
 
 function renumberPages(pages: CapturePageItem[]) {
