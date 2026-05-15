@@ -16,6 +16,7 @@ import {
   type CaptureSessionStatus
 } from '../../api/captureSessions';
 import {
+  arrayToQuadByCorner,
   createDefaultQuad,
   isValidQuad,
   quadToArray,
@@ -80,17 +81,6 @@ function revokePreviewUrl(url?: string) {
   if (url && typeof URL !== 'undefined' && 'revokeObjectURL' in URL) {
     URL.revokeObjectURL(url);
   }
-}
-
-function arrayToQuadByCorner(points: Array<{ x: number; y: number }> | null | undefined, width: number, height: number): QuadPointsByCorner {
-  if (!Array.isArray(points) || points.length !== 4) {
-    return createDefaultQuad(width, height);
-  }
-  const [tl, tr, br, bl] = points;
-  if (![tl, tr, br, bl].every((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))) {
-    return createDefaultQuad(width, height);
-  }
-  return { tl, tr, br, bl };
 }
 
 function toInitialPages(session: CaptureSession): CapturePageItem[] {

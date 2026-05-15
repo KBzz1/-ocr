@@ -47,7 +47,7 @@ class SessionService:
 
         return session
 
-    def _with_safe_page_metadata(self, session: dict) -> dict:
+    def with_safe_page_metadata(self, session: dict) -> dict:
         pages = []
         for page in session.get("pages", []):
             enriched = dict(page)

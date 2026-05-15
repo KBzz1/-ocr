@@ -24,6 +24,17 @@ export function quadToArray(points: QuadPointsByCorner) {
   return cornerOrder.map((corner) => points[corner]);
 }
 
+export function arrayToQuadByCorner(points: Array<{ x: number; y: number }> | null | undefined, width: number, height: number): QuadPointsByCorner {
+  if (!Array.isArray(points) || points.length !== 4) {
+    return createDefaultQuad(width, height);
+  }
+  const [tl, tr, br, bl] = points;
+  if (![tl, tr, br, bl].every((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))) {
+    return createDefaultQuad(width, height);
+  }
+  return { tl, tr, br, bl };
+}
+
 function orientation(a: QuadPoint, b: QuadPoint, c: QuadPoint) {
   return (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
 }
