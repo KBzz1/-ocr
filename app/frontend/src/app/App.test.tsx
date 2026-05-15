@@ -128,7 +128,6 @@ describe('Workstation data integration', () => {
     expect(qrImage.src).toMatch(/^data:image\/svg\+xml/);
     expectPresent(within(dialog).getByText('等待设备扫码'));
     expectPresent(within(dialog).getByText(/已上传页数 2 页/));
-    expect(screen.queryByRole('button', { name: '结束会话' })).toBeNull();
     expectBodyNotToContain(/192\.168\.1\.5:8081\/mobile\/sess_001/);
     expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:5173/mobile/sessions/sess_001');
   });
@@ -240,6 +239,18 @@ describe('Workstation data integration', () => {
 
     const qrImage = within(dialog).getByRole('img', { name: '采集二维码' }) as HTMLImageElement;
     expect(qrImage.dataset.qrValue).toBe('http://192.168.1.9:8081/mobile/sessions/sess_001');
+  });
+
+  it('shows end session placeholder on current active session card', async () => {
+    const user = userEvent.setup();
+    server.use(mockSystemStatus(), mockTasks([]), mockCreateCaptureSession());
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /新建采集/ }));
+    await user.click(await screen.findByRole('button', { name: '关闭' }));
+    await user.click(screen.getByRole('button', { name: '结束会话' }));
+
+    expect(screen.getByText('请在手机端点击完成采集；如需作废，请重新生成二维码。')).toBeTruthy();
   });
 
   it('retries system status loading after service no response', async () => {

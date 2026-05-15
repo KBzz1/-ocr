@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CaptureSessionSummary, SystemStatus } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
@@ -31,6 +32,7 @@ export function WorkstationHero({
   onNewCapture,
   onViewQr
 }: WorkstationHeroProps) {
+  const [endSessionHint, setEndSessionHint] = useState(false);
   const statusTitle =
     systemStatus.startup === 'running'
       ? '系统已启动'
@@ -119,7 +121,13 @@ export function WorkstationHero({
               <button className="secondary-action" type="button" onClick={onViewQr}>
                 查看二维码
               </button>
+              <button className="secondary-action" type="button" onClick={() => setEndSessionHint(true)}>
+                结束会话
+              </button>
             </div>
+            {endSessionHint ? (
+              <p className="inline-hint">请在手机端点击完成采集；如需作废，请重新生成二维码。</p>
+            ) : null}
           </div>
         ) : (
           <div className="session-empty">
