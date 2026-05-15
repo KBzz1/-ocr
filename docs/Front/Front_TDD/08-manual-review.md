@@ -12,7 +12,7 @@
 | FE-REV-005 | 组件 | `failed` 任务禁止进入审核页，展示失败原因和重新处理入口 |
 | FE-REV-006 | 组件 | 结构化字段候选来自后端成功结果；前端不得基于 schema 自行生成可审核字段 |
 | FE-REV-007 | 组件 | 点击字段值进入编辑态，输入框获得焦点 |
-| FE-REV-008 | 组件 | 字段失焦保存时调用 `PUT /api/tasks/{taskId}/review/fields/{fieldKey}` |
+| FE-REV-008 | 组件 | 字段失焦且值发生变化时调用 `PUT /api/tasks/{taskId}/review/fields/{fieldKey}` |
 | FE-REV-009 | 组件 | 保存成功后字段状态变为 `modified` |
 | FE-REV-010 | 组件 | 保存失败后回滚 UI 值并显示"保存失败，请重试" |
 | FE-REV-011 | 组件 | 用户可清空字段值，保存后状态显示 `empty` 或后端返回状态 |
@@ -20,3 +20,9 @@
 | FE-REV-013 | 组件 | 用户可标记字段存疑，状态变为 `suspicious` |
 | FE-REV-014 | 组件 | 刷新页面后从 `review_result` 加载人工修改后的值 |
 | FE-REV-015 | 组件 | 存在保存中的字段时，确认审核按钮进入防重复提交状态 |
+| FE-REV-016 | 组件 | 失焦时字段值未变化则不触发保存 API 调用 |
+| FE-REV-017 | 组件 | 用户勾选多个字段后点击"批量确认"，调用 `POST /api/tasks/{taskId}/review/fields/batch-confirm`，勾选字段状态变为 `confirmed` |
+| FE-REV-018 | 组件 | 未勾选任何字段时"批量确认"按钮禁用 |
+| FE-REV-019 | 组件 | `empty` 状态字段可点击"确认空值"，调用保存 API 标记空值已确认，状态变为 `confirmed_empty` |
+| FE-REV-020 | 组件 | 失焦自动保存中显示保存状态，保存成功后状态消失或显示最近保存时间 |
+| FE-REV-021 | 组件 | 失焦自动保存失败时保留用户输入，显示"保存失败"并提供重试保存 |

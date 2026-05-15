@@ -1,5 +1,7 @@
 # BE-08 导出服务设计
 
+> 2026-05-15 产品修订：导出前字段完整性问题改为预警统计，不再因未审核、存疑、为空或无来源字段使用 `EXPORT_VALIDATION_FAILED` 硬阻断；`ready_for_review` 或 `confirmed` 任务在用户确认风险后均可导出。本文中旧的“未确认任务必须阻断导出”表述以后续 PRD、BDD/TDD 和 `docs/Shared/error-codes.md` 为准。
+
 ## 范围
 
 对应 PRD `PR-BE-009`，覆盖 `docs/PRD任务清单.md` 中：

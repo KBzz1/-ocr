@@ -11,19 +11,24 @@ Feature: 任务列表
   Scenario: 任务列表每一项展示核心字段
     Given 系统中存在多个不同状态的病历任务
     When 我访问工作台的任务列表区域
-    Then 每个任务至少应显示：任务编号、创建时间、页数、处理状态、审核状态、导出状态
+    Then 每个任务至少应显示：任务编号、首页缩略图、创建时间、页数、处理状态、审核状态、导出状态
 
   Scenario: 各状态任务使用对应的中文标签展示
-    Given 系统中存在 created、uploading、uploaded、processing、ready_for_review、confirmed、exported、failed 状态的任务
+    Given 系统中存在 capturing、uploaded、processing、ready_for_review、confirmed、exported、failed 状态的任务
     When 我查看任务列表
-    Then 每个状态应显示对应的中文标签："已创建"、"上传中"、"上传完成"、"处理中"、"待审核"、"已确认"、"已导出"、"失败"
+    Then 每个状态应显示对应的中文标签："采集中"、"上传完成"、"处理中"、"待审核"、"已确认"、"已导出"、"失败"
 
-  Scenario: 手机端完成采集后任务列表自动新增
+  Scenario: 新建采集后任务列表自动新增采集中任务
     Given 任务列表当前有 2 个任务
-    And 手机端完成了一次新的采集
-    When 任务列表轮询或收到推送
+    When 电脑端点击 "新建采集"
     Then 任务列表应该自动新增一条记录
-    And 新任务的初始状态应为 "上传完成" 或 "处理中"
+    And 新任务的初始状态应为 "采集中"
+    And 应显示首页缩略图占位（暂无页面时）
+
+  Scenario: 手机端完成采集后任务状态更新
+    Given 一个任务当前状态为 "采集中"
+    When 手机端完成采集
+    Then 任务状态应该更新为 "上传完成"
 
   Scenario: 任务从上传完成到待审核的状态变化过程可见
     Given 一个任务当前状态为 "上传完成"
@@ -54,9 +59,28 @@ Feature: 任务列表
     Then 系统应该调用 POST /api/tasks/{taskId}/retry
     And 任务状态应该更新为 "处理中"
 
+  Scenario: 待审核任务重新处理回到处理中
+    Given 任务列表中有一个 "待审核" 任务
+    When 我点击该任务的 "重新处理" 按钮
+    Then 系统应该调用 POST /api/tasks/{taskId}/reprocess
+    And 任务状态应该更新为 "处理中"
+
+  Scenario: 已锁定任务修订采集回到采集中
+    Given 任务列表中有一个 "上传完成" 任务（会话已锁定）
+    When 我点击该任务的 "修订采集"
+    And 在确认弹窗中点击 "确认修订"
+    Then 系统应该调用修订采集 API
+    And 任务状态应该更新为 "采集中"
+    And 手机端可继续编辑页面
+
   Scenario: 筛选待审核任务时只展示对应状态
     Given 系统中有 3 个待审核任务和 2 个已确认任务
     When 我选择筛选条件 "待审核"
     Then 列表只应显示 3 个待审核任务
     And 已确认任务不应出现
+
+  Scenario: 筛选采集中任务
+    Given 系统中有 2 个采集中任务和 3 个其他状态任务
+    When 我选择筛选条件 "采集中"
+    Then 列表只应显示 2 个采集中任务
 ```

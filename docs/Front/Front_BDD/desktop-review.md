@@ -44,12 +44,20 @@ Feature: 电脑端人工审核
     Then 该字段应该切换为输入框并获得焦点
     And 字段旁应显示 "保存" 和 "取消" 操作
 
-  Scenario: 保存修改后字段状态更新为已修改
+  Scenario: 修改字段值后失焦自动保存
     Given 我在审核页编辑 "主诉" 字段的值
-    When 我输入新值并点击保存（或失焦）
+    When 我输入新值并使字段失焦
+    And 新值与原值不同
     Then 系统应该调用 PUT /api/tasks/{taskId}/review/fields/chief_complaint
     And 保存成功后字段状态应变为 "已修改"
     And 字段值应显示我输入的新值
+
+  Scenario: 失焦时值未变化则不触发保存
+    Given 我在审核页点击 "主诉" 字段进入编辑态
+    And 原值为 "头痛3天"
+    When 我没有修改任何内容直接使字段失焦
+    Then 不应该调用保存 API
+    And 字段状态应保持原状态不变
 
   Scenario: 保存失败时恢复原值并提示错误
     Given 我在审核页编辑 "主诉" 字段的值
@@ -57,6 +65,14 @@ Feature: 电脑端人工审核
     When 我输入新值并保存
     Then 字段值应该回滚到修改前的值
     And 我应该看到 "保存失败，请重试" 的错误提示
+
+  Scenario: 失焦自动保存失败时保留用户输入并允许重试
+    Given 我在审核页编辑 "主诉" 字段的值
+    And 保存 API 将返回网络错误
+    When 我输入新值并使字段失焦
+    Then 字段应显示 "保存失败" 状态
+    And 输入框中应保留我刚输入的值
+    And 页面应提供 "重试保存" 操作
 
   Scenario: 清空字段值后状态变为空
     Given 审核页中 "既往史" 字段有自动抽取值
@@ -80,6 +96,20 @@ Feature: 电脑端人工审核
     When 我刷新审核页
     Then "主诉" 字段应该显示我修改后的值
     And 不应显示自动抽取的原始值
+
+  Scenario: 批量勾选字段后一键确认
+    Given 审核页中有 10 个字段均为 "未审核" 状态
+    When 我勾选其中 5 个字段的复选框
+    And 我点击 "批量确认"
+    Then 系统应该调用 POST /api/tasks/{taskId}/review/fields/batch-confirm
+    And 请求体应该包含被勾选的 5 个字段 key
+    And 这 5 个字段状态应变为 "已确认"
+    And 未被勾选的字段状态应保持 "未审核"
+
+  Scenario: 未勾选任何字段时批量确认按钮禁用
+    Given 审核页中有若干字段
+    When 我没有勾选任何字段
+    Then "批量确认" 按钮应该处于禁用状态
 
   Scenario: 字段保存中时确认审核按钮进入防重复状态
     Given 我在审核页正在保存一个字段

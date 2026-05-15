@@ -1,5 +1,7 @@
 # 任务生命周期管理设计（A-lite）
 
+> 2026-05-15 产品修订：任务不再使用 `created`/`uploading` 作为业务起点；点击“新建采集”时即创建 `capturing` 任务，完成采集后进入 `uploaded`。本文中旧的 `created`/`uploading` 保留说明以后续 PRD、BDD/TDD 和 `docs/Shared/state-enums.md` 为准。
+
 ## 范围
 
 对应 PRD `PR-BE-004`，承接后端 TDD 实施顺序第 6-7 步（`docs/Backend/Backend_TDD/06-task-lifecycle.md`、`07-algorithm-failure-contracts.md`）。

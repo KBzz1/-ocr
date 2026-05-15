@@ -18,19 +18,19 @@
 | 任务 | 状态 | 工作区/文件 | 边界 |
 |------|------|-------------|------|
 | 后端最小骨架 | 已完成 | `app/backend/`、`docs/superpowers/plans/2026-05-11-backend-minimal-skeleton.md` | 配置、状态枚举、统一错误、健康检查、JsonStore；不含业务流程 |
-| PR-BE-002 采集会话管理 | 已完成 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话、页面清单、过期/锁定 guard、finish 幂等、页序固化、Task 桩；不做真实图片文件校验 |
+| PR-BE-002 采集会话管理 | 需更新 | `app/backend/services/session_service.py`、`docs/superpowers/plans/2026-05-11-capture-session-implementation.md` | 创建会话（同时创建 `capturing` 任务）、页面清单、过期（默认30分钟）/锁定 guard、取消/修订采集、finish 幂等、页序固化；不做真实图片文件校验 |
 | PR-BE-003/011 图片上传与元数据 | 已完成 | `app/backend/services/file_validator.py`、`app/backend/services/quad_validator.py`、`app/backend/services/page_service.py`、`app/backend/routes/mobile.py`、`docs/superpowers/specs/2026-05-12-file-upload-design.md`、`docs/superpowers/2026-05-14-mobile-capture-ux-redesign.md` | 已接入上传保存原图和 quad 元数据、重新框选坐标更新和补拍替换图片；不独立维护页序，不做裁剪、透视矫正或图像处理 |
-| PR-BE-004 任务生命周期 | 已完成 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
+| PR-BE-004 任务生命周期 | 需更新 | `app/backend/services/task_service.py`、`app/backend/routes/task.py`、`docs/superpowers/specs/2026-05-12-task-lifecycle-design.md` | 任务列表/详情、状态流转（`capturing→uploaded→processing→ready_for_review→confirmed→exported`，含 `→capturing` 修订采集回退和 `→processing` 重新处理）、缩略图、处理/重试入口、算法未配置失败落库；不实现算法适配器或字段生成 |
 | PR-BE-005/006 外部算法端口 | 已完成 | `app/backend/services/algorithm_ports/`、`docs/superpowers/specs/2026-05-12-algorithm-ports-design.md` | 定义本地算法端口、编排、fixture、失败映射和结果持久化；不实现 OCR/LLM/图像算法 |
 | PR-BE-007 Schema 管理 | 已完成 | `app/config/schemas/medical_record.v1.yaml`、`app/backend/services/schema_service.py`、`docs/superpowers/specs/2026-05-12-schema-loader-design.md` | 加载当前 schema、记录版本、校验候选字段 key；schema 不生成字段值 |
-| BE-07 人工审核结果 | 已完成 | `app/backend/services/review_service.py`、`app/backend/routes/review.py`、`docs/superpowers/specs/2026-05-12-review-results-design.md` | 读取自动候选并保存人工审核结果；确认前校验未审核/存疑/不可接受空值；不导出 |
-| BE-08 导出服务 | 已完成 | `app/backend/services/export_service.py`、`app/backend/routes/export.py`、`docs/superpowers/specs/2026-05-13-export-service-design.md` | 基于人工 `final_value` 导出 JSON/Excel；导出前阻断未完成审核字段；不实现前端入口 |
+| BE-07 人工审核结果 | 需更新 | `app/backend/services/review_service.py`、`app/backend/routes/review.py`、`docs/superpowers/specs/2026-05-12-review-results-design.md` | 读取自动候选并保存人工审核结果；支持批量确认字段和空值可接受确认；确认前预警提示未审核/存疑/空值；不导出 |
+| BE-08 导出服务 | 需更新 | `app/backend/services/export_service.py`、`app/backend/routes/export.py`、`docs/superpowers/specs/2026-05-13-export-service-design.md` | 基于人工 `final_value` 导出 JSON/Excel；导出前返回完整性检查统计（预警但不阻断）；不实现前端入口 |
 | BE-09 日志、隐私和部署 | 已完成 | `app/backend/services/local_event_log.py`、`app/backend/services/offline_check_service.py`、`app/backend/services/cleanup_service.py`、`docs/superpowers/specs/2026-05-12-local-logs-privacy-design.md` | 本地事件、隐私脱敏、离线检查和任务级清理；不实现真实算法 |
 | BE-10 API 契约和后端 E2E | 已完成 | `app/backend/tests/test_backend_e2e.py`、`app/backend/tests/test_api_contracts.py`、`docs/superpowers/specs/2026-05-13-backend-e2e-contracts-design.md` | 使用本地 fixtures 覆盖成功/失败主流程和 API 契约；不访问外网 |
 | BE-01 Windows 启停与离线启动 | 已完成 | `run.bat`、`stop.bat`、`scripts/offline_startup_check.py`、`docs/superpowers/specs/2026-05-12-windows-offline-startup-design.md` | 聚焦 Windows 启停、PID、健康检查和断网启动验收；不实现业务 API |
 | FE-01 工作台首页第一阶段 | 已完成 | `app/frontend/`、`docs/Front/Design/`、`docs/superpowers/specs/2026-05-13-frontend-workstation-design.md`、`docs/superpowers/plans/2026-05-13-frontend-workstation-foundation-plan.md`、`docs/superpowers/plans/2026-05-14-workstation-mobile-completion-gaps-plan.md` | 已完成前端地基、首页、新建采集、二维码弹窗和会话状态；补齐工作台状态重试入口、二维码连接帮助地址选择和手动 URL 覆盖；"结束会话"为有意占位，待后端取消/结束会话 API 定义后接入；`npm run test`、`npm run typecheck`、`npm run build` 通过 |
 | FE-S1/S2 共享契约和路由骨架 | 已完成 | `app/frontend/src/api/`、`app/frontend/src/app/routes.tsx`、`app/frontend/src/styles/status.ts`、`app/frontend/tests/fixtures/`、`docs/superpowers/plans/2026-05-14-frontend-shared-contracts-routing-plan.md` | 已完成手机采集、任务、审核、导出 API 边界，状态文案、错误归一化、路由常量和占位入口；电脑端任务管理复用工作站侧边栏，模块切换保留返回工作台总览入口；`npm run test`、`npm run typecheck`、`npm run build`、`npm run test:e2e` 通过；Playwright Node 24 卡住问题已通过 `scripts/run-playwright.mjs` 使用 Node 18/20/22 规避 |
-| FE-02 手机采集页 UX 重构 | 已完成 | `app/frontend/src/pages/mobile-capture/`、`app/frontend/src/components/mobile-capture/QuadSelector.tsx`、`docs/superpowers/2026-05-14-mobile-capture-ux-redesign.md`、`docs/superpowers/plans/2026-05-14-mobile-capture-ux-redesign-plan.md`、`docs/superpowers/plans/2026-05-14-workstation-mobile-completion-gaps-plan.md`、`docs/Front/Design/图片设计稿/` | 已完成单入口拍摄/选择、真实四角拖动、行内页面操作、拖拽排序、底部内容流、重新框选和补拍替换；补齐已保存页面框选坐标回显（`quad_points`→框选四角）；Vitest/typecheck/build 与后端相关 pytest 通过 |
+| FE-02 手机采集页 UX 重构 | 二次修正中 | `app/frontend/src/pages/mobile-capture/`、`app/frontend/src/components/mobile-capture/QuadSelector.tsx`、`docs/superpowers/2026-05-14-mobile-capture-ux-redesign.md`、`docs/superpowers/specs/2026-05-15-mobile-capture-design-alignment.md`、`docs/UI_image/目标设计稿/` | 已完成基础采集、四角拖动、拖拽排序（去掉上移/下移）、重新框选和补拍替换；框选全手动无外部算法；需适配 360px~428px 多宽度视口；真实 UI 暴露出文案过多、框选拖动不丝滑、角点瞬移/交叉、列表布局凌乱、框选页不可返回、框选缩略图缺失等问题，按 2026-05-15 设计稿对齐 spec 二次修正 |
 
 ## 后端任务
 
@@ -65,7 +65,7 @@
 ### BE-02 采集会话管理（PR-BE-002）
 
 - [x] **BE-02-01 创建采集会话**
-  - 范围：生成 `session_id`、`created_at`、`expires_at`、`status: active`、二维码 URL。
+  - 范围：生成 `session_id`、`created_at`、`expires_at`（默认 30 分钟）、`status: active`、二维码 URL；同时创建关联任务（`capturing`）。
   - 边界：不生成二维码图片细节，只提供手机访问 URL。
 
 - [x] **BE-02-02 查询采集会话**
@@ -87,6 +87,18 @@
 - [x] **BE-02-06 finish 幂等**
   - 范围：重复 finish 返回同一个 locked 状态和同一个 task_id。
   - 边界：不得重复创建任务或改变已固化页序。
+
+- [ ] **BE-02-07 取消采集会话**
+  - 范围：`POST /api/capture-sessions/{session_id}/cancel`，active → cancelled，关联任务 → failed，清理已上传页面。
+  - 边界：仅 active 可取消；cancelled 为终态。
+
+- [ ] **BE-02-08 修订采集 / 解锁采集会话**
+  - 范围：`POST /api/capture-sessions/{session_id}/unlock`，locked → active，关联任务 → capturing，保留已上传页面和页序。
+  - 边界：除 `processing` 外，locked 会话均可解锁；解锁不改变 session_id 和 task_id；不要求填写原因。
+
+- [ ] **BE-02-09 修改会话过期时间**
+  - 范围：`PUT /api/capture-sessions/{session_id}/expiry`，更新 expires_at。
+  - 边界：仅 active 可修改。
 
 ### BE-03 图片上传与文件管理（PR-BE-003、PR-BE-011）
 
@@ -137,16 +149,20 @@
   - 边界：不展示或生成结构化字段。
 
 - [x] **BE-04-02 状态流转校验**
-  - 范围：created/uploading/uploaded/processing/ready_for_review/confirmed/exported/failed 合法流转。
+  - 范围：capturing/uploaded/processing/ready_for_review/confirmed/exported/failed 合法流转（含 capturing→uploaded→processing→ready_for_review 正向流程，ready_for_review→processing 重新处理，uploaded/ready_for_review/confirmed/exported/failed→capturing 修订采集回退）。
   - 边界：非法流转返回 `INVALID_TASK_TRANSITION`。
 
 - [x] **BE-04-03 触发处理与重试入口**
-  - 范围：uploaded 任务触发处理；failed 任务可重试；A-lite 因算法模块未配置进入 `failed`。
+  - 范围：uploaded 任务触发处理；failed 任务可重试；ready_for_review 任务可重新处理回到 processing；A-lite 因算法模块未配置进入 `failed`。
   - 边界：只保留后续外部模块编排入口，不实现算法适配器。
 
 - [x] **BE-04-04 失败任务信息保存**
   - 范围：保存 error_code、error_message、failed_at 和状态历史；中间产物引用留给 BE-05 接入算法端口后写入。
   - 边界：失败任务不得进入审核态，不提供人工降级补字段路径。
+
+- [ ] **BE-04-05 任务缩略图**
+  - 范围：任务列表返回首页缩略图 URL（基于第一页原图生成）。
+  - 边界：不实现图像处理算法，缩略图在后端 upload 时生成。
 
 ### BE-05 外部算法端口（PR-BE-005、PR-BE-006）
 
@@ -191,14 +207,22 @@
   - 边界：不覆盖自动抽取原值。
 
 - [x] **BE-07-03 任务确认校验**
-  - 范围：未审核、存疑、不可接受空值阻断确认。
-  - 边界：错误返回 `REVIEW_VALIDATION_FAILED`。
+  - 范围：存在未审核、存疑、空值字段时返回预警统计，用户确认后允许继续。
+  - 边界：错误返回 `REVIEW_VALIDATION_FAILED`（仅在后端校验不通过时）。
+
+- [ ] **BE-07-04 批量字段确认**
+  - 范围：`POST /api/tasks/{taskId}/review/fields/batch-confirm`，接收字段 key 列表，批量更新状态为 `confirmed`。
+  - 边界：仅可确认 `unreviewed` 状态字段。
+
+- [ ] **BE-07-05 空值确认**
+  - 范围：`PUT /api/tasks/{taskId}/review/fields/{fieldKey}` 接受 `status: "confirmed_empty"`，将空值字段标记为可接受。
+  - 边界：仅 `empty` 状态字段可操作。
 
 ### BE-08 导出服务（PR-BE-009）
 
 - [x] **BE-08-01 导出前完整性检查**
-  - 范围：统计未审核、存疑、空值字段。
-  - 边界：不满足确认条件时阻断导出。
+  - 范围：统计未审核、存疑、为空、未定位来源、空值已确认字段数量并返回；前端展示预警面板，用户确认后继续导出。
+  - 边界：返回统计数据但不阻断导出。
 
 - [x] **BE-08-02 JSON 导出**
   - 范围：导出人工审核后的最终结果、任务信息、字段状态。
@@ -283,26 +307,34 @@
   - 边界：上传失败不丢失当前待上传页面。
 
 - [x] **FE-02-05 页面列表管理**
-  - 范围：完成采集前查看、删除、拖拽排序、补拍当前页、重新框选已上传页，行内按钮触控高度不小于 44px。
-  - 边界：locked 后禁止编辑。
+  - 范围：完成采集前查看、删除、拖拽排序（无上移/下移按钮）、补拍当前页、重新框选已上传页，行内按钮触控高度不小于 44px。
+  - 边界：locked 后禁止编辑；修订采集后恢复编辑。
 
 - [x] **FE-02-06 完成采集**
   - 范围：调用 finish，展示会话已锁定并提示回到电脑端。
   - 边界：重复点击不重复创建任务。
 
+- [ ] **FE-02-07 手机采集页视觉与交互二次修正**
+  - 范围：按 `docs/UI_image/目标设计稿/` 的未拍照态、框选态、已采集列表态补齐 UI 逻辑；状态与帮助文案减量；框选页关键内容单屏可见；四角拖动只从圆点开始且不得点击空白处瞬移；列表展示框选后的四边形区域预览；列表仅支持拖拽排序（无上移/下移按钮）；列表项为横向审阅布局；适配 360px~428px 多宽度视口。
+  - 边界：前端只基于用户确认的 `quad_points` 做本地预览裁切/遮罩展示，不实现 OCR、透视矫正、图像增强、自动边界识别或字段推断。框选全手动，无外部算法。
+
 ### FE-03 任务列表（PR-FE-003）
 
 - [ ] **FE-03-01 任务列表展示**
-  - 范围：任务编号、创建时间、页数、处理状态、审核状态、导出状态。
-  - 边界：状态文案来自共享状态枚举。
+  - 范围：任务编号、首页缩略图、创建时间、页数、处理状态、审核状态、导出状态。
+  - 边界：状态文案来自共享状态枚举（含 `capturing` 采集中）。
 
 - [ ] **FE-03-02 任务状态刷新**
-  - 范围：上传后自动新增，处理状态更新。
+  - 范围：新建采集后自动新增 `capturing` 任务；完成采集后状态更新为 `uploaded`；处理状态实时更新。
   - 边界：不自行推断后端状态。
 
 - [ ] **FE-03-03 失败任务展示和重试**
   - 范围：展示失败原因，提供重新处理入口。
   - 边界：不提供人工降级继续确认/导出路径。
+
+- [ ] **FE-03-04 任务操作入口**
+  - 范围：`capturing` 显示"查看二维码""取消采集"；`uploaded`/`ready_for_review`/`confirmed`/`exported`/`failed` 显示"修订采集"；`ready_for_review` 同时显示"重新处理"；`processing` 禁用"修订采集"。
+  - 边界：操作按钮随状态动态变化。
 
 ### FE-04 审核页（PR-FE-004、PR-FE-005、PR-FE-006）
 
@@ -315,33 +347,41 @@
   - 边界：页面顺序来自任务结果。
 
 - [ ] **FE-04-03 字段编辑**
-  - 范围：编辑、清空、保存字段最终值。
+  - 范围：编辑、清空、失焦自动保存字段最终值（仅值变化时触发保存）。
   - 边界：保存人工结果，不覆盖自动候选。
 
 - [ ] **FE-04-04 字段状态**
-  - 范围：未审核、已确认、已修改、存疑、为空。
-  - 边界：状态转换遵循共享字段状态。
+  - 范围：未审核、已确认、已修改、存疑、为空、空值已确认。
+  - 边界：状态转换遵循共享字段状态；`empty` 可显式确认为 `confirmed_empty`。
 
-- [ ] **FE-04-05 来源证据**
+- [ ] **FE-04-05 批量确认字段**
+  - 范围：勾选多个字段后一键确认，调用批量确认 API。
+  - 边界：未勾选时按钮禁用。
+
+- [ ] **FE-04-06 来源证据**
   - 范围：点击字段查看来源文本或来源页面。
   - 边界：无来源字段提示人工核验。
 
-- [ ] **FE-04-06 确认审核**
-  - 范围：显示未审核/存疑/空值统计，满足条件后确认任务。
+- [ ] **FE-04-07 确认审核**
+  - 范围：显示未审核/存疑/空值统计，存在未审核/存疑时弹出预警窗，用户确认后继续。
   - 边界：不绕过后端确认校验。
 
 ### FE-05 导出和错误恢复（PR-FE-007、PR-FE-008）
 
-- [ ] **FE-05-01 JSON 导出入口**
+- [ ] **FE-05-01 导出前完整性检查预警面板**
+  - 范围：展示未审核、存疑、为空、未定位来源、空值已确认字段数量；存在未审核/存疑时展示预警并提供"继续导出""返回审核"。
+  - 边界：导出内容来自人工审核结果。
+
+- [ ] **FE-05-02 JSON 导出入口**
   - 范围：触发 JSON 导出，展示成功/失败。
   - 边界：导出内容来自人工审核结果。
 
-- [ ] **FE-05-02 Excel 导出入口**
+- [ ] **FE-05-03 Excel 导出入口**
   - 范围：触发 Excel 导出，展示成功/失败。
   - 边界：不在前端拼 Excel。
 
-- [ ] **FE-05-03 常见错误提示**
-  - 范围：手机连接失败、上传失败、处理失败、抽取失败、导出失败。
+- [ ] **FE-05-04 常见错误提示**
+  - 范围：手机连接失败、上传失败、处理失败、抽取失败、导出失败、取消采集、修订采集。
   - 边界：错误文案基于后端错误码，不暴露堆栈。
 
 ### FE-06 前端离线和 E2E
@@ -351,12 +391,20 @@
   - 边界：测试环境未 mock 的网络请求必须失败。
 
 - [ ] **FE-06-02 完整成功 E2E**
-  - 范围：工作台 → 手机采集三页 → 完成采集 → 任务待审核 → 审核确认 → JSON/Excel 导出。
+  - 范围：工作台 → 新建采集（`capturing` 任务） → 手机采集三页 → 完成采集 → 任务待审核 → 审核确认（含批量确认和空值确认） → 导出预警面板 → JSON/Excel 导出。
   - 边界：算法结果使用本地 fixture。
 
 - [ ] **FE-06-03 算法失败 E2E**
   - 范围：算法未配置时任务失败，审核入口不可正常继续。
   - 边界：不出现人工补录降级路径。
+
+- [ ] **FE-06-04 修订采集 E2E**
+  - 范围：完成采集 → 修订采集 → 任务回到 `capturing` → 手机端补拍/重排 → 重新完成采集 → 重新处理 → 待审核。
+  - 边界：session_id 和 task_id 不变。
+
+- [ ] **FE-06-05 取消采集 E2E**
+  - 范围：新建采集 → 上传 2 页 → 取消采集 → 会话 `cancelled` → 任务 `failed`。
+  - 边界：手机端显示已取消且不可操作。
 
 ## 集成和发布任务
 
@@ -394,7 +442,11 @@
 
 - 不接入 HIS/EMR，不写回病历系统。
 - 不调用云 API，不使用 CDN、遥测或运行时联网下载。
-- 不在本仓库实现 OCR、LLM 字段抽取、图像预处理、裁剪、透视矫正或规则抽取。
+- 不在本仓库实现 OCR、LLM 字段抽取、图像预处理、裁剪、透视矫正、自动边界识别或规则抽取。
+- 四边形框选完全由用户手动调节，前端不实现自动边界识别算法。
 - 算法模块缺失、异常、空结构化字段或契约非法时，任务必须进入 `failed`。
 - 前端不得从 schema、OCR 文本或页面内容推断、补造结构化字段。
+- 导出采用预警面板而非硬阻断，用户知情后可继续导出。
+- 采集会话默认 30 分钟过期；支持取消、修订采集；修订采集不改变 session_id 和 task_id。
+- 任务在新建采集时即创建（`capturing`），覆盖完整生命周期。
 - 真实运行数据不得提交到 `data/`、`exports/`、`logs/`。

@@ -12,14 +12,22 @@ Feature: 采集会话管理
     Given 后端服务已正常启动
     When 电脑端发起 "新建采集" 请求 POST /api/capture-sessions
     Then 系统应返回 201 和唯一的 session_id
+    And 系统应同时创建关联任务，任务状态为 capturing
     And 响应应包含二维码 URL
     And 会话默认状态为 active
     And 会话应记录 created_at 和 expires_at
+    And 默认 expires_at 应为创建时间后 30 分钟
 
   Scenario: 查询会话信息
     Given 已存在一个 active 会话 S001
     When 我查询 GET /api/capture-sessions/S001
-    Then 应返回会话的当前页数、状态、创建时间和过期时间
+    Then 应返回会话的关联 task_id、当前页数、状态、创建时间和过期时间
+
+  Scenario: 电脑端修改采集会话过期时间
+    Given 会话 S001 处于 active 状态
+    When 电脑端将会话有效期修改为 45 分钟
+    Then 系统应更新 expires_at
+    And 手机端再次查询会话时应看到新的剩余时间
 
   Scenario: 会话过期后拒绝上传
     Given 会话 S001 已超过 expires_at
@@ -45,7 +53,7 @@ Feature: 采集会话管理
     Then 会话状态应变更为 locked
     And 当前页面列表顺序应被固化为任务处理顺序
     And 当前页面的框选元数据应被固化为任务处理输入
-    And 系统应根据页面列表创建或更新对应的病历任务
+    And 关联任务状态应从 capturing 变更为 uploaded
 
   Scenario: 锁定后禁止编辑
     Given 会话 S001 已锁定
@@ -69,5 +77,28 @@ Feature: 采集会话管理
     And 会话 S001 还没有任何已成功上传并写回 upload_ref 的页面
     When 调用 POST /api/mobile/S001/finish
     Then 系统应返回 400 和错误码 SESSION_EMPTY
-    And 不应创建病历任务
+    And 关联任务应仍保持 capturing 状态
+
+  Scenario: 主动取消未完成的采集
+    Given 会话 S001 处于 active 状态，已有 2 页图片
+    When 电脑端调用 POST /api/capture-sessions/S001/cancel
+    Then 会话状态应变更为 cancelled
+    And 关联任务应变更为 failed
+    And 失败原因应为 "用户取消采集"
+    And 手机端再次写入该会话应返回 SESSION_CANCELLED
+
+  Scenario: 修订采集使已锁定会话恢复编辑
+    Given 会话 S001 已锁定
+    And 关联任务 T001 处于 ready_for_review、confirmed、exported 或 failed 状态之一
+    When 电脑端调用 POST /api/capture-sessions/S001/unlock 并确认
+    Then 会话状态应变更为 active
+    And 关联任务 T001 状态应回到 capturing
+    And session_id 和 task_id 应保持不变
+    And 已上传页面和页序应保留，允许用户删除、补拍、重新框选或拖拽排序
+
+  Scenario: 处理中任务不可修订采集
+    Given 会话 S001 已锁定
+    And 关联任务状态为 processing
+    When 电脑端尝试解锁会话
+    Then 系统应返回 409 和错误码 SESSION_UNLOCK_NOT_ALLOWED
 ```
