@@ -208,6 +208,7 @@ function WorkstationApp() {
       onViewQr={() => setIsQrOpen(true)}
       onCloseQr={() => setIsQrOpen(false)}
       onRegenerateQr={handleCreateSession}
+      lanAddresses={systemStatus?.lan_addresses ?? []}
     />
   );
 }

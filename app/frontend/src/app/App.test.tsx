@@ -209,6 +209,39 @@ describe('Workstation data integration', () => {
     expect(screen.queryByRole('img', { name: '采集二维码' })).toBeNull();
   });
 
+  it('lets connection help choose LAN address and manually edit mobile URL', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockSystemStatus({
+        success: true,
+        data: {
+          status: 'running',
+          version: 'test',
+          started_at: '2026-05-14T10:00:00+08:00',
+          lan_addresses: ['192.168.1.5:8081', '10.0.0.8:8081']
+        }
+      }),
+      mockTasks([]),
+      mockCreateCaptureSession()
+    );
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /新建采集/ }));
+    const dialog = await screen.findByRole('dialog', { name: '采集二维码' });
+    await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
+
+    expect(within(dialog).getByRole('button', { name: '192.168.1.5:8081' })).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: '10.0.0.8:8081' }));
+    expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toContain('10.0.0.8:8081');
+
+    await user.clear(within(dialog).getByLabelText('手机访问链接'));
+    await user.type(within(dialog).getByLabelText('手机访问链接'), 'http://192.168.1.9:8081/mobile/sessions/sess_001');
+    await user.click(within(dialog).getByRole('button', { name: '更新二维码' }));
+
+    const qrImage = within(dialog).getByRole('img', { name: '采集二维码' }) as HTMLImageElement;
+    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.9:8081/mobile/sessions/sess_001');
+  });
+
   it('retries system status loading after service no response', async () => {
     const user = userEvent.setup();
     let statusCalls = 0;

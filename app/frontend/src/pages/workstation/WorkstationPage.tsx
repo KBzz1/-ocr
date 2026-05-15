@@ -30,6 +30,7 @@ type WorkstationPageProps = {
   createError?: string | null;
   isSystemReady?: boolean;
   isRetryingSystem?: boolean;
+  lanAddresses?: string[];
   onRetrySystem?: () => void;
   onNewCapture?: () => void;
   onViewQr?: () => void;
@@ -44,6 +45,7 @@ export function WorkstationPage({
   createError = null,
   isSystemReady = true,
   isRetryingSystem = false,
+  lanAddresses = [],
   onRetrySystem = () => undefined,
   onNewCapture = () => undefined,
   onViewQr = () => undefined,
@@ -81,6 +83,7 @@ export function WorkstationPage({
         session={pageData.currentSession}
         onClose={onCloseQr}
         onRegenerate={regenerateQr}
+        lanAddresses={lanAddresses}
       />
     </WorkstationLayout>
   );

@@ -9,20 +9,25 @@ type CaptureQrDialogProps = {
   session: CaptureSessionSummary | null;
   onClose: () => void;
   onRegenerate: () => void;
+  lanAddresses?: string[];
 };
 
-export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: CaptureQrDialogProps) {
+export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAddresses = [] }: CaptureQrDialogProps) {
   const [qrSvgDataUrl, setQrSvgDataUrl] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [manualUrl, setManualUrl] = useState('');
+  const [qrValueOverride, setQrValueOverride] = useState<string | null>(null);
+  const [manualUrlError, setManualUrlError] = useState<string | null>(null);
+  const qrValue = qrValueOverride ?? session?.qrCodeValue ?? '';
 
   useEffect(() => {
     let isCurrent = true;
     setQrSvgDataUrl(null);
 
-    if (!isOpen || !session?.qrCodeValue) return undefined;
+    if (!isOpen || !qrValue) return undefined;
 
-    QRCode.toString(session.qrCodeValue, {
+    QRCode.toString(qrValue, {
       type: 'svg',
       margin: 1,
       width: 192,
@@ -39,6 +44,14 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
     return () => {
       isCurrent = false;
     };
+  }, [isOpen, qrValue]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQrValueOverride(null);
+      setManualUrl(session?.qrCodeValue ?? '');
+      setManualUrlError(null);
+    }
   }, [isOpen, session?.qrCodeValue]);
 
   useEffect(() => {
@@ -51,13 +64,31 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
   if (!isOpen) return null;
 
   async function handleCopyLink() {
-    if (!session?.qrCodeValue) return;
+    if (!qrValue) return;
 
     try {
-      await navigator.clipboard?.writeText(session.qrCodeValue);
+      await navigator.clipboard?.writeText(qrValue);
       setCopyStatus('已复制');
     } catch {
       setCopyStatus('复制失败，请手动选择链接');
+    }
+  }
+
+  function buildUrlForAddress(address: string) {
+    if (!session) return '';
+    return `http://${address}/mobile/sessions/${encodeURIComponent(session.id)}`;
+  }
+
+  function applyManualUrl() {
+    try {
+      const parsed = new URL(manualUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('invalid protocol');
+      }
+      setQrValueOverride(parsed.toString());
+      setManualUrlError(null);
+    } catch {
+      setManualUrlError('请输入有效的手机访问链接');
     }
   }
 
@@ -91,7 +122,7 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
                 className="qr-code-image"
                 src={qrSvgDataUrl}
                 alt="采集二维码"
-                data-qr-value={session?.qrCodeValue}
+                data-qr-value={qrValue}
               />
             ) : (
               <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
@@ -122,11 +153,39 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate }: Capt
             <div className="qr-help-panel">
               <label htmlFor="mobile-capture-url">手机访问链接</label>
               <div className="qr-help-panel__copy-row">
-                <input id="mobile-capture-url" value={session.qrCodeValue} readOnly />
+                <input
+                  id="mobile-capture-url"
+                  aria-label="手机访问链接"
+                  value={manualUrl}
+                  onChange={(event) => setManualUrl(event.currentTarget.value)}
+                />
                 <button className="secondary-action" type="button" onClick={() => void handleCopyLink()}>
                   复制链接
                 </button>
               </div>
+              {lanAddresses.length > 0 ? (
+                <div className="qr-help-panel__addresses" aria-label="局域网地址列表">
+                  {lanAddresses.map((address) => (
+                    <button
+                      className="secondary-action"
+                      key={address}
+                      type="button"
+                      onClick={() => {
+                        const nextUrl = buildUrlForAddress(address);
+                        setManualUrl(nextUrl);
+                        setQrValueOverride(nextUrl);
+                        setManualUrlError(null);
+                      }}
+                    >
+                      {address}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <button className="secondary-action" type="button" onClick={applyManualUrl}>
+                更新二维码
+              </button>
+              {manualUrlError ? <span role="alert">{manualUrlError}</span> : null}
               <p>请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。</p>
               {copyStatus ? <span role="status">{copyStatus}</span> : null}
             </div>
