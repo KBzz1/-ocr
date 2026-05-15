@@ -7,6 +7,8 @@ type WorkstationHeroProps = {
   isSystemReady?: boolean;
   isCreatingSession?: boolean;
   createError?: string | null;
+  isRetryingSystem?: boolean;
+  onRetrySystem?: () => void;
   onNewCapture: () => void;
   onViewQr: () => void;
 };
@@ -24,6 +26,8 @@ export function WorkstationHero({
   isSystemReady = true,
   isCreatingSession = false,
   createError = null,
+  isRetryingSystem = false,
+  onRetrySystem = () => undefined,
   onNewCapture,
   onViewQr
 }: WorkstationHeroProps) {
@@ -57,6 +61,12 @@ export function WorkstationHero({
             </div>
           ))}
         </div>
+
+        {systemStatus.startup === 'error' ? (
+          <button className="secondary-action" type="button" disabled={isRetryingSystem} onClick={onRetrySystem}>
+            {isRetryingSystem ? '正在重试' : '重试'}
+          </button>
+        ) : null}
       </div>
 
       <div className="new-capture-panel">

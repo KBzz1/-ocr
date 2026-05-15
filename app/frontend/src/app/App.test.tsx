@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -206,5 +207,34 @@ describe('Workstation data integration', () => {
     expectPresent(await screen.findByText('创建采集会话失败，请重试'));
     expect(screen.queryByRole('dialog', { name: '采集二维码' })).toBeNull();
     expect(screen.queryByRole('img', { name: '采集二维码' })).toBeNull();
+  });
+
+  it('retries system status loading after service no response', async () => {
+    const user = userEvent.setup();
+    let statusCalls = 0;
+    server.use(
+      http.get('*/api/system/status', () => {
+        statusCalls += 1;
+        if (statusCalls === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json({
+          success: true,
+          data: {
+            status: 'running',
+            version: 'test',
+            started_at: '2026-05-14T10:00:00+08:00',
+            lan_addresses: ['192.168.1.5:8081']
+          }
+        });
+      }),
+      mockTasks([])
+    );
+
+    render(<App />);
+    expect(await screen.findByText('服务无响应', { selector: 'h2' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('系统已启动', { selector: 'h2' })).toBeTruthy();
+    expect(statusCalls).toBeGreaterThanOrEqual(2);
   });
 });

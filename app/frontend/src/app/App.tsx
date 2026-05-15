@@ -122,28 +122,41 @@ function WorkstationApp() {
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [isRetryingSystem, setIsRetryingSystem] = useState(false);
+
+  async function loadDashboard() {
+    const [statusResult, tasksResult] = await Promise.allSettled([
+      getSystemStatus(),
+      getTasks()
+    ]);
+
+    if (statusResult.status === 'fulfilled') {
+      const status = statusResult.value;
+      setSystemStatus(status);
+      setSystemError(status.status === 'running' ? null : status.message ?? '系统状态异常');
+    } else {
+      setSystemStatus(null);
+      setSystemError(getErrorMessage(statusResult.reason, '服务无响应'));
+    }
+
+    if (tasksResult.status === 'fulfilled') {
+      setTasks(tasksResult.value);
+      setTaskError(null);
+    } else {
+      setTasks([]);
+      setTaskError(getErrorMessage(tasksResult.reason, '任务列表加载失败'));
+    }
+  }
 
   useEffect(() => {
-    getSystemStatus()
-      .then((status) => {
-        setSystemStatus(status);
-        setSystemError(status.status === 'running' ? null : status.message ?? '系统状态异常');
-      })
-      .catch((error: unknown) => {
-        setSystemStatus(null);
-        setSystemError(getErrorMessage(error, '服务无响应'));
-      });
-
-    getTasks()
-      .then((nextTasks) => {
-        setTasks(nextTasks);
-        setTaskError(null);
-      })
-      .catch((error: unknown) => {
-        setTasks([]);
-        setTaskError(getErrorMessage(error, '任务列表加载失败'));
-      });
+    void loadDashboard();
   }, []);
+
+  async function handleRetrySystem() {
+    setIsRetryingSystem(true);
+    await loadDashboard();
+    setIsRetryingSystem(false);
+  }
 
   const pageData = useMemo<WorkstationPageData>(() => {
     const reminders = toReminders(tasks, currentSession);
@@ -189,6 +202,8 @@ function WorkstationApp() {
       isCreatingSession={isCreatingSession}
       createError={createError}
       isSystemReady={systemStatus?.status === 'running' && !systemError}
+      isRetryingSystem={isRetryingSystem}
+      onRetrySystem={handleRetrySystem}
       onNewCapture={handleCreateSession}
       onViewQr={() => setIsQrOpen(true)}
       onCloseQr={() => setIsQrOpen(false)}

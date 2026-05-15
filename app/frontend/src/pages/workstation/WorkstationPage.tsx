@@ -29,6 +29,8 @@ type WorkstationPageProps = {
   isCreatingSession?: boolean;
   createError?: string | null;
   isSystemReady?: boolean;
+  isRetryingSystem?: boolean;
+  onRetrySystem?: () => void;
   onNewCapture?: () => void;
   onViewQr?: () => void;
   onCloseQr?: () => void;
@@ -41,6 +43,8 @@ export function WorkstationPage({
   isCreatingSession = false,
   createError = null,
   isSystemReady = true,
+  isRetryingSystem = false,
+  onRetrySystem = () => undefined,
   onNewCapture = () => undefined,
   onViewQr = () => undefined,
   onCloseQr = () => undefined,
@@ -58,6 +62,8 @@ export function WorkstationPage({
           isSystemReady={isSystemReady}
           isCreatingSession={isCreatingSession}
           createError={createError}
+          isRetryingSystem={isRetryingSystem}
+          onRetrySystem={onRetrySystem}
           onNewCapture={onNewCapture}
           onViewQr={onViewQr}
         />
