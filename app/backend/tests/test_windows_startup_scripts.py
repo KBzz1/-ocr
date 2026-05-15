@@ -154,6 +154,21 @@ class TestStopBatch:
         os.remove(pid_file)
         assert not os.path.exists(pid_file)
 
+    def test_stop_cleans_stale_pid_when_process_is_not_backend(self):
+        stop_content = open("stop.bat").read()
+        assert "not a manzufei_ocr backend process" in stop_content
+        assert 'del "%PID_FILE%"' in stop_content
+        assert "exit /b 0" in stop_content
+
+    def test_stop_uses_pushd_for_unc_project_paths(self):
+        stop_content = open("stop.bat").read()
+        assert 'pushd "%~dp0"' in stop_content
+        assert 'cd /d "%~dp0"' not in stop_content
+
+    def test_stop_uses_ascii_output_to_avoid_cmd_codepage_mojibake(self):
+        stop_content = open("stop.bat", encoding="utf-8").read()
+        assert stop_content.isascii()
+
 
 class TestDirectoryCreation:
     """目录预创建逻辑验证 — run.bat 行为对应。"""
@@ -376,3 +391,65 @@ def test_run_bat_health_check_still_uses_status_endpoint():
     """WIN-NW-002: run.bat 健康检查仍使用 /api/system/status"""
     content = open("run.bat").read()
     assert "http://127.0.0.1:8081/api/system/status" in content
+
+
+def test_run_bat_starts_backend_without_vite_dev_server():
+    """run.bat 不应启动 Vite dev server，手机扫码统一访问后端 8081。"""
+    content = open("run.bat").read()
+    assert "-m app.backend.main" in content
+    assert "npm run dev" not in content
+    assert "FRONTEND_HEALTH_URL" not in content
+    assert "WORKSTATION_URL=http://127.0.0.1:8081/" in content
+
+
+def test_run_bat_rebuilds_frontend_dist_before_backend_start():
+    """run.bat 每次启动前构建前端，避免后端托管旧扫码逻辑。"""
+    content = open("run.bat").read()
+    assert 'set "FRONTEND_DIST_INDEX=%FRONTEND_DIR%\\dist\\index.html"' in content
+    assert "npm run build" in content
+    assert "ensure_frontend_dist" in content
+    assert "if exist \"%FRONTEND_DIST_INDEX%\"" not in content
+
+
+def test_run_bat_handles_stale_pid_before_starting_backend():
+    """run.bat 启动前必须处理旧 PID，避免把脏 PID 当成启动成功。"""
+    content = open("run.bat").read()
+    assert "Found existing PID file" in content
+    assert 'del "%PID_FILE%"' in content
+    assert "backend_ready_existing" in content
+
+
+def test_run_bat_uses_pushd_for_unc_project_paths():
+    """run.bat 从 \\wsl.localhost 这类 UNC 路径启动时必须能进入仓库目录。"""
+    content = open("run.bat").read()
+    assert 'pushd "%~dp0"' in content
+    assert 'cd /d "%~dp0"' not in content
+
+
+def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():
+    """run.bat 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
+    content = open("run.bat", encoding="utf-8").read()
+    assert content.isascii()
+
+
+def test_wsl_run_script_starts_backend_without_vite_dev_server():
+    """run.sh 在 WSL 内只启动后端，不依赖 Vite dev server。"""
+    content = open("run.sh").read()
+    assert "CONDA_PYTHON" in content
+    assert "miniconda3/envs/manzufei_ocr/bin/python" in content
+    assert "-m app.backend.main" in content
+    assert "setsid -f" in content
+    assert "npm run dev" not in content
+    assert "http://127.0.0.1:5173/" not in content
+    assert "http://127.0.0.1:8081/" in content
+    assert "cmd.exe" not in content
+    assert "start " not in content
+
+
+def test_wsl_stop_script_stops_backend_and_frontend_pids():
+    """stop.sh 读取 WSL PID 文件停止前后端。"""
+    content = open("stop.sh").read()
+    assert 'BACKEND_PID_FILE="$LOG_DIR/backend.pid"' in content
+    assert 'FRONTEND_PID_FILE="$LOG_DIR/frontend.pid"' in content
+    assert "kill" in content
+    assert "cmd.exe" not in content

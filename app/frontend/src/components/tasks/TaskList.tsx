@@ -78,10 +78,7 @@ export function TaskList({
   return (
     <section className="task-list-panel" aria-labelledby="task-list-title">
       <div className="task-list-panel__toolbar">
-        <div>
-          <p className="task-list-panel__kicker">任务管理</p>
-          <h2 id="task-list-title">任务列表</h2>
-        </div>
+        <h2 id="task-list-title">任务管理</h2>
 
         <div className="task-list-filters" aria-label="任务状态筛选">
           {statusFilters.map((filter) => (

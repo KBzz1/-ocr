@@ -17,6 +17,15 @@ function renderTaskList() {
 }
 
 describe('FE-03 task list and retry', () => {
+  it('keeps the task page chrome compact without duplicated page titles', async () => {
+    renderTaskList();
+
+    await screen.findByRole('table', { name: '任务列表' });
+
+    expect(screen.queryByText('病历任务列表')).toBeNull();
+    expect(within(screen.getByRole('main', { name: '任务列表页' })).queryAllByText('任务管理')).toHaveLength(1);
+  });
+
   it('shows task identity, timestamps, page counts, and shared status labels', async () => {
     renderTaskList();
 

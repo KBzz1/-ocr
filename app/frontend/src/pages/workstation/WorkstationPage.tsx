@@ -54,18 +54,29 @@ export function WorkstationPage({
 }: WorkstationPageProps) {
   const pageData = data;
   const regenerateQr = onRegenerateQr ?? onNewCapture;
+  const sidebarStatus =
+    pageData.systemStatus.startup === 'running'
+      ? { tone: 'success' as const, title: '系统已启动', subtitle: '正在运行中' }
+      : pageData.systemStatus.startup === 'error'
+        ? {
+            tone: 'danger' as const,
+            title: pageData.systemStatus.message ?? '系统异常',
+            subtitle: '请检查本地服务'
+          }
+        : { tone: 'neutral' as const, title: '正在检查', subtitle: '等待服务响应' };
 
   return (
-    <WorkstationLayout>
+    <WorkstationLayout
+      systemStatus={sidebarStatus}
+      isRetryingSystem={isRetryingSystem}
+      onRetrySystem={onRetrySystem}
+    >
       <main className="workstation-content" aria-label="电脑端工作台首页">
         <WorkstationHero
-          systemStatus={pageData.systemStatus}
           currentSession={pageData.currentSession}
           isSystemReady={isSystemReady}
           isCreatingSession={isCreatingSession}
           createError={createError}
-          isRetryingSystem={isRetryingSystem}
-          onRetrySystem={onRetrySystem}
           onNewCapture={onNewCapture}
           onViewQr={onViewQr}
         />

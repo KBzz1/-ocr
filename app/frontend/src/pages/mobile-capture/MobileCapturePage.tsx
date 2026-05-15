@@ -465,7 +465,7 @@ export function MobileCapturePage() {
             confirmLabel={getConfirmLabel()}
             cancelLabel={editMode === 'quad' ? '取消' : '重拍'}
             onChangeQuad={(quad) => setSelectedPage({ ...selectedPage, quad })}
-            onResetQuad={() => setSelectedPage({ ...selectedPage, quad: createDefaultQuad(PREVIEW_WIDTH, PREVIEW_HEIGHT) })}
+            onResetQuad={() => setSelectedPage({ ...selectedPage, quad: createDefaultQuad(selectedPage.width, selectedPage.height) })}
             onCancel={resetEditState}
             onConfirm={handleConfirm}
           />

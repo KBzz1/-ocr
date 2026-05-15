@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
 import '../../components/tasks/tasks.css';
 
@@ -57,35 +58,37 @@ export function TasksPlaceholder() {
   }
 
   return (
-    <main className="tasks-page" aria-label="任务列表页">
-      <header className="tasks-page__header">
-        <div>
-          <p>任务管理</p>
-          <h1>病历任务列表</h1>
+    <WorkstationLayout
+      activeRouteId="tasks"
+      headerKicker=""
+      headerTitle=""
+    >
+      <main className="tasks-page" aria-label="任务列表页">
+        <header className="tasks-page__header">
+          <button
+            className="tasks-refresh-button"
+            disabled={isLoading || isRefreshing}
+            type="button"
+            onClick={() => void handleRefresh()}
+          >
+            {isRefreshing ? '刷新中' : '刷新'}
+          </button>
+        </header>
+
+        <div className="tasks-page__content">
+          <p className={error ? 'tasks-page__status tasks-page__error' : 'tasks-page__status'}>
+            {error ?? (isLoading ? '正在加载任务' : `共 ${tasks.length} 个任务`)}
+          </p>
+
+          <TaskList
+            activeFilter={activeFilter}
+            retryingTaskId={retryingTaskId}
+            tasks={tasks}
+            onFilterChange={setActiveFilter}
+            onTaskStatusChange={handleTaskStatusChange}
+          />
         </div>
-        <button
-          className="tasks-refresh-button"
-          disabled={isLoading || isRefreshing}
-          type="button"
-          onClick={() => void handleRefresh()}
-        >
-          {isRefreshing ? '刷新中' : '刷新'}
-        </button>
-      </header>
-
-      <div className="tasks-page__content">
-        <p className={error ? 'tasks-page__status tasks-page__error' : 'tasks-page__status'}>
-          {error ?? (isLoading ? '正在加载任务' : `共 ${tasks.length} 个任务`)}
-        </p>
-
-        <TaskList
-          activeFilter={activeFilter}
-          retryingTaskId={retryingTaskId}
-          tasks={tasks}
-          onFilterChange={setActiveFilter}
-          onTaskStatusChange={handleTaskStatusChange}
-        />
-      </div>
-    </main>
+      </main>
+    </WorkstationLayout>
   );
 }

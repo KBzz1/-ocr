@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
+import captureIllustration from '../../assets/illustrations/phone-qr-capture.png';
 import type { CaptureSessionSummary } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
@@ -103,7 +104,6 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
       >
         <header className="qr-dialog__header">
           <div>
-            <p className="section-kicker">扫码采集</p>
             <h2 id="qr-dialog-title">采集二维码</h2>
           </div>
           <IconButton label="关闭弹窗" onClick={onClose} variant="soft">
@@ -113,17 +113,19 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
 
         <div className="qr-dialog__body">
           <div className="qr-dialog__scan">
-            <p>请使用手机浏览器扫描二维码进行拍照采集。</p>
-            <div className="qr-dialog__notice">
-              手机需与电脑处于同一网络环境，无法连接时请查看帮助说明。
-            </div>
             {qrSvgDataUrl ? (
-              <img
-                className="qr-code-image"
-                src={qrSvgDataUrl}
-                alt="采集二维码"
-                data-qr-value={qrValue}
-              />
+              <div className="qr-code-shell">
+                <span className="qr-code-corner qr-code-corner--tl" />
+                <span className="qr-code-corner qr-code-corner--tr" />
+                <span className="qr-code-corner qr-code-corner--bl" />
+                <span className="qr-code-corner qr-code-corner--br" />
+                <img
+                  className="qr-code-image"
+                  src={qrSvgDataUrl}
+                  alt="采集二维码"
+                  data-qr-value={qrValue}
+                />
+              </div>
             ) : (
               <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
             )}
@@ -132,18 +134,29 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
             </button>
           </div>
 
+          <img className="qr-dialog__illustration" src={captureIllustration} alt="" aria-hidden="true" />
+
           <div className="qr-dialog__status">
             <div className="qr-status-row qr-status-row--success">
-              <strong>服务已就绪</strong>
-              <span>本地采集服务正常</span>
+              <span className="qr-status-icon" aria-hidden="true">✓</span>
+              <div>
+                <strong>会话已创建</strong>
+                <span>{session?.createdAtText ?? '等待扫码'}</span>
+              </div>
             </div>
             <div className="qr-status-row qr-status-row--info">
-              <strong>{session ? '等待设备扫码' : '等待新会话'}</strong>
-              <span>剩余有效时间 {session?.remainingTimeText ?? '30 分钟'}</span>
+              <span className="qr-status-icon" aria-hidden="true">◷</span>
+              <div>
+                <strong>剩余 {session?.remainingTimeText ?? '30 分钟'}</strong>
+                <span>到期后自动失效</span>
+              </div>
             </div>
             <div className="qr-status-row">
-              <strong>图像传输</strong>
-              <span>已上传页数 {session?.uploadedPages ?? 0} 页</span>
+              <span className="qr-status-icon" aria-hidden="true">↑</span>
+              <div>
+                <strong>已上传 {session?.uploadedPages ?? 0} 页</strong>
+                <span>等待手机上传页面</span>
+              </div>
             </div>
           </div>
         </div>

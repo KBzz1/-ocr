@@ -26,7 +26,7 @@
 - Vitest、React Testing Library、MSW 和 Playwright 配置已建立。
 - 首页、新建采集、二维码弹窗、当前会话卡片、任务概览、最近任务和系统提醒已接入本地 API 封装和 fixtures。
 - `npm run test`、`npm run typecheck`、`npm run build` 已通过。
-- `npm run test:e2e` 在当前 Codex 沙箱中无输出卡住，`timeout 30s npm run test:e2e` 以退出码 `124` 结束；该问题作为 FE-06 离线/E2E 质量门风险继续排查，不放宽外部请求和未 mock 请求门禁。
+- 2026-05-15 已补充 `scripts/run-playwright.mjs` 规避 Node 24 下 Playwright test runner 初始化卡住问题；非沙箱本机环境执行 `npm run test:e2e` 已通过，不放宽外部请求和未 mock 请求门禁。
 
 ## 推荐任务包
 

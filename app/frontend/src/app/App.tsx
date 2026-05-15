@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../api/client';
 import type { CaptureSession } from '../api/captureSessions';
-import { createCaptureSession } from '../api/captureSessions';
+import { createCaptureSession, getCaptureSession } from '../api/captureSessions';
 import { getSystemStatus, type SystemStatus as ApiSystemStatus } from '../api/system';
 import { getTasks, type TaskSummary as ApiTaskSummary } from '../api/tasks';
 import {
@@ -11,7 +11,10 @@ import {
   sortRecentTasks
 } from '../state/workstationStore';
 import { MOBILE_SESSION_PREFIX } from './routes';
+import { ExportPlaceholder } from '../pages/export/ExportPlaceholder';
 import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
+import { ReviewPlaceholder } from '../pages/review/ReviewPlaceholder';
+import { TasksPlaceholder } from '../pages/tasks/TasksPlaceholder';
 import { WorkstationPage } from '../pages/workstation/WorkstationPage';
 import type {
   CaptureSessionSummary,
@@ -20,6 +23,8 @@ import type {
   TaskSummary,
   WorkstationPageData
 } from '../pages/workstation/workstation.types';
+
+const CURRENT_CAPTURE_SESSION_KEY = 'manzufei.currentCaptureSessionId';
 
 function toSystemStatus(status: ApiSystemStatus | null, error: string | null): SystemStatus {
   if (error) {
@@ -148,8 +153,22 @@ function WorkstationApp() {
     }
   }
 
+  async function restoreCurrentSession() {
+    const sessionId = window.localStorage.getItem(CURRENT_CAPTURE_SESSION_KEY);
+    if (!sessionId) return;
+
+    try {
+      const session = await getCaptureSession(sessionId);
+      setCurrentSession(session);
+    } catch {
+      window.localStorage.removeItem(CURRENT_CAPTURE_SESSION_KEY);
+      setCurrentSession(null);
+    }
+  }
+
   useEffect(() => {
     void loadDashboard();
+    void restoreCurrentSession();
   }, []);
 
   async function handleRetrySystem() {
@@ -185,6 +204,7 @@ function WorkstationApp() {
 
     try {
       const session = await createCaptureSession();
+      window.localStorage.setItem(CURRENT_CAPTURE_SESSION_KEY, session.session_id);
       setCurrentSession(session);
       setIsQrOpen(true);
     } catch {
@@ -214,8 +234,22 @@ function WorkstationApp() {
 }
 
 export function App() {
-  if (window.location.pathname.startsWith(MOBILE_SESSION_PREFIX)) {
+  const { pathname } = window.location;
+
+  if (pathname.startsWith(MOBILE_SESSION_PREFIX)) {
     return <MobileCapturePage />;
+  }
+
+  if (/^\/tasks\/[^/]+\/review\/?$/.test(pathname)) {
+    return <ReviewPlaceholder />;
+  }
+
+  if (/^\/tasks\/[^/]+\/export\/?$/.test(pathname)) {
+    return <ExportPlaceholder />;
+  }
+
+  if (pathname === '/tasks' || pathname === '/tasks/') {
+    return <TasksPlaceholder />;
   }
 
   return <WorkstationApp />;

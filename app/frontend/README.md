@@ -38,12 +38,14 @@ npm run test:e2e
 - `npm run test`
 - `npm run typecheck`
 - `npm run build`
+- `npm run test:e2e`
 
 当前环境限制：
 
-- `npm run test:e2e` 在当前 Codex 沙箱中会无输出卡住，使用 `timeout 30s npm run test:e2e` 会以退出码 `124` 结束。
-- 同一环境中 `npx playwright --version` 和 Playwright 配置导入可以运行，卡点发生在 Playwright test runner 进入测试枚举/运行阶段。
-- 该问题作为 FE-06 离线/E2E 质量门的待排查项记录；不得因此放宽未 mock 请求失败或外部资源拦截规则。
+- `@playwright/test@1.52.0` 在 Node 24 下会在 test runner 初始化阶段无输出卡住；`npm run test:e2e` 通过 `scripts/run-playwright.mjs` 自动使用本机 Node 18/20/22 运行 Playwright。
+- Codex 沙箱内不能绑定本地 Vite 端口，也不能执行 `/usr/bin/node` fallback；E2E 需要在非沙箱本机环境运行。
+- E2E 保持未 mock API 请求失败和外部资源请求失败的约束。
+- 当前 Playwright 已覆盖已实现页面：工作台、任务列表、手机采集三页上传、审核字段状态、失败审核态和导出下载；PRD 中后续完整业务链路随页面能力继续补充。
 
 ## 离线资源规则
 

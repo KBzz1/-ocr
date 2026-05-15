@@ -4,17 +4,40 @@ import chongqingLogo from '../../assets/logos/chongqing-university-logo.webp';
 import xinqiaoLogo from '../../assets/logos/xinqiao-hospital-logo.jpg';
 import { appRoutes } from '../../app/routes';
 import { IconButton } from '../common/IconButton';
+import '../workstation/workstation.css';
 
 const navigationItems = [
-  { label: '工作台总览', href: appRoutes.workstation.path },
-  { label: '任务管理', href: appRoutes.tasks.path }
+  { id: appRoutes.workstation.id, label: '工作台总览', href: appRoutes.workstation.path },
+  { id: appRoutes.tasks.id, label: '任务管理', href: appRoutes.tasks.path }
 ];
 
 type WorkstationLayoutProps = {
   children: ReactNode;
+  activeRouteId?: 'workstation' | 'tasks';
+  headerKicker?: string;
+  headerTitle?: string;
+  systemStatus?: {
+    tone: 'success' | 'warning' | 'danger' | 'neutral';
+    title: string;
+    subtitle: string;
+  };
+  isRetryingSystem?: boolean;
+  onRetrySystem?: () => void;
 };
 
-export function WorkstationLayout({ children }: WorkstationLayoutProps) {
+export function WorkstationLayout({
+  children,
+  activeRouteId = 'workstation',
+  headerKicker = '工作台总览',
+  headerTitle = '病历文书结构化采集',
+  systemStatus = {
+    tone: 'success',
+    title: '系统已启动',
+    subtitle: '正在运行中'
+  },
+  isRetryingSystem = false,
+  onRetrySystem
+}: WorkstationLayoutProps) {
   return (
     <div className="workstation-shell">
       <aside className="workstation-sidebar" aria-label="工作站导航">
@@ -32,7 +55,8 @@ export function WorkstationLayout({ children }: WorkstationLayoutProps) {
           <nav className="workstation-nav" aria-label="主要模块">
             {navigationItems.map((item) => (
               <a
-                className={`workstation-nav__item${item.href === appRoutes.workstation.path ? ' is-active' : ''}`}
+                aria-current={item.id === activeRouteId ? 'page' : undefined}
+                className={`workstation-nav__item${item.id === activeRouteId ? ' is-active' : ''}`}
                 href={item.href}
                 key={item.href}
               >
@@ -43,21 +67,35 @@ export function WorkstationLayout({ children }: WorkstationLayoutProps) {
           </nav>
         </div>
 
-        <div className="workstation-sidebar__status">
-          <span className="status-dot status-dot--neutral" aria-hidden="true" />
+        <div className={`workstation-sidebar__status workstation-sidebar__status--${systemStatus.tone}`}>
+          <span className={`status-dot status-dot--${systemStatus.tone}`} aria-hidden="true" />
           <div>
-            <div className="workstation-sidebar__status-title">本地离线环境</div>
-            <div className="workstation-sidebar__status-subtitle">状态以首页为准</div>
+            <div className="workstation-sidebar__status-title">{systemStatus.title}</div>
+            <div className="workstation-sidebar__status-subtitle">{systemStatus.subtitle}</div>
           </div>
+          {systemStatus.tone === 'danger' && onRetrySystem ? (
+            <button
+              className="workstation-sidebar__status-retry"
+              disabled={isRetryingSystem}
+              type="button"
+              onClick={onRetrySystem}
+            >
+              {isRetryingSystem ? '重试中' : '重试'}
+            </button>
+          ) : null}
         </div>
       </aside>
 
       <div className="workstation-main">
         <header className="workstation-header">
-          <div>
-            <p className="workstation-header__kicker">工作台总览</p>
-            <h1>病历文书结构化采集</h1>
-          </div>
+          {headerKicker || headerTitle ? (
+            <div>
+              {headerKicker ? <p className="workstation-header__kicker">{headerKicker}</p> : null}
+              {headerTitle ? <h1>{headerTitle}</h1> : null}
+            </div>
+          ) : (
+            <div aria-hidden="true" />
+          )}
 
           <div className="workstation-header__actions">
             <div className="workstation-header__logos" aria-label="合作单位">

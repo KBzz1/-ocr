@@ -480,7 +480,7 @@ cd app/frontend
 timeout 30s npm run test:e2e
 ```
 
-Expected in current Codex sandbox: exit code `124` with no Playwright test output. If it passes in a different environment, update README and PRD task notes with the exact result.
+Result updated on 2026-05-15: Node 24 下 Playwright test runner 初始化会无输出卡住；`npm run test:e2e` 已改为通过 `scripts/run-playwright.mjs` 使用 Node 18/20/22 运行。非沙箱本机环境执行 `npm run test:e2e` 通过。
 
 - [x] **Step 4: Commit**
 

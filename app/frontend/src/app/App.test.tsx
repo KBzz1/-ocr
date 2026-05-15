@@ -63,8 +63,8 @@ describe('Workstation data integration', () => {
     renderWorkstation();
 
     await expectTextPresent('系统已启动');
-    await expectTextPresent('离线运行');
-    await expectTextPresent('手机采集可用');
+    expectBodyNotToContain('离线运行');
+    expectBodyNotToContain('手机采集可用');
     expectBodyNotToContain(/https?:\/\/|localhost|127\.0\.0\.1|192\.168\./);
     expectBodyNotToContain(/mobile\/|capture\?session=/);
   });
@@ -106,6 +106,16 @@ describe('Workstation data integration', () => {
     expect(screen.getByRole('link', { name: '导出结果' }).getAttribute('href')).toBe('/tasks/task-exported/export');
   });
 
+  it('keeps the workstation sidebar available after entering task management', async () => {
+    window.history.pushState({}, '', '/tasks');
+    server.use(mockTasks());
+    render(<App />);
+
+    expect(await screen.findByRole('main', { name: '任务列表页' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /工作台总览/ }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
+  });
+
   it('shows empty task copy when the task API returns no records', async () => {
     server.use(mockSystemStatus(), mockTasks([]));
     render(<App />);
@@ -126,10 +136,24 @@ describe('Workstation data integration', () => {
     const qrImage = (await within(dialog).findByRole('img', { name: '采集二维码' })) as HTMLImageElement;
     expect(qrImage.tagName).toBe('IMG');
     expect(qrImage.src).toMatch(/^data:image\/svg\+xml/);
-    expectPresent(within(dialog).getByText('等待设备扫码'));
-    expectPresent(within(dialog).getByText(/已上传页数 2 页/));
+    expectPresent(within(dialog).getByText('会话已创建'));
+    expectPresent(within(dialog).getByText(/已上传 2 页/));
     expectBodyNotToContain(/192\.168\.1\.5:8081\/mobile\/sess_001/);
     expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/sessions/sess_001');
+  });
+
+  it('restores the current capture session from the backend after returning to the homepage', async () => {
+    localStorage.setItem('manzufei.currentCaptureSessionId', activeSession.session_id);
+    server.use(
+      mockSystemStatus(),
+      mockTasks([]),
+      mockGetCaptureSession({ ...activeSession, page_count: 1 })
+    );
+    render(<App />);
+
+    expect(await screen.findByText('会话进行中')).toBeTruthy();
+    expect(screen.getByText(/已上传 1 页/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '查看二维码' })).toBeTruthy();
   });
 
   it('shows connection help and copyable mobile link only after request', async () => {
@@ -276,9 +300,9 @@ describe('Workstation data integration', () => {
     );
 
     render(<App />);
-    expect(await screen.findByText('服务无响应', { selector: 'h2' })).toBeTruthy();
+    expect(await screen.findByText('服务无响应')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '重试' }));
-    expect(await screen.findByText('系统已启动', { selector: 'h2' })).toBeTruthy();
+    expect(await screen.findByText('系统已启动')).toBeTruthy();
     expect(statusCalls).toBeGreaterThanOrEqual(2);
   });
 });

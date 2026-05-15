@@ -1,18 +1,17 @@
 .tasks-page {
   min-height: 100vh;
-  background: #f6f8fb;
+  background: #f5f8fd;
   color: #0f172a;
 }
 
 .tasks-page__header {
-  min-height: 64px;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 20px;
-  padding: 0 28px;
-  border-bottom: 1px solid #dbe3ef;
-  background: #ffffff;
+  padding: 0 32px;
+  background: transparent;
 }
 
 .tasks-page__header p,
@@ -35,7 +34,7 @@
   width: 100%;
   max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 28px 32px;
+  padding: 0 32px 36px;
 }
 
 .tasks-page__status {
@@ -58,7 +57,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 7px;
   padding: 0 12px;
   background: #ffffff;
   color: #334155;
@@ -79,16 +78,16 @@
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
 .task-list-panel__toolbar {
-  min-height: 68px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 14px 18px;
+  padding: 14px 20px;
   border-bottom: 1px solid #e2e8f0;
 }
 
@@ -120,7 +119,7 @@
 .task-list-table th,
 .task-list-table td {
   min-height: 56px;
-  padding: 14px 16px;
+  padding: 14px 18px;
   border-bottom: 1px solid #edf1f7;
   text-align: left;
   vertical-align: top;

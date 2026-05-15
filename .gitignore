@@ -29,6 +29,8 @@ data/uploads/*
 data/results/*
 data/temp/*
 data/sessions/*
+data/pages/*
+data/tasks/*
 exports/*
 logs/*
 !data/uploads/README.md

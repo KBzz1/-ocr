@@ -1,15 +1,13 @@
 import { useState } from 'react';
-import type { CaptureSessionSummary, SystemStatus } from '../../pages/workstation/workstation.types';
+import captureIllustration from '../../assets/illustrations/phone-qr-capture.png';
+import type { CaptureSessionSummary } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
 type WorkstationHeroProps = {
-  systemStatus: SystemStatus;
   currentSession: CaptureSessionSummary | null;
   isSystemReady?: boolean;
   isCreatingSession?: boolean;
   createError?: string | null;
-  isRetryingSystem?: boolean;
-  onRetrySystem?: () => void;
   onNewCapture: () => void;
   onViewQr: () => void;
 };
@@ -22,62 +20,24 @@ const sessionStatusText: Record<NonNullable<CaptureSessionSummary>['status'], st
 };
 
 export function WorkstationHero({
-  systemStatus,
   currentSession,
   isSystemReady = true,
   isCreatingSession = false,
   createError = null,
-  isRetryingSystem = false,
-  onRetrySystem = () => undefined,
   onNewCapture,
   onViewQr
 }: WorkstationHeroProps) {
   const [endSessionHint, setEndSessionHint] = useState(false);
-  const statusTitle =
-    systemStatus.startup === 'running'
-      ? '系统已启动'
-      : systemStatus.startup === 'error'
-        ? systemStatus.message ?? '系统状态异常'
-        : '正在检查服务';
-  const statusPill = systemStatus.startup === 'running' ? '离线运行' : '服务未就绪';
 
   return (
     <section className="workstation-hero" aria-label="首页核心操作">
-      <div className="system-status-panel">
-        <div className="system-status-panel__heading">
-          <div>
-            <p className="section-kicker">系统状态</p>
-            <h2>{statusTitle}</h2>
-          </div>
-          <span className="system-status-panel__pill">{statusPill}</span>
-        </div>
-
-        <div className="system-status-grid">
-          {systemStatus.items.map((item) => (
-            <div className="system-status-item" key={item.id}>
-              <span className={`status-dot status-dot--${item.tone}`} aria-hidden="true" />
-              <div>
-                <div className="system-status-item__label">{item.label}</div>
-                <div className="system-status-item__value">{item.value}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {systemStatus.startup === 'error' ? (
-          <button className="secondary-action" type="button" disabled={isRetryingSystem} onClick={onRetrySystem}>
-            {isRetryingSystem ? '正在重试' : '重试'}
-          </button>
-        ) : null}
-      </div>
-
       <div className="new-capture-panel">
-        <div>
-          <p className="section-kicker">新建采集</p>
-          <h2>开始新的病历采集</h2>
-          <p>
-            使用手机扫码拍摄病历文书页面，上传后进入本地解析与人工核验流程。
-          </p>
+        <div className="new-capture-panel__content">
+          <img className="capture-illustration" src={captureIllustration} alt="" aria-hidden="true" />
+          <div>
+            <h2>开始新的病历采集</h2>
+            <p>手机扫码拍摄，电脑端核验导出。</p>
+          </div>
         </div>
         <button
           className="primary-action"
