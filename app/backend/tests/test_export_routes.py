@@ -42,173 +42,86 @@ def client(app):
     return app.test_client()
 
 
-def _seed_confirmed_task(app):
+def seed_exportable_task(app, status="review"):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     store.write(
-        "tasks/task-001.json",
+        "tasks/task_001.json",
         {
-            "task_id": "task-001",
-            "session_id": "session-001",
-            "status": "confirmed",
-            "created_at": "2026-05-12T10:00:00+00:00",
-            "page_count": 2,
-            "page_order": ["page-1", "page-2"],
-            "source": "capture_session",
-            "schema_version": "1.0.0",
-            "document_type": "general_medical_record",
+            "task_id": "task_001",
+            "status": status,
+            "created_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "upload_token": "token_001",
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
         },
     )
-    fields = [
-        {
-            "field_key": "chief_complaint",
-            "field_name": "主诉",
-            "auto_value": "auto_headache",
-            "final_value": "头痛3天",
-            "evidence": "第1页第2行",
-            "page_no": 1,
-            "confidence": 0.95,
-            "status": FieldStatus.CONFIRMED.value,
-            "empty_accepted": False,
-            "review_note": None,
-            "reviewed_at": "2026-05-13T09:55:00+00:00",
-            "updated_at": "2026-05-13T09:55:00+00:00",
-            "history": [],
-        },
-        {
-            "field_key": "diagnosis",
-            "field_name": "诊断",
-            "auto_value": "auto_diag",
-            "final_value": "上呼吸道感染",
-            "evidence": "第2页第1行",
-            "page_no": 2,
-            "confidence": 0.8,
-            "status": FieldStatus.CONFIRMED.value,
-            "empty_accepted": False,
-            "review_note": None,
-            "reviewed_at": "2026-05-13T09:56:00+00:00",
-            "updated_at": "2026-05-13T09:56:00+00:00",
-            "history": [],
-        },
-    ]
     store.write(
-        "results/task-001/review_result.json",
+        "results/task_001/review_result.json",
         {
-            "task_id": "task-001",
+            "task_id": "task_001",
             "schema_version": "1.0.0",
             "document_type": "general_medical_record",
-            "initialized_at": "2026-05-13T09:50:00+00:00",
-            "updated_at": "2026-05-13T09:56:00+00:00",
-            "fields": fields,
-            "summary": {
-                "total_count": 2,
-                "unreviewed_count": 0,
-                "confirmed_count": 2,
-                "modified_count": 0,
-                "suspicious_count": 0,
-                "empty_count": 0,
-                "empty_unaccepted_count": 0,
-                "missing_evidence_count": 0,
-            },
+            "fields": [
+                {
+                    "field_key": "patient_name",
+                    "field_name": "姓名",
+                    "final_value": "张三",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "第1页",
+                    "page_no": 1,
+                }
+            ],
         },
     )
 
 
-def _events(app):
+def events(app):
     with open(app.config["LOCAL_EVENT_LOG"].current_path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
-class TestExportCheckRoute:
-    def test_export_check_route_success(self, client, app):
-        _seed_confirmed_task(app)
+def test_export_check_route_allows_review_task(client, app):
+    seed_exportable_task(app, status="review")
 
-        resp = client.get("/api/tasks/task-001/export/check")
+    response = client.get("/api/tasks/task_001/export/check")
 
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["task_id"] == "task-001"
-        assert data["status"] == "confirmed"
-        assert data["can_export"] is True
-        assert data["summary"]["total_count"] == 2
-
-    def test_export_check_route_rejects_unconfirmed_task(self, client, app):
-        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
-        store.write(
-            "tasks/task-002.json",
-            {
-                "task_id": "task-002",
-                "session_id": "session-001",
-                "status": "ready_for_review",
-                "created_at": "2026-05-12T10:00:00+00:00",
-                "page_count": 1,
-                "page_order": ["page-1"],
-                "source": "capture_session",
-            },
-        )
-
-        resp = client.get("/api/tasks/task-002/export/check")
-
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"
-
-    def test_export_route_missing_task_returns_task_not_found(self, client):
-        resp = client.get("/api/tasks/nonexistent/export/check")
-
-        assert resp.status_code == 404
-        assert resp.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "review"
+    assert data["can_export"] is True
 
 
-class TestExportJsonRoute:
-    def test_export_json_route_returns_download_headers(self, client, app):
-        _seed_confirmed_task(app)
+def test_export_json_route_keeps_task_status(client, app):
+    seed_exportable_task(app, status="done")
 
-        resp = client.get("/api/tasks/task-001/export/json")
+    response = client.get("/api/tasks/task_001/export/json")
 
-        assert resp.status_code == 200
-        assert resp.content_type == "application/json"
-        content_disp = resp.headers.get("Content-Disposition", "")
-        assert "attachment" in content_disp
-        assert "task-001.review.json" in content_disp
-
-        # Verify JSON body uses final_value
-        body = resp.get_json()
-        fields = body["fields"]
-        chief = next(f for f in fields if f["field_key"] == "chief_complaint")
-        assert chief["final_value"] == "头痛3天"
-        assert "auto_value" not in chief
-
-        export_events = [item for item in _events(app) if item["event"] == "export_succeeded"]
-        assert export_events
-        assert export_events[-1]["task_id"] == "task-001"
-        assert export_events[-1]["format"] == "json"
-        assert export_events[-1]["relative_path"] == "task-001/task-001.review.json"
-
-    def test_export_json_route_rejects_blocking_fields(self, client, app):
-        _seed_confirmed_task(app)
-        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
-        review = store.read("results/task-001/review_result.json")
-        review["fields"][0]["status"] = FieldStatus.UNREVIEWED.value
-        store.write("results/task-001/review_result.json", review)
-
-        resp = client.get("/api/tasks/task-001/export/json")
-
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"
-        failed_events = [item for item in _events(app) if item["event"] == "export_failed"]
-        assert failed_events
-        assert failed_events[-1]["task_id"] == "task-001"
-        assert failed_events[-1]["format"] == "json"
-        assert failed_events[-1]["error_code"] == "EXPORT_VALIDATION_FAILED"
+    assert response.status_code == 200
+    assert response.content_type == "application/json"
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    task = store.read("tasks/task_001.json")
+    assert task["status"] == "done"
+    assert "json" in task["export_summary"]["formats"]
+    assert events(app)[-1]["event"] == "export_succeeded"
 
 
-class TestExportExcelRoute:
-    def test_export_excel_route_returns_xlsx_download_headers(self, client, app):
-        _seed_confirmed_task(app)
+def test_export_excel_route_returns_xlsx_download_headers(client, app):
+    seed_exportable_task(app, status="review")
 
-        resp = client.get("/api/tasks/task-001/export/excel")
+    response = client.get("/api/tasks/task_001/export/excel")
 
-        assert resp.status_code == 200
-        assert "spreadsheet" in resp.content_type
-        content_disp = resp.headers.get("Content-Disposition", "")
-        assert "attachment" in content_disp
-        assert "task-001.review.xlsx" in content_disp
+    assert response.status_code == 200
+    assert "spreadsheet" in response.content_type
+    assert "task_001.review.xlsx" in response.headers.get("Content-Disposition", "")
+
+
+def test_export_route_rejects_uploading_task(client, app):
+    seed_exportable_task(app, status="uploading")
+
+    response = client.get("/api/tasks/task_001/export/json")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"

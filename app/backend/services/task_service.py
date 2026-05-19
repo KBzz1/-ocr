@@ -161,11 +161,15 @@ class TaskService:
         self._write_task(task)
         return task
 
+    def record_export(self, task_id: str, format: str, relative_path: str) -> dict:
+        task = self._read_task(task_id)
+        self._update_export_summary(task, format=format, relative_path=relative_path)
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        return task
+
     def mark_exported(self, task_id: str, format: str | None = None, relative_path: str | None = None, task: dict | None = None) -> dict:
         task = task or self._read_task(task_id)
-        # Only transition if not already exported
-        if task["status"] != TaskStatus.EXPORTED.value:
-            task = self._transition(task, TaskStatus.EXPORTED.value, "导出完成")
         self._update_export_summary(task, format=format, relative_path=relative_path)
         self._write_task(task)
         return task

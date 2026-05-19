@@ -30,18 +30,16 @@ class ExportService:
         review = self._store.read(f"results/{task_id}/review_result.json")
         fields = self._get_review_fields_for_export(task_id, status, review)
 
-        unreviewed, suspicious, empty_unaccepted = self._compute_blocking_fields(fields)
+        unreviewed = self._compute_blocking_fields(fields)
         summary = self._compute_summary(fields)
 
         return {
             "task_id": task_id,
             "status": status,
-            "can_export": not (unreviewed or suspicious or empty_unaccepted),
+            "can_export": not unreviewed,
             "summary": summary,
             "blocking_fields": {
                 "unreviewed": unreviewed,
-                "suspicious": suspicious,
-                "empty_unaccepted": empty_unaccepted,
             },
         }
 
@@ -113,7 +111,7 @@ class ExportService:
                 details={"format": format, "reason": str(e)},
             )
 
-        self._task_service.mark_exported(task_id, format=format, relative_path=relative_path, task=task)
+        self._task_service.record_export(task_id, format=format, relative_path=relative_path)
 
         return {
             "format": format,
@@ -126,10 +124,10 @@ class ExportService:
 
     @staticmethod
     def _get_review_fields_for_export(task_id: str, status: str, review: dict | None) -> list[dict]:
-        if status not in (TaskStatus.CONFIRMED.value, TaskStatus.EXPORTED.value):
+        if status not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
             raise AppError(
                 ErrorCode.EXPORT_VALIDATION_FAILED,
-                message="任务尚未确认，不允许导出",
+                message="只有待审核或已完成任务可以导出",
                 details={"current": status},
             )
         if review is None or not isinstance(review.get("fields"), list) or not review["fields"]:
@@ -142,16 +140,14 @@ class ExportService:
 
     @classmethod
     def _ensure_no_blocking_fields(cls, fields: list[dict]) -> None:
-        unreviewed, suspicious, empty_unaccepted = cls._compute_blocking_fields(fields)
-        if unreviewed or suspicious or empty_unaccepted:
+        unreviewed = cls._compute_blocking_fields(fields)
+        if unreviewed:
             raise AppError(
                 ErrorCode.EXPORT_VALIDATION_FAILED,
                 message="审核结果存在未确认字段，无法导出",
                 details={
                     "blocking_fields": {
                         "unreviewed": unreviewed,
-                        "suspicious": suspicious,
-                        "empty_unaccepted": empty_unaccepted,
                     }
                 },
             )
@@ -160,45 +156,27 @@ class ExportService:
     def _compute_summary(fields: list[dict]) -> dict:
         total = len(fields)
         unreviewed = 0
-        suspicious = 0
-        empty = 0
-        empty_unaccepted = 0
         missing_evidence = 0
         for f in fields:
             status = f["status"]
             if status == FieldStatus.UNREVIEWED.value:
                 unreviewed += 1
-            elif status == FieldStatus.SUSPICIOUS.value:
-                suspicious += 1
-            elif status == FieldStatus.EMPTY.value:
-                empty += 1
-                if not f.get("empty_accepted"):
-                    empty_unaccepted += 1
             if not f.get("evidence"):
                 missing_evidence += 1
         return {
             "total_count": total,
             "unreviewed_count": unreviewed,
-            "suspicious_count": suspicious,
-            "empty_count": empty,
-            "empty_unaccepted_count": empty_unaccepted,
             "missing_evidence_count": missing_evidence,
         }
 
     @staticmethod
-    def _compute_blocking_fields(fields: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    def _compute_blocking_fields(fields: list[dict]) -> list[str]:
         unreviewed = []
-        suspicious = []
-        empty_unaccepted = []
         for f in fields:
             status = f["status"]
             if status == FieldStatus.UNREVIEWED.value:
                 unreviewed.append(f["field_key"])
-            elif status == FieldStatus.SUSPICIOUS.value:
-                suspicious.append(f["field_key"])
-            elif status == FieldStatus.EMPTY.value and not f.get("empty_accepted"):
-                empty_unaccepted.append(f["field_key"])
-        return unreviewed, suspicious, empty_unaccepted
+        return unreviewed
 
     # -- file writers --
 
