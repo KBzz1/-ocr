@@ -156,12 +156,10 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .routes.system import system_bp
     app.register_blueprint(system_bp)
 
-    from .routes.capture_session import capture_session_bp
     from .routes.mobile import mobile_bp
     from .routes.task import task_bp
     from .routes.schema import schema_bp
     from .routes.maintenance import maintenance_bp
-    app.register_blueprint(capture_session_bp)
     app.register_blueprint(mobile_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(schema_bp)
