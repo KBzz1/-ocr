@@ -113,6 +113,7 @@ class TaskService:
         task["processing_at"] = self._now()
         task["updated_at"] = task["processing_at"]
         self._write_task(task)
+        _safe_event("task_processing_started", task_id=task_id)
         return self._run_orchestrator(task)
 
     def mark_ready(self, task_id: str) -> dict:

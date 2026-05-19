@@ -63,9 +63,9 @@ def events(app):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def upload_jpeg(client, session_id):
+def upload_jpeg(client, task):
     return client.post(
-        f"/api/mobile/{session_id}/pages",
+        f"/api/mobile-upload/{task['task_id']}/images?token={task['upload_token']}",
         data={
             "image_width": "100",
             "image_height": "100",
@@ -81,27 +81,22 @@ def test_startup_event_logged(app):
     assert "algorithm_module_not_configured" in names
 
 
-def test_session_upload_finish_events_logged(client, app):
-    create_resp = client.post("/api/capture-sessions")
-    session_id = create_resp.get_json()["data"]["session_id"]
-    upload_resp = upload_jpeg(client, session_id)
+def test_task_upload_finish_events_logged(client, app):
+    task = client.post("/api/tasks").get_json()["data"]
+    upload_resp = upload_jpeg(client, task)
     assert upload_resp.status_code == 201
-    finish_resp = client.post(f"/api/mobile/{session_id}/finish")
+    finish_resp = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}")
     assert finish_resp.status_code == 200
 
     names = [item["event"] for item in events(app)]
-    assert "session_created" in names
-    assert "page_uploaded" in names
-    assert "session_finished" in names
+    assert "task_processing_started" in names
+    assert "task_processing_failed" in names
 
 
 def test_task_processing_failure_event_has_context_and_no_sensitive_text(client, app):
-    create_resp = client.post("/api/capture-sessions")
-    session_id = create_resp.get_json()["data"]["session_id"]
-    upload_jpeg(client, session_id)
-    task_id = client.post(f"/api/mobile/{session_id}/finish").get_json()["data"]["task_id"]
-
-    client.post(f"/api/tasks/{task_id}/process")
+    task = client.post("/api/tasks").get_json()["data"]
+    upload_jpeg(client, task)
+    task_id = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}").get_json()["data"]["task_id"]
 
     failures = [item for item in events(app) if item["event"] == "task_processing_failed"]
     assert failures
@@ -122,12 +117,10 @@ def test_review_events_logged_without_field_values(client, app):
         "tasks/task-review.json",
         {
             "task_id": "task-review",
-            "session_id": "session-001",
-            "status": "ready_for_review",
-            "created_at": "2026-05-12T10:00:00+00:00",
-            "page_count": 1,
-            "page_order": ["page-1"],
-            "source": "capture_session",
+            "status": "review",
+            "created_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "images": [],
             "schema_version": "1.0.0",
             "document_type": "general_medical_record",
         },
@@ -153,7 +146,7 @@ def test_review_events_logged_without_field_values(client, app):
     client.get("/api/tasks/task-review/review")
     patch_resp = client.patch("/api/tasks/task-review/review/fields/name", json={"action": "confirm"})
     assert patch_resp.status_code == 200
-    confirm_resp = client.post("/api/tasks/task-review/review/confirm")
+    confirm_resp = client.post("/api/tasks/task-review/complete")
     assert confirm_resp.status_code == 200
 
     records = events(app)

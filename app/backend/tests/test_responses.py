@@ -57,7 +57,7 @@ class TestErrorResponse:
         from flask import Flask
         app = Flask(__name__)
         with app.test_request_context():
-            err = AppError(ErrorCode.SESSION_EXPIRED)
+            err = AppError(ErrorCode.TASK_UPLOAD_CLOSED)
             resp = error_response(err)
             assert resp.status_code == 409
 
@@ -67,11 +67,11 @@ class TestErrorResponse:
         with app.test_request_context():
             err = AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
-                details={"current": "created", "target": "exported"},
+                details={"current": "uploading", "target": "done"},
             )
             resp = error_response(err)
             data = json.loads(resp.get_data(as_text=True))
-            assert data["error"]["details"] == {"current": "created", "target": "exported"}
+            assert data["error"]["details"] == {"current": "uploading", "target": "done"}
 
     def test_error_response_content_type(self):
         from flask import Flask
