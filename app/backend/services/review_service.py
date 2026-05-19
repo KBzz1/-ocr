@@ -5,6 +5,12 @@ from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
 
+MVP_FIELD_STATUSES = {
+    FieldStatus.UNREVIEWED.value,
+    FieldStatus.CONFIRMED.value,
+    FieldStatus.MODIFIED.value,
+}
+
 
 class ReviewService:
     def __init__(self, store: JsonStore, task_service, schema_provider: Callable[[], dict] | None = None):
@@ -84,18 +90,11 @@ class ReviewService:
             "unreviewed_count": sum(1 for f in fields if f["status"] == FieldStatus.UNREVIEWED.value),
             "confirmed_count": sum(1 for f in fields if f["status"] == FieldStatus.CONFIRMED.value),
             "modified_count": sum(1 for f in fields if f["status"] == FieldStatus.MODIFIED.value),
-            "suspicious_count": sum(1 for f in fields if f["status"] == FieldStatus.SUSPICIOUS.value),
-            "empty_count": sum(1 for f in fields if f["status"] == FieldStatus.EMPTY.value),
-            "empty_unaccepted_count": sum(1 for f in fields if f["status"] == FieldStatus.EMPTY.value and not f["empty_accepted"]),
             "missing_evidence_count": sum(1 for f in fields if not f.get("evidence")),
         }
 
     def _ensure_readable(self, task: dict) -> None:
-        if task["status"] not in (
-            TaskStatus.READY_FOR_REVIEW.value,
-            TaskStatus.CONFIRMED.value,
-            TaskStatus.EXPORTED.value,
-        ):
+        if task["status"] not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
             raise AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
                 message=f"任务状态 {task['status']} 不允许读取审核结果",
@@ -103,17 +102,67 @@ class ReviewService:
             )
 
     def _ensure_writable(self, task: dict) -> None:
-        if task["status"] != TaskStatus.READY_FOR_REVIEW.value:
+        if task["status"] != TaskStatus.REVIEW.value:
             raise AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
                 message=f"任务状态 {task['status']} 不允许编辑审核结果",
                 details={"current": task["status"]},
             )
 
+    def _validate_field_status(self, status: str) -> None:
+        if status not in MVP_FIELD_STATUSES:
+            raise AppError(
+                ErrorCode.REVIEW_VALIDATION_FAILED,
+                message="字段状态必须是 unreviewed、confirmed 或 modified",
+                details={"status": status},
+            )
+
+    def save(self, task_id: str, payload: dict) -> dict:
+        fields = payload.get("fields")
+        if not isinstance(fields, list):
+            raise AppError(ErrorCode.REVIEW_VALIDATION_FAILED, message="fields 必须是列表")
+
+        review = self.get_or_init(task_id)
+        for item in fields:
+            if not isinstance(item, dict):
+                raise AppError(ErrorCode.REVIEW_VALIDATION_FAILED, message="字段项必须是对象")
+            field_key = item.get("field_key")
+            status = item.get("status", FieldStatus.MODIFIED.value)
+            self._validate_field_status(status)
+            field = self._find_field(review, field_key)
+            value = item.get("value", item.get("final_value", field["final_value"]))
+            if not isinstance(value, str):
+                raise AppError(ErrorCode.REVIEW_VALIDATION_FAILED, message="字段值必须是字符串")
+            field["final_value"] = value
+            field["status"] = status
+            field["reviewed_at"] = self._now()
+            field["updated_at"] = field["reviewed_at"]
+
+        review["updated_at"] = self._now()
+        review["summary"] = self._build_summary(review["fields"])
+        self._store.write(f"results/{task_id}/review_result.json", review)
+        return review
+
     def update_field(self, task_id: str, field_key: str, payload: dict) -> dict:
         task = self._task_service.get_task(task_id)
         self._ensure_writable(task)
         review = self.get_or_init(task_id)
+
+        if "status" in payload:
+            status = payload["status"]
+            self._validate_field_status(status)
+            field = self._find_field(review, field_key)
+            value = payload.get("value", payload.get("final_value", field["final_value"]))
+            if not isinstance(value, str):
+                raise AppError(ErrorCode.REVIEW_VALIDATION_FAILED, message="字段值必须是字符串")
+            field["final_value"] = value
+            field["status"] = status
+            field["reviewed_at"] = self._now()
+            field["updated_at"] = field["reviewed_at"]
+            review["updated_at"] = field["updated_at"]
+            review["summary"] = self._build_summary(review["fields"])
+            self._store.write(f"results/{task_id}/review_result.json", review)
+            return review
 
         action = payload.get("action")
         review_note = payload.get("review_note")
@@ -131,12 +180,6 @@ class ReviewService:
             return review
         if action == "modify" and field["status"] == FieldStatus.MODIFIED.value and new_value == old_value:
             return review
-        if action == "clear" and field["status"] == FieldStatus.EMPTY.value and old_value == "":
-            return review
-        if action == "accept_empty" and field["empty_accepted"]:
-            return review
-        if action == "mark_suspicious" and field["status"] == FieldStatus.SUSPICIOUS.value:
-            return review
 
         now = self._now()
 
@@ -152,18 +195,6 @@ class ReviewService:
                 raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="modify 必须提供字符串 final_value")
             field["final_value"] = payload["final_value"]
             field["status"] = FieldStatus.MODIFIED.value
-            field["empty_accepted"] = False
-        elif action == "clear":
-            field["final_value"] = ""
-            field["status"] = FieldStatus.EMPTY.value
-            field["empty_accepted"] = False
-        elif action == "accept_empty":
-            if field["status"] != FieldStatus.EMPTY.value or field["final_value"] != "":
-                raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="只有已清空字段可以接受空值")
-            field["status"] = FieldStatus.EMPTY.value
-            field["empty_accepted"] = True
-        elif action == "mark_suspicious":
-            field["status"] = FieldStatus.SUSPICIOUS.value
             field["empty_accepted"] = False
         else:
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message=f"未知审核动作: {action}")
@@ -192,24 +223,16 @@ class ReviewService:
         summary = self._build_summary(review["fields"])
 
         unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.UNREVIEWED.value]
-        suspicious = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.SUSPICIOUS.value]
-        empty_unaccepted = [
-            f["field_key"]
-            for f in review["fields"]
-            if f["status"] == FieldStatus.EMPTY.value and not f["empty_accepted"]
-        ]
-        if not review["fields"] or unreviewed or suspicious or empty_unaccepted:
+        if not review["fields"] or unreviewed:
             raise AppError(
                 ErrorCode.REVIEW_VALIDATION_FAILED,
                 message="审核确认校验失败",
                 details={
                     FieldStatus.UNREVIEWED.value: unreviewed,
-                    FieldStatus.SUSPICIOUS.value: suspicious,
-                    "empty_unaccepted": empty_unaccepted,
                     "missing_evidence_count": summary["missing_evidence_count"],
                 },
             )
-        return self._task_service.mark_confirmed(task_id, review_summary=summary, task=task)
+        return self._task_service.complete_review(task_id, review_summary=summary)
 
     def _find_field(self, review: dict, field_key: str) -> dict:
         for field in review["fields"]:

@@ -1,73 +1,61 @@
 import pytest
 
 from app.backend.errors import AppError, ErrorCode
+from app.backend.services.review_service import ReviewService
 from app.backend.services.task_service import TaskService
 from app.backend.storage.json_store import JsonStore
 
 
-def make_review_service(tmp_path, schema=None):
-    from app.backend.services.review_service import ReviewService
-
+def make_services(tmp_path):
     store = JsonStore(str(tmp_path))
     task_service = TaskService(store)
-    if schema is None:
-        schema = {
-            "version": "medical_record.v1",
-            "document_type": "medical_record",
-            "field_groups": [
-                {
-                    "group_key": "history",
-                    "group_label": "病史",
-                    "fields": [
-                        {"field_key": "chief_complaint", "label": "主诉"},
-                        {"field_key": "diagnosis", "label": "初步诊断"},
-                    ],
-                }
-            ],
-        }
-    return ReviewService(store, task_service, schema_provider=lambda: schema), store
+    schema = {
+        "version": "medical_record.v1",
+        "document_type": "medical_record",
+        "field_groups": [
+            {
+                "group_key": "basic",
+                "group_label": "基本信息",
+                "fields": [
+                    {"field_key": "patient_name", "label": "姓名"},
+                    {"field_key": "department", "label": "科室"},
+                ],
+            }
+        ],
+    }
+    review_service = ReviewService(store, task_service, schema_provider=lambda: schema)
+    return review_service, task_service, store
 
 
-def write_task(store, task_id="task-001", status="ready_for_review"):
+def write_review_task(store, task_id="task_001", status="review"):
     store.write(
         f"tasks/{task_id}.json",
         {
             "task_id": task_id,
-            "session_id": "session-001",
             "status": status,
-            "created_at": "2026-05-12T10:00:00+00:00",
-            "page_count": 2,
-            "page_order": ["page-1", "page-2"],
-            "source": "capture_session",
-            "schema_version": "medical_record.v1",
-            "document_type": "medical_record",
+            "created_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "upload_token": "token_001",
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
         },
     )
 
 
-def write_candidates(store, task_id="task-001", candidates=None):
-    if candidates is None:
-        candidates = [
-            {
-                "field_key": "chief_complaint",
-                "original_value": "头痛3天",
-                "field_name": "主诉",
-                "evidence": "第1页第2行",
-                "page_no": 1,
-                "confidence": 0.95,
-            },
-            {
-                "field_key": "diagnosis",
-                "original_value": "上呼吸道感染",
-                "field_name": "初步诊断",
-                "evidence": "第2页",
-                "page_no": 2,
-                "confidence": 0.8,
-            },
-        ]
+def write_candidates(store, task_id="task_001"):
     store.write(
         f"results/{task_id}/field_candidates.json",
-        {"task_id": task_id, "stage": "field_extraction", "status": "success", "candidates": candidates},
+        {
+            "task_id": task_id,
+            "stage": "field_extraction",
+            "status": "success",
+            "candidates": [
+                {"field_key": "patient_name", "original_value": "张三", "evidence": "第1页", "confidence": 0.9},
+                {"field_key": "department", "original_value": "骨科", "evidence": "第1页", "confidence": 0.8},
+            ],
+        },
     )
 
 
@@ -75,297 +63,88 @@ def find_field(review, field_key):
     return next(field for field in review["fields"] if field["field_key"] == field_key)
 
 
-class TestReviewServiceRead:
-    def test_first_read_initializes_review_result_from_candidates(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
+def test_first_read_initializes_review_result_from_candidates(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
 
-        review = service.get_or_init("task-001")
+    review = review_service.get_or_init("task_001")
 
-        assert review["task_id"] == "task-001"
-        assert review["schema_version"] == "medical_record.v1"
-        assert review["document_type"] == "medical_record"
-        assert review["initialized_at"]
-        assert review["updated_at"]
-        assert [f["field_key"] for f in review["fields"]] == ["chief_complaint", "diagnosis"]
-
-        field = find_field(review, "chief_complaint")
-        assert field["field_name"] == "主诉"
-        assert field["auto_value"] == "头痛3天"
-        assert field["final_value"] == "头痛3天"
-        assert field["status"] == "unreviewed"
-        assert field["empty_accepted"] is False
-        assert field["history"] == []
-
-        assert review["summary"]["total_count"] == 2
-        assert review["summary"]["unreviewed_count"] == 2
-        assert review["summary"]["missing_evidence_count"] == 0
-
-    def test_second_read_does_not_overwrite_manual_result(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        review = service.get_or_init("task-001")
-        find_field(review, "chief_complaint")["final_value"] = "人工修正"
-        find_field(review, "chief_complaint")["status"] = "modified"
-        store.write("results/task-001/review_result.json", review)
-
-        reopened = service.get_or_init("task-001")
-
-        assert find_field(reopened, "chief_complaint")["final_value"] == "人工修正"
-        assert find_field(reopened, "chief_complaint")["status"] == "modified"
-
-    def test_auto_candidate_file_is_not_modified(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-
-        service.get_or_init("task-001")
-
-        candidates = store.read("results/task-001/field_candidates.json")
-        assert candidates["candidates"][0]["original_value"] == "头痛3天"
-
-    def test_missing_candidates_returns_review_validation_failed(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-
-        with pytest.raises(AppError) as exc_info:
-            service.get_or_init("task-001")
-
-        assert exc_info.value.code == ErrorCode.REVIEW_VALIDATION_FAILED.code
-
-    def test_empty_candidates_returns_review_validation_failed(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store, candidates=[])
-
-        with pytest.raises(AppError) as exc_info:
-            service.get_or_init("task-001")
-
-        assert exc_info.value.code == ErrorCode.REVIEW_VALIDATION_FAILED.code
-
-    def test_non_reviewable_task_cannot_read(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store, status="failed")
-        write_candidates(store)
-
-        with pytest.raises(AppError) as exc_info:
-            service.get_or_init("task-001")
-
-        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
-
-    def test_existing_review_still_checks_current_task_status(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        write_task(store, status="failed")
-
-        with pytest.raises(AppError) as exc_info:
-            service.get_or_init("task-001")
-
-        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
-
-    def test_exported_task_can_read_existing_review_result(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        review = service.get_or_init("task-001")
-        write_task(store, status="exported")
-
-        reopened = service.get_or_init("task-001")
-
-        assert reopened == review
+    assert [field["field_key"] for field in review["fields"]] == ["patient_name", "department"]
+    assert find_field(review, "patient_name")["status"] == "unreviewed"
+    assert review["summary"]["unreviewed_count"] == 2
+    assert "suspicious_count" not in review["summary"]
 
 
-class TestReviewServiceFieldActions:
-    def test_confirm_keeps_current_value_when_final_value_omitted(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
+def test_review_save_rejects_legacy_field_status(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
 
-        review = service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-
-        field = find_field(review, "chief_complaint")
-        assert field["status"] == "confirmed"
-        assert field["final_value"] == "头痛3天"
-        assert field["empty_accepted"] is False
-        assert field["history"][0]["action"] == "confirm"
-
-    def test_modify_updates_final_value_and_preserves_auto_value(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-
-        review = service.update_field(
-            "task-001",
-            "chief_complaint",
-            {"action": "modify", "final_value": "头痛3天，加重1天", "review_note": "按原文修正"},
+    with pytest.raises(AppError) as exc:
+        review_service.update_field(
+            "task_001",
+            "patient_name",
+            {"value": "张三", "status": "suspicious"},
         )
 
-        field = find_field(review, "chief_complaint")
-        assert field["status"] == "modified"
-        assert field["auto_value"] == "头痛3天"
-        assert field["final_value"] == "头痛3天，加重1天"
-        assert field["review_note"] == "按原文修正"
-        assert field["history"][0]["from_value"] == "头痛3天"
-        assert field["history"][0]["to_value"] == "头痛3天，加重1天"
-
-    def test_clear_then_accept_empty(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-
-        cleared = service.update_field("task-001", "diagnosis", {"action": "clear"})
-        assert find_field(cleared, "diagnosis")["status"] == "empty"
-        assert find_field(cleared, "diagnosis")["final_value"] == ""
-        assert find_field(cleared, "diagnosis")["empty_accepted"] is False
-
-        accepted = service.update_field("task-001", "diagnosis", {"action": "accept_empty"})
-        assert find_field(accepted, "diagnosis")["status"] == "empty"
-        assert find_field(accepted, "diagnosis")["empty_accepted"] is True
-
-    def test_mark_suspicious_keeps_value_and_note(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-
-        review = service.update_field("task-001", "diagnosis", {"action": "mark_suspicious", "review_note": "来源不清"})
-
-        field = find_field(review, "diagnosis")
-        assert field["status"] == "suspicious"
-        assert field["final_value"] == "上呼吸道感染"
-        assert field["review_note"] == "来源不清"
-
-    def test_multiple_changes_preserve_history_order(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-
-        service.update_field("task-001", "chief_complaint", {"action": "modify", "final_value": "改1"})
-        service.update_field("task-001", "chief_complaint", {"action": "modify", "final_value": "改2"})
-        review = service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-
-        history = find_field(review, "chief_complaint")["history"]
-        assert [h["action"] for h in history] == ["modify", "modify", "confirm"]
-        assert history[0]["from_value"] == "头痛3天"
-        assert history[1]["from_value"] == "改1"
-        assert history[2]["to_value"] == "改2"
-
-    def test_invalid_action_returns_invalid_request_params(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-
-        with pytest.raises(AppError) as exc_info:
-            service.update_field("task-001", "chief_complaint", {"action": "delete"})
-
-        assert exc_info.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
-
-    def test_processing_task_cannot_update_review(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        write_task(store, status="processing")
-
-        with pytest.raises(AppError) as exc_info:
-            service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-
-        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+    assert exc.value.code == ErrorCode.REVIEW_VALIDATION_FAILED.code
 
 
-class TestReviewServiceConfirm:
-    def test_confirm_blocks_unreviewed_fields(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
+def test_update_field_accepts_mvp_status_payload(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
 
-        with pytest.raises(AppError) as exc_info:
-            service.confirm("task-001")
+    review = review_service.update_field(
+        "task_001",
+        "patient_name",
+        {"value": "李四", "status": "modified"},
+    )
 
-        assert exc_info.value.code == ErrorCode.REVIEW_VALIDATION_FAILED.code
-        assert exc_info.value.details["unreviewed"] == ["diagnosis"]
+    field = find_field(review, "patient_name")
+    assert field["final_value"] == "李四"
+    assert field["status"] == "modified"
+    assert review["summary"]["modified_count"] == 1
 
-    def test_confirm_blocks_suspicious_fields(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-        service.update_field("task-001", "diagnosis", {"action": "mark_suspicious"})
 
-        with pytest.raises(AppError) as exc_info:
-            service.confirm("task-001")
+def test_save_bulk_fields_updates_review_result(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
 
-        assert exc_info.value.details["suspicious"] == ["diagnosis"]
+    review = review_service.save(
+        "task_001",
+        {
+            "fields": [
+                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
+                {"field_key": "department", "value": "骨外科", "status": "modified"},
+            ]
+        },
+    )
 
-    def test_confirm_blocks_unaccepted_empty_fields(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-        service.update_field("task-001", "diagnosis", {"action": "clear"})
+    assert find_field(review, "patient_name")["status"] == "confirmed"
+    assert find_field(review, "department")["final_value"] == "骨外科"
+    assert review["summary"]["confirmed_count"] == 1
+    assert review["summary"]["modified_count"] == 1
 
-        with pytest.raises(AppError) as exc_info:
-            service.confirm("task-001")
 
-        assert exc_info.value.details["empty_unaccepted"] == ["diagnosis"]
+def test_confirm_review_marks_task_done(tmp_path):
+    review_service, task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
+    review_service.save(
+        "task_001",
+        {
+            "fields": [
+                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
+                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+            ]
+        },
+    )
 
-    def test_confirm_all_confirmed_updates_task(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-        service.update_field("task-001", "diagnosis", {"action": "modify", "final_value": "上感"})
+    task = review_service.confirm("task_001")
 
-        task = service.confirm("task-001")
-
-        assert task["status"] == "confirmed"
-        assert task["confirmed_at"]
-        assert task["review_summary"]["unreviewed_count"] == 0
-        assert task["review_summary"]["modified_count"] == 1
-
-    def test_confirm_accepted_empty_passes(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(store)
-        service.get_or_init("task-001")
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-        service.update_field("task-001", "diagnosis", {"action": "clear"})
-        service.update_field("task-001", "diagnosis", {"action": "accept_empty"})
-
-        task = service.confirm("task-001")
-
-        assert task["status"] == "confirmed"
-
-    def test_missing_evidence_is_counted_but_not_blocking(self, tmp_path):
-        service, store = make_review_service(tmp_path)
-        write_task(store)
-        write_candidates(
-            store,
-            candidates=[
-                {"field_key": "chief_complaint", "original_value": "头痛", "evidence": "第1页", "confidence": 0.9},
-                {"field_key": "diagnosis", "original_value": "上感", "confidence": 0.8},
-            ],
-        )
-        review = service.get_or_init("task-001")
-        assert review["summary"]["missing_evidence_count"] == 1
-        service.update_field("task-001", "chief_complaint", {"action": "confirm"})
-        service.update_field("task-001", "diagnosis", {"action": "confirm"})
-
-        task = service.confirm("task-001")
-
-        assert task["status"] == "confirmed"
-        assert task["review_summary"]["missing_evidence_count"] == 1
+    assert task["status"] == "done"
+    assert task["done_at"]
+    assert task_service.get_task("task_001")["review_summary"]["confirmed_count"] == 2

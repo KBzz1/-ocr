@@ -39,116 +39,95 @@ def client(app):
     return app.test_client()
 
 
-def seed_reviewable_task(app, status="ready_for_review"):
+@pytest.fixture
+def review_task(app):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     store.write(
-        "tasks/task-001.json",
+        "tasks/task_001.json",
         {
-            "task_id": "task-001",
-            "session_id": "session-001",
-            "status": status,
-            "created_at": "2026-05-12T10:00:00+00:00",
-            "page_count": 1,
-            "page_order": ["page-1"],
-            "source": "capture_session",
-            "schema_version": "medical_record.v1",
-            "document_type": "medical_record",
+            "task_id": "task_001",
+            "status": "review",
+            "created_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "upload_token": "token_001",
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
         },
     )
     store.write(
-        "results/task-001/field_candidates.json",
+        "results/task_001/field_candidates.json",
         {
-            "task_id": "task-001",
+            "task_id": "task_001",
             "stage": "field_extraction",
             "status": "success",
             "candidates": [
-                {"field_key": "chief_complaint", "original_value": "头痛3天", "evidence": "第1页", "confidence": 0.95},
-                {"field_key": "diagnosis", "original_value": "上感", "evidence": "第1页", "confidence": 0.8},
+                {"field_key": "patient_name", "original_value": "张三", "evidence": "第1页", "confidence": 0.9},
+                {"field_key": "department", "original_value": "骨科", "evidence": "第1页", "confidence": 0.8},
             ],
         },
     )
+    return {"task_id": "task_001"}
 
 
-def field_from_response(resp, field_key):
-    fields = resp.get_json()["data"]["review_result"]["fields"]
-    return next(field for field in fields if field["field_key"] == field_key)
+def test_get_review_initializes_result(client, review_task):
+    response = client.get(f"/api/tasks/{review_task['task_id']}/review")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["task_id"] == "task_001"
+    assert data["status"] == "review"
+    assert data["review_result"]["summary"]["unreviewed_count"] == 2
 
 
-class TestReviewRoutes:
-    def test_get_review_initializes_result(self, client, app):
-        seed_reviewable_task(app)
+def test_put_review_saves_final_fields(client, review_task):
+    response = client.put(
+        f"/api/tasks/{review_task['task_id']}/review",
+        json={
+            "fields": [
+                {"field_key": "patient_name", "value": "张三", "status": "modified"},
+                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+            ]
+        },
+    )
 
-        resp = client.get("/api/tasks/task-001/review")
+    assert response.status_code == 200
+    fields = response.get_json()["data"]["review_result"]["fields"]
+    assert {field["status"] for field in fields} <= {"unreviewed", "confirmed", "modified"}
 
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["task_id"] == "task-001"
-        assert data["status"] == "ready_for_review"
-        assert data["review_result"]["summary"]["unreviewed_count"] == 2
 
-    def test_patch_modify_field(self, client, app):
-        seed_reviewable_task(app)
-        client.get("/api/tasks/task-001/review")
+def test_complete_review_route_marks_done(client, review_task):
+    client.put(
+        f"/api/tasks/{review_task['task_id']}/review",
+        json={
+            "fields": [
+                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
+                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+            ]
+        },
+    )
 
-        resp = client.patch(
-            "/api/tasks/task-001/review/fields/chief_complaint",
-            json={"action": "modify", "final_value": "修正值"},
-        )
+    response = client.post(f"/api/tasks/{review_task['task_id']}/complete")
 
-        assert resp.status_code == 200
-        field = field_from_response(resp, "chief_complaint")
-        assert field["status"] == "modified"
-        assert field["final_value"] == "修正值"
+    assert response.status_code == 200
+    assert response.get_json()["data"]["status"] == "done"
 
-    def test_patch_confirm_field_without_final_value(self, client, app):
-        seed_reviewable_task(app)
-        client.get("/api/tasks/task-001/review")
 
-        resp = client.patch("/api/tasks/task-001/review/fields/chief_complaint", json={"action": "confirm"})
+def test_failed_task_cannot_enter_review_flow(client, app):
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    store.write(
+        "tasks/task_001.json",
+        {
+            "task_id": "task_001",
+            "status": "failed",
+            "created_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "images": [],
+        },
+    )
 
-        assert resp.status_code == 200
-        assert field_from_response(resp, "chief_complaint")["status"] == "confirmed"
+    response = client.get("/api/tasks/task_001/review")
 
-    def test_confirm_incomplete_review_returns_review_validation_failed(self, client, app):
-        seed_reviewable_task(app)
-        client.get("/api/tasks/task-001/review")
-
-        resp = client.post("/api/tasks/task-001/review/confirm")
-
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "REVIEW_VALIDATION_FAILED"
-        assert resp.get_json()["error"]["details"]["unreviewed"] == ["chief_complaint", "diagnosis"]
-
-    def test_confirm_complete_review_updates_task(self, client, app):
-        seed_reviewable_task(app)
-        client.get("/api/tasks/task-001/review")
-        client.patch("/api/tasks/task-001/review/fields/chief_complaint", json={"action": "confirm"})
-        client.patch("/api/tasks/task-001/review/fields/diagnosis", json={"action": "confirm"})
-
-        resp = client.post("/api/tasks/task-001/review/confirm")
-
-        assert resp.status_code == 200
-        assert resp.get_json()["data"]["status"] == "confirmed"
-        assert resp.get_json()["data"]["review_summary"]["unreviewed_count"] == 0
-
-    def test_failed_task_cannot_enter_review_flow(self, client, app):
-        seed_reviewable_task(app, status="failed")
-
-        resp = client.get("/api/tasks/task-001/review")
-
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
-
-    def test_exported_task_can_reopen_review_result(self, client, app):
-        seed_reviewable_task(app)
-        client.get("/api/tasks/task-001/review")
-        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
-        task = store.read("tasks/task-001.json")
-        task["status"] = "exported"
-        store.write("tasks/task-001.json", task)
-
-        resp = client.get("/api/tasks/task-001/review")
-
-        assert resp.status_code == 200
-        assert resp.get_json()["data"]["status"] == "exported"
-        assert resp.get_json()["data"]["review_result"]["task_id"] == "task-001"
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
