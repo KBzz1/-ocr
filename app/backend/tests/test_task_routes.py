@@ -1,4 +1,5 @@
 import pytest
+
 from app.backend import create_backend_app
 from app.backend.storage.json_store import JsonStore
 
@@ -35,80 +36,89 @@ def client(app):
     return app.test_client()
 
 
-def write_task(app, task_id="task-001", status="uploaded", **overrides):
+def write_task(app, task_id="task_001", status="uploading", **overrides):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     task = {
-        "task_id": task_id, "session_id": "session-001",
-        "status": status, "created_at": "2026-05-12T10:00:00+00:00",
-        "page_count": 2, "page_order": ["page-1", "page-2"],
-        "source": "capture_session",
+        "task_id": task_id,
+        "status": status,
+        "created_at": "2026-05-19T10:00:00+00:00",
+        "updated_at": "2026-05-19T10:00:00+00:00",
+        "upload_token": "token_001",
+        "images": [],
+        "error_code": None,
+        "error_message": None,
+        "export_summary": {"last_exported_at": None, "formats": [], "files": []},
     }
     task.update(overrides)
     store.write(f"tasks/{task_id}.json", task)
 
 
-class TestTaskRoutes:
-    def test_list_tasks_returns_200(self, client, app):
-        write_task(app, task_id="task-001", status="uploaded")
-        resp = client.get("/api/tasks")
-        assert resp.status_code == 200
-        task = resp.get_json()["data"]["tasks"][0]
-        assert task["task_id"] == "task-001"
-        assert task["review_summary"]["status"] is None
-        assert task["export_summary"]["formats"] == []
-        assert task["error_code"] is None
+def test_post_tasks_creates_uploading_task(client):
+    response = client.post("/api/tasks")
 
-    def test_list_tasks_filter_by_status(self, client, app):
-        write_task(app, task_id="task-001", status="uploaded")
-        write_task(app, task_id="task-002", status="failed")
-        resp = client.get("/api/tasks?status=failed")
-        assert resp.status_code == 200
-        assert [t["task_id"] for t in resp.get_json()["data"]["tasks"]] == ["task-002"]
+    assert response.status_code == 201
+    data = response.get_json()["data"]
+    assert data["task_id"].startswith("task_")
+    assert data["status"] == "uploading"
+    assert data["upload_token"]
+    assert f"/mobile/upload/{data['task_id']}?token={data['upload_token']}" in data["mobile_upload_url"]
 
-    def test_get_task_returns_200(self, client, app):
-        write_task(app)
-        resp = client.get("/api/tasks/task-001")
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["task_id"] == "task-001"
-        assert data["page_summary"]["page_order"] == ["page-1", "page-2"]
-        assert data["document_summary"] is None
-        assert data["review_summary"]["status"] is None
-        assert data["export_summary"]["formats"] == []
 
-    def test_get_nonexistent_task_returns_404(self, client):
-        resp = client.get("/api/tasks/missing")
-        assert resp.status_code == 404
-        assert resp.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+def test_get_task_returns_mvp_shape_without_session(client):
+    created = client.post("/api/tasks").get_json()["data"]
 
-    def test_process_task_without_algorithm_returns_failed_payload(self, client, app):
-        write_task(app, status="uploaded")
-        resp = client.post("/api/tasks/task-001/process")
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["status"] == "failed"
-        assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert data["error_message"] == "图像处理模块未配置"
-        assert [e["to_status"] for e in data["status_history"]] == ["uploaded", "processing", "failed"]
+    response = client.get(f"/api/tasks/{created['task_id']}")
 
-    def test_process_task_invalid_state_returns_400(self, client, app):
-        write_task(app, status="confirmed")
-        resp = client.post("/api/tasks/task-001/process")
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "uploading"
+    assert data["images"] == []
+    assert data["page_count"] == 0
+    assert "session_id" not in data
 
-    def test_retry_task_without_algorithm_returns_failed_payload(self, client, app):
-        write_task(app, status="failed", error_code="OLD", error_message="旧错误",
-                   failed_at="2026-05-12T10:01:00+00:00")
-        resp = client.post("/api/tasks/task-001/retry")
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["status"] == "failed"
-        assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert data["error_message"] == "图像处理模块未配置"
 
-    def test_retry_task_invalid_state_returns_400(self, client, app):
-        write_task(app, status="uploaded")
-        resp = client.post("/api/tasks/task-001/retry")
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+def test_list_tasks_returns_mvp_summaries(client, app):
+    write_task(app, task_id="task_001", status="uploading")
+    write_task(app, task_id="task_002", status="failed", error_code="ALGORITHM_MODULE_FAILED")
+
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 200
+    tasks = response.get_json()["data"]["tasks"]
+    assert [task["task_id"] for task in tasks] == ["task_001", "task_002"]
+    assert all("session_id" not in task for task in tasks)
+    assert tasks[0]["page_count"] == 0
+
+
+def test_list_tasks_filter_by_status(client, app):
+    write_task(app, task_id="task_001", status="uploading")
+    write_task(app, task_id="task_002", status="failed")
+
+    response = client.get("/api/tasks?status=failed")
+
+    assert response.status_code == 200
+    assert [task["task_id"] for task in response.get_json()["data"]["tasks"]] == ["task_002"]
+
+
+def test_get_nonexistent_task_returns_404(client):
+    response = client.get("/api/tasks/missing")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_process_task_without_algorithm_returns_failed_payload(client, app):
+    write_task(app, status="uploading")
+
+    response = client.post("/api/tasks/task_001/process")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+    assert data["error_message"] == "图像处理模块未配置"
+    assert [entry["to_status"] for entry in data["status_history"]] == [
+        "uploading",
+        "processing",
+        "failed",
+    ]

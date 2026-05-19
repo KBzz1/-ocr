@@ -84,7 +84,6 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     _register_static_serve(app, config["static_dir"])
 
     from .storage.json_store import JsonStore
-    from .services.session_service import SessionService
 
     store = JsonStore(config["storage_dir"])
 
@@ -110,13 +109,6 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     )
     event_log.safe_write("algorithm_module_not_configured", level="WARNING", stage="image_processing")
 
-    session_service = SessionService(
-        store=store,
-        lan_addresses=app.config["LAN_ADDRESSES"],
-        ttl_minutes=config["capture_session_ttl_minutes"],
-    )
-    app.config["SESSION_SERVICE"] = session_service
-
     from .services.file_validator import FileValidator
     from .services.page_service import PageService
 
@@ -125,7 +117,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         base_dir="pages",
     )
     page_service = PageService(
-        session_service=session_service,
+        session_service=None,
         file_validator=file_validator,
         store=store,
         storage_dir=config["storage_dir"],
@@ -145,7 +137,6 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     orchestrator = ProcessingOrchestrator(
         store=store,
-        session_service=session_service,
         schema_validator=schema_service.build_validator(),
     )
     app.config["TASK_SERVICE"] = TaskService(

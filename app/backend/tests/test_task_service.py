@@ -1,11 +1,11 @@
 import pytest
 
 from app.backend.errors import AppError, ErrorCode
+from app.backend.services.task_service import TaskService
 from app.backend.storage.json_store import JsonStore
 
 
 def make_service(tmp_path, orchestrator=None, schema_provider=None):
-    from app.backend.services.task_service import TaskService
     return TaskService(
         JsonStore(str(tmp_path)),
         orchestrator=orchestrator,
@@ -13,323 +13,139 @@ def make_service(tmp_path, orchestrator=None, schema_provider=None):
     )
 
 
-def write_task(tmp_path, task_id="task-001", status="uploaded", **overrides):
+def write_task(tmp_path, task_id="task_001", status="uploading", **overrides):
     task = {
         "task_id": task_id,
-        "session_id": "session-001",
         "status": status,
-        "created_at": "2026-05-12T10:00:00+00:00",
-        "page_count": 2,
-        "page_order": ["page-1", "page-2"],
-        "source": "capture_session",
+        "created_at": "2026-05-19T10:00:00+00:00",
+        "updated_at": "2026-05-19T10:00:00+00:00",
+        "upload_token": "token_001",
+        "images": [],
+        "error_code": None,
+        "error_message": None,
+        "export_summary": {"last_exported_at": None, "formats": [], "files": []},
     }
     task.update(overrides)
     JsonStore(str(tmp_path)).write(f"tasks/{task_id}.json", task)
     return task
 
 
-class TestTaskServiceQueries:
-    def test_legacy_task_stub_is_normalized(self, tmp_path):
-        write_task(tmp_path)
-        service = make_service(tmp_path)
+def test_create_uploading_task_has_upload_token_and_empty_images(tmp_path):
+    service = make_service(tmp_path)
 
-        task = service.get_task("task-001")
+    task = service.create_uploading_task(base_url="http://192.168.1.5:8081")
 
-        assert task["error_code"] is None
-        assert task["error_message"] is None
-        assert task["failed_at"] is None
-        assert task["processing_at"] is None
-        assert task["ready_at"] is None
-        assert task["page_summary"] == {"page_count": 2, "page_order": ["page-1", "page-2"]}
-        assert task["document_summary"] is None
-        assert task["review_summary"] == {
-            "status": None,
-            "unreviewed_count": None,
-            "suspicious_count": None,
-        }
-        assert task["export_summary"] == {"last_exported_at": None, "formats": [], "files": []}
-        assert task["status_history"] == [
-            {
-                "from_status": None,
-                "to_status": "uploaded",
-                "changed_at": "2026-05-12T10:00:00+00:00",
-                "reason": "采集会话完成采集",
-            }
-        ]
-
-    def test_list_tasks_returns_all_when_no_filter(self, tmp_path):
-        write_task(tmp_path, task_id="task-b", status="failed")
-        write_task(tmp_path, task_id="task-a", status="uploaded")
-        service = make_service(tmp_path)
-
-        tasks = service.list_tasks()
-
-        assert [task["task_id"] for task in tasks] == ["task-a", "task-b"]
-        assert tasks[0] == {
-            "task_id": "task-a",
-            "session_id": "session-001",
-            "status": "uploaded",
-            "created_at": "2026-05-12T10:00:00+00:00",
-            "page_count": 2,
-            "review_summary": {
-                "status": None,
-                "unreviewed_count": None,
-                "suspicious_count": None,
-            },
-            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
-            "error_code": None,
-        }
-
-    def test_list_tasks_filters_by_status(self, tmp_path):
-        write_task(tmp_path, task_id="task-1", status="uploaded")
-        write_task(tmp_path, task_id="task-2", status="failed")
-        service = make_service(tmp_path)
-
-        tasks = service.list_tasks(status="failed")
-
-        assert [task["task_id"] for task in tasks] == ["task-2"]
-
-    def test_list_tasks_unknown_status_returns_empty_list(self, tmp_path):
-        write_task(tmp_path, task_id="task-1", status="uploaded")
-        service = make_service(tmp_path)
-
-        assert service.list_tasks(status="unknown") == []
-
-    def test_get_nonexistent_task_raises_not_found(self, tmp_path):
-        service = make_service(tmp_path)
-
-        with pytest.raises(AppError) as exc_info:
-            service.get_task("missing")
-
-        assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
-
-
-class TestTaskServiceTransitions:
-    @pytest.mark.parametrize(
-        ("current", "target"),
-        [
-            ("created", "uploading"),
-            ("created", "failed"),
-            ("uploading", "uploaded"),
-            ("uploading", "failed"),
-            ("uploaded", "processing"),
-            ("uploaded", "failed"),
-            ("processing", "ready_for_review"),
-            ("processing", "failed"),
-            ("failed", "processing"),
-            ("ready_for_review", "confirmed"),
-            ("ready_for_review", "processing"),
-            ("ready_for_review", "failed"),
-            ("confirmed", "exported"),
-        ],
+    assert task["task_id"].startswith("task_")
+    assert task["status"] == "uploading"
+    assert task["upload_token"]
+    assert task["mobile_upload_url"] == (
+        f"http://192.168.1.5:8081/mobile/upload/{task['task_id']}?token={task['upload_token']}"
     )
-    def test_valid_transitions_match_state_enums(self, tmp_path, current, target):
-        service = make_service(tmp_path)
+    assert task["images"] == []
+    assert task["error_code"] is None
+    assert task["export_summary"] == {"last_exported_at": None, "formats": [], "files": []}
+
+
+def test_list_tasks_does_not_expose_session_id(tmp_path):
+    service = make_service(tmp_path)
+    created = service.create_uploading_task(base_url="http://127.0.0.1:8081")
+
+    [summary] = service.list_tasks()
+
+    assert summary["task_id"] == created["task_id"]
+    assert summary["status"] == "uploading"
+    assert summary["page_count"] == 0
+    assert "session_id" not in summary
+
+
+def test_get_task_normalizes_mvp_shape(tmp_path):
+    write_task(
+        tmp_path,
+        images=[{"page_id": "page_001", "page_no": 1}],
+        review_summary=None,
+    )
+    service = make_service(tmp_path)
+
+    task = service.get_task("task_001")
+
+    assert task["status"] == "uploading"
+    assert task["page_count"] == 1
+    assert task["images"] == [{"page_id": "page_001", "page_no": 1}]
+    assert task["review_summary"] is None
+    assert "session_id" not in task
+
+
+def test_get_nonexistent_task_raises_not_found(tmp_path):
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
+        service.get_task("missing")
+
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        ("uploading", "processing"),
+        ("uploading", "failed"),
+        ("processing", "review"),
+        ("processing", "failed"),
+        ("review", "done"),
+        ("review", "processing"),
+        ("done", "processing"),
+        ("failed", "processing"),
+    ],
+)
+def test_valid_transitions_match_mvp_state_enums(tmp_path, current, target):
+    service = make_service(tmp_path)
+    service._validate_transition(current, target)
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        ("uploading", "review"),
+        ("processing", "done"),
+        ("done", "failed"),
+        ("failed", "uploading"),
+    ],
+)
+def test_invalid_transitions_raise_invalid_transition(tmp_path, current, target):
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
         service._validate_transition(current, target)
 
-    @pytest.mark.parametrize(
-        ("current", "target"),
-        [
-            ("uploaded", "confirmed"),
-            ("processing", "uploaded"),
-            ("failed", "confirmed"),
-            ("confirmed", "failed"),
-            ("exported", "failed"),
-        ],
-    )
-    def test_invalid_transitions_raise_invalid_transition(self, tmp_path, current, target):
-        service = make_service(tmp_path)
-
-        with pytest.raises(AppError) as exc_info:
-            service._validate_transition(current, target)
-
-        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
-        assert exc_info.value.details == {"current": current, "target": target}
-
-    def test_process_without_algorithm_marks_failed(self, tmp_path):
-        write_task(tmp_path, status="uploaded")
-        service = make_service(tmp_path)
-
-        result = service.process("task-001")
-
-        assert result["status"] == "failed"
-        assert result["processing_at"] is not None
-        assert result["failed_at"] is not None
-        assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert result["error_message"] == "图像处理模块未配置"
-        assert result["details"]["stage"] == "image_processing"
-        assert result["details"]["reason"] == "module_not_configured"
-        assert [entry["to_status"] for entry in result["status_history"]] == [
-            "uploaded",
-            "processing",
-            "failed",
-        ]
-
-    def test_process_invalid_state_raises_invalid_transition(self, tmp_path):
-        write_task(tmp_path, status="confirmed")
-        service = make_service(tmp_path)
-
-        with pytest.raises(AppError) as exc_info:
-            service.process("task-001")
-
-        assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
-
-    def test_process_uses_schema_provider_when_schema_not_passed(self, tmp_path):
-        class RecordingOrchestrator:
-            def __init__(self):
-                self.calls = []
-
-            def run(self, task, task_service, schema=None):
-                self.calls.append({"task": task, "schema": schema})
-                return task_service.mark_ready(task["task_id"])
-
-        write_task(tmp_path, status="uploaded")
-        orchestrator = RecordingOrchestrator()
-        service = make_service(
-            tmp_path,
-            orchestrator=orchestrator,
-            schema_provider=lambda: {"version": "1.0.0", "document_type": "general_medical_record"},
-        )
-
-        result = service.process("task-001")
-
-        assert result["status"] == "ready_for_review"
-        assert orchestrator.calls[0]["schema"] == {
-            "version": "1.0.0",
-            "document_type": "general_medical_record",
-        }
-        stored = JsonStore(str(tmp_path)).read("tasks/task-001.json")
-        assert stored["schema_version"] == "1.0.0"
-        assert stored["document_type"] == "general_medical_record"
-
-    def test_retry_without_algorithm_marks_failed_again(self, tmp_path):
-        write_task(
-            tmp_path,
-            status="failed",
-            error_code="ALGORITHM_MODULE_FAILED",
-            error_message="旧错误",
-            failed_at="2026-05-12T10:01:00+00:00",
-            status_history=[
-                {
-                    "from_status": None,
-                    "to_status": "uploaded",
-                    "changed_at": "2026-05-12T10:00:00+00:00",
-                    "reason": "采集会话完成采集",
-                },
-                {
-                    "from_status": "processing",
-                    "to_status": "failed",
-                    "changed_at": "2026-05-12T10:01:00+00:00",
-                    "reason": "旧错误",
-                },
-            ],
-        )
-        service = make_service(tmp_path)
-
-        result = service.retry("task-001")
-
-        assert result["status"] == "failed"
-        assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert result["error_message"] == "图像处理模块未配置"
-        assert result["details"]["stage"] == "image_processing"
-        assert result["details"]["reason"] == "module_not_configured"
-        assert result["status_history"][-2]["from_status"] == "failed"
-        assert result["status_history"][-2]["to_status"] == "processing"
-        assert result["status_history"][-1]["from_status"] == "processing"
-        assert result["status_history"][-1]["to_status"] == "failed"
-
-    def test_mark_ready_sets_ready_at(self, tmp_path):
-        write_task(tmp_path, status="processing")
-        service = make_service(tmp_path)
-
-        result = service.mark_ready("task-001")
-
-        assert result["status"] == "ready_for_review"
-        assert result["ready_at"] is not None
-
-    def test_mark_failed_saves_error_info(self, tmp_path):
-        write_task(tmp_path, status="processing")
-        service = make_service(tmp_path)
-
-        result = service.mark_failed("task-001", "ALGORITHM_MODULE_FAILED", "算法模块异常")
-
-        assert result["status"] == "failed"
-        assert result["error_code"] == "ALGORITHM_MODULE_FAILED"
-        assert result["error_message"] == "算法模块异常"
-        assert result["failed_at"] is not None
-        assert result["details"]["stage"] == "processing"
-
-    def test_mark_confirmed_and_exported(self, tmp_path):
-        write_task(tmp_path, status="ready_for_review")
-        service = make_service(tmp_path)
-
-        confirmed = service.mark_confirmed("task-001")
-        exported = service.mark_exported("task-001")
-
-        assert confirmed["status"] == "confirmed"
-        assert exported["status"] == "exported"
+    assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+    assert exc_info.value.details == {"current": current, "target": target}
 
 
-class TestTaskServiceExportSummary:
-    def test_mark_exported_records_export_summary_file(self, tmp_path):
-        write_task(tmp_path, status="confirmed")
-        service = make_service(tmp_path)
+def test_process_without_algorithm_marks_failed(tmp_path):
+    write_task(tmp_path, status="uploading")
+    service = make_service(tmp_path)
 
-        result = service.mark_exported(
-            "task-001",
-            format="json",
-            relative_path="task-001/task-001.review.json",
-        )
+    result = service.process("task_001")
 
-        assert result["status"] == "exported"
-        summary = result["export_summary"]
-        assert summary["last_exported_at"] is not None
-        assert summary["formats"] == ["json"]
-        assert len(summary["files"]) == 1
-        assert summary["files"][0]["format"] == "json"
-        assert summary["files"][0]["relative_path"] == "task-001/task-001.review.json"
+    assert result["status"] == "failed"
+    assert result["processing_at"] is not None
+    assert result["failed_at"] is not None
+    assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+    assert result["error_message"] == "图像处理模块未配置"
+    assert result["details"]["stage"] == "image_processing"
+    assert result["details"]["reason"] == "module_not_configured"
+    assert [entry["to_status"] for entry in result["status_history"]] == [
+        "uploading",
+        "processing",
+        "failed",
+    ]
 
-    def test_mark_exported_keeps_existing_call_compatible(self, tmp_path):
-        """mark_exported(task_id) without new params must still work."""
-        write_task(tmp_path, status="confirmed")
-        service = make_service(tmp_path)
 
-        result = service.mark_exported("task-001")
+def test_process_invalid_state_raises_invalid_transition(tmp_path):
+    write_task(tmp_path, status="done")
+    service = make_service(tmp_path)
 
-        assert result["status"] == "exported"
-        summary = result["export_summary"]
-        assert summary["formats"] == []
-        assert summary["files"] == []
+    with pytest.raises(AppError) as exc_info:
+        service.mark_failed("task_001", "ALGORITHM_MODULE_FAILED", "算法模块异常")
 
-    def test_mark_exported_deduplicates_format_on_repeat_export(self, tmp_path):
-        write_task(tmp_path, status="confirmed")
-        service = make_service(tmp_path)
-
-        # First export: json
-        service.mark_exported(
-            "task-001",
-            format="json",
-            relative_path="task-001/task-001.review.json",
-        )
-        # Export json again with different path — should update entry, not duplicate
-        result = service.mark_exported(
-            "task-001",
-            format="json",
-            relative_path="task-001/task-001.review.json",
-        )
-
-        assert result["export_summary"]["formats"] == ["json"]
-        assert len(result["export_summary"]["files"]) == 1
-
-        # Export excel — should append format, add new file entry
-        result2 = service.mark_exported(
-            "task-001",
-            format="excel",
-            relative_path="task-001/task-001.review.xlsx",
-        )
-
-        assert result2["export_summary"]["formats"] == ["json", "excel"]
-        assert len(result2["export_summary"]["files"]) == 2
-        file_formats = [f["format"] for f in result2["export_summary"]["files"]]
-        assert "json" in file_formats
-        assert "excel" in file_formats
+    assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code

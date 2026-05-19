@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from secrets import token_urlsafe
 from typing import Callable
 
 from ..enums import TaskStatus
@@ -18,6 +19,40 @@ class TaskService:
         self._orchestrator = orchestrator
         self._schema_provider = schema_provider
 
+    def create_uploading_task(self, base_url: str) -> dict:
+        existing_count = len(self._store.list_json("tasks"))
+        task_id = f"task_{existing_count + 1:03d}"
+        now = self._now()
+        upload_token = token_urlsafe(24)
+        task = {
+            "task_id": task_id,
+            "status": TaskStatus.UPLOADING.value,
+            "created_at": now,
+            "updated_at": now,
+            "upload_token": upload_token,
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "failed_at": None,
+            "review_summary": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "status_history": [
+                {
+                    "from_status": None,
+                    "to_status": TaskStatus.UPLOADING.value,
+                    "changed_at": now,
+                    "reason": "创建上传任务",
+                }
+            ],
+        }
+        self._write_task(task)
+        task = self._normalize_task(task)
+        task["mobile_upload_url"] = self._build_mobile_upload_url(base_url, task_id, upload_token)
+        return task
+
+    def _build_mobile_upload_url(self, base_url: str, task_id: str, upload_token: str) -> str:
+        return f"{base_url.rstrip('/')}/mobile/upload/{task_id}?token={upload_token}"
+
     def list_tasks(self, status: str | None = None) -> list[dict]:
         tasks = [self._normalize_task(task) for task in self._store.list_json("tasks")]
         if status is not None:
@@ -25,13 +60,14 @@ class TaskService:
         return [
             {
                 "task_id": task["task_id"],
-                "session_id": task["session_id"],
                 "status": task["status"],
                 "created_at": task["created_at"],
+                "updated_at": task["updated_at"],
                 "page_count": task["page_count"],
                 "review_summary": task["review_summary"],
                 "export_summary": task["export_summary"],
                 "error_code": task["error_code"],
+                "error_message": task["error_message"],
             }
             for task in sorted(tasks, key=lambda item: item["task_id"])
         ]
@@ -166,12 +202,14 @@ class TaskService:
 
     def _normalize_task(self, task: dict) -> dict:
         normalized = dict(task)
+        normalized.setdefault("images", [])
         normalized.setdefault("error_code", None)
         normalized.setdefault("error_message", None)
         normalized.setdefault("failed_at", None)
         normalized.setdefault("processing_at", None)
         normalized.setdefault("ready_at", None)
         normalized.setdefault("confirmed_at", None)
+        normalized.setdefault("updated_at", normalized.get("created_at"))
         normalized.setdefault(
             "status_history",
             [
@@ -179,19 +217,13 @@ class TaskService:
                     "from_status": None,
                     "to_status": normalized["status"],
                     "changed_at": normalized["created_at"],
-                    "reason": "采集会话完成采集",
+                    "reason": "创建上传任务",
                 }
             ],
         )
-        normalized["page_summary"] = {
-            "page_count": normalized.get("page_count", 0),
-            "page_order": normalized.get("page_order", []),
-        }
+        normalized["page_count"] = len(normalized["images"])
         normalized.setdefault("document_summary", None)
-        normalized.setdefault(
-            "review_summary",
-            {"status": None, "unreviewed_count": None, "suspicious_count": None},
-        )
+        normalized.setdefault("review_summary", None)
         normalized.setdefault("export_summary", {"last_exported_at": None, "formats": [], "files": []})
         return normalized
 
