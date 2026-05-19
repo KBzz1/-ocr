@@ -117,11 +117,9 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         base_dir="pages",
     )
     page_service = PageService(
-        session_service=None,
         file_validator=file_validator,
         store=store,
         storage_dir=config["storage_dir"],
-        min_quad_area_ratio=config["min_quad_area_ratio"],
     )
     app.config["PAGE_SERVICE"] = page_service
 

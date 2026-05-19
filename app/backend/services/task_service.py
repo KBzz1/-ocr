@@ -90,10 +90,36 @@ class TaskService:
         task = self._start_processing(task_id, "失败任务重试")
         return self._run_orchestrator(task, schema=schema)
 
+    def assert_upload_token(self, task: dict, token: str | None) -> None:
+        if not token or token != task.get("upload_token"):
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="上传令牌无效")
+
+    def add_image(self, task_id: str, page: dict) -> dict:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.UPLOADING.value:
+            raise AppError(ErrorCode.TASK_UPLOAD_CLOSED)
+        task.setdefault("images", []).append(page)
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        return page
+
+    def finish_upload(self, task_id: str) -> dict:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.UPLOADING.value:
+            return task
+        if not task.get("images"):
+            raise AppError(ErrorCode.TASK_EMPTY)
+        task = self._transition(task, TaskStatus.PROCESSING.value, "完成上传")
+        task["processing_at"] = self._now()
+        task["updated_at"] = task["processing_at"]
+        self._write_task(task)
+        return self._run_orchestrator(task)
+
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
-        task = self._transition(task, TaskStatus.READY_FOR_REVIEW.value, "算法处理完成")
+        task = self._transition(task, TaskStatus.REVIEW.value, "算法处理完成")
         task["ready_at"] = self._now()
+        task["updated_at"] = task["ready_at"]
         self._write_task(task)
         _safe_event("task_ready_for_review", task_id=task_id, schema_version=task.get("schema_version"))
         return task
@@ -111,6 +137,7 @@ class TaskService:
         task["error_code"] = error_code
         task["error_message"] = error_message
         task["failed_at"] = self._now()
+        task["updated_at"] = task["failed_at"]
         task["details"] = {"stage": stage, **(details or {})}
         self._write_task(task)
         _safe_event(
