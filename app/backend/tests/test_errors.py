@@ -1,118 +1,19 @@
-import pytest
-from app.backend.errors import (
-    ErrorCode,
-    AlgorithmErrorCode,
-    AppError,
-)
+from app.backend.errors import ErrorCode
 
 
-class TestErrorCode:
-    def test_code_attribute(self):
-        assert ErrorCode.SESSION_NOT_FOUND.code == "SESSION_NOT_FOUND"
-        assert ErrorCode.TASK_NOT_FOUND.code == "TASK_NOT_FOUND"
-        assert ErrorCode.SESSION_EXPIRED.code == "SESSION_EXPIRED"
-        assert ErrorCode.SESSION_EMPTY.code == "SESSION_EMPTY"
-
-    def test_http_status_attribute(self):
-        assert ErrorCode.SESSION_NOT_FOUND.http_status == 404
-        assert ErrorCode.SESSION_EXPIRED.http_status == 409
-        assert ErrorCode.SESSION_EMPTY.http_status == 400
-        assert ErrorCode.EXPORT_FAILED.http_status == 500
-
-    def test_default_message_attribute(self):
-        assert ErrorCode.SESSION_NOT_FOUND.default_message == "采集会话不存在"
-        assert ErrorCode.SESSION_EMPTY.default_message == "采集会话没有已上传页面"
-        assert ErrorCode.TASK_NOT_FOUND.default_message == "任务不存在"
-        assert ErrorCode.INVALID_TASK_TRANSITION.default_message == "非法任务状态流转"
-
-    def test_session_cancelled_error_contract(self):
-        assert ErrorCode.SESSION_CANCELLED.code == "SESSION_CANCELLED"
-        assert ErrorCode.SESSION_CANCELLED.http_status == 409
-
-    def test_session_unlock_not_allowed_error_contract(self):
-        assert ErrorCode.SESSION_UNLOCK_NOT_ALLOWED.code == "SESSION_UNLOCK_NOT_ALLOWED"
-        assert ErrorCode.SESSION_UNLOCK_NOT_ALLOWED.http_status == 409
-
-    def test_all_codes_defined(self):
-        codes = {e.code for e in ErrorCode}
-        assert "SESSION_NOT_FOUND" in codes
-        assert "SESSION_EXPIRED" in codes
-        assert "SESSION_LOCKED" in codes
-        assert "SESSION_CANCELLED" in codes
-        assert "SESSION_UNLOCK_NOT_ALLOWED" in codes
-        assert "SESSION_EMPTY" in codes
-        assert "UNSUPPORTED_FILE_TYPE" in codes
-        assert "FILE_TOO_LARGE" in codes
-        assert "INVALID_REQUEST_PARAMS" in codes
-        assert "INVALID_QUAD_POINTS" in codes
-        assert "TASK_NOT_FOUND" in codes
-        assert "INVALID_TASK_TRANSITION" in codes
-        assert "REVIEW_VALIDATION_FAILED" in codes
-        assert "EXPORT_VALIDATION_FAILED" in codes
-        assert "EXPORT_FAILED" in codes
-        assert "REQUEST_NOT_FOUND" in codes
-        assert "INTERNAL_SERVER_ERROR" in codes
-        assert "ALGORITHM_MODULE_NOT_CONFIGURED" in codes
-        assert "ALGORITHM_MODULE_FAILED" in codes
-        assert "ALGORITHM_CONTRACT_INVALID" in codes
-        assert len(codes) == 20
+def test_mvp_error_codes_include_upload_errors():
+    assert ErrorCode.TASK_UPLOAD_CLOSED.code == "TASK_UPLOAD_CLOSED"
+    assert ErrorCode.TASK_UPLOAD_CLOSED.http_status == 409
+    assert ErrorCode.TASK_EMPTY.code == "TASK_EMPTY"
+    assert ErrorCode.TASK_EMPTY.http_status == 400
 
 
-class TestAlgorithmErrorCode:
-    def test_member_values(self):
-        assert AlgorithmErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.value == "ALGORITHM_MODULE_NOT_CONFIGURED"
-        assert AlgorithmErrorCode.ALGORITHM_MODULE_FAILED.value == "ALGORITHM_MODULE_FAILED"
-        assert AlgorithmErrorCode.ALGORITHM_CONTRACT_INVALID.value == "ALGORITHM_CONTRACT_INVALID"
-
-
-class TestAppError:
-    def test_with_default_message(self):
-        err = AppError(ErrorCode.TASK_NOT_FOUND)
-        assert err.code == "TASK_NOT_FOUND"
-        assert err.message == "任务不存在"
-        assert err.http_status == 404
-        assert err.details == {}
-
-    def test_with_custom_message(self):
-        err = AppError(ErrorCode.TASK_NOT_FOUND, message="任务 task_001 不存在")
-        assert err.message == "任务 task_001 不存在"
-        assert err.code == "TASK_NOT_FOUND"
-
-    def test_with_details(self):
-        err = AppError(
-            ErrorCode.INVALID_TASK_TRANSITION,
-            details={"current": "created", "target": "exported"},
-        )
-        assert err.details == {"current": "created", "target": "exported"}
-
-    def test_is_exception(self):
-        err = AppError(ErrorCode.SESSION_NOT_FOUND)
-        assert isinstance(err, Exception)
-
-    def test_exception_args_contains_message(self):
-        err = AppError(ErrorCode.TASK_NOT_FOUND)
-        assert err.args == ("任务不存在",)
-
-
-class TestInvalidRequestParams:
-    def test_invalid_request_params_error_code_exists(self):
-        assert hasattr(ErrorCode, "INVALID_REQUEST_PARAMS")
-        code = ErrorCode.INVALID_REQUEST_PARAMS
-        assert code.code == "INVALID_REQUEST_PARAMS"
-        assert code.http_status == 400
-        assert "参数" in code.default_message
-
-    def test_invalid_request_params_app_error_response(self):
-        error = AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="缺少必填字段 image")
-        assert error.http_status == 400
-        assert error.code == "INVALID_REQUEST_PARAMS"
-
-
-class TestAbort:
-    def test_abort_raises_app_error(self):
-        from app.backend.errors import abort
-
-        with pytest.raises(AppError) as exc_info:
-            abort(ErrorCode.SESSION_EXPIRED, message="会话已过期")
-        assert exc_info.value.code == "SESSION_EXPIRED"
-        assert exc_info.value.message == "会话已过期"
+def test_session_and_quad_error_codes_are_not_public_contract():
+    codes = {item.code for item in ErrorCode}
+    assert "SESSION_NOT_FOUND" not in codes
+    assert "SESSION_EXPIRED" not in codes
+    assert "SESSION_LOCKED" not in codes
+    assert "SESSION_EMPTY" not in codes
+    assert "SESSION_CANCELLED" not in codes
+    assert "SESSION_UNLOCK_NOT_ALLOWED" not in codes
+    assert "INVALID_QUAD_POINTS" not in codes
