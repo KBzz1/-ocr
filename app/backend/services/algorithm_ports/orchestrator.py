@@ -5,11 +5,16 @@ from .results import AlgorithmResultStore
 
 
 class ProcessingOrchestrator:
-    def __init__(self, store: JsonStore, session_service=None, result_store=None,
-                 image_port=None, doc_port=None, field_port=None,
-                 schema_validator=None):
+    def __init__(
+        self,
+        store: JsonStore,
+        result_store=None,
+        image_port=None,
+        doc_port=None,
+        field_port=None,
+        schema_validator=None,
+    ):
         self._store = store
-        self._session_service = session_service
         self._result_store = result_store or AlgorithmResultStore(store)
         self._image_port = image_port
         self._doc_port = doc_port
@@ -200,49 +205,23 @@ class ProcessingOrchestrator:
         return task_service.mark_ready(task_id)
 
     def _build_image_inputs(self, task: dict) -> list | None:
-        session_id = task.get("session_id")
-        page_order = task.get("page_order", [])
-        if not session_id or not page_order:
+        images = task.get("images") or []
+        if not images:
             return None
-
-        if self._session_service is None:
-            session = self._store.read(f"sessions/{session_id}.json")
-        else:
-            try:
-                session = self._session_service.get(session_id)
-            except Exception:
-                return None
-        if session is None:
-            return None
-
-        page_by_id = {p["page_id"]: p for p in session.get("pages", [])}
 
         inputs = []
-        for page_no, page_id in enumerate(page_order, start=1):
-            session_page = page_by_id.get(page_id)
-            if not session_page or not session_page.get("upload_ref"):
-                return None
-
-            try:
-                meta = self._store.read(session_page["upload_ref"])
-            except ValueError:
-                return None
-            if meta is None:
-                return None
-
-            original_path = meta.get("original_image_path")
+        for image in sorted(images, key=lambda item: item["page_no"]):
+            original_path = image.get("original_image_path")
             if not original_path:
                 return None
-            if not isinstance(meta.get("image_width"), int) or not isinstance(meta.get("image_height"), int):
-                return None
-
-            inputs.append({
-                "task_id": task["task_id"],
-                "page_id": page_id,
-                "page_no": page_no,
-                "original_path": original_path,
-                "quad_points": meta.get("quad_points"),
-                "image_width": meta["image_width"],
-                "image_height": meta["image_height"],
-            })
+            inputs.append(
+                {
+                    "task_id": task["task_id"],
+                    "page_id": image["page_id"],
+                    "page_no": image["page_no"],
+                    "original_path": original_path,
+                    "image_width": image.get("image_width"),
+                    "image_height": image.get("image_height"),
+                }
+            )
         return inputs
