@@ -14,24 +14,26 @@ export interface ReviewEvidence {
 
 export interface ReviewField {
   field_key: string;
-  label: string;
-  candidate_value: string;
-  final_value: string;
+  label?: string;
+  field_name?: string;
+  value: string;
   status: FieldStatus;
-  evidence: ReviewEvidence[];
-}
-
-export interface ReviewSummary {
-  unreviewed: number;
-  suspicious: number;
-  empty: number;
-  confirmed: number;
+  evidence?: ReviewEvidence[];
+  candidate_value?: string;
+  auto_value?: string;
+  final_value?: string;
 }
 
 export interface ReviewResult {
-  task_id: string;
   fields: ReviewField[];
-  summary: ReviewSummary;
+  ocr_text?: string;
+  pages?: Array<{ page_id: string; page_no: number; preview_url?: string; parsed_text?: string; image_url?: string }>;
+}
+
+export interface ReviewPayload {
+  task_id: string;
+  status: TaskStatus;
+  review_result: ReviewResult;
 }
 
 export interface SaveReviewFieldInput {
@@ -45,35 +47,73 @@ export interface SaveReviewFieldResult {
   status: FieldStatus;
 }
 
-export interface ConfirmReviewResult {
-  task_id: string;
-  status: TaskStatus;
+function normalizeReviewField(field: ReviewField): ReviewField {
+  const label = field.label ?? field.field_name;
+  const candidateValue = field.candidate_value ?? field.auto_value;
+  const value = field.value ?? (field.final_value === '' ? undefined : field.final_value) ?? candidateValue ?? '';
+  return {
+    ...field,
+    label,
+    value,
+    candidate_value: candidateValue,
+    final_value: value,
+    evidence: field.evidence ?? []
+  };
 }
 
-export function getReviewResult(taskId: string) {
-  return apiRequest<ReviewResult>(`/api/tasks/${encodeURIComponent(taskId)}/review`);
+function normalizeReviewPayload(data: unknown): ReviewPayload {
+  const value = data as Partial<ReviewPayload> & Partial<ReviewResult> & { task_id?: string; status?: TaskStatus };
+  const reviewResult = value.review_result ?? {
+    fields: value.fields ?? [],
+    ocr_text: value.ocr_text,
+    pages: value.pages
+  };
+  return {
+    task_id: value.task_id ?? '',
+    status: value.status ?? 'review',
+    review_result: {
+      ...reviewResult,
+      fields: (reviewResult.fields ?? []).map(normalizeReviewField)
+    }
+  };
 }
 
-export function saveReviewField(
+export async function getReview(taskId: string) {
+  const data = await apiRequest<unknown>(`/api/tasks/${encodeURIComponent(taskId)}/review`);
+  return normalizeReviewPayload(data);
+}
+
+export async function saveReview(taskId: string, fields: ReviewField[]) {
+  const data = await apiRequest<unknown>(`/api/tasks/${encodeURIComponent(taskId)}/review`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fields })
+  });
+  return normalizeReviewPayload(data);
+}
+
+export async function getReviewResult(taskId: string) {
+  const data = await getReview(taskId);
+  return {
+    task_id: data.task_id,
+    fields: data.review_result.fields,
+    summary: { unreviewed: 0, confirmed: 0, modified: 0 }
+  };
+}
+
+export async function saveReviewField(
   taskId: string,
   fieldKey: string,
   input: SaveReviewFieldInput
 ) {
-  return apiRequest<SaveReviewFieldResult>(
-    `/api/tasks/${encodeURIComponent(taskId)}/review/fields/${encodeURIComponent(fieldKey)}`,
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(input)
-    }
+  const current = await getReview(taskId);
+  const fields = current.review_result.fields.map((field) =>
+    field.field_key === fieldKey
+      ? { ...field, value: input.final_value, final_value: input.final_value, status: input.status }
+      : field
   );
-}
-
-export function confirmReview(taskId: string) {
-  return apiRequest<ConfirmReviewResult>(
-    `/api/tasks/${encodeURIComponent(taskId)}/review/confirm`,
-    { method: 'POST' }
-  );
+  await saveReview(taskId, fields);
+  return { field_key: fieldKey, final_value: input.final_value, status: input.status };
 }
