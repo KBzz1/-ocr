@@ -25,6 +25,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   const [fields, setFields] = useState<ReviewField[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -35,6 +37,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
         setStatus(payload.status);
         setReview(payload.review_result);
         setFields(payload.review_result.fields);
+        const firstPageId = payload.review_result.pages?.[0]?.page_id ?? null;
+        setSelectedPageId(firstPageId);
+        setSelectedFieldKey(payload.review_result.fields[0]?.field_key ?? null);
       })
       .catch(() => {
         if (isCurrent) setMessage('审核数据加载失败');
@@ -90,6 +95,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     );
   }
 
+  const pages = review.pages ?? [];
+  const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
   const ocrText = review.ocr_text ?? review.pages?.map((page) => page.parsed_text ?? '').join('\n') ?? '';
 
   return renderShell(
@@ -107,19 +114,29 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
       {message ? <p role="status" className="review-alert">{message}</p> : null}
 
       <div className="review-grid">
-        <section className="review-panel" aria-label="任务图片">
-          <h2>任务图片</h2>
-          {review.pages?.length ? (
-            review.pages.map((page) => (
-              <div key={page.page_id}>
-                <h3>第 {page.page_no} 页</h3>
-                {page.preview_url || page.image_url ? (
-                  <img src={page.preview_url ?? page.image_url} alt={`第 ${page.page_no} 页原图`} />
-                ) : null}
-              </div>
-            ))
+        <section className="review-panel review-panel--image" aria-label="任务图片">
+          <div className="review-panel__heading">
+            <h2>任务图片</h2>
+            <span>{pages.length ? `共 ${pages.length} 页` : '无页面'}</span>
+          </div>
+          {pages.length ? (
+            <div className="review-page-tabs" role="tablist" aria-label="任务页码">
+              {pages.map((page) => (
+                <button
+                  aria-selected={page.page_id === selectedPage?.page_id}
+                  key={page.page_id}
+                  type="button"
+                  onClick={() => setSelectedPageId(page.page_id)}
+                >
+                  第 {page.page_no} 页
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {selectedPage?.preview_url || selectedPage?.image_url ? (
+            <img src={selectedPage.preview_url ?? selectedPage.image_url} alt={`第 ${selectedPage.page_no} 页原图`} />
           ) : (
-            <p>后端未返回任务图片</p>
+            <p className="review-empty">后端未返回当前页原图</p>
           )}
         </section>
 

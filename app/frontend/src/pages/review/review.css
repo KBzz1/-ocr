@@ -82,6 +82,29 @@
   background: #fff0f0;
 }
 
+.review-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.review-panel__heading h2 {
+  margin: 0;
+}
+
+.review-panel__heading span {
+  color: #5d6b82;
+  font-size: 13px;
+}
+
+.review-page-tabs button[aria-selected='true'] {
+  border-color: #1f6feb;
+  background: #eaf2ff;
+  color: #174ea6;
+}
+
 .review-grid {
   display: grid;
   grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1fr) minmax(320px, 1.25fr);
