@@ -6,14 +6,15 @@ import { appRoutes } from '../../app/routes';
 import { IconButton } from '../common/IconButton';
 import '../workstation/workstation.css';
 
-const navigationItems = [
+const baseNavigationItems = [
   { id: appRoutes.workstation.id, label: '工作台总览', href: appRoutes.workstation.path },
   { id: appRoutes.tasks.id, label: '任务管理', href: appRoutes.tasks.path }
 ];
 
 type WorkstationLayoutProps = {
   children: ReactNode;
-  activeRouteId?: 'workstation' | 'tasks';
+  activeRouteId?: 'workstation' | 'tasks' | 'review';
+  reviewTaskHref?: string;
   headerKicker?: string;
   headerTitle?: string;
   systemStatus?: {
@@ -38,6 +39,7 @@ function navigateWithinApp(event: MouseEvent<HTMLAnchorElement>, href: string) {
 export function WorkstationLayout({
   children,
   activeRouteId = 'workstation',
+  reviewTaskHref,
   headerKicker = '工作台总览',
   headerTitle = '病历文书结构化采集',
   systemStatus = {
@@ -48,6 +50,12 @@ export function WorkstationLayout({
   isRetryingSystem = false,
   onRetrySystem
 }: WorkstationLayoutProps) {
+  const navigationItems = reviewTaskHref
+    ? [
+        ...baseNavigationItems,
+        { id: appRoutes.review.id, label: '人工审核', href: reviewTaskHref }
+      ]
+    : baseNavigationItems;
   return (
     <div className="workstation-shell">
       <aside className="workstation-sidebar" aria-label="工作站导航">

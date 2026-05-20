@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { getReview, saveReview, type ReviewField, type ReviewResult } from '../../api/review';
 import { completeTask, type TaskStatus } from '../../api/tasks';
@@ -6,6 +6,8 @@ import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
 import { ReviewSourcePanel } from '../../components/review/ReviewSourcePanel';
 import { fieldStatusMeta } from '../../styles/status';
+import { buildReviewPath } from '../../app/routes';
+import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import './review.css';
 
 type ReviewPageProps = {
@@ -46,6 +48,19 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     };
   }, [taskId]);
 
+  function renderShell(content: ReactNode) {
+    return (
+      <WorkstationLayout
+        activeRouteId="review"
+        reviewTaskHref={buildReviewPath(taskId)}
+        headerKicker="人工审核"
+        headerTitle={`任务 ${taskId}`}
+      >
+        {content}
+      </WorkstationLayout>
+    );
+  }
+
   async function handleSave() {
     const saved = await saveReview(taskId, fields);
     setReview(saved.review_result);
@@ -64,11 +79,11 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   }
 
   if (isLoading) {
-    return <main aria-label="人工审核页">正在加载审核数据</main>;
+    return renderShell(<main className="review-page" aria-label="人工审核页">正在加载审核数据</main>);
   }
 
   if (!review) {
-    return (
+    return renderShell(
       <main className="review-page" aria-label="人工审核页">
         <p role="alert" className="review-alert review-alert--danger">{message ?? '审核数据加载失败'}</p>
       </main>
@@ -77,7 +92,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
 
   const ocrText = review.ocr_text ?? review.pages?.map((page) => page.parsed_text ?? '').join('\n') ?? '';
 
-  return (
+  return renderShell(
     <main className="review-page" aria-label="人工审核页">
       <header className="review-header">
         <div>

@@ -55,6 +55,16 @@ function mockReviewRoutes() {
 }
 
 describe('ReviewPage', () => {
+  it('uses the shared workstation navigation shell', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByRole('navigation', { name: '主要模块' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /工作台总览/ }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
+    expect(screen.getByRole('link', { name: /人工审核/ }).getAttribute('aria-current')).toBe('page');
+  });
+
   it('shows images, OCR text, editable fields, complete and export actions', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
