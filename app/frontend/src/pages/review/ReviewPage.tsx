@@ -4,8 +4,8 @@ import { getReview, saveReview, type ReviewField, type ReviewResult } from '../.
 import { completeTask, type TaskStatus } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
-import { ReviewSourcePanel } from '../../components/review/ReviewSourcePanel';
-import { fieldStatusMeta } from '../../styles/status';
+import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
+import { fieldStatusMeta, getTaskStatusLabel } from '../../styles/status';
 import { buildReviewPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import './review.css';
@@ -79,9 +79,10 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   }
 
   const savingRef = useRef(false);
+  const completingRef = useRef(false);
 
   async function saveFields(nextFields: ReviewField[]) {
-    if (savingRef.current) return;
+    if (savingRef.current) return null;
     savingRef.current = true;
     setSaveStatus('saving');
     try {
@@ -106,10 +107,13 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   }
 
   async function handleComplete() {
+    if (savingRef.current || completingRef.current) return;
+    completingRef.current = true;
     setIsCompleting(true);
     try {
       const unifiedFields = normalizeFieldsForUnifiedReview(fields);
-      await saveFields(unifiedFields);
+      const savedFields = await saveFields(unifiedFields);
+      if (!savedFields) return;
       const task = await completeTask(taskId);
       setStatus(task.status);
       setMessage('已完成');
@@ -117,6 +121,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
       setSaveStatus('failed');
       setMessage(error instanceof Error ? error.message : '统一审核完成失败');
     } finally {
+      completingRef.current = false;
       setIsCompleting(false);
     }
   }
@@ -164,6 +169,17 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   const mergedOcrText = review.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
   const currentPageOcrText = selectedPage?.parsed_text ?? mergedOcrText;
   const visibleOcrText = ocrMode === 'page' ? currentPageOcrText : mergedOcrText;
+  const selectedField = fields.find((field) => field.field_key === selectedFieldKey) ?? fields[0] ?? null;
+  const selectedEvidenceText = selectedField?.evidence?.find((item) => item.text)?.text;
+  const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
+  const unreviewedFieldCount = fields.filter((field) => field.status === 'unreviewed').length;
+  const sourceMessage: SourceMessage | null = selectedField
+    ? selectedEvidenceText
+      ? visibleOcrText.includes(selectedEvidenceText)
+        ? { kind: 'located', text: '已定位来源文本', evidenceText: selectedEvidenceText }
+        : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
+      : { kind: 'unavailable', text: '当前字段未返回来源文本' }
+    : null;
 
   function handleFocusField(field: ReviewField) {
     setSelectedFieldKey(field.field_key);
@@ -182,6 +198,13 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
         <div>
           <p className="review-eyebrow">人工审核</p>
           <h1>任务 {taskId}</h1>
+          <div className="review-summary" aria-label="审核摘要">
+            <span>状态：{getTaskStatusLabel(status)}</span>
+            <span>页数：{pages.length}</span>
+            <span>字段：{fields.length}</span>
+            <span>已修改：{modifiedFieldCount}</span>
+            <span>未统一审核：{unreviewedFieldCount}</span>
+          </div>
         </div>
         <div className="review-header__actions">
           <span className={`review-save-state review-save-state--${saveStatus}`}>
@@ -263,7 +286,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
                   合并文本
                 </button>
               </div>
-              <ReviewSourcePanel text={visibleOcrText || '后端未返回 OCR 文本'} sourceMessage={null} />
+              <ReviewSourcePanel text={visibleOcrText || '后端未返回 OCR 文本'} sourceMessage={sourceMessage} />
             </>
           ) : null}
         </section>

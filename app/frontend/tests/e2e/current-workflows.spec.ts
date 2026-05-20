@@ -104,7 +104,7 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
   await page.getByLabel('patient_name').fill('李四');
   await page.getByRole('button', { name: '保存' }).click();
   await page.getByRole('button', { name: '统一审核并完成' }).click();
-  await expect(page.getByText('已完成')).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('已完成');
   await expect(page.getByRole('button', { name: '导出 JSON' })).toBeEnabled();
   await expect(page.getByRole('button', { name: '导出 Excel' })).toBeEnabled();
   await page.evaluate(() => window.__assertE2eNetworkGate());
