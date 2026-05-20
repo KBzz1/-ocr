@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { getReview, saveReview, type ReviewField, type ReviewResult } from '../../api/review';
 import { completeTask, type TaskStatus } from '../../api/tasks';
@@ -65,7 +65,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
         headerKicker="人工审核"
         headerTitle={`任务 ${taskId}`}
       >
-        {content}
+        <main className="review-page" aria-label="人工审核页">{content}</main>
       </WorkstationLayout>
     );
   }
@@ -78,19 +78,27 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     );
   }
 
+  const savingRef = useRef(false);
+
   async function saveFields(nextFields: ReviewField[]) {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaveStatus('saving');
-    const saved = await saveReview(taskId, nextFields);
-    setReview(saved.review_result);
-    setFields(saved.review_result.fields);
-    setSaveStatus('saved');
-    setMessage('已保存');
-    return saved.review_result.fields;
+    try {
+      const saved = await saveReview(taskId, nextFields);
+      setReview(saved.review_result);
+      setFields(saved.review_result.fields);
+      setSaveStatus('saved');
+      return saved.review_result.fields;
+    } finally {
+      savingRef.current = false;
+    }
   }
 
   async function handleSave() {
     try {
       await saveFields(fields);
+      setMessage('已保存');
     } catch (error) {
       setSaveStatus('failed');
       setMessage(error instanceof Error ? error.message : '保存失败，请重试');
@@ -118,6 +126,45 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     setSaveStatus('dirty');
   }
 
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleCompleteRef = useRef(handleComplete);
+  handleCompleteRef.current = handleComplete;
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const isModifier = event.ctrlKey || event.metaKey;
+      if (!isModifier) return;
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void handleSaveRef.current();
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void handleCompleteRef.current();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  if (isLoading) {
+    return renderShell(<>正在加载审核数据</>);
+  }
+
+  if (!review) {
+    return renderShell(
+      <p role="alert" className="review-alert review-alert--danger">{message ?? '审核数据加载失败'}</p>
+    );
+  }
+
+  const pages = review.pages ?? [];
+  const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
+  const mergedOcrText = review.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
+  const currentPageOcrText = selectedPage?.parsed_text ?? mergedOcrText;
+  const visibleOcrText = ocrMode === 'page' ? currentPageOcrText : mergedOcrText;
+
   function handleFocusField(field: ReviewField) {
     setSelectedFieldKey(field.field_key);
     const evidence = field.evidence?.find((item) => item.page_id || item.page_no);
@@ -129,44 +176,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     if (pageByNo) setSelectedPageId(pageByNo.page_id);
   }
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const isModifier = event.ctrlKey || event.metaKey;
-      if (!isModifier) return;
-      if (event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        void handleSave();
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        void handleComplete();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  });
-
-  if (isLoading) {
-    return renderShell(<main className="review-page" aria-label="人工审核页">正在加载审核数据</main>);
-  }
-
-  if (!review) {
-    return renderShell(
-      <main className="review-page" aria-label="人工审核页">
-        <p role="alert" className="review-alert review-alert--danger">{message ?? '审核数据加载失败'}</p>
-      </main>
-    );
-  }
-
-  const pages = review.pages ?? [];
-  const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
-  const mergedOcrText = review.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
-  const currentPageOcrText = selectedPage?.parsed_text ?? mergedOcrText;
-  const visibleOcrText = ocrMode === 'page' ? currentPageOcrText : mergedOcrText;
-
   return renderShell(
-    <main className="review-page" aria-label="人工审核页">
+    <>
       <header className="review-header">
         <div>
           <p className="review-eyebrow">人工审核</p>
@@ -269,6 +280,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
           <ExportPanel task={{ task_id: taskId, status }} />
         </section>
       </div>
-    </main>
+    </>
   );
 }
