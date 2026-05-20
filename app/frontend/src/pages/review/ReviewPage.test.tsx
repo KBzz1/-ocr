@@ -121,6 +121,24 @@ describe('ReviewPage', () => {
     expect(screen.queryByRole('img', { name: '第 1 页原图' })).toBeNull();
   });
 
+  it('keeps OCR hidden by default and shows current page OCR on demand', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+
+    await screen.findByText('结构化字段');
+    expect(screen.queryByText('第一页文本')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: '显示 OCR' }));
+    expect(screen.getByText('第一页文本')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+    expect(screen.getByText('第二页文本')).toBeTruthy();
+    expect(screen.queryByText('第一页文本')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: '隐藏 OCR' }));
+    expect(screen.queryByText('第二页文本')).toBeNull();
+  });
+
   it('shows images, OCR text, editable fields, complete and export actions', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);

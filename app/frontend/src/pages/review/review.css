@@ -1,7 +1,4 @@
 .review-page {
-  min-height: 100vh;
-  padding: 24px;
-  background: #f5f7fb;
   color: #18202f;
 }
 
@@ -107,9 +104,13 @@
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1fr) minmax(320px, 1.25fr);
+  grid-template-columns: minmax(260px, 0.9fr) minmax(420px, 1.4fr);
   gap: 12px;
   align-items: start;
+}
+
+.review-panel--ocr {
+  grid-column: 1 / -1;
 }
 
 .review-panel {

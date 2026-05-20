@@ -27,6 +27,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
+  const [isOcrVisible, setIsOcrVisible] = useState(false);
+  const [ocrMode, setOcrMode] = useState<'page' | 'merged'>('page');
 
   useEffect(() => {
     let isCurrent = true;
@@ -97,7 +99,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
 
   const pages = review.pages ?? [];
   const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
-  const ocrText = review.ocr_text ?? review.pages?.map((page) => page.parsed_text ?? '').join('\n') ?? '';
+  const mergedOcrText = review.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
+  const currentPageOcrText = selectedPage?.parsed_text ?? mergedOcrText;
+  const visibleOcrText = ocrMode === 'page' ? currentPageOcrText : mergedOcrText;
 
   return renderShell(
     <main className="review-page" aria-label="人工审核页">
@@ -140,9 +144,34 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
           )}
         </section>
 
-        <section className="review-panel" aria-label="OCR 文本">
-          <h2>OCR 文本</h2>
-          <ReviewSourcePanel text={ocrText || '后端未返回 OCR 文本'} sourceMessage={null} />
+        <section className={`review-panel review-panel--ocr${isOcrVisible ? ' is-open' : ''}`} aria-label="OCR 文本">
+          <div className="review-panel__heading">
+            <h2>OCR 文本</h2>
+            <button type="button" onClick={() => setIsOcrVisible((value) => !value)}>
+              {isOcrVisible ? '隐藏 OCR' : '显示 OCR'}
+            </button>
+          </div>
+          {isOcrVisible ? (
+            <>
+              <div className="review-text-actions" aria-label="OCR 文本范围">
+                <button
+                  aria-pressed={ocrMode === 'page'}
+                  type="button"
+                  onClick={() => setOcrMode('page')}
+                >
+                  当前页
+                </button>
+                <button
+                  aria-pressed={ocrMode === 'merged'}
+                  type="button"
+                  onClick={() => setOcrMode('merged')}
+                >
+                  合并文本
+                </button>
+              </div>
+              <ReviewSourcePanel text={visibleOcrText || '后端未返回 OCR 文本'} sourceMessage={null} />
+            </>
+          ) : null}
         </section>
 
         <section className="review-panel" aria-label="结构化字段">
