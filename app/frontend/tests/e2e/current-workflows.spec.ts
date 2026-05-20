@@ -110,6 +110,71 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
   await page.evaluate(() => window.__assertE2eNetworkGate());
 });
 
+test('MVP failed flow: failed task shows reason and no manual fallback', async ({ page }) => {
+  await mockSystemStatus(page);
+  await page.route('**/api/tasks', async (route) => {
+    await fulfillJson(route, {
+      tasks: [
+        {
+          task_id: 'task_failed',
+          status: 'failed',
+          created_at: '2026-05-20T10:00:00+08:00',
+          updated_at: '2026-05-20T10:01:00+08:00',
+          page_count: 2,
+          error_code: 'ALGORITHM_CONTRACT_INVALID',
+          error_message: '模拟结构化字段为空',
+          review_summary: null,
+          export_summary: { last_exported_at: null, formats: [], files: [] }
+        }
+      ]
+    });
+  });
+  await page.route('**/api/tasks/task_failed/process', async (route) => {
+    await fulfillJson(route, {
+      task_id: 'task_failed',
+      status: 'processing',
+      created_at: '2026-05-20T10:00:00+08:00',
+      page_count: 2
+    });
+  });
+
+  await page.goto('/tasks');
+
+  const table = page.getByRole('table', { name: '任务列表' });
+  await expect(table.getByText('task_failed')).toBeVisible();
+  await expect(table.getByText('失败', { exact: true })).toBeVisible();
+  await expect(table.getByText('模拟结构化字段为空').first()).toBeVisible();
+  await expect(table.getByRole('link', { name: '进入审核' })).toHaveCount(0);
+  await expect(page.getByText('人工降级')).toHaveCount(0);
+  await expect(page.getByText('人工补字段')).toHaveCount(0);
+  await expect(page.getByText('查看日志')).toHaveCount(0);
+
+  await table.getByRole('button', { name: '重新处理' }).click();
+  await expect(table.getByText('处理中')).toBeVisible();
+  await page.evaluate(() => window.__assertE2eNetworkGate());
+});
+
+test('MVP failed flow: direct review URL does not render editable fallback fields', async ({ page }) => {
+  await mockSystemStatus(page);
+  await page.route('**/api/tasks/task_failed/review', async (route) => {
+    await fulfillError(
+      route,
+      'INVALID_TASK_TRANSITION',
+      '任务状态 failed 不允许读取审核结果',
+      400,
+      { current: 'failed' }
+    );
+  });
+
+  await page.goto('/tasks/task_failed/review');
+
+  await expect(page.getByRole('alert')).toContainText('审核数据加载失败');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '保存审核结果' })).toHaveCount(0);
+  await expect(page.getByText('人工补字段')).toHaveCount(0);
+  await page.evaluate(() => window.__assertE2eNetworkGate());
+});
+
 declare global {
   interface Window {
     __assertE2eNetworkGate: () => void;
