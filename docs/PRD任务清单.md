@@ -191,11 +191,13 @@
   - 范围：工作台新建任务 → 手机上传 3 张图片 → 完成上传 → processing → review → 审核保存 → done → JSON/Excel 导出。
   - 边界：算法结果使用本地 fixture。
   - 设计：`docs/superpowers/specs/2026-05-20-mvp-e2e-acceptance-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-20-mvp-e2e-acceptance-plan.md`。
 
 - [~] **E2E-MVP-02 失败主流程**
   - 范围：算法未配置/失败/空字段/契约非法均进入 `failed`，任务管理页展示原因。
   - 边界：不出现人工补字段降级路径。
   - 设计：`docs/superpowers/specs/2026-05-20-mvp-e2e-acceptance-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-20-mvp-e2e-acceptance-plan.md`。
 
 - [ ] **REL-MVP-01 Windows 本地运行包**
   - 状态：延后。
