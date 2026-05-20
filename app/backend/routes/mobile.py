@@ -20,6 +20,21 @@ def _parse_optional_dimensions():
         raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="image_width 和 image_height 必须为整数")
 
 
+@mobile_bp.route("/api/mobile-upload/<task_id>", methods=["GET"])
+def get_task_upload_status(task_id: str):
+    task_service = _get_task_service()
+    task = task_service.get_task(task_id)
+    task_service.assert_upload_token(task, request.args.get("token"))
+    return success(
+        data={
+            "task_id": task["task_id"],
+            "status": task["status"],
+            "page_count": task["page_count"],
+            "images": task["images"],
+        }
+    )
+
+
 @mobile_bp.route("/api/mobile-upload/<task_id>/images", methods=["POST"])
 def upload_task_image(task_id: str):
     task_service = _get_task_service()

@@ -69,6 +69,20 @@ def test_upload_image_adds_page_to_task_in_upload_order(client):
     assert [image["page_no"] for image in detail["images"]] == [1, 2]
 
 
+def test_mobile_upload_status_returns_existing_images(client):
+    task = _create_task(client)
+    _upload(client, task, "first.png")
+
+    response = client.get(f"/api/mobile-upload/{task['task_id']}?token={task['upload_token']}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["task_id"] == task["task_id"]
+    assert data["status"] == "uploading"
+    assert data["page_count"] == 1
+    assert [image["page_no"] for image in data["images"]] == [1]
+
+
 def test_upload_rejects_invalid_token(client):
     task = _create_task(client)
 

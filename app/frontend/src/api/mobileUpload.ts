@@ -11,6 +11,13 @@ export interface UploadedImage {
   uploaded_at: string;
 }
 
+export interface TaskUploadStatus {
+  task_id: string;
+  status: TaskSummary['status'];
+  page_count: number;
+  images: UploadedImage[];
+}
+
 export function buildTaskImageFormData(
   file: File,
   dimensions?: { image_width?: number; image_height?: number }
@@ -35,6 +42,12 @@ export function uploadTaskImage(
       method: 'POST',
       body
     }
+  );
+}
+
+export function getTaskUploadStatus(taskId: string, token: string) {
+  return apiRequest<TaskUploadStatus>(
+    `/api/mobile-upload/${encodeURIComponent(taskId)}?token=${encodeURIComponent(token)}`
   );
 }
 

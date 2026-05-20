@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../../api/client';
-import { finishTaskUpload, uploadTaskImage, type UploadedImage } from '../../api/mobileUpload';
+import { finishTaskUpload, getTaskUploadStatus, uploadTaskImage, type UploadedImage } from '../../api/mobileUpload';
 import { CapturePhotoButton } from './CapturePhotoButton';
 import { CapturePageList } from './CapturePageList';
 import { CaptureFooter } from './CaptureFooter';
@@ -70,6 +70,26 @@ export function MobileCapturePage({
   const [isUploading, setIsUploading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+
+  useEffect(() => {
+    if (!taskId || !token || initialImages.length > 0) return;
+
+    let isMounted = true;
+    getTaskUploadStatus(taskId, token)
+      .then((status) => {
+        if (!isMounted) return;
+        setPages(status.images.map(toPageItem));
+        setIsFinished(status.status !== 'uploading');
+      })
+      .catch((statusError) => {
+        if (!isMounted) return;
+        setError(getErrorMessage(statusError, '上传状态加载失败，请重新扫描二维码'));
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialImages.length, taskId, token]);
 
   async function handleFilesSelected(files: FileList | null) {
     if (!files || !taskId || !token || isFinished) return;

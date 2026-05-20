@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 
 import { server } from '../../../tests/setupTests';
+import type { UploadedImage } from '../../api/mobileUpload';
 import { MobileCapturePage } from './MobileCapturePage';
 
 const originalCreateObjectURL = URL.createObjectURL;
@@ -18,6 +19,10 @@ afterEach(() => {
   } else {
     Reflect.deleteProperty(URL, 'createObjectURL');
   }
+});
+
+beforeEach(() => {
+  mockUploadStatus();
 });
 
 function stubBlobUrls() {
@@ -60,6 +65,22 @@ function mockUploadRoutes() {
   );
 }
 
+function mockUploadStatus(images: UploadedImage[] = []) {
+  server.use(
+    http.get('*/api/mobile-upload/task_001', () =>
+      HttpResponse.json({
+        success: true,
+        data: {
+          task_id: 'task_001',
+          status: 'uploading',
+          page_count: images.length,
+          images
+        }
+      })
+    )
+  );
+}
+
 describe('MobileCapturePage', () => {
   it('uploads selected images directly to task and shows upload order', async () => {
     stubBlobUrls();
@@ -80,6 +101,23 @@ describe('MobileCapturePage', () => {
     render(<MobileCapturePage taskId="task_001" token="token_001" />);
 
     expect((screen.getByRole('button', { name: '完成上传' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('loads existing uploaded task images when opened from QR code', async () => {
+    mockUploadStatus([
+      {
+        page_id: 'page_001',
+        task_id: 'task_001',
+        page_no: 1,
+        preview_url: '/api/tasks/task_001/images/page_001',
+        uploaded_at: '2026-05-20T20:55:00+08:00'
+      }
+    ]);
+
+    render(<MobileCapturePage taskId="task_001" token="token_001" />);
+
+    expect(await screen.findByText('第 1 页')).toBeTruthy();
+    expect(screen.getAllByText('已上传 1 张图片').length).toBeGreaterThan(0);
   });
 
   it('finish upload tells user to return to desktop', async () => {
