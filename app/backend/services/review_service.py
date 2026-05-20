@@ -18,8 +18,9 @@ class ReviewService:
         self._task_service = task_service
         self._schema_provider = schema_provider
 
-    def get_or_init(self, task_id: str) -> dict:
-        task = self._task_service.get_task(task_id)
+    def get_or_init(self, task_id: str, task: dict | None = None) -> dict:
+        if task is None:
+            task = self._task_service.get_task(task_id)
         self._ensure_readable(task)
 
         existing = self._store.read(f"results/{task_id}/review_result.json")
@@ -146,7 +147,7 @@ class ReviewService:
     def update_field(self, task_id: str, field_key: str, payload: dict) -> dict:
         task = self._task_service.get_task(task_id)
         self._ensure_writable(task)
-        review = self.get_or_init(task_id)
+        review = self.get_or_init(task_id, task=task)
 
         if "status" in payload:
             status = payload["status"]
@@ -219,7 +220,7 @@ class ReviewService:
     def confirm(self, task_id: str) -> dict:
         task = self._task_service.get_task(task_id)
         self._ensure_writable(task)
-        review = self.get_or_init(task_id)
+        review = self.get_or_init(task_id, task=task)
         summary = self._build_summary(review["fields"])
 
         unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.UNREVIEWED.value]
