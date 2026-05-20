@@ -3,34 +3,8 @@ import json
 import os
 
 from app.backend.errors import ErrorCode
-from app.backend.services.algorithm_ports.fixtures import FixtureDocPort, FixtureFieldPort, FixtureImagePort
-from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
-from app.backend.services.review_service import ReviewService
-from app.backend.services.task_service import TaskService
-from app.backend.storage.json_store import JsonStore
 from app.backend.tests.fixtures.client import make_client, setup_task_with_images, upload_task_image
-
-
-def install_fixture_task_service(app, field_port=None):
-    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
-    orchestrator = ProcessingOrchestrator(
-        store=store,
-        image_port=FixtureImagePort(),
-        doc_port=FixtureDocPort(),
-        field_port=field_port or FixtureFieldPort(),
-        schema_validator=app.config["SCHEMA_SERVICE"].build_validator(),
-    )
-    task_service = TaskService(
-        store=store,
-        orchestrator=orchestrator,
-        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
-    )
-    app.config["TASK_SERVICE"] = task_service
-    app.config["REVIEW_SERVICE"] = ReviewService(
-        store=store,
-        task_service=task_service,
-        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
-    )
+from app.backend.tests.fixtures.processing import install_simulated_processing
 
 
 def test_fixture_client_starts_with_system_status(tmp_path, monkeypatch):
@@ -44,33 +18,48 @@ def test_fixture_client_starts_with_system_status(tmp_path, monkeypatch):
 
 def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, monkeypatch):
     client, app = make_client(tmp_path, monkeypatch)
-    install_fixture_task_service(app)
+    install_simulated_processing(app, mode="success")
     created = client.post("/api/tasks").get_json()["data"]
 
-    upload = upload_task_image(client, created)
-    assert upload.status_code == 201
+    for index in range(3):
+        upload = upload_task_image(client, created, filename=f"page-{index + 1}.jpg")
+        assert upload.status_code == 201
+        assert upload.get_json()["data"]["page_no"] == index + 1
 
     finished = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
     assert finished.status_code == 200
     assert finished.get_json()["data"]["status"] == "review"
 
+    task_after_finish = client.get(f"/api/tasks/{created['task_id']}").get_json()["data"]
+    assert task_after_finish["page_count"] == 3
+
     review = client.get(f"/api/tasks/{created['task_id']}/review")
     assert review.status_code == 200
     fields = review.get_json()["data"]["review_result"]["fields"]
+    assert fields[0]["field_key"] == "chief_complaint"
+    assert fields[0]["auto_value"] == "模拟外部算法返回的主诉"
     assert fields[0]["status"] == "unreviewed"
 
     saved = client.put(
         f"/api/tasks/{created['task_id']}/review",
-        json={"fields": [{"field_key": fields[0]["field_key"], "value": "头痛3天加重1天", "status": "modified"}]},
+        json={"fields": [{"field_key": "chief_complaint", "value": "人工审核后的主诉", "status": "modified"}]},
     )
     assert saved.status_code == 200
+    saved_field = saved.get_json()["data"]["review_result"]["fields"][0]
+    assert saved_field["auto_value"] == "模拟外部算法返回的主诉"
+    assert saved_field["final_value"] == "人工审核后的主诉"
 
     completed = client.post(f"/api/tasks/{created['task_id']}/complete")
     assert completed.status_code == 200
     assert completed.get_json()["data"]["status"] == "done"
 
-    exported = client.get(f"/api/tasks/{created['task_id']}/export/json")
-    assert exported.status_code == 200
+    exported_json = client.get(f"/api/tasks/{created['task_id']}/export/json")
+    assert exported_json.status_code == 200
+    assert "人工审核后的主诉" in exported_json.get_data(as_text=True)
+
+    exported_excel = client.get(f"/api/tasks/{created['task_id']}/export/excel")
+    assert exported_excel.status_code == 200
+
     assert client.get(f"/api/tasks/{created['task_id']}").get_json()["data"]["status"] == "done"
 
 
@@ -88,7 +77,7 @@ def test_mvp_algorithm_not_configured_goes_failed(tmp_path, monkeypatch):
 
 def test_mvp_empty_field_candidates_goes_failed(tmp_path, monkeypatch):
     client, app = make_client(tmp_path, monkeypatch)
-    install_fixture_task_service(app, field_port=FixtureFieldPort(return_empty=True))
+    install_simulated_processing(app, mode="empty_fields")
     created = setup_task_with_images(client)
 
     response = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
@@ -97,11 +86,42 @@ def test_mvp_empty_field_candidates_goes_failed(tmp_path, monkeypatch):
     data = response.get_json()["data"]
     assert data["status"] == "failed"
     assert data["error_code"] == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+    review = client.get(f"/api/tasks/{created['task_id']}/review")
+    assert review.status_code == 400
+    assert review.get_json()["error"]["code"] == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+def test_mvp_simulated_algorithm_exception_goes_failed(tmp_path, monkeypatch):
+    client, app = make_client(tmp_path, monkeypatch)
+    install_simulated_processing(app, mode="module_failed")
+    created = setup_task_with_images(client)
+
+    response = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == ErrorCode.ALGORITHM_MODULE_FAILED.code
+    assert data["failed_at"]
+
+
+def test_mvp_invalid_field_contract_goes_failed(tmp_path, monkeypatch):
+    client, app = make_client(tmp_path, monkeypatch)
+    install_simulated_processing(app, mode="invalid_contract")
+    created = setup_task_with_images(client)
+
+    response = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+    assert data["failed_at"]
 
 
 def test_e2e_logs_do_not_include_sensitive_payloads(tmp_path, monkeypatch):
     client, app = make_client(tmp_path, monkeypatch)
-    install_fixture_task_service(app)
+    install_simulated_processing(app, mode="success")
     created = setup_task_with_images(client, page_count=2)
     client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
 
