@@ -1,24 +1,13 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const localApi = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\/api\//;
+import {
+  fulfillError,
+  fulfillJson,
+  installNetworkGate,
+  mockSystemStatus
+} from './helpers/mvpApi';
+
 const imageFixture = 'src/assets/logos/xinqiao-hospital-logo.jpg';
-
-async function installNetworkGate(page: Page) {
-  const unmockedApiRequests: string[] = [];
-
-  await page.route(localApi, async (route) => {
-    unmockedApiRequests.push(`${route.request().method()} ${route.request().url()}`);
-    await route.abort();
-  });
-
-  await page.exposeFunction('__assertE2eNetworkGate', () => {
-    expect(unmockedApiRequests).toEqual([]);
-  });
-}
-
-async function fulfillJson(route: Route, data: unknown, status = 200) {
-  await route.fulfill({ status, json: { success: true, data } });
-}
 
 test.beforeEach(async ({ page }) => {
   await installNetworkGate(page);
