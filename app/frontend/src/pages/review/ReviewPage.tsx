@@ -29,6 +29,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [isOcrVisible, setIsOcrVisible] = useState(false);
   const [ocrMode, setOcrMode] = useState<'page' | 'merged'>('page');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'failed'>('idle');
+  const [isCompleting, setIsCompleting] = useState(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -68,25 +70,52 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     );
   }
 
-  async function handleSave() {
-    const saved = await saveReview(taskId, fields);
+  function normalizeFieldsForUnifiedReview(currentFields: ReviewField[]) {
+    return currentFields.map((field) =>
+      field.status === 'unreviewed'
+        ? { ...field, status: 'confirmed' as const }
+        : field
+    );
+  }
+
+  async function saveFields(nextFields: ReviewField[]) {
+    setSaveStatus('saving');
+    const saved = await saveReview(taskId, nextFields);
     setReview(saved.review_result);
     setFields(saved.review_result.fields);
+    setSaveStatus('saved');
     setMessage('已保存');
+    return saved.review_result.fields;
+  }
+
+  async function handleSave() {
+    try {
+      await saveFields(fields);
+    } catch (error) {
+      setSaveStatus('failed');
+      setMessage(error instanceof Error ? error.message : '保存失败，请重试');
+    }
   }
 
   async function handleComplete() {
+    setIsCompleting(true);
     try {
+      const unifiedFields = normalizeFieldsForUnifiedReview(fields);
+      await saveFields(unifiedFields);
       const task = await completeTask(taskId);
       setStatus(task.status);
       setMessage('已完成');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '标记完成失败');
+      setSaveStatus('failed');
+      setMessage(error instanceof Error ? error.message : '统一审核完成失败');
+    } finally {
+      setIsCompleting(false);
     }
   }
 
   function handleFieldsChange(nextFields: ReviewField[]) {
     setFields(nextFields);
+    setSaveStatus('dirty');
   }
 
   function handleFocusField(field: ReviewField) {
@@ -99,6 +128,24 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     const pageByNo = pages.find((page) => page.page_no === evidence?.page_no);
     if (pageByNo) setSelectedPageId(pageByNo.page_id);
   }
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const isModifier = event.ctrlKey || event.metaKey;
+      if (!isModifier) return;
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void handleSave();
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void handleComplete();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 
   if (isLoading) {
     return renderShell(<main className="review-page" aria-label="人工审核页">正在加载审核数据</main>);
@@ -125,9 +172,30 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
           <p className="review-eyebrow">人工审核</p>
           <h1>任务 {taskId}</h1>
         </div>
-        <button type="button" className="review-confirm-button" onClick={() => void handleComplete()}>
-          标记完成
-        </button>
+        <div className="review-header__actions">
+          <span className={`review-save-state review-save-state--${saveStatus}`}>
+            {saveStatus === 'dirty'
+              ? '未保存修改'
+              : saveStatus === 'saving'
+                ? '保存中'
+                : saveStatus === 'saved'
+                  ? '已保存'
+                  : saveStatus === 'failed'
+                    ? '保存失败'
+                    : '无修改'}
+          </span>
+          <button type="button" onClick={() => void handleSave()} disabled={saveStatus === 'saving' || isCompleting}>
+            保存
+          </button>
+          <button
+            type="button"
+            className="review-confirm-button"
+            onClick={() => void handleComplete()}
+            disabled={isCompleting || saveStatus === 'saving'}
+          >
+            {isCompleting ? '完成中' : '统一审核并完成'}
+          </button>
+        </div>
       </header>
 
       {message ? <p role="status" className="review-alert">{message}</p> : null}
@@ -198,9 +266,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
             onFocusField={handleFocusField}
             getStatusLabel={(fieldStatus) => fieldStatusMeta[fieldStatus].label}
           />
-          <button type="button" onClick={() => void handleSave()}>
-            保存审核结果
-          </button>
           <ExportPanel task={{ task_id: taskId, status }} />
         </section>
       </div>

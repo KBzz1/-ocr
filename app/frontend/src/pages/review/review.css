@@ -40,6 +40,38 @@
   color: #ffffff;
 }
 
+.review-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-save-state {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #5d6b82;
+  font-size: 13px;
+}
+
+.review-save-state--dirty,
+.review-save-state--failed {
+  border-color: #f0c36d;
+  background: #fff8e6;
+  color: #7a4f00;
+}
+
+.review-save-state--saved {
+  border-color: #b7dfc4;
+  background: #e8f7ee;
+  color: #17643a;
+}
+
 .review-page button[disabled] {
   cursor: not-allowed;
   opacity: 0.56;

@@ -160,11 +160,11 @@ describe('ReviewPage', () => {
 
     await userEvent.clear(field);
     await userEvent.type(field, '李四');
-    await userEvent.click(screen.getByRole('button', { name: '保存审核结果' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存' }));
 
-    expect(await screen.findByText('已保存')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: '标记完成' }));
-    expect(await screen.findByText('已完成')).toBeTruthy();
+    expect((await screen.findAllByText('已保存')).length).toBeGreaterThanOrEqual(1);
+    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
+    expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
     expect((screen.getByRole('button', { name: '导出 JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '导出 Excel' }) as HTMLButtonElement).disabled).toBe(false);
   });
@@ -202,6 +202,58 @@ describe('ReviewPage', () => {
     expect((screen.getByLabelText('chief_complaint') as HTMLInputElement).value).toBe('头痛三天');
   });
 
+  it('saves unmodified fields as confirmed and modified fields as modified before completing', async () => {
+    mockReviewRoutes();
+    server.use(
+      http.put('*/api/tasks/task_001/review', async ({ request }) => {
+        const body = (await request.json()) as { fields: Array<Record<string, unknown>> };
+        expect(body).toMatchObject({
+          fields: expect.arrayContaining([
+            expect.objectContaining({ field_key: 'patient_name', value: '李四', status: 'modified' }),
+            expect.objectContaining({ field_key: 'chief_complaint', value: '头痛三天', status: 'confirmed' })
+          ])
+        });
+        return HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '第一页文本\n第二页文本',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '第一页文本'
+                },
+                {
+                  page_id: 'page_002',
+                  page_no: 2,
+                  preview_url: '/api/tasks/task_001/images/page_002',
+                  parsed_text: '第二页文本'
+                }
+              ],
+              fields: [
+                { field_key: 'patient_name', label: '姓名', value: '李四', status: 'modified' },
+                { field_key: 'chief_complaint', label: '主诉', value: '头痛三天', status: 'confirmed' }
+              ]
+            }
+          }
+        });
+      })
+    );
+    render(<ReviewPage taskId="task_001" />);
+
+    const nameField = await screen.findByLabelText('patient_name');
+    await userEvent.clear(nameField);
+    await userEvent.type(nameField, '李四');
+    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
+
+    // 保存成功 + 完成 都要通过，页面至少有一个"已完成"
+    expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
+  });
+
   it('shows a message when task completion validation fails', async () => {
     mockReviewRoutes();
     server.use(
@@ -222,7 +274,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText('OCR 文本');
-    await userEvent.click(screen.getByRole('button', { name: '标记完成' }));
+    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
 
     expect(await screen.findByText('仍有字段未审核')).toBeTruthy();
   });
