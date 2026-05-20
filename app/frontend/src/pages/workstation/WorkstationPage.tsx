@@ -4,7 +4,6 @@ import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
 import { RecentTasks } from '../../components/workstation/RecentTasks';
 import { SystemReminders } from '../../components/workstation/SystemReminders';
-import { TaskOverview } from '../../components/workstation/TaskOverview';
 import { WorkstationHero } from '../../components/workstation/WorkstationHero';
 import type { WorkstationPageData } from './workstation.types';
 import '../../components/workstation/workstation.css';
@@ -18,7 +17,7 @@ const emptyWorkstationData: WorkstationPageData = {
       { id: 'mobile', label: '手机采集', value: '等待服务就绪', tone: 'neutral' }
     ]
   },
-  currentSession: null,
+  currentTask: null,
   tasks: [],
   reminders: []
 };
@@ -73,15 +72,13 @@ export function WorkstationPage({
     >
       <main className="workstation-content" aria-label="电脑端工作台首页">
         <WorkstationHero
-          currentSession={pageData.currentSession}
+          currentTask={pageData.currentTask}
           isSystemReady={isSystemReady}
           isCreatingSession={isCreatingSession}
           createError={createError}
           onNewCapture={onNewCapture}
           onViewQr={onViewQr}
         />
-
-        <TaskOverview tasks={pageData.tasks} />
 
         <div className="workstation-lower-grid">
           <RecentTasks tasks={pageData.tasks} />
@@ -91,7 +88,7 @@ export function WorkstationPage({
 
       <CaptureQrDialog
         isOpen={isQrOpen}
-        session={pageData.currentSession}
+        task={pageData.currentTask}
         onClose={onCloseQr}
         onRegenerate={regenerateQr}
         lanAddresses={lanAddresses}

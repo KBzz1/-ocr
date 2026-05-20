@@ -1,53 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { exportTaskExcel, exportTaskJson } from '../../api/export';
+import type { TaskStatus } from '../../api/tasks';
 import { UserFriendlyError } from '../errors/UserFriendlyError';
 
 type ExportFormat = 'json' | 'excel';
-type ExportableStatus = 'confirmed' | 'exported' | string;
 
 export interface ExportTaskView {
   task_id: string;
-  status: ExportableStatus;
-  review_summary?: {
-    unreviewed?: number;
-    suspicious?: number;
-    empty?: number;
-    missing_source?: number;
-  };
+  status: TaskStatus;
   export_summary?: {
     formats?: string[];
     last_exported_at?: string | null;
-    last_format?: string | null;
   };
 }
 
 interface ExportPanelProps {
   task: ExportTaskView;
-}
-
-interface LastExport {
-  format: ExportFormat;
-  exportedAt: string;
-}
-
-const formatLabels: Record<ExportFormat, string> = {
-  json: 'JSON',
-  excel: 'Excel'
-};
-
-function pad(value: number) {
-  return String(value).padStart(2, '0');
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '时间未知';
-
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
 }
 
 function toFileName(taskId: string, format: ExportFormat) {
@@ -66,21 +36,6 @@ function triggerDownload(blob: Blob, taskId: string, format: ExportFormat) {
   URL.revokeObjectURL(url);
 }
 
-function getInitialLastExport(task: ExportTaskView): LastExport | null {
-  const lastFormat = task.export_summary?.last_format;
-  const lastExportedAt = task.export_summary?.last_exported_at;
-  if ((lastFormat === 'json' || lastFormat === 'excel') && lastExportedAt) {
-    return { format: lastFormat, exportedAt: lastExportedAt };
-  }
-
-  const latestFormat = task.export_summary?.formats?.at(-1);
-  if ((latestFormat === 'json' || latestFormat === 'excel') && lastExportedAt) {
-    return { format: latestFormat, exportedAt: lastExportedAt };
-  }
-
-  return null;
-}
-
 function getErrorCode(error: unknown) {
   if (error instanceof ApiError) return error.code;
   return 'EXPORT_FAILED';
@@ -89,34 +44,20 @@ function getErrorCode(error: unknown) {
 export function ExportPanel({ task }: ExportPanelProps) {
   const [busyFormat, setBusyFormat] = useState<ExportFormat | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [lastExport, setLastExport] = useState<LastExport | null>(() => getInitialLastExport(task));
-  const isConfirmed = task.status === 'confirmed' || task.status === 'exported';
-  const summary = task.review_summary ?? {};
-  const hasReviewIssues =
-    (summary.unreviewed ?? 0) > 0 ||
-    (summary.suspicious ?? 0) > 0 ||
-    (summary.empty ?? 0) > 0 ||
-    (summary.missing_source ?? 0) > 0;
-  const disabledReason = !isConfirmed ? '请先确认审核' : null;
-  const statusText = useMemo(() => {
-    if (lastExport) {
-      return `最近导出：${formatLabels[lastExport.format]} ${formatDateTime(lastExport.exportedAt)}`;
-    }
-
-    return '最近导出：暂无';
-  }, [lastExport]);
+  const [lastExportText, setLastExportText] = useState(
+    task.export_summary?.last_exported_at ? `最近导出：${task.export_summary.last_exported_at}` : '最近导出：暂无'
+  );
+  const canExport = task.status === 'review' || task.status === 'done';
 
   async function handleExport(format: ExportFormat) {
-    if (!isConfirmed || busyFormat) return;
+    if (!canExport || busyFormat) return;
 
     setBusyFormat(format);
     setErrorCode(null);
-
     try {
-      const blob =
-        format === 'json' ? await exportTaskJson(task.task_id) : await exportTaskExcel(task.task_id);
+      const blob = format === 'json' ? await exportTaskJson(task.task_id) : await exportTaskExcel(task.task_id);
       triggerDownload(blob, task.task_id, format);
-      setLastExport({ format, exportedAt: new Date().toISOString() });
+      setLastExportText(`最近导出：${format === 'json' ? 'JSON' : 'Excel'}`);
     } catch (error: unknown) {
       setErrorCode(getErrorCode(error));
     } finally {
@@ -127,40 +68,26 @@ export function ExportPanel({ task }: ExportPanelProps) {
   return (
     <section aria-label="导出结果">
       <header>
-        <h1>导出结果</h1>
-        <p>{statusText}</p>
+        <h2>导出结果</h2>
+        <p>{lastExportText}</p>
       </header>
-
-      <div aria-label="导出前完整性提示">
-        <span>未审核 {summary.unreviewed ?? 0}</span>
-        <span>存疑 {summary.suspicious ?? 0}</span>
-        <span>为空 {summary.empty ?? 0}</span>
-        <span>未定位来源 {summary.missing_source ?? 0}</span>
-      </div>
-
-      {hasReviewIssues ? <p>导出前请处理仍需核验的字段。</p> : null}
-      {disabledReason ? <p>{disabledReason}</p> : null}
-      <p>已审核数据保留在本地任务中</p>
-
+      {!canExport ? <p>待审核或已完成任务才可导出</p> : null}
       <div>
         <button
           type="button"
-          disabled={!isConfirmed || busyFormat !== null}
+          disabled={!canExport || busyFormat !== null}
           onClick={() => void handleExport('json')}
-          title={disabledReason ?? undefined}
         >
           {busyFormat === 'json' ? '导出中...' : '导出 JSON'}
         </button>
         <button
           type="button"
-          disabled={!isConfirmed || busyFormat !== null}
+          disabled={!canExport || busyFormat !== null}
           onClick={() => void handleExport('excel')}
-          title={disabledReason ?? undefined}
         >
           {busyFormat === 'excel' ? '导出中...' : '导出 Excel'}
         </button>
       </div>
-
       {errorCode ? <UserFriendlyError code={errorCode} title="导出失败" /> : null}
     </section>
   );

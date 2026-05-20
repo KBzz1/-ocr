@@ -61,9 +61,9 @@ class TestStaticServe:
         assert "text/html" in resp.content_type
         assert b"<!DOCTYPE html>" in resp.data
 
-    def test_mobile_session_returns_spa(self, static_client):
-        """BE-NW-003: GET /mobile/sessions/{id} 返回 SPA index.html。"""
-        resp = static_client.get("/mobile/sessions/abc-123")
+    def test_mobile_upload_returns_spa(self, static_client):
+        """BE-NW-003: GET /mobile/upload/{task_id} 返回 SPA index.html。"""
+        resp = static_client.get("/mobile/upload/task_001")
 
         assert resp.status_code == 200
         assert "text/html" in resp.content_type

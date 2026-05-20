@@ -38,7 +38,7 @@ def update_review_field(task_id, field_key):
 def complete_task(task_id):
     task = _get_review_service().confirm(task_id)
     review_summary = task.get("review_summary") or {}
-    _safe_event("review_confirmed", task_id=task_id, field_count=review_summary.get("total_count"))
+    _safe_event("review_completed", task_id=task_id, field_count=review_summary.get("total_count"))
     return success(data=task)
 
 
@@ -46,5 +46,5 @@ def complete_task(task_id):
 def confirm_review(task_id):
     task = _get_review_service().confirm(task_id)
     review_summary = task.get("review_summary") or {}
-    _safe_event("review_confirmed", task_id=task_id, field_count=review_summary.get("total_count"))
+    _safe_event("review_completed", task_id=task_id, field_count=review_summary.get("total_count"))
     return success(data=task)

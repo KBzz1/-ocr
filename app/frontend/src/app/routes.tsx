@@ -6,7 +6,7 @@ export type AppRoute = {
 
 export const appRoutes = {
   workstation: { id: 'workstation', label: '工作台总览', path: '/' },
-  mobileCapture: { id: 'mobileCapture', label: '手机采集', path: '/mobile/sessions/:sessionId' },
+  mobileCapture: { id: 'mobileCapture', label: '手机上传', path: '/mobile/upload/:taskId' },
   tasks: { id: 'tasks', label: '任务管理', path: '/tasks' },
   review: { id: 'review', label: '人工审核', path: '/tasks/:taskId/review' },
   export: { id: 'export', label: '导出结果', path: '/tasks/:taskId/export' }
@@ -20,14 +20,14 @@ export const routes: AppRoute[] = [
   appRoutes.export
 ];
 
-export const MOBILE_SESSION_PREFIX = '/mobile/sessions/';
+export const MOBILE_UPLOAD_PREFIX = '/mobile/upload/';
 
 function encodeSegment(value: string) {
   return encodeURIComponent(value);
 }
 
-export function buildMobileSessionPath(sessionId: string) {
-  return `${MOBILE_SESSION_PREFIX}${encodeSegment(sessionId)}`;
+export function buildMobileUploadPath(taskId: string) {
+  return `${MOBILE_UPLOAD_PREFIX}${encodeSegment(taskId)}`;
 }
 
 export function buildReviewPath(taskId: string) {

@@ -6,10 +6,11 @@ const overviewItems: Array<{
   title: string;
   hint: string;
 }> = [
-  { status: 'ready_for_review', title: '待审核', hint: '待人工核验任务' },
+  { status: 'uploading', title: '上传中', hint: '等待手机上传图片' },
   { status: 'processing', title: '处理中', hint: '本地解析进行中' },
-  { status: 'failed', title: '处理失败', hint: '可查看原因并重试' },
-  { status: 'exported', title: '已导出', hint: '结构化结果已生成' }
+  { status: 'review', title: '待审核', hint: '待人工核验任务' },
+  { status: 'done', title: '已完成', hint: '可查看和导出' },
+  { status: 'failed', title: '失败', hint: '可查看原因并重试' }
 ];
 
 type TaskOverviewProps = {

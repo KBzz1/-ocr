@@ -1,20 +1,19 @@
 import { apiRequest } from './client';
 
-export type TaskStatus =
-  | 'created'
-  | 'uploading'
-  | 'uploaded'
-  | 'processing'
-  | 'ready_for_review'
-  | 'confirmed'
-  | 'exported'
-  | 'failed';
+export type TaskStatus = 'uploading' | 'processing' | 'review' | 'done' | 'failed';
+
+export interface CreateTaskResult {
+  task_id: string;
+  status: 'uploading';
+  upload_token: string;
+  mobile_upload_url: string;
+}
 
 export interface TaskSummary {
   task_id: string;
-  session_id?: string;
   status: TaskStatus;
   created_at: string;
+  updated_at?: string;
   page_count: number;
   error_code?: string | null;
   error_message?: string | null;
@@ -24,7 +23,9 @@ export interface TaskSummary {
     total_count?: number;
   };
   export_summary?: {
+    last_exported_at?: string | null;
     formats?: string[];
+    files?: Array<{ format: string; relative_path: string }>;
   };
 }
 
@@ -48,20 +49,50 @@ export interface TaskRetryResult {
 }
 
 interface TaskListResponse {
-  tasks: TaskSummary[];
+  tasks: Array<Omit<TaskSummary, 'status'> & { status: string }>;
+}
+
+function normalizeTaskStatus(status: string): TaskStatus {
+  if (status === 'uploading' || status === 'processing' || status === 'review' || status === 'done' || status === 'failed') {
+    return status;
+  }
+  if (status === 'ready_for_review') return 'review';
+  if (status === 'confirmed' || status === 'exported') return 'done';
+  return 'uploading';
+}
+
+function normalizeTaskSummary(task: Omit<TaskSummary, 'status'> & { status: string }): TaskSummary {
+  return {
+    ...task,
+    status: normalizeTaskStatus(task.status)
+  };
 }
 
 export async function getTasks() {
   const data = await apiRequest<TaskListResponse>('/api/tasks');
-  return data.tasks;
+  return data.tasks.map(normalizeTaskSummary);
+}
+
+export function createTask() {
+  return apiRequest<CreateTaskResult>('/api/tasks', { method: 'POST' });
 }
 
 export function getTaskDetail(taskId: string) {
   return apiRequest<TaskDetail>(`/api/tasks/${encodeURIComponent(taskId)}`);
 }
 
-export function retryTaskProcessing(taskId: string) {
-  return apiRequest<TaskRetryResult>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, {
+export function processTask(taskId: string) {
+  return apiRequest<TaskSummary>(`/api/tasks/${encodeURIComponent(taskId)}/process`, {
     method: 'POST'
   });
+}
+
+export function completeTask(taskId: string) {
+  return apiRequest<TaskSummary>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
+    method: 'POST'
+  });
+}
+
+export function retryTaskProcessing(taskId: string) {
+  return processTask(taskId) as Promise<TaskRetryResult>;
 }

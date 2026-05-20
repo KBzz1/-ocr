@@ -114,7 +114,7 @@ def test_e2e_logs_do_not_include_sensitive_payloads(tmp_path, monkeypatch):
     events = [record["event"] for record in lines]
     assert "system_started" in events
     assert "task_processing_started" in events
-    assert "task_ready_for_review" in events
+    assert "task_review_ready" in events
 
     log_text = json.dumps(lines, ensure_ascii=False)
     assert "ffd8" not in log_text.lower()

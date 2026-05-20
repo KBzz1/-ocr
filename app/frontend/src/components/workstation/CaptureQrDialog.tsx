@@ -1,26 +1,25 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
-import captureIllustration from '../../assets/illustrations/phone-qr-capture.png';
-import type { CaptureSessionSummary } from '../../pages/workstation/workstation.types';
+import type { TaskUploadSummary } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
 type CaptureQrDialogProps = {
   isOpen: boolean;
-  session: CaptureSessionSummary | null;
+  task: TaskUploadSummary | null;
   onClose: () => void;
   onRegenerate: () => void;
   lanAddresses?: string[];
 };
 
-export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAddresses = [] }: CaptureQrDialogProps) {
+export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddresses = [] }: CaptureQrDialogProps) {
   const [qrSvgDataUrl, setQrSvgDataUrl] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [manualUrl, setManualUrl] = useState('');
   const [qrValueOverride, setQrValueOverride] = useState<string | null>(null);
   const [manualUrlError, setManualUrlError] = useState<string | null>(null);
-  const qrValue = qrValueOverride ?? session?.qrCodeValue ?? '';
+  const qrValue = qrValueOverride ?? task?.mobile_upload_url ?? '';
 
   useEffect(() => {
     let isCurrent = true;
@@ -50,10 +49,10 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
   useEffect(() => {
     if (isOpen) {
       setQrValueOverride(null);
-      setManualUrl(session?.qrCodeValue ?? '');
+      setManualUrl(task?.mobile_upload_url ?? '');
       setManualUrlError(null);
     }
-  }, [isOpen, session?.qrCodeValue]);
+  }, [isOpen, task?.mobile_upload_url]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -76,8 +75,8 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
   }
 
   function buildUrlForAddress(address: string) {
-    if (!session) return '';
-    return `http://${address}/mobile/sessions/${encodeURIComponent(session.id)}`;
+    if (!task) return '';
+    return `http://${address}/mobile/upload/${encodeURIComponent(task.task_id)}?token=${encodeURIComponent(task.upload_token)}`;
   }
 
   function applyManualUrl() {
@@ -104,7 +103,7 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
       >
         <header className="qr-dialog__header">
           <div>
-            <h2 id="qr-dialog-title">采集二维码</h2>
+            <h2 id="qr-dialog-title">任务上传二维码</h2>
           </div>
           <IconButton label="关闭弹窗" onClick={onClose} variant="soft">
             x
@@ -122,7 +121,7 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
                 <img
                   className="qr-code-image"
                   src={qrSvgDataUrl}
-                  alt="采集二维码"
+                  alt="任务上传二维码"
                   data-qr-value={qrValue}
                 />
               </div>
@@ -132,37 +131,36 @@ export function CaptureQrDialog({ isOpen, session, onClose, onRegenerate, lanAdd
             <button className="secondary-action" type="button" onClick={onRegenerate}>
               重新生成二维码
             </button>
+            {qrValue ? <p className="qr-dialog__url">{qrValue}</p> : null}
           </div>
-
-          <img className="qr-dialog__illustration" src={captureIllustration} alt="" aria-hidden="true" />
 
           <div className="qr-dialog__status">
             <div className="qr-status-row qr-status-row--success">
               <span className="qr-status-icon" aria-hidden="true">✓</span>
               <div>
-                <strong>会话已创建</strong>
-                <span>{session?.createdAtText ?? '等待扫码'}</span>
+                <strong>任务已创建</strong>
+                <span>{task?.createdAtText ?? '等待扫码'}</span>
               </div>
             </div>
             <div className="qr-status-row qr-status-row--info">
               <span className="qr-status-icon" aria-hidden="true">◷</span>
               <div>
-                <strong>剩余 {session?.remainingTimeText ?? '30 分钟'}</strong>
-                <span>到期后自动失效</span>
+                <strong>{task?.task_id ?? '等待任务编号'}</strong>
+                <span>手机图片将上传到此任务</span>
               </div>
             </div>
             <div className="qr-status-row">
               <span className="qr-status-icon" aria-hidden="true">↑</span>
               <div>
-                <strong>已上传 {session?.uploadedPages ?? 0} 页</strong>
-                <span>等待手机上传页面</span>
+                <strong>已上传 {task?.uploadedPages ?? 0} 张图片</strong>
+                <span>等待手机上传原图</span>
               </div>
             </div>
           </div>
         </div>
 
         <footer className="qr-dialog__footer">
-          {isHelpOpen && session?.qrCodeValue ? (
+          {isHelpOpen && task?.mobile_upload_url ? (
             <div className="qr-help-panel">
               <label htmlFor="mobile-capture-url">手机访问链接</label>
               <div className="qr-help-panel__copy-row">

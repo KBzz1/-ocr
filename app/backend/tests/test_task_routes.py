@@ -64,6 +64,15 @@ def test_post_tasks_creates_uploading_task(client):
     assert f"/mobile/upload/{data['task_id']}?token={data['upload_token']}" in data["mobile_upload_url"]
 
 
+def test_post_tasks_uses_lan_address_for_mobile_upload_url(client):
+    response = client.post("/api/tasks", base_url="http://127.0.0.1:8081")
+
+    assert response.status_code == 201
+    data = response.get_json()["data"]
+    assert data["mobile_upload_url"].startswith("http://192.168.1.5:8081/mobile/upload/")
+    assert "127.0.0.1" not in data["mobile_upload_url"]
+
+
 def test_get_task_returns_mvp_shape_without_session(client):
     created = client.post("/api/tasks").get_json()["data"]
 

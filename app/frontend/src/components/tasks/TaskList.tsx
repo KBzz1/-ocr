@@ -1,20 +1,21 @@
 import type { TaskStatus, TaskSummary } from '../../api/tasks';
 import { retryTaskProcessing } from '../../api/tasks';
-import { buildReviewPath } from '../../app/routes';
-import { exportStatusMeta, taskStatusMeta } from '../../styles/status';
+import { buildReviewPath, buildTaskExportPath } from '../../app/routes';
+import { taskStatusMeta } from '../../styles/status';
 
 const statusFilters: Array<{ label: string; value: TaskStatus | 'all' }> = [
   { label: '全部', value: 'all' },
-  { label: taskStatusMeta.ready_for_review.label, value: 'ready_for_review' },
+  { label: taskStatusMeta.uploading.label, value: 'uploading' },
+  { label: taskStatusMeta.processing.label, value: 'processing' },
+  { label: taskStatusMeta.review.label, value: 'review' },
+  { label: taskStatusMeta.done.label, value: 'done' },
   { label: taskStatusMeta.failed.label, value: 'failed' }
 ];
 
 const reviewStatusLabels: Record<string, string> = {
   unreviewed: '未审核',
   confirmed: '已确认',
-  modified: '已修改',
-  suspicious: '存疑',
-  empty: '为空'
+  modified: '已修改'
 };
 
 type TaskListProps = {
@@ -45,14 +46,6 @@ function getReviewLabel(task: TaskSummary) {
   const total = task.review_summary?.total_count ?? 0;
   if (total > 0 && confirmed >= total) return '已确认';
   return '未审核';
-}
-
-function getExportLabel(task: TaskSummary) {
-  if (task.status === 'exported' || (task.export_summary?.formats?.length ?? 0) > 0) {
-    return exportStatusMeta.exported.label;
-  }
-
-  return exportStatusMeta.not_exported.label;
 }
 
 function getErrorSummary(task: TaskSummary) {
@@ -110,7 +103,6 @@ export function TaskList({
                 <th>页数</th>
                 <th>处理状态</th>
                 <th>审核状态</th>
-                <th>导出状态</th>
                 <th>失败原因</th>
                 <th>操作</th>
               </tr>
@@ -132,7 +124,6 @@ export function TaskList({
                       </span>
                     </td>
                     <td>{getReviewLabel(task)}</td>
-                    <td>{getExportLabel(task)}</td>
                     <td>
                       {errorSummary ? (
                         <details className="task-error-details">
@@ -145,9 +136,25 @@ export function TaskList({
                     </td>
                     <td>
                       <div className="task-list-actions">
-                        {task.status === 'ready_for_review' ? (
+                        {task.status === 'uploading' ? (
+                          <span className="task-list-muted">查看二维码</span>
+                        ) : null}
+                        {task.status === 'processing' ? (
+                          <span className="task-list-muted">查看进度</span>
+                        ) : null}
+                        {task.status === 'review' ? (
                           <a className="task-list-action" href={buildReviewPath(task.task_id)}>
-                            开始审核
+                            进入审核
+                          </a>
+                        ) : null}
+                        {task.status === 'review' || task.status === 'done' ? (
+                          <a className="task-list-action" href={buildTaskExportPath(task.task_id)}>
+                            导出
+                          </a>
+                        ) : null}
+                        {task.status === 'done' ? (
+                          <a className="task-list-action" href={buildReviewPath(task.task_id)}>
+                            查看结果
                           </a>
                         ) : null}
                         {task.status === 'failed' ? (

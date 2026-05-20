@@ -6,8 +6,8 @@ function getTaskActions(task: TaskSummary) {
   const taskListPath = appRoutes.tasks.path;
   const failedPath = `${taskListPath}?status=failed`;
 
-  if (task.status === 'ready_for_review') return [{ label: '开始审核', href: buildReviewPath(task.id) }];
-  if (task.status === 'processing' || task.status === 'created' || task.status === 'uploading' || task.status === 'uploaded') {
+  if (task.status === 'review') return [{ label: '进入审核', href: buildReviewPath(task.id) }];
+  if (task.status === 'processing' || task.status === 'uploading') {
     return [{ label: '查看进度', href: taskListPath }];
   }
   if (task.status === 'failed') {
@@ -16,8 +16,7 @@ function getTaskActions(task: TaskSummary) {
       { label: '重新处理', href: failedPath }
     ];
   }
-  if (task.status === 'confirmed') return [{ label: '导出结果', href: buildTaskExportPath(task.id) }];
-  return [{ label: '导出结果', href: buildTaskExportPath(task.id) }];
+  return [{ label: '导出', href: buildTaskExportPath(task.id) }];
 }
 
 type RecentTasksProps = {

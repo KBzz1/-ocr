@@ -152,7 +152,7 @@ def test_review_events_logged_without_field_values(client, app):
     records = events(app)
     names = [item["event"] for item in records]
     assert "review_field_saved" in names
-    assert "review_confirmed" in names
+    assert "review_completed" in names
 
     review_event = next(item for item in records if item["event"] == "review_field_saved")
     assert review_event["task_id"] == "task-review"

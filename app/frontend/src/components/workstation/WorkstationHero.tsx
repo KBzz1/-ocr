@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import captureIllustration from '../../assets/illustrations/phone-qr-capture.png';
-import type { CaptureSessionSummary } from '../../pages/workstation/workstation.types';
+import type { TaskUploadSummary } from '../../pages/workstation/workstation.types';
 import { IconButton } from '../common/IconButton';
 
 type WorkstationHeroProps = {
-  currentSession: CaptureSessionSummary | null;
+  currentTask: TaskUploadSummary | null;
   isSystemReady?: boolean;
   isCreatingSession?: boolean;
   createError?: string | null;
@@ -12,15 +12,8 @@ type WorkstationHeroProps = {
   onViewQr: () => void;
 };
 
-const sessionStatusText: Record<NonNullable<CaptureSessionSummary>['status'], string> = {
-  active: '会话进行中',
-  expired: '已过期，不可继续上传',
-  locked: '采集已完成',
-  cancelled: '已取消'
-};
-
 export function WorkstationHero({
-  currentSession,
+  currentTask,
   isSystemReady = true,
   isCreatingSession = false,
   createError = null,
@@ -46,7 +39,7 @@ export function WorkstationHero({
           onClick={onNewCapture}
         >
           <span aria-hidden="true">+</span>
-          {isCreatingSession ? '正在创建' : '新建采集'}
+          {isCreatingSession ? '正在创建' : '新建任务'}
         </button>
         {createError ? (
           <p className="inline-error" role="alert">
@@ -58,35 +51,32 @@ export function WorkstationHero({
       <div className="current-session-panel">
         <div className="panel-title-row">
           <div>
-            <p className="section-kicker">当前会话</p>
-            <h2>当前采集会话</h2>
+            <p className="section-kicker">当前任务</p>
+            <h2>手机上传入口</h2>
           </div>
           <span
-            className={`session-indicator${currentSession ? ' session-indicator--active' : ''}`}
+            className={`session-indicator${currentTask ? ' session-indicator--active' : ''}`}
             aria-hidden="true"
           />
         </div>
 
-        {currentSession ? (
+        {currentTask ? (
           <div className="session-summary">
             <div>
               <div className="session-summary__state">
-                {sessionStatusText[currentSession.status]}
+                上传任务已创建
               </div>
               <div className="session-summary__meta">
-                已上传 {currentSession.uploadedPages} 页 · 剩余 {currentSession.remainingTimeText}
+                {currentTask.id} · 已上传 {currentTask.uploadedPages} 张图片
               </div>
             </div>
             <div className="session-summary__actions">
               <button className="secondary-action" type="button" onClick={onViewQr}>
                 查看二维码
               </button>
-              <button className="secondary-action" type="button" onClick={() => setEndSessionHint(true)}>
-                结束会话
-              </button>
             </div>
             {endSessionHint ? (
-              <p className="inline-hint">请在手机端点击完成采集；如需作废，请重新生成二维码。</p>
+              <p className="inline-hint">请在手机端点击完成上传，然后回到电脑端审核。</p>
             ) : null}
           </div>
         ) : (
@@ -95,8 +85,8 @@ export function WorkstationHero({
               +
             </IconButton>
             <div>
-              <div className="session-summary__state">暂无进行中的采集会话</div>
-              <div className="session-summary__meta">新建采集后，可在此查看上传进度。</div>
+              <div className="session-summary__state">暂无上传中的任务</div>
+              <div className="session-summary__meta">新建任务后，可在此查看手机上传入口。</div>
             </div>
           </div>
         )}

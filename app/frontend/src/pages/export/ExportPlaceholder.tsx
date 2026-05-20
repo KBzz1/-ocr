@@ -15,22 +15,9 @@ function getErrorCode(error: unknown) {
 }
 
 function toExportTask(task: TaskDetail) {
-  const total = task.review_summary?.total_count ?? 0;
-  const confirmed = task.review_summary?.confirmed_count ?? 0;
-  const isConfirmed =
-    task.review_summary?.status === 'confirmed' ||
-    task.status === 'confirmed' ||
-    task.status === 'exported';
-
   return {
     task_id: task.task_id,
     status: task.status,
-    review_summary: {
-      unreviewed: isConfirmed ? 0 : Math.max(total - confirmed, 0),
-      suspicious: 0,
-      empty: 0,
-      missing_source: 0
-    },
     export_summary: {
       formats: task.export_summary?.formats ?? []
     }

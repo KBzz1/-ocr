@@ -1,14 +1,6 @@
-export type TaskStatus =
-  | 'created'
-  | 'uploading'
-  | 'uploaded'
-  | 'processing'
-  | 'ready_for_review'
-  | 'confirmed'
-  | 'exported'
-  | 'failed';
+import type { CreateTaskResult, TaskStatus } from '../../api/tasks';
 
-export type CaptureSessionStatus = 'active' | 'expired' | 'locked' | 'cancelled';
+export type { TaskStatus };
 
 export type SystemStatus = {
   startup: 'running' | 'error' | 'offline';
@@ -21,13 +13,10 @@ export type SystemStatus = {
   }>;
 };
 
-export type CaptureSessionSummary = {
+export type TaskUploadSummary = CreateTaskResult & {
   id: string;
-  status: CaptureSessionStatus;
   uploadedPages: number;
-  remainingTimeText: string;
   createdAtText: string;
-  qrCodeValue?: string;
 };
 
 export type TaskSummary = {
@@ -37,6 +26,7 @@ export type TaskSummary = {
   status: TaskStatus;
   reviewedFields: number;
   totalFields: number;
+  errorReason?: string | null;
 };
 
 export type ReminderTone = 'warning' | 'info' | 'success';
@@ -52,7 +42,7 @@ export type SystemReminder = {
 
 export type WorkstationFixtures = {
   systemStatus: SystemStatus;
-  currentSession: CaptureSessionSummary | null;
+  currentTask: TaskUploadSummary | null;
   tasks: TaskSummary[];
   reminders: SystemReminder[];
 };

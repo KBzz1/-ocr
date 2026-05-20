@@ -1,30 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../api/client';
-import type { CaptureSession } from '../api/captureSessions';
-import { createCaptureSession, getCaptureSession } from '../api/captureSessions';
 import { getSystemStatus, type SystemStatus as ApiSystemStatus } from '../api/system';
-import { getTasks, type TaskSummary as ApiTaskSummary } from '../api/tasks';
+import { createTask, getTasks, type CreateTaskResult, type TaskSummary as ApiTaskSummary } from '../api/tasks';
 import {
   buildSystemReminders,
-  formatRemainingTime,
   sortRecentTasks
 } from '../state/workstationStore';
-import { MOBILE_SESSION_PREFIX } from './routes';
+import { MOBILE_UPLOAD_PREFIX } from './routes';
 import { ExportPlaceholder } from '../pages/export/ExportPlaceholder';
 import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
-import { ReviewPlaceholder } from '../pages/review/ReviewPlaceholder';
-import { TasksPlaceholder } from '../pages/tasks/TasksPlaceholder';
+import { ReviewPage } from '../pages/review/ReviewPage';
+import { TasksPage } from '../pages/tasks/TasksPage';
 import { WorkstationPage } from '../pages/workstation/WorkstationPage';
 import type {
-  CaptureSessionSummary,
   SystemReminder,
   SystemStatus,
+  TaskUploadSummary,
   TaskSummary,
   WorkstationPageData
 } from '../pages/workstation/workstation.types';
-
-const CURRENT_CAPTURE_SESSION_KEY = 'manzufei.currentCaptureSessionId';
 
 function toSystemStatus(status: ApiSystemStatus | null, error: string | null): SystemStatus {
   if (error) {
@@ -60,22 +55,24 @@ function toSystemStatus(status: ApiSystemStatus | null, error: string | null): S
   };
 }
 
-function toSessionSummary(session: CaptureSession | null): CaptureSessionSummary | null {
-  if (!session) return null;
+function toTaskUploadSummary(task: CreateTaskResult | null): TaskUploadSummary | null {
+  if (!task) return null;
 
   return {
-    id: session.session_id,
-    status: session.status,
-    uploadedPages: session.page_count,
-    remainingTimeText: formatRemainingTime(session),
-    createdAtText: formatDateTime(session.created_at),
-    qrCodeValue: session.qr_code_url
+    ...task,
+    id: task.task_id,
+    uploadedPages: 0,
+    createdAtText: '刚刚'
   };
 }
 
 function toTaskSummary(task: ApiTaskSummary): TaskSummary {
   const totalFields = task.review_summary?.total_count ?? 0;
   const reviewedFields = task.review_summary?.confirmed_count ?? 0;
+  const errorReason =
+    task.status === 'failed'
+      ? task.error_message || task.error_code || '处理失败，请重新处理'
+      : null;
 
   return {
     id: task.task_id,
@@ -83,18 +80,18 @@ function toTaskSummary(task: ApiTaskSummary): TaskSummary {
     pageCount: task.page_count,
     status: task.status,
     reviewedFields,
-    totalFields
+    totalFields,
+    errorReason
   };
 }
 
-function toReminders(tasks: ApiTaskSummary[], session: CaptureSession | null): SystemReminder[] {
-  return buildSystemReminders(tasks, session).map((message, index) => {
+function toReminders(tasks: ApiTaskSummary[]): SystemReminder[] {
+  return buildSystemReminders(tasks).map((message, index) => {
     const isFailed = message.includes('处理失败');
-    const isExpired = message.includes('过期');
     return {
       id: `reminder-${index}`,
-      tone: isFailed || isExpired ? 'warning' : 'info',
-      title: isFailed ? '任务处理失败' : isExpired ? '采集会话过期' : '系统提醒',
+      tone: isFailed ? 'warning' : 'info',
+      title: isFailed ? '任务处理失败' : '系统提醒',
       timeText: '刚刚',
       message,
       actionLabel: isFailed ? '查看原因' : undefined
@@ -118,12 +115,27 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+function useCurrentPathname() {
+  const [pathname, setPathname] = useState(window.location.pathname);
+
+  useEffect(() => {
+    function updatePathname() {
+      setPathname(window.location.pathname);
+    }
+
+    window.addEventListener('popstate', updatePathname);
+    return () => window.removeEventListener('popstate', updatePathname);
+  }, []);
+
+  return pathname;
+}
+
 function WorkstationApp() {
   const [systemStatus, setSystemStatus] = useState<ApiSystemStatus | null>(null);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ApiTaskSummary[]>([]);
   const [taskError, setTaskError] = useState<string | null>(null);
-  const [currentSession, setCurrentSession] = useState<CaptureSession | null>(null);
+  const [currentTask, setCurrentTask] = useState<CreateTaskResult | null>(null);
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -153,22 +165,8 @@ function WorkstationApp() {
     }
   }
 
-  async function restoreCurrentSession() {
-    const sessionId = window.localStorage.getItem(CURRENT_CAPTURE_SESSION_KEY);
-    if (!sessionId) return;
-
-    try {
-      const session = await getCaptureSession(sessionId);
-      setCurrentSession(session);
-    } catch {
-      window.localStorage.removeItem(CURRENT_CAPTURE_SESSION_KEY);
-      setCurrentSession(null);
-    }
-  }
-
   useEffect(() => {
     void loadDashboard();
-    void restoreCurrentSession();
   }, []);
 
   async function handleRetrySystem() {
@@ -178,7 +176,7 @@ function WorkstationApp() {
   }
 
   const pageData = useMemo<WorkstationPageData>(() => {
-    const reminders = toReminders(tasks, currentSession);
+    const reminders = toReminders(tasks);
     if (taskError) {
       reminders.unshift({
         id: 'task-error',
@@ -191,11 +189,11 @@ function WorkstationApp() {
 
     return {
       systemStatus: toSystemStatus(systemStatus, systemError),
-      currentSession: toSessionSummary(currentSession),
+      currentTask: toTaskUploadSummary(currentTask),
       tasks: sortRecentTasks(tasks).map(toTaskSummary),
       reminders
     };
-  }, [currentSession, systemError, systemStatus, taskError, tasks]);
+  }, [currentTask, systemError, systemStatus, taskError, tasks]);
 
   async function handleCreateSession() {
     setIsCreatingSession(true);
@@ -203,13 +201,17 @@ function WorkstationApp() {
     setIsQrOpen(false);
 
     try {
-      const session = await createCaptureSession();
-      window.localStorage.setItem(CURRENT_CAPTURE_SESSION_KEY, session.session_id);
-      setCurrentSession(session);
+      const task = await createTask();
+      setCurrentTask(task);
       setIsQrOpen(true);
-    } catch {
-      setCurrentSession(null);
-      setCreateError('创建采集会话失败，请重试');
+      await loadDashboard();
+    } catch (error) {
+      setCurrentTask(null);
+      setCreateError(
+        error instanceof ApiError && error.status === 405
+          ? '当前后端版本不支持新建任务，请重启服务后再试'
+          : '创建任务失败，请重试'
+      );
     } finally {
       setIsCreatingSession(false);
     }
@@ -234,14 +236,14 @@ function WorkstationApp() {
 }
 
 export function App() {
-  const { pathname } = window.location;
+  const pathname = useCurrentPathname();
 
-  if (pathname.startsWith(MOBILE_SESSION_PREFIX)) {
+  if (pathname.startsWith(MOBILE_UPLOAD_PREFIX)) {
     return <MobileCapturePage />;
   }
 
   if (/^\/tasks\/[^/]+\/review\/?$/.test(pathname)) {
-    return <ReviewPlaceholder />;
+    return <ReviewPage />;
   }
 
   if (/^\/tasks\/[^/]+\/export\/?$/.test(pathname)) {
@@ -249,7 +251,7 @@ export function App() {
   }
 
   if (pathname === '/tasks' || pathname === '/tasks/') {
-    return <TasksPlaceholder />;
+    return <TasksPage />;
   }
 
   return <WorkstationApp />;

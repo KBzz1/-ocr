@@ -6,13 +6,20 @@ import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
 import '../../components/tasks/tasks.css';
 
+const taskStatuses: TaskStatus[] = ['uploading', 'processing', 'review', 'done', 'failed'];
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-export function TasksPlaceholder() {
+function getInitialStatusFilter(): TaskStatus | 'all' {
+  const status = new URLSearchParams(window.location.search).get('status');
+  return taskStatuses.includes(status as TaskStatus) ? (status as TaskStatus) : 'all';
+}
+
+export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
-  const [activeFilter, setActiveFilter] = useState<TaskStatus | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<TaskStatus | 'all'>(getInitialStatusFilter);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
@@ -57,6 +64,13 @@ export function TasksPlaceholder() {
     setRetryingTaskId(null);
   }
 
+  function handleFilterChange(filter: TaskStatus | 'all') {
+    setActiveFilter(filter);
+
+    const nextUrl = filter === 'all' ? '/tasks' : `/tasks?status=${encodeURIComponent(filter)}`;
+    window.history.replaceState({}, '', nextUrl);
+  }
+
   return (
     <WorkstationLayout
       activeRouteId="tasks"
@@ -84,7 +98,7 @@ export function TasksPlaceholder() {
             activeFilter={activeFilter}
             retryingTaskId={retryingTaskId}
             tasks={tasks}
-            onFilterChange={setActiveFilter}
+            onFilterChange={handleFilterChange}
             onTaskStatusChange={handleTaskStatusChange}
           />
         </div>
@@ -92,3 +106,5 @@ export function TasksPlaceholder() {
     </WorkstationLayout>
   );
 }
+
+export const TasksPlaceholder = TasksPage;

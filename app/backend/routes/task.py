@@ -1,4 +1,4 @@
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 
 from ..responses import success
 from . import _get_task_service
@@ -8,7 +8,8 @@ task_bp = Blueprint("task", __name__)
 
 @task_bp.route("/api/tasks", methods=["POST"])
 def create_task():
-    base_url = request.host_url.rstrip("/")
+    lan_addresses = current_app.config.get("LAN_ADDRESSES") or []
+    base_url = f"{request.scheme}://{lan_addresses[0]}" if lan_addresses else request.host_url.rstrip("/")
     return success(data=_get_task_service().create_uploading_task(base_url=base_url), status=201)
 
 

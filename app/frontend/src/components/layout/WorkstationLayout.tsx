@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import chongqingLogo from '../../assets/logos/chongqing-university-logo.webp';
 import xinqiaoLogo from '../../assets/logos/xinqiao-hospital-logo.jpg';
@@ -24,6 +24,16 @@ type WorkstationLayoutProps = {
   isRetryingSystem?: boolean;
   onRetrySystem?: () => void;
 };
+
+function navigateWithinApp(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return;
+  }
+
+  event.preventDefault();
+  window.history.pushState({}, '', href);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
 
 export function WorkstationLayout({
   children,
@@ -59,6 +69,7 @@ export function WorkstationLayout({
                 className={`workstation-nav__item${item.id === activeRouteId ? ' is-active' : ''}`}
                 href={item.href}
                 key={item.href}
+                onClick={(event) => navigateWithinApp(event, item.href)}
               >
                 <span className="workstation-nav__icon" aria-hidden="true" />
                 <span>{item.label}</span>

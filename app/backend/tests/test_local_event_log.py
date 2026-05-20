@@ -58,13 +58,13 @@ class TestLocalEventLog:
     def test_writes_single_json_line_with_required_fields(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
 
-        log.write("session_created", session_id="session-001")
+        log.write("task_processing_started", task_id="task-001")
 
         records = read_jsonl(log.current_path)
         assert len(records) == 1
-        assert records[0]["event"] == "session_created"
+        assert records[0]["event"] == "task_processing_started"
         assert records[0]["level"] == "INFO"
-        assert records[0]["session_id"] == "session-001"
+        assert records[0]["task_id"] == "task-001"
         assert "ts" in records[0]
 
     def test_rejects_unknown_event_name(self, tmp_path):
@@ -100,7 +100,7 @@ class TestLocalEventLog:
     def test_rotates_when_file_exceeds_max_bytes(self, tmp_path):
         log = LocalEventLog(str(tmp_path), max_bytes=300, backup_count=2)
         for i in range(50):
-            log.write("session_created", session_id=f"session-{i}")
+            log.write("task_processing_started", task_id=f"task-{i}")
 
         backups = [name for name in os.listdir(tmp_path) if re.match(r"backend-events\.jsonl\.\d+", name)]
         assert backups
