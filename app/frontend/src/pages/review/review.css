@@ -184,6 +184,11 @@
   background: #fcfdff;
 }
 
+.review-field.is-selected {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.12);
+}
+
 .review-field__header {
   display: flex;
   align-items: center;

@@ -85,6 +85,21 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     }
   }
 
+  function handleFieldsChange(nextFields: ReviewField[]) {
+    setFields(nextFields);
+  }
+
+  function handleFocusField(field: ReviewField) {
+    setSelectedFieldKey(field.field_key);
+    const evidence = field.evidence?.find((item) => item.page_id || item.page_no);
+    if (evidence?.page_id) {
+      setSelectedPageId(evidence.page_id);
+      return;
+    }
+    const pageByNo = pages.find((page) => page.page_no === evidence?.page_no);
+    if (pageByNo) setSelectedPageId(pageByNo.page_id);
+  }
+
   if (isLoading) {
     return renderShell(<main className="review-page" aria-label="人工审核页">正在加载审核数据</main>);
   }
@@ -176,7 +191,13 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
 
         <section className="review-panel" aria-label="结构化字段">
           <h2>结构化字段</h2>
-          <FieldList fields={fields} onChange={setFields} getStatusLabel={(fieldStatus) => fieldStatusMeta[fieldStatus].label} />
+          <FieldList
+            fields={fields}
+            selectedFieldKey={selectedFieldKey}
+            onChange={handleFieldsChange}
+            onFocusField={handleFocusField}
+            getStatusLabel={(fieldStatus) => fieldStatusMeta[fieldStatus].label}
+          />
           <button type="button" onClick={() => void handleSave()}>
             保存审核结果
           </button>

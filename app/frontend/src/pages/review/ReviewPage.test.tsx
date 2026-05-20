@@ -139,6 +139,17 @@ describe('ReviewPage', () => {
     expect(screen.queryByText('第二页文本')).toBeNull();
   });
 
+  it('does not require per-field confirmation and tracks field focus', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByLabelText('patient_name')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
+
+    await userEvent.click(screen.getByLabelText('chief_complaint'));
+    expect(screen.getByText('来源：第 2 页')).toBeTruthy();
+  });
+
   it('shows images, OCR text, editable fields, complete and export actions', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
