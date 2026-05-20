@@ -7,7 +7,7 @@
 ```text
 电脑端新建任务
   -> 手机端上传多张图片
-  -> 完成上传并触发本地算法 fixture
+  -> 完成上传并用测试 fixture 模拟处理结果
   -> 成功任务进入 review
   -> 电脑端审核保存并标记 done
   -> JSON/Excel 导出
@@ -39,8 +39,9 @@
 ## 当前推进原则
 
 - E2E 优先验证用户主流程，不提前投入 Windows 运行包。
-- 测试使用本地 fixture，不访问外网，不调用云 API，不下载模型。
-- 算法能力只能来自本地 fixture 或外部端口注入；不得在前端、后端或测试中根据 schema/OCR 文本推断字段。
+- 测试使用本地 fixture 或 API mock 模拟处理结果，不访问外网，不调用云 API，不下载模型。
+- 当前不要求真实触发本地算法模块；算法成功、失败、空字段和契约非法均通过测试 fixture 或 mock 响应模拟。
+- 模拟出的结构化字段必须代表“外部算法返回”，不得在前端、后端或测试中根据 schema/OCR 文本推断字段。
 - 失败主流程必须进入 `failed`，不得出现人工补字段、规则兜底或前端补造可审核字段。
 - MVP 不恢复采集会话、四边形框选、补拍替换、拖拽排序、复杂字段状态或独立导出状态。
 - 所有真实运行数据仍不得提交到 `data/`、`exports/`、`logs/`。
@@ -49,7 +50,7 @@
 
 ### 后端 E2E
 
-后端 E2E 用 Flask test client 和本地算法 fixture 验证真实服务契约。它证明 API、状态流转、持久化、算法失败映射、审核和导出在同一后端进程内闭环。
+后端 E2E 用 Flask test client 和测试 fixture 验证真实服务契约。它证明 API、状态流转、持久化、模拟算法失败映射、审核和导出在同一后端进程内闭环。
 
 主要文件：
 
@@ -81,7 +82,7 @@ app/frontend/tests/fixtures/export.ts
 
 ### 轻量联调检查
 
-主流程稳定后，可增加一个最小联调脚本或 Playwright 模式，使用本地后端服务和 fixture 算法端口跑一遍真实 HTTP 链路。该检查只作为 E2E 增强，不替代后端测试和前端 mock E2E。
+主流程稳定后，可增加一个最小联调脚本或 Playwright 模式，使用本地后端服务和测试 fixture 跑一遍真实 HTTP 链路。该检查只作为 E2E 增强，不替代后端测试和前端 mock E2E；它仍然模拟算法结果，不要求本地存在真实算法模块。
 
 如果后续改用 Docker，该联调检查应迁移到 Docker Compose 或等价命令中。
 
@@ -110,8 +111,8 @@ GET  /api/tasks/{task_id}/export/excel
 - `POST /api/tasks` 创建 `uploading` 任务，返回 `task_id`、`upload_token`、手机上传 URL。
 - 图片上传只接受 `uploading` 状态和正确 token。
 - 页序按上传成功顺序写入 `page_no = 1, 2, 3`。
-- 完成上传后触发本地 fixture 算法处理，成功后任务进入 `review`。
-- review 初始化字段来自 fixture 字段候选，不来自前端或 schema 推断。
+- 完成上传后的处理结果由测试 fixture 或 mock 模拟，任务进入 `review`。
+- review 初始化字段来自模拟的外部算法候选，不来自前端或 schema 推断。
 - `PUT /review` 保存人工最终值，不覆盖自动候选原值。
 - `POST /complete` 后任务进入 `done`。
 - JSON/Excel 导出可在 `review` 和 `done` 状态执行，导出不改变任务状态。
@@ -148,7 +149,7 @@ GET  /api/tasks/{task_id}/export/excel
 必须覆盖：
 
 - 算法模块未配置：任务进入 `failed`，`error_code = ALGORITHM_MODULE_NOT_CONFIGURED`。
-- 算法端口异常：任务进入 `failed`，`error_code = ALGORITHM_MODULE_FAILED`。
+- 模拟算法异常：任务进入 `failed`，`error_code = ALGORITHM_MODULE_FAILED`。
 - 字段抽取返回空列表：任务进入 `failed`，`error_code = ALGORITHM_CONTRACT_INVALID`。
 - 字段候选契约非法：任务进入 `failed`，`error_code = ALGORITHM_CONTRACT_INVALID`。
 
@@ -177,9 +178,9 @@ GET  /api/tasks/{task_id}/export/excel
 
 使用测试内存图片或仓库已有静态测试图片，不提交真实病历图片。后端测试使用最小 magic bytes 覆盖 jpg/png/bmp 校验；前端浏览器测试使用现有本地 asset。
 
-### 成功算法 fixture
+### 成功处理 fixture
 
-复用 `app/backend/services/algorithm_ports/fixtures.py` 中已有 fixture 端口。若现有 fixture 无法表达三页成功输入，可只扩展测试 fixture，不改变生产算法端口契约。
+成功处理 fixture 直接提供处理后的 OCR 文本、页面记录和字段候选，或通过测试替身让任务进入 `review`。它不代表本仓库具备 OCR、文档解析或字段抽取能力。E2E 实施时优先选择最薄的测试 fixture 或 API mock，不为测试强行接入算法端口。
 
 字段候选必须包含：
 
@@ -194,11 +195,11 @@ GET  /api/tasks/{task_id}/export/excel
 }
 ```
 
-字段值只代表外部模块返回，不代表本仓库具备抽取能力。
+字段值只代表模拟的外部模块返回，不代表本仓库具备抽取能力。
 
-### 失败算法 fixture
+### 失败处理 fixture
 
-失败 fixture 用端口参数或局部测试类表达，不在业务代码加入测试分支。每个失败 fixture 只负责触发一个标准失败类型，避免一个测试同时覆盖多个错误来源。
+失败 fixture 直接模拟算法未配置、算法异常、空字段和契约非法后的任务结果或 API 响应。不在业务代码加入测试分支。每个失败 fixture 只负责触发一个标准失败类型，避免一个测试同时覆盖多个错误来源。
 
 ## 数据与文件边界
 
@@ -243,7 +244,7 @@ npm --prefix app/frontend run test:e2e
 
 1. 盘点现有后端 E2E 与前端 E2E，标出和本 spec 不一致的旧状态、旧接口、旧 fixture。
 2. 补齐后端成功主流程三图上传、审核保存、done 后导出不改状态。
-3. 补齐后端四类算法失败主流程。
+3. 补齐后端四类模拟算法失败主流程。
 4. 补齐前端成功主流程浏览器 E2E。
 5. 补齐前端失败主流程浏览器 E2E。
 6. 跑后端、前端单测和前端 E2E，修正暴露出的契约缺口。
