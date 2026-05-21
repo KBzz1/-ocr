@@ -16,7 +16,7 @@
 - 以 `Medical_Text3` 字段为源头重写字段契约。
 - 将 `Medical_Text3` 的规则分段、字段默认结构、抽取提示词和复核提示词整理后纳入主代码。
 - 使用单个本地 Qwen2.5-7B-Instruct GGUF 模型串行执行抽取和复核。
-- 后端核心代码提供慢阻肺专病规则化抽取模块，负责规则分段、LLM 调用、候选字段归一化、证据校验和复核编排。
+- 后端核心代码提供慢阻肺专病规则化抽取模块，负责规则分段、LLM 调用、字段结果归一化、证据校验和复核编排。
 - 审核页全量展示 schema 字段，未抽到的字段也显示为空，便于人工补录和核验。
 - 同步 PRD、BDD、TDD 中关于字段、空值、失败和校验的描述。
 
@@ -66,7 +66,7 @@
 
 ## 输出契约
 
-项目内慢阻肺字段抽取模块最终向后端处理流程返回候选字段列表。每个字段必须满足：
+项目内慢阻肺字段抽取模块最终向后端处理流程返回全量字段结果列表。每个 schema 字段必须有且只有一条结果。每个字段结果必须满足：
 
 ```json
 {
@@ -75,7 +75,14 @@
   "evidence": "反复咳嗽、咳痰15年",
   "confidence": 0.86,
   "source_section": "主诉",
-  "extraction_status": "extracted"
+  "extraction_status": "extracted",
+  "verification_status": "passed",
+  "ocr_correction": {
+    "applied": false,
+    "raw": "反复咳嗽、咳痰15年",
+    "normalized": "反复咳嗽、咳痰15年",
+    "reason": ""
+  }
 }
 ```
 
@@ -87,6 +94,8 @@
 - `confidence`：0 到 1 的数值；未抽到时可以为 0。
 - `source_section`：主诉、现病史、既往史、个人史、体格检查、辅助检查等。
 - `extraction_status`：`extracted`、`not_found`、`uncertain`。
+- `verification_status`：`passed`、`suspicious`、`failed`、`not_checked`。
+- `ocr_correction`：模型是否按上下文理解了 OCR 疑似错误；不得静默改写。
 
 ## 空值和失败原则
 
@@ -98,7 +107,8 @@
 - 没抽到的字段：`extraction_status=not_found`，`original_value=""`，`evidence=null`，允许进入审核页。
 - 不确定字段：`extraction_status=uncertain`，允许进入审核页，但必须展示为待人工重点核验。
 - 如果所有字段都是 `not_found` 或空值，任务失败，不进入审核页。
-- 如果任一 `extracted` 字段的 evidence 找不到、不可信、数值不一致、否定关系反转或字段归属明显错误，则任务失败或进入算法复核失败，不放行到审核页。
+- 单字段 evidence 不可信、数值疑似不一致、否定关系疑似反转或字段归属可疑时，不默认让整个任务失败；该字段应标记为 `verification_status=suspicious` 或 `failed` 并进入审核页高亮。
+- 任务级失败只用于整体不可解析、字段结果结构非法、字段 key 不完整、全字段空值、模型调用失败或复核输出不可解析。
 - 主代码中的规则只允许用于文本规范化、章节分段、字段候选定位和证据匹配；不得在无原文证据时编造医学值。
 - 空字段由项目内抽取模块按 schema 回填为 `not_found`，用于审核页全量展示。
 
@@ -141,7 +151,7 @@ OCR 合并文本
 - 将规则分段和文本规范化整理为纯函数，覆盖主诉、现病史、既往史、个人史、婚育史、家族史、体格检查、辅助检查。
 - 将 LLM 抽取封装为可注入模型路径的服务，默认读取 `models/llm/qwen2.5-7b-instruct-gguf/`。
 - 将 LLM 复核封装为同一模型的第二次串行调用。
-- 将嵌套结果转换为扁平候选字段列表。
+- 将嵌套结果转换为扁平全量字段结果列表。
 - 将 evidence 匹配和全空失败作为项目内可测试逻辑。
 
 建议代码边界：
@@ -170,7 +180,7 @@ app/backend/services/copd_extraction/
 - OCR 风险提示：`1/I/l`、`0/O/o`、`BHI/BMI`、`cT/CT/Ct`、单位断裂、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。
 - 硬约束：不得静默修正 OCR，不得改写数值，不得医学换算，不得推断原文未写的信息，不得把否定表达转成阳性。
 
-抽取 prompt 输出必须是字段列表。每个字段除基础契约外，还必须包含 OCR 纠偏审计信息：
+抽取 prompt 输出必须是全量字段列表。每个字段除基础契约外，还必须包含 OCR 纠偏审计信息：
 
 ```json
 {
@@ -180,6 +190,7 @@ app/backend/services/copd_extraction/
   "confidence": 0.78,
   "source_section": "体格检查",
   "extraction_status": "extracted",
+  "verification_status": "not_checked",
   "ocr_correction": {
     "applied": true,
     "raw": "BHI",
@@ -232,7 +243,7 @@ OCR 纠偏规则：
 }
 ```
 
-`fail` 字段不放行到审核页。`uncertain` 可以进入审核页，但前端必须突出显示为需要人工重点核验。
+复核失败或可疑字段进入审核页，但必须突出显示为需要人工重点核验。只有复核输出整体不可解析、结构非法或全字段不可用时，任务才进入 `failed`。
 
 ## 校验机制
 
@@ -241,9 +252,11 @@ OCR 纠偏规则：
 第一层是项目内抽取模块契约校验：
 
 - 输出必须是合法 JSON。
-- 字段 key 必须完整覆盖 schema。
+- 字段 key 必须完整覆盖 schema，且不得重复。
 - 每个字段必须包含 `field_key`、`original_value`、`evidence`、`confidence`、`source_section`、`extraction_status`。
+- 每个字段必须包含 `verification_status`。
 - `extraction_status` 必须在枚举内。
+- `verification_status` 必须在枚举内。
 - `extracted` 字段必须有非空 `original_value` 和 evidence。
 - 每个字段必须包含 `ocr_correction`，且结构包含 `applied`、`raw`、`normalized`、`reason`。
 
@@ -251,20 +264,21 @@ OCR 纠偏规则：
 
 - `extracted` 字段的 evidence 应能在 OCR 合并文本中直接找到。
 - 数值字段应保留原单位和原文写法，不做医学换算。
-- 存在 OCR 纠偏时，复核结果必须确认纠偏理由合理。
-- 否定表达不能被转成阳性字段。
-- 复核模型发现错误时，不放行到审核页。
+- 存在 OCR 纠偏时，复核结果必须判断纠偏理由是否合理。
+- 否定表达不能被转成阳性字段；无法确认时标记为 `suspicious`。
+- 复核模型发现字段级错误时，字段标记为 `failed` 或 `suspicious`，进入审核页高亮。
 
 第三层是后端 schema 校验：
 
-- 字段 key 不在 schema 中则失败。
+- 字段 key 不在 schema 中则任务失败。
+- 字段 key 缺失、重复或未完整覆盖 schema 则任务失败。
 - 结构非法则失败。
 - 全字段空值则失败。
 - 通过后写入算法结果，再进入审核页。
 
 ## 样本和泛化验证
 
-实施计划必须包含一个独立验证步骤：手动制造测试样本，覆盖真实病历风格和 OCR 易错场景，先验证规则分段、prompt harness、模型输出和复核输出，再接入完整任务流程。
+实施计划必须包含一个独立验证步骤：手动制造测试样本，覆盖真实病历风格和 OCR 易错场景，先验证规则分段、prompt harness、模型输出和复核输出，再接入完整任务流程。第一版暂不要求收集真实 OCR 文本；由人工按真实报告风格和已观察到的 OCR 错误类型构造回归样本。
 
 样本来源和类型：
 
@@ -275,18 +289,15 @@ OCR 纠偏规则：
 - 构造否定表达样本，例如“无发热”“否认咯血”“未见明显异常”，验证不被转成阳性。
 - 构造数值和单位样本，例如 `pH 7.40`、`PCO2 36.00mmHg`、`WBC 6.63*10^9/L`、`CRP 3.3mg/L`。
 
-OCR 噪声样本至少覆盖：
+OCR 误差族群至少覆盖：
 
-- `I` 和 `1` 混淆，例如 `FI02`、`1/日`、`10^9/L`。
-- `O` 和 `0` 混淆，例如 `PCO2`、`PO2`、`SpO2`。
-- `l`、`I`、`1` 混淆，例如 `mg/L`、`mmol/L`。
-- `m`、`rn`、`n` 类似形混淆。
-- `BHI` 误识别为 `BMI` 或反向。
-- `cT`、`CT`、`Ct` 大小写混乱。
-- 表格错位或断行，例如检验项目和值换行、项目和值跨列粘连。
-- 冒号、分号、顿号和空格丢失，例如 `体温36.7°脉搏99次/分`。
-- 小数点、逗号、单位间距异常，例如 `3 .3mg/L`、`130. 00mmol/L`。
-- OCR 错别字不影响字段定位的场景，例如“林巴结/淋巴结”“芷常/正常”。
+- 医学指标标签误识别：数字、英文字母和上下标混淆导致检验指标标签异常，模型可结合医学上下文理解标签，但不得改写数值。
+- 药名和医学词错字：常见药名、医学术语被识别成近形字、同音字或缺字，模型可以标记疑似纠偏，但必须保留原文 evidence。
+- 单位、数值和范围异常：单位断裂、小数点异常、范围值前后矛盾、后文出现更合理版本时，模型应优先标记为 `suspicious`，不得自动选一个确定值。
+- 机构名、地名和日期误识别：医院名称、页码、日期年份出现明显不合语境的识别错误时，只能作为低置信度信息或 OCR 纠偏审计输出。
+- 跨页、跨栏、表格错位和拼接错误：项目和值错位、段落跨页粘连、内容重复拼接时，模型不得把重复内容当成多个独立事实。
+- 重复段落和重复医嘱：明显由页面重叠或 OCR 合并导致的重复，应被压缩为一个字段事实或标记可疑。
+- 否定和程度词误识别：否认、无、未见、考虑、可能、建议复查等语气词不得被忽略或改写为确定阳性结论。
 
 验收方式：
 
@@ -294,6 +305,7 @@ OCR 噪声样本至少覆盖：
 - 规则化分段、prompt 输出结构、OCR 纠偏审计、evidence 匹配和全流程抽取分别有测试。
 - 模型输出不要求字字相同，但关键字段、数值、否定关系和 evidence 必须正确。
 - 记录失败样本，区分是 prompt harness、模型能力、evidence 校验还是 schema 设计问题。
+- 5 份手工构造样本只作为第一版回归集和冒烟基线，不宣称已经覆盖真实世界泛化；后续拿到脱敏 OCR 文本后再扩展字段级评估集。
 
 ## 后端职责
 
@@ -302,7 +314,7 @@ OCR 噪声样本至少覆盖：
 - 承载慢阻肺专病规则化抽取模块。
 - 调用本地 LLM。
 - 校验输出契约。
-- 保存候选字段。
+- 保存字段结果。
 - 维护任务状态。
 - 展示失败原因。
 - 支持人工审核、保存和导出。
@@ -321,9 +333,10 @@ OCR 噪声样本至少覆盖：
 - 根级 `AGENTS.md` / `CLAUDE.md`：删除或修订“本仓库不得实现规则抽取”的旧边界，改为允许慢阻肺专病字段规则化抽取。
 - `docs/PRD任务清单.md`：新增专病字段抽取集成任务。
 - `docs/Backend/Backend_BDD/algorithm-integration.md`：更新字段抽取成功、空值展示、全空失败、证据失败场景。
-- `docs/Backend/Backend_TDD/02-algorithm-ports.md`：更新字段候选契约。
+- `docs/Backend/Backend_TDD/02-algorithm-ports.md`：更新字段结果契约。
 - `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`：更新全空和 evidence 失败契约。
 - `docs/Backend/Backend_TDD/08-schema-management.md`：说明 schema 可全量展示空字段，但不得生成字段值。
+- `docs/Shared/state-enums.md`：扩展字段级抽取/验证元数据，支持未抽取、可疑、验证失败和 OCR 纠偏审计展示。
 - `docs/Backend/AGENTS.md` / `docs/Backend/CLAUDE.md`：同步后端职责，允许专病规则化抽取模块存在。
 - `app/config/schemas/`：新增或替换为 `copd_admission_record.v1.yaml`。
 
@@ -335,8 +348,9 @@ OCR 噪声样本至少覆盖：
 - 抽到的字段带原文 evidence。
 - 未抽到的字段在审核页显示为空，且状态为未抽取。
 - 全字段未抽到时任务进入 `failed`。
-- evidence 不可信或复核失败时任务不进入审核页。
+- 单字段 evidence 不可信或复核失败时进入审核页高亮；整体结构非法、全字段空值或复核输出不可解析时任务进入 `failed`。
 - 手工制造的真实风格和 OCR 噪声样本通过规则分段、prompt harness、OCR 纠偏审计、evidence 校验和全流程抽取测试。
 - 模型发生 OCR 纠偏时必须输出 `ocr_correction`，不得静默修改标签、单位或数值。
+- 手工样本作为第一版回归集，不作为泛化充分性的证明。
 - 后端测试覆盖 schema 外字段、非法结构、全空字段、evidence 失败和正常字段展示。
 - PRD、BDD、TDD 与实现契约一致。
