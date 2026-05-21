@@ -27,5 +27,8 @@ algorithms:
   local_ocr_python_executable: "python"
   local_ocr_script_path: "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py"
   local_ocr_timeout_seconds: 1800
+  local_ocr_device:
+  local_ocr_max_new_tokens:
+  local_ocr_max_pixels:
   enable_copd_extractor: false
   llm_model_path: "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"

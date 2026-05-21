@@ -112,8 +112,6 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         port=config["port"],
         lan_addresses_count=len(app.config["LAN_ADDRESSES"]),
     )
-    event_log.safe_write("algorithm_module_not_configured", level="WARNING", stage="image_processing")
-
     from .services.file_validator import FileValidator
     from .services.page_service import PageService
 
@@ -149,6 +147,10 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
             python_executable=config["local_ocr_python_executable"],
             script_path=config["local_ocr_script_path"],
             work_root=os.path.join(config["storage_dir"], "ocr_runs"),
+            cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
+            device=config.get("local_ocr_device"),
+            max_new_tokens=config.get("local_ocr_max_new_tokens"),
+            max_pixels=config.get("local_ocr_max_pixels"),
             timeout_seconds=config["local_ocr_timeout_seconds"],
         )
 
@@ -178,7 +180,20 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
     )
 
-    app.logger.warning("算法模块未配置")
+    if image_port is None or doc_port is None or field_port is None:
+        missing_stages = []
+        if image_port is None:
+            missing_stages.append("image_processing")
+        if doc_port is None:
+            missing_stages.append("document_parsing")
+        if field_port is None:
+            missing_stages.append("field_extraction")
+        event_log.safe_write(
+            "algorithm_module_not_configured",
+            level="WARNING",
+            stages=missing_stages,
+        )
+        app.logger.warning("算法模块未配置: %s", ",".join(missing_stages))
 
     from .routes.system import system_bp
     app.register_blueprint(system_bp)

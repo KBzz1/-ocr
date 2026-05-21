@@ -257,6 +257,9 @@ algorithms:
   local_ocr_python_executable: /opt/conda/envs/manzufei_ocr/bin/python
   local_ocr_script_path: ./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py
   local_ocr_timeout_seconds: 1200
+  local_ocr_device: gpu:0
+  local_ocr_max_new_tokens: 1024
+  local_ocr_max_pixels: 200000
 """,
         encoding="utf-8",
     )
@@ -267,6 +270,9 @@ algorithms:
     assert config["local_ocr_python_executable"] == "/opt/conda/envs/manzufei_ocr/bin/python"
     assert config["local_ocr_script_path"].endswith("paddleocr_vl_batch_runner.py")
     assert config["local_ocr_timeout_seconds"] == 1200
+    assert config["local_ocr_device"] == "gpu:0"
+    assert config["local_ocr_max_new_tokens"] == 1024
+    assert config["local_ocr_max_pixels"] == 200000
 
 
 def test_local_ocr_timeout_must_be_positive(tmp_path):
@@ -283,6 +289,23 @@ algorithms:
     )
 
     with pytest.raises(ValueError, match="local_ocr_timeout_seconds"):
+        load_config(str(config_dir))
+
+
+def test_local_ocr_generation_limits_must_be_positive_when_set(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        """
+algorithms:
+  local_ocr_max_new_tokens: -1
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="local_ocr_max_new_tokens"):
         load_config(str(config_dir))
 
 

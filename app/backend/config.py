@@ -33,6 +33,9 @@ DEFAULT_CONFIG = {
     "local_ocr_python_executable": sys.executable,
     "local_ocr_script_path": "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py",
     "local_ocr_timeout_seconds": 1800,
+    "local_ocr_device": None,
+    "local_ocr_max_new_tokens": None,
+    "local_ocr_max_pixels": None,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -98,6 +101,12 @@ def _flatten_config(raw: dict) -> dict:
         flattened["local_ocr_script_path"] = algorithms_config["local_ocr_script_path"]
     if "local_ocr_timeout_seconds" in algorithms_config:
         flattened["local_ocr_timeout_seconds"] = algorithms_config["local_ocr_timeout_seconds"]
+    if "local_ocr_device" in algorithms_config:
+        flattened["local_ocr_device"] = algorithms_config["local_ocr_device"]
+    if "local_ocr_max_new_tokens" in algorithms_config:
+        flattened["local_ocr_max_new_tokens"] = algorithms_config["local_ocr_max_new_tokens"]
+    if "local_ocr_max_pixels" in algorithms_config:
+        flattened["local_ocr_max_pixels"] = algorithms_config["local_ocr_max_pixels"]
 
     return flattened
 
@@ -156,6 +165,11 @@ def _validate_config(config: dict):
     ocr_timeout = config.get("local_ocr_timeout_seconds")
     if not isinstance(ocr_timeout, int) or ocr_timeout <= 0:
         raise ValueError(f"local_ocr_timeout_seconds 必须为正整数，当前值: {ocr_timeout}")
+
+    for key in ("local_ocr_max_new_tokens", "local_ocr_max_pixels"):
+        value = config.get(key)
+        if value is not None and (not isinstance(value, int) or value <= 0):
+            raise ValueError(f"{key} 必须为空或正整数，当前值: {value}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

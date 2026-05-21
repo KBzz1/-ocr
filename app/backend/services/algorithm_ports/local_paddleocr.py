@@ -39,11 +39,19 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
         python_executable: str,
         script_path: str,
         work_root: str,
+        cache_dir: str | None = None,
+        device: str | None = None,
+        max_new_tokens: int | None = None,
+        max_pixels: int | None = None,
         timeout_seconds: int = 1800,
     ):
         self._python_executable = python_executable
         self._script_path = script_path
         self._work_root = work_root
+        self._cache_dir = cache_dir
+        self._device = device
+        self._max_new_tokens = max_new_tokens
+        self._max_pixels = max_pixels
         self._timeout_seconds = timeout_seconds
 
     def parse(self, input: dict) -> dict:
@@ -67,9 +75,19 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             "--output-file",
             str(output_file),
         ]
+        if self._device:
+            command.extend(["--device", self._device])
+        if self._max_new_tokens is not None:
+            command.extend(["--max-new-tokens", str(self._max_new_tokens)])
+        if self._max_pixels is not None:
+            command.extend(["--max-pixels", str(self._max_pixels)])
+        env = os.environ.copy()
+        env.setdefault("PADDLE_PDX_CACHE_HOME", self._cache_dir or str(work_dir / "paddlex_cache"))
+        env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         completed = subprocess.run(
             command,
             cwd=str(work_dir),
+            env=env,
             capture_output=True,
             text=True,
             timeout=self._timeout_seconds,

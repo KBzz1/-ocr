@@ -1,5 +1,9 @@
 from argparse import ArgumentParser
+import os
 from pathlib import Path
+
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(Path.cwd() / "paddlex_cache"))
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 from paddleocr import PaddleOCRVL
 
@@ -23,10 +27,20 @@ def collect_images(input_dir: Path) -> list[Path]:
     )
 
 
-def recognize_images(pipeline: PaddleOCRVL, image_paths: list[Path]) -> list[tuple[Path, str]]:
+def recognize_images(
+    pipeline: PaddleOCRVL,
+    image_paths: list[Path],
+    max_new_tokens: int | None = None,
+    max_pixels: int | None = None,
+) -> list[tuple[Path, str]]:
     image_results = []
     for image_path in image_paths:
-        output = pipeline.predict(input=str(image_path))
+        predict_kwargs = {}
+        if max_new_tokens is not None:
+            predict_kwargs["max_new_tokens"] = max_new_tokens
+        if max_pixels is not None:
+            predict_kwargs["max_pixels"] = max_pixels
+        output = pipeline.predict(input=str(image_path), **predict_kwargs)
         markdown_pages = [result.markdown for result in output]
         markdown_text = pipeline.concatenate_markdown_pages(markdown_pages)
         image_results.append((image_path, markdown_text))
@@ -46,6 +60,9 @@ def parse_args():
     parser = ArgumentParser(description="批量识别目录中的图片，并合并输出为 Markdown 文件。")
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--output-file", required=True)
+    parser.add_argument("--device", default=None)
+    parser.add_argument("--max-new-tokens", type=int, default=None)
+    parser.add_argument("--max-pixels", type=int, default=None)
     return parser.parse_args()
 
 
@@ -60,8 +77,19 @@ def main() -> None:
     if not image_paths:
         raise RuntimeError(f"输入目录中没有找到图片: {input_dir}")
 
-    pipeline = PaddleOCRVL()
-    write_merged_markdown(recognize_images(pipeline, image_paths), output_file)
+    pipeline_kwargs = {}
+    if args.device:
+        pipeline_kwargs["device"] = args.device
+    pipeline = PaddleOCRVL(**pipeline_kwargs)
+    write_merged_markdown(
+        recognize_images(
+            pipeline,
+            image_paths,
+            max_new_tokens=args.max_new_tokens,
+            max_pixels=args.max_pixels,
+        ),
+        output_file,
+    )
 
 
 if __name__ == "__main__":

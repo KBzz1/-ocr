@@ -101,6 +101,110 @@ algorithms:
 
     assert orchestrator._image_port is not None
     assert orchestrator._doc_port is not None
+    assert orchestrator._doc_port._cache_dir == f"{tmp_path}/models/ppstructure/paddlex_cache"
+
+
+def test_local_ocr_runner_flow_create_upload_process_review(tmp_path, monkeypatch):
+    from app.backend import create_backend_app
+
+    class FieldPortFromOcrText:
+        def extract(self, input: dict) -> list[dict]:
+            text = input["document_result"]["merged_text"]
+            return [
+                {
+                    "field_key": "cough_sputum_change",
+                    "original_value": "咳嗽咳痰3天",
+                    "evidence": text,
+                    "confidence": 0.9,
+                    "extraction_status": "extracted",
+                    "verification_status": "passed",
+                    "quality_flags": [],
+                    "source_section": "主诉",
+                    "ocr_correction": {
+                        "applied": False,
+                        "raw": "",
+                        "normalized": "",
+                        "reason": "",
+                    },
+                }
+            ]
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    runner = tmp_path / "ocr_runner.py"
+    runner.write_text(
+        """
+import argparse
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--input-dir")
+parser.add_argument("--output-file")
+args = parser.parse_args()
+
+images = sorted(Path(args.input_dir).iterdir())
+output = Path(args.output_file)
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text("\\n\\n---\\n\\n".join(
+    f"# {image.name}\\n\\n主诉：咳嗽咳痰3天" for image in images
+), encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  model_dir: "{tmp_path}/models"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+algorithms:
+  enable_local_ocr: true
+  local_ocr_python_executable: "{sys.executable}"
+  local_ocr_script_path: "{runner}"
+  enable_copd_extractor: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "app.backend._get_lan_addresses",
+        lambda port: ["192.168.1.5:8081"],
+    )
+    monkeypatch.setattr(
+        "app.backend.services.copd_extraction.port.build_default_copd_field_port",
+        lambda config, field_keys_provider: FieldPortFromOcrText(),
+    )
+
+    app = create_backend_app(str(config_dir))
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    created = setup_task_with_images(client)
+    finished = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
+    review = client.get(f"/api/tasks/{created['task_id']}/review")
+
+    assert finished.status_code == 200
+    assert finished.get_json()["data"]["status"] == "review"
+    assert review.status_code == 200
+    data = review.get_json()["data"]
+    fields = {field["field_key"]: field for field in data["review_result"]["fields"]}
+    assert fields["cough_sputum_change"]["auto_value"] == "咳嗽咳痰3天"
+    assert fields["cough_sputum_change"]["evidence"] == "主诉：咳嗽咳痰3天"
 
 
 def test_fixture_client_starts_with_system_status(tmp_path, monkeypatch):
