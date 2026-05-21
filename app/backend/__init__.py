@@ -126,7 +126,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.schema_service import SchemaService
 
     schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
-                               "medical_record.v1.yaml")
+                               "copd_admission_record.v1.yaml")
     schema_service = SchemaService(schema_path)
     app.config["SCHEMA_SERVICE"] = schema_service
 
