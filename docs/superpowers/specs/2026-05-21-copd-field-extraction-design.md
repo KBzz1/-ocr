@@ -99,7 +99,7 @@
 - 不确定字段：`extraction_status=uncertain`，允许进入审核页，但必须展示为待人工重点核验。
 - 如果所有字段都是 `not_found` 或空值，任务失败，不进入审核页。
 - 如果任一 `extracted` 字段的 evidence 找不到、不可信、数值不一致、否定关系反转或字段归属明显错误，则任务失败或进入算法复核失败，不放行到审核页。
-- 主代码中的规则只允许用于文本规范化、章节分段、字段候选定位、证据匹配和 OCR 噪声归一化；不得在无原文证据时编造医学值。
+- 主代码中的规则只允许用于文本规范化、章节分段、字段候选定位和证据匹配；不得在无原文证据时编造医学值。
 - 空字段由项目内抽取模块按 schema 回填为 `not_found`，用于审核页全量展示。
 
 ## 模型策略
@@ -116,7 +116,7 @@ models/llm/qwen2.5-7b-instruct-gguf/
 
 ```text
 OCR 合并文本
-  -> 规则分段和 OCR 噪声轻量归一化
+  -> 规则分段
   -> 7B 抽取慢阻肺专病字段
   -> 项目内契约和 evidence 校验
   -> 7B 复核 value/evidence 一致性
@@ -142,7 +142,7 @@ OCR 合并文本
 - 将 LLM 抽取封装为可注入模型路径的服务，默认读取 `models/llm/qwen2.5-7b-instruct-gguf/`。
 - 将 LLM 复核封装为同一模型的第二次串行调用。
 - 将嵌套结果转换为扁平候选字段列表。
-- 将 evidence 匹配、OCR 噪声归一化和全空失败作为项目内可测试逻辑。
+- 将 evidence 匹配和全空失败作为项目内可测试逻辑。
 
 建议代码边界：
 
@@ -159,6 +159,81 @@ app/backend/services/copd_extraction/
 
 这些模块属于主代码，但只服务慢阻肺专病结构化，不扩展成通用医疗规则引擎。
 
+## Prompt Harness 设计
+
+第一版不实现 OCR 噪声候选生成，也不由规则层预先修正 OCR 文本。OCR 可能误识别的信息只作为 prompt 中的风险提示，由模型在抽取和复核时结合上下文判断。
+
+抽取 prompt 输入应包含：
+
+- 当前字段 schema 和字段解释。
+- 规则分段后的原始 OCR 文本。
+- OCR 风险提示：`1/I/l`、`0/O/o`、`BHI/BMI`、`cT/CT/Ct`、单位断裂、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。
+- 硬约束：不得静默修正 OCR，不得改写数值，不得医学换算，不得推断原文未写的信息，不得把否定表达转成阳性。
+
+抽取 prompt 输出必须是字段列表。每个字段除基础契约外，还必须包含 OCR 纠偏审计信息：
+
+```json
+{
+  "field_key": "bmi",
+  "original_value": "24.2kg/m2",
+  "evidence": "BHI:24.2kg/m2",
+  "confidence": 0.78,
+  "source_section": "体格检查",
+  "extraction_status": "extracted",
+  "ocr_correction": {
+    "applied": true,
+    "raw": "BHI",
+    "normalized": "BMI",
+    "reason": "该片段位于身高、体重之后，且数值单位为 kg/m2，更符合 BMI 字段"
+  }
+}
+```
+
+OCR 纠偏规则：
+
+- 如果模型按 OCR 原文直接抽取，`ocr_correction.applied=false`，`raw` 和 `normalized` 可相同，`reason` 为空字符串。
+- 如果模型将 OCR 片段按医学上下文理解为另一个标签或单位，必须设置 `applied=true`，并输出 `raw`、`normalized` 和具体理由。
+- 没有上下文依据时不得纠偏；宁可输出 `uncertain`，由人工审核。
+- 允许纠偏字段标签或单位写法，例如 `BHI` 理解为 `BMI`、`PC02` 理解为 `PCO2`。
+- 不允许纠偏数值本身，例如不得把 `36.00` 改成 `38.00`。
+- evidence 必须保留 OCR 原文片段，不能只输出模型纠偏后的文本。
+
+复核 prompt 不再只输出 `PASS` 或自由文本，应逐字段输出结构化审计结果：
+
+```json
+{
+  "field_key": "blood_gas_paco2",
+  "verdict": "pass",
+  "checks": {
+    "evidence_supported": true,
+    "ocr_correction_reasonable": true,
+    "numeric_value_preserved": true,
+    "negation_preserved": true,
+    "section_assignment_reasonable": true
+  },
+  "comment": ""
+}
+```
+
+复核失败示例：
+
+```json
+{
+  "field_key": "blood_gas_paco2",
+  "verdict": "fail",
+  "checks": {
+    "evidence_supported": true,
+    "ocr_correction_reasonable": false,
+    "numeric_value_preserved": false,
+    "negation_preserved": true,
+    "section_assignment_reasonable": true
+  },
+  "comment": "原文 evidence 为 PCO2 36.00mmHg，候选值改变了数值或缺少合理 OCR 纠偏理由"
+}
+```
+
+`fail` 字段不放行到审核页。`uncertain` 可以进入审核页，但前端必须突出显示为需要人工重点核验。
+
 ## 校验机制
 
 校验分三层。
@@ -170,12 +245,13 @@ app/backend/services/copd_extraction/
 - 每个字段必须包含 `field_key`、`original_value`、`evidence`、`confidence`、`source_section`、`extraction_status`。
 - `extraction_status` 必须在枚举内。
 - `extracted` 字段必须有非空 `original_value` 和 evidence。
+- 每个字段必须包含 `ocr_correction`，且结构包含 `applied`、`raw`、`normalized`、`reason`。
 
 第二层是 evidence 校验：
 
-- `extracted` 字段的 evidence 应能在 OCR 合并文本中直接找到，或通过轻量归一化后找到。
-- OCR 噪声归一化允许处理常见误识别，例如 `I/1`、`O/0`、中文冒号和英文冒号、单位空格、大小写 CT/cT。
+- `extracted` 字段的 evidence 应能在 OCR 合并文本中直接找到。
 - 数值字段应保留原单位和原文写法，不做医学换算。
+- 存在 OCR 纠偏时，复核结果必须确认纠偏理由合理。
 - 否定表达不能被转成阳性字段。
 - 复核模型发现错误时，不放行到审核页。
 
@@ -188,7 +264,7 @@ app/backend/services/copd_extraction/
 
 ## 样本和泛化验证
 
-实施计划必须包含一个独立验证步骤：手动制造测试样本，覆盖真实病历风格和 OCR 易错场景，先验证规则、prompt 和模型输出，再接入完整任务流程。
+实施计划必须包含一个独立验证步骤：手动制造测试样本，覆盖真实病历风格和 OCR 易错场景，先验证规则分段、prompt harness、模型输出和复核输出，再接入完整任务流程。
 
 样本来源和类型：
 
@@ -215,9 +291,9 @@ OCR 噪声样本至少覆盖：
 验收方式：
 
 - 每份样本有期望字段快照。
-- 规则化分段、候选构建、evidence 匹配和全流程抽取分别有测试。
+- 规则化分段、prompt 输出结构、OCR 纠偏审计、evidence 匹配和全流程抽取分别有测试。
 - 模型输出不要求字字相同，但关键字段、数值、否定关系和 evidence 必须正确。
-- 记录失败样本，区分是 OCR 噪声归一化、prompt、模型能力还是 schema 设计问题。
+- 记录失败样本，区分是 prompt harness、模型能力、evidence 校验还是 schema 设计问题。
 
 ## 后端职责
 
@@ -260,6 +336,7 @@ OCR 噪声样本至少覆盖：
 - 未抽到的字段在审核页显示为空，且状态为未抽取。
 - 全字段未抽到时任务进入 `failed`。
 - evidence 不可信或复核失败时任务不进入审核页。
-- 手工制造的真实风格和 OCR 噪声样本通过规则分段、evidence 校验和全流程抽取测试。
+- 手工制造的真实风格和 OCR 噪声样本通过规则分段、prompt harness、OCR 纠偏审计、evidence 校验和全流程抽取测试。
+- 模型发生 OCR 纠偏时必须输出 `ocr_correction`，不得静默修改标签、单位或数值。
 - 后端测试覆盖 schema 外字段、非法结构、全空字段、evidence 失败和正常字段展示。
 - PRD、BDD、TDD 与实现契约一致。
