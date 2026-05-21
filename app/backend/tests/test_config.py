@@ -225,6 +225,26 @@ def test_static_dir_default_normalized(tmp_path):
     assert config["static_dir"].endswith(os.path.join("app", "frontend", "dist"))
 
 
+def test_load_config_supports_copd_extractor_settings(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        """
+algorithms:
+  enable_copd_extractor: true
+  llm_model_path: ./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_dir))
+
+    assert config["enable_copd_extractor"] is True
+    assert config["llm_model_path"].endswith("qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf")
+
+
 def test_static_dir_overridable_via_local_yaml(tmp_path):
     """paths.static_dir 可通过 local.yaml 覆盖。"""
     import yaml

@@ -133,8 +133,14 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
+    field_port = None
+    if config.get("enable_copd_extractor"):
+        from .services.copd_extraction.port import build_default_copd_field_port
+        field_port = build_default_copd_field_port(config, schema_service.get_current)
+
     orchestrator = ProcessingOrchestrator(
         store=store,
+        field_port=field_port,
         schema_validator=schema_service.build_validator(),
     )
     app.config["TASK_SERVICE"] = TaskService(
