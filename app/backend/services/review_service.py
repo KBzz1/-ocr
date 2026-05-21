@@ -75,6 +75,11 @@ class ReviewService:
                     "evidence": item.get("evidence"),
                     "page_no": item.get("page_no"),
                     "confidence": item.get("confidence"),
+                    "source_section": item.get("source_section"),
+                    "extraction_status": item.get("extraction_status", "extracted"),
+                    "verification_status": item.get("verification_status", "not_checked"),
+                    "quality_flags": item.get("quality_flags", []),
+                    "ocr_correction": item.get("ocr_correction"),
                     "status": FieldStatus.UNREVIEWED.value,
                     "empty_accepted": False,
                     "review_note": None,
@@ -91,6 +96,9 @@ class ReviewService:
             "unreviewed_count": sum(1 for f in fields if f["status"] == FieldStatus.UNREVIEWED.value),
             "confirmed_count": sum(1 for f in fields if f["status"] == FieldStatus.CONFIRMED.value),
             "modified_count": sum(1 for f in fields if f["status"] == FieldStatus.MODIFIED.value),
+            "suspicious_count": sum(1 for f in fields if f.get("verification_status") == "suspicious"),
+            "failed_verification_count": sum(1 for f in fields if f.get("verification_status") == "failed"),
+            "not_found_count": sum(1 for f in fields if f.get("extraction_status") == "not_found"),
             "missing_evidence_count": sum(1 for f in fields if not f.get("evidence")),
         }
 

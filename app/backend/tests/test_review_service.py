@@ -63,6 +63,55 @@ def find_field(review, field_key):
     return next(field for field in review["fields"] if field["field_key"] == field_key)
 
 
+def test_review_fields_preserve_extraction_metadata(tmp_path):
+    """Task 10: each field must carry source_section, extraction_status,
+    verification_status, quality_flags, and ocr_correction from the candidate."""
+    store = JsonStore(str(tmp_path))
+
+    # Minimal task service stub — only get_task is called
+    class _TaskSvc:
+        def get_task(self, task_id):
+            return {
+                "task_id": task_id,
+                "status": "review",
+                "schema_version": "1.0.0",
+                "document_type": "copd_admission_record",
+            }
+
+    store.write("results/t1/field_candidates.json", {
+        "candidates": [
+            {
+                "field_key": "bmi",
+                "original_value": "24.2kg/m2",
+                "evidence": "BHI:24.2kg/m2",
+                "confidence": 0.78,
+                "source_section": "体格检查",
+                "extraction_status": "extracted",
+                "verification_status": "suspicious",
+                "quality_flags": [{"flag": "value_not_in_evidence", "severity": "warning", "message": "risk"}],
+                "ocr_correction": {"applied": True, "raw": "BHI", "normalized": "BMI", "reason": "unit kg/m2"},
+            }
+        ]
+    })
+    schema = {
+        "version": "1.0.0",
+        "document_type": "copd_admission_record",
+        "field_groups": [
+            {"fields": [{"field_key": "bmi", "label": "BMI"}]}
+        ],
+    }
+    service = ReviewService(store, _TaskSvc(), schema_provider=lambda: schema)
+
+    review = service.get_or_init("t1")
+    field = review["fields"][0]
+
+    assert field["extraction_status"] == "extracted"
+    assert field["verification_status"] == "suspicious"
+    assert field["quality_flags"][0]["flag"] == "value_not_in_evidence"
+    assert field["ocr_correction"]["normalized"] == "BMI"
+    assert field["source_section"] == "体格检查"
+
+
 def test_first_read_initializes_review_result_from_candidates(tmp_path):
     review_service, _task_service, store = make_services(tmp_path)
     write_review_task(store)
@@ -73,7 +122,9 @@ def test_first_read_initializes_review_result_from_candidates(tmp_path):
     assert [field["field_key"] for field in review["fields"]] == ["patient_name", "department"]
     assert find_field(review, "patient_name")["status"] == "unreviewed"
     assert review["summary"]["unreviewed_count"] == 2
-    assert "suspicious_count" not in review["summary"]
+    assert review["summary"]["suspicious_count"] == 0
+    assert review["summary"]["failed_verification_count"] == 0
+    assert review["summary"]["not_found_count"] == 0
 
 
 def test_review_save_rejects_legacy_field_status(tmp_path):
