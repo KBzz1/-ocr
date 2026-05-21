@@ -22,7 +22,7 @@
 | BE-MVP-01 任务创建和二维码上传入口 | 已完成 | `app/backend/routes/task.py`、`app/backend/routes/mobile.py` | 创建 `uploading` 任务并生成手机上传 URL；不再创建采集会话 |
 | BE-MVP-02 图片上传和页序 | 已完成 | `app/backend/services/page_service.py` | 上传原图，页序按上传成功顺序确定；不做 quad、补拍替换、拖拽排序 |
 | BE-MVP-03 简化任务生命周期 | 已完成 | `app/backend/services/task_service.py` | 状态统一为 `uploading / processing / review / done / failed` |
-| BE-MVP-04 OCR/结构化模块调用 | 已完成/需对齐 | `app/backend/services/algorithm_ports/` | 调用本地算法模块，失败进入 `failed`；不实现算法 |
+| BE-MVP-04 OCR/文档解析和慢阻肺专病抽取 | 需收敛 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析来自本地模块；慢阻肺专病字段抽取纳入主代码 |
 | BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态先保留 `unreviewed / confirmed / modified` |
 | BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值 |
 | FE-MVP-01 工作台总览 | 已完成 | `app/frontend/src/pages/workstation/` | 新建任务、二维码、最近任务、状态统计 |
@@ -89,19 +89,23 @@
   - 范围：保存 error_code、error_message、failed_at 和状态历史。
   - 边界：失败任务不得被前端伪装成可审核结果。
 
-### BE-MVP-04 OCR 和结构化模块
+### BE-MVP-04 OCR、文档解析和慢阻肺专病抽取
 
-- [x] **BE-MVP-04-01 本地算法端口**
-  - 范围：定义本地 OCR/结构化模块调用边界。
-  - 边界：本仓库不实现 OCR、LLM 字段抽取、图像预处理或规则抽取。
+- [~] **BE-MVP-04-01 本地 OCR/文档解析端口**
+  - 范围：定义本地 OCR/文档解析模块调用边界。
+  - 边界：本仓库不实现 OCR、图像预处理、裁剪或透视矫正。
 
 - [x] **BE-MVP-04-02 输入改为任务图片列表**
   - 范围：输入使用上传顺序的原图列表。
   - 边界：MVP 不依赖 processed 图像或 quad 元数据。
 
 - [x] **BE-MVP-04-03 算法失败映射**
-  - 范围：未配置、异常、空字段、契约非法均进入 `failed`。
-  - 边界：不得规则兜底或补造字段。
+  - 范围：外部模块未配置或异常、结构化处理整体不可用、全字段为空、契约非法均进入 `failed`。
+  - 边界：单字段可疑进入审核页，不直接阻断整个任务。
+
+- [ ] **BE-MVP-04-04 慢阻肺专病字段抽取**
+  - 范围：按慢阻肺/呼吸系统入院记录 schema 生成全量字段结果，支持未抽取、可疑、复核失败和质量风险提示。
+  - 边界：只做当前专病，不扩展为通用医学规则引擎。
 
 ### BE-MVP-05 审核和导出
 
@@ -109,9 +113,9 @@
   - 范围：读取自动候选、保存人工最终值。
   - 边界：不覆盖自动抽取原值。
 
-- [x] **BE-MVP-05-02 字段状态收敛**
-  - 范围：MVP 字段状态只保留 `unreviewed / confirmed / modified`。
-  - 边界：`suspicious / empty / confirmed_empty` 后置。
+- [~] **BE-MVP-05-02 字段状态和抽取元数据收敛**
+  - 范围：人工审核状态保留 `unreviewed / confirmed / modified`；自动抽取元数据展示未抽取、可疑、复核失败和质量风险。
+  - 边界：复杂导出前质控流程后置。
 
 - [x] **BE-MVP-05-03 标记任务完成**
   - 范围：审核完成后任务进入 `done`。
@@ -217,7 +221,7 @@
 - 会话过期、取消、修订采集、解锁。
 - 四边形框选、重新框选、裁剪、透视矫正。
 - 手机端拖拽排序、补拍替换某页。
-- 复杂字段状态：`suspicious / empty / confirmed_empty`。
+- 复杂导出前质控流程。
 - 导出前复杂完整性预警面板。
 - 多医生协同、云同步、医院系统接口。
 
@@ -225,7 +229,8 @@
 
 - 不接入 HIS/EMR，不写回病历系统。
 - 不调用云 API，不使用 CDN、遥测或运行时联网下载。
-- 不在本仓库实现 OCR、LLM 字段抽取、图像预处理、裁剪、透视矫正、自动边界识别或规则抽取。
-- 算法模块缺失、异常、空结构化字段或契约非法时，任务必须进入 `failed`。
+- 不在本仓库实现 OCR、图像预处理、裁剪、透视矫正或自动边界识别。
+- 慢阻肺/呼吸系统入院记录专病字段抽取在主代码内实现，但不得扩展为通用医学规则引擎。
+- 外部模块缺失、异常、字段结果整体不可用或契约非法时，任务必须进入 `failed`；单字段可疑进入审核页。
 - 前端不得从 schema、OCR 文本或页面内容推断、补造结构化字段。
 - 真实运行数据不得提交到 `data/`、`exports/`、`logs/`。

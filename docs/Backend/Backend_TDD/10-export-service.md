@@ -13,6 +13,6 @@
 | BE-EXP-007 | API | `GET /api/tasks/{taskId}/export/excel` 返回下载响应和正确文件名 | 响应头错误 |
 | BE-EXP-008 | API | 未审核、存疑、为空或无来源字段只产生完整性预警统计，不使用 `EXPORT_VALIDATION_FAILED` 硬阻断 | 字段完整性问题被错误阻断 |
 | BE-EXP-009 | 集成 | 导出失败不修改审核结果和任务确认状态 | 失败产生脏状态 |
-| BE-EXP-010 | 集成 | 导出成功后记录导出时间、格式和文件路径，任务可变为 `exported` | 导出记录缺失 |
-| BE-EXP-011 | API | 前端确认风险后，`ready_for_review` 或 `confirmed` 任务均可导出 JSON/Excel | 待审核任务被错误禁用导出 |
-| BE-EXP-012 | API | `confirmed_empty` 字段导出时保留空值和审核状态，不记入未处理空值数量 | 空值已确认状态丢失 |
+| BE-EXP-010 | 集成 | 导出成功后记录导出时间、格式和文件路径，不引入独立任务状态 | 导出记录缺失或错误改状态 |
+| BE-EXP-011 | API | `review` 或 `done` 任务均可导出 JSON/Excel | 待审核任务被错误禁用导出 |
+| BE-EXP-012 | API | 未抽取、可疑或复核失败字段随人工最终值一起导出，并保留必要审核状态 | 字段风险元数据丢失 |

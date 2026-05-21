@@ -1,20 +1,20 @@
-# 外部算法模块集成
+# OCR/文档解析与慢阻肺字段抽取
 
 > 对应 PRD: PR-BE-005, PR-BE-006 | 依赖: `docs/Shared/error-codes.md`
 
 ```gherkin
-Feature: 外部算法模块集成
+Feature: OCR/文档解析与慢阻肺字段抽取
   作为 系统
-  我想要 调用外部交付的图像处理、OCR 和 LLM 字段抽取模块
-  以便 获得文档解析结果和结构化字段候选，同时正确处理模块失败
+  我想要 调用外部 OCR/文档解析模块，并执行慢阻肺专病字段抽取
+  以便 获得 OCR 文本、文档解析结果和可人工审核的结构化字段结果，同时正确处理失败和字段级风险
 
   Scenario: 算法模块未配置时任务处理失败
-    Given 外部算法模块文件未放置在预期目录
+    Given 外部 OCR 或文档解析模块文件未放置在预期目录
     When 系统触发任务 T001 的处理流程
     Then 任务状态应变为 failed
     And error_code 应为 ALGORITHM_MODULE_NOT_CONFIGURED
     And error_message 应包含 "算法模块未配置"
-    And 任务不应进入 ready_for_review 或任何可审核状态
+    And 任务不应进入 review 或任何可审核状态
 
   Scenario: 图像处理模块返回处理后图像路径
     Given 外部图像处理模块已正确配置
@@ -49,27 +49,34 @@ Feature: 外部算法模块集成
     Then 任务状态应变为 failed
     And 不应将空结果暴露为可审核的文档结果
 
-  Scenario: 字段抽取成功并原样保存候选
-    Given 外部字段抽取模块已正确配置
-    When 系统调用字段抽取模块传入文档解析结果和 schema
-    Then 模块返回的 field_key、original_value、evidence、confidence 应被原样持久化
+  Scenario: 慢阻肺字段抽取成功并保存全量字段结果
+    Given 文档解析结果已生成 OCR 合并文本
+    When 系统执行慢阻肺专病字段抽取
+    Then 每个 schema 字段都应生成字段结果
+    And 字段结果中的 field_key、original_value、evidence、confidence、抽取状态和复核状态应被持久化
     And 每个字段应标记为 unreviewed 初始状态
 
-  Scenario: 字段抽取返回空候选时任务失败
-    Given 外部字段抽取模块返回空的字段候选数组
+  Scenario: 字段抽取全字段为空时任务失败
+    Given 慢阻肺字段抽取返回的所有字段均为空
     When 系统接收该结果
     Then 任务状态应变为 failed
-    And 系统不得基于 schema 生成空字段作为替代
-    And 任务不应进入 ready_for_review 状态
+    And 任务不应进入 review 状态
+
+  Scenario: 单字段复核可疑时进入审核页
+    Given 慢阻肺字段抽取生成了字段结果
+    And 其中一个字段 evidence 可疑或存在 OCR 风险标记
+    When 系统完成字段级复核
+    Then 任务应进入 review
+    And 可疑字段应在审核页提示人工重点核验
 
   Scenario: 字段抽取返回 schema 外字段时任务失败
-    Given 外部字段抽取模块返回的字段中包含 schema 未定义的 field_key
-    When 系统校验字段候选
+    Given 字段结果中包含 schema 未定义的 field_key
+    When 系统校验字段结果
     Then 任务状态应变为 failed
     And error_code 应为 ALGORITHM_CONTRACT_INVALID
 
   Scenario: 字段抽取返回非法字段结构时任务失败
-    Given 外部字段抽取模块返回的字段缺少 field_key 或 original_value
+    Given 字段结果缺少 field_key、original_value 或必要状态元数据
     When 系统校验字段结构
     Then 任务状态应变为 failed
     And error_code 应为 ALGORITHM_CONTRACT_INVALID
