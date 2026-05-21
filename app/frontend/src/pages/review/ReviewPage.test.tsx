@@ -373,6 +373,42 @@ describe('ReviewPage', () => {
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('shows extraction risk warnings and OCR correction hints for COPD fields', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: 'BHI:24.2kg/m2',
+              pages: [{ page_id: 'page_001', page_no: 1, preview_url: '/api/tasks/task_001/images/page_001', parsed_text: 'BHI:24.2kg/m2' }],
+              fields: [
+                {
+                  field_key: 'bmi',
+                  label: 'BMI',
+                  value: '24.2kg/m2',
+                  status: 'unreviewed',
+                  extraction_status: 'extracted',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'value_not_in_evidence', severity: 'warning', message: '字段值中的数字未能在 evidence 中直接找到' }],
+                  ocr_correction: { applied: true, raw: 'BHI', normalized: 'BMI', reason: '单位 kg/m2' }
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('需重点核验')).toBeTruthy();
+    expect(screen.getByText('字段值中的数字未能在 evidence 中直接找到')).toBeTruthy();
+    expect(screen.getByText(/OCR.*BHI.*BMI/)).toBeTruthy();
+  });
+
   it('shows a message when task completion validation fails', async () => {
     mockReviewRoutes();
     server.use(

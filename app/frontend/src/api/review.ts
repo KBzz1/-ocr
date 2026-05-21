@@ -22,6 +22,15 @@ export interface ReviewField {
   candidate_value?: string;
   auto_value?: string;
   final_value?: string;
+  extraction_status?: string;
+  verification_status?: string;
+  quality_flags?: Array<{ flag: string; severity: string; message: string }>;
+  ocr_correction?: {
+    applied: boolean;
+    raw: string;
+    normalized: string;
+    reason: string;
+  };
 }
 
 export interface ReviewResult {
