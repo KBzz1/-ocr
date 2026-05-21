@@ -5,8 +5,13 @@ from app.backend.services.algorithm_ports.field_extraction import validate_field
 
 def test_valid_candidates_pass():
     validate_field_candidates([
-        {"field_key": "chief_complaint", "original_value": "头痛3天", "confidence": 0.95},
-        {"field_key": "name", "original_value": "张三", "evidence": None},
+        {"field_key": "chief_complaint", "original_value": "头痛3天", "confidence": 0.95,
+         "extraction_status": "extracted", "verification_status": "not_checked",
+         "quality_flags": [], "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+         "evidence": "头痛3天"},
+        {"field_key": "name", "original_value": "张三", "evidence": None,
+         "extraction_status": "not_found", "verification_status": "not_checked",
+         "quality_flags": [], "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""}},
     ])
 
 
@@ -29,8 +34,50 @@ def test_invalid_candidates_raise_contract_invalid(payload):
 
 def test_extra_fields_are_allowed():
     validate_field_candidates([
-        {"field_key": "k", "original_value": "x", "unknown_external_attr": {"raw": True}},
+        {"field_key": "k", "original_value": "x", "unknown_external_attr": {"raw": True},
+         "extraction_status": "extracted", "verification_status": "not_checked",
+         "quality_flags": [], "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+         "evidence": "x"},
     ])
+
+
+def _valid_field_result():
+    return {
+        "field_key": "copd_history_years",
+        "original_value": "15年",
+        "evidence": "反复咳嗽、咳痰15年",
+        "confidence": 0.9,
+        "source_section": "主诉",
+        "extraction_status": "extracted",
+        "verification_status": "passed",
+        "quality_flags": [],
+        "ocr_correction": {
+            "applied": False,
+            "raw": "反复咳嗽、咳痰15年",
+            "normalized": "反复咳嗽、咳痰15年",
+            "reason": "",
+        },
+    }
+
+
+def test_validate_field_result_accepts_full_metadata():
+    validate_field_candidates([_valid_field_result()])
+
+
+def test_validate_field_result_rejects_missing_ocr_correction():
+    item = _valid_field_result()
+    del item["ocr_correction"]
+
+    with pytest.raises(AppError):
+        validate_field_candidates([item])
+
+
+def test_validate_field_result_rejects_invalid_status():
+    item = _valid_field_result()
+    item["verification_status"] = "maybe"
+
+    with pytest.raises(AppError):
+        validate_field_candidates([item])
 
 
 from app.backend.services.algorithm_ports.fixtures import FixtureFieldPort
