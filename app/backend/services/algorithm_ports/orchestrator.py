@@ -4,6 +4,10 @@ from .field_extraction import validate_field_candidates
 from .results import AlgorithmResultStore
 
 
+def _all_field_results_empty(candidates: list[dict]) -> bool:
+    return all(not (item.get("original_value") or "").strip() for item in candidates)
+
+
 class ProcessingOrchestrator:
     def __init__(
         self,
@@ -169,12 +173,12 @@ class ProcessingOrchestrator:
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "invalid_candidate_contract"},
             )
-        if not candidates:
+        if not candidates or _all_field_results_empty(candidates):
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
-                "字段候选结果为空",
+                "字段结果为空",
                 stage="field_extraction",
-                details={"stage": "field_extraction", "reason": "empty_candidates"},
+                details={"stage": "field_extraction", "reason": "empty_field_results"},
             )
         try:
             validate_field_candidates(candidates)
