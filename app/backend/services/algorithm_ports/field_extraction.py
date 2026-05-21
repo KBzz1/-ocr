@@ -4,6 +4,14 @@ EXTRACTION_STATUSES = {"extracted", "not_found", "uncertain"}
 VERIFICATION_STATUSES = {"passed", "suspicious", "failed", "not_checked"}
 
 
+def all_fields_empty(candidates: list[dict]) -> bool:
+    return all(
+        item.get("extraction_status") != "uncertain"
+        and not (item.get("original_value") or "").strip()
+        for item in candidates
+    )
+
+
 class FieldExtractionPort:
     def extract(self, input: dict) -> list[dict]:
         raise NotImplementedError

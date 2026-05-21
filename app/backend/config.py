@@ -91,14 +91,12 @@ def _flatten_config(raw: dict) -> dict:
 
 def _normalize_paths(config: dict) -> dict:
     """将相对路径转为基于 PROJECT_ROOT 的绝对路径。"""
-    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir"):
-        path = config[key]
-        if not os.path.isabs(path):
+    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir", "llm_model_path"):
+        path = config.get(key)
+        if path and not os.path.isabs(path):
             path = os.path.join(PROJECT_ROOT, path)
-        config[key] = os.path.normpath(path)
-    model_path = config.get("llm_model_path")
-    if model_path and not os.path.isabs(model_path):
-        config["llm_model_path"] = os.path.normpath(os.path.join(PROJECT_ROOT, model_path))
+        if path:
+            config[key] = os.path.normpath(path)
     return config
 
 

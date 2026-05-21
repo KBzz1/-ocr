@@ -1,3 +1,9 @@
+from ..algorithm_ports.field_extraction import (
+    EXTRACTION_STATUSES,
+    all_fields_empty,  # noqa: F401 - re-export
+)
+
+
 def _default_result(field_key: str) -> dict:
     return {
         "field_key": field_key,
@@ -15,11 +21,20 @@ def _default_result(field_key: str) -> dict:
 def _normalize_extracted(item: dict) -> dict:
     result = _default_result(item["field_key"])
     result.update(item)
-    if result.get("original_value"):
+    if "extraction_status" not in item and result.get("original_value"):
         result["extraction_status"] = "extracted"
+    if result.get("extraction_status") not in EXTRACTION_STATUSES:
+        result["extraction_status"] = "extracted" if result.get("original_value") else "not_found"
+    if result["extraction_status"] == "not_found":
+        result["original_value"] = ""
+        result["evidence"] = None
+    if result["extraction_status"] == "extracted" and not result.get("original_value"):
+        result["extraction_status"] = "not_found"
+        result["evidence"] = None
     result.setdefault("quality_flags", [])
     result.setdefault("verification_status", "not_checked")
-    result.setdefault("ocr_correction", {"applied": False, "raw": "", "normalized": "", "reason": ""})
+    if not isinstance(result.get("ocr_correction"), dict):
+        result["ocr_correction"] = {"applied": False, "raw": "", "normalized": "", "reason": ""}
     return result
 
 
@@ -28,5 +43,4 @@ def complete_field_results(raw_results: list[dict], field_keys: list[str]) -> li
     return [by_key.get(key, _default_result(key)) for key in field_keys]
 
 
-def all_fields_empty(field_results: list[dict]) -> bool:
-    return all(not (item.get("original_value") or "").strip() for item in field_results)
+# all_fields_empty is re-exported from algorithm_ports.field_extraction (see top-level import)

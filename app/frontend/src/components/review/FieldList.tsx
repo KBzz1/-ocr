@@ -51,8 +51,8 @@ export function FieldList({ fields, selectedFieldKey, onChange, onFocusField, ge
             />
             {field.candidate_value ? <p className="review-candidate">候选值：{field.candidate_value}</p> : null}
             {field.verification_status === 'suspicious' && <span className="field-risk">需重点核验</span>}
-            {field.quality_flags?.map((flag) => (
-              <small key={flag.flag} className="field-risk-detail">{flag.message}</small>
+            {field.quality_flags?.map((flag, idx) => (
+              <small key={`${flag.flag}-${idx}`} className="field-risk-detail">{flag.message}</small>
             ))}
             {field.ocr_correction?.applied && (
               <small className="field-ocr-correction">

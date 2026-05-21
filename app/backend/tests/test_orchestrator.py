@@ -75,13 +75,13 @@ def test_build_image_inputs_returns_none_when_image_path_missing(tmp_path):
 
 
 def test_orchestrator_detects_all_empty_field_results(tmp_path):
-    from app.backend.services.algorithm_ports.orchestrator import _all_field_results_empty
+    from app.backend.services.algorithm_ports.field_extraction import all_fields_empty
 
-    assert _all_field_results_empty([
+    assert all_fields_empty([
         {"field_key": "bmi", "original_value": "", "extraction_status": "not_found"},
         {"field_key": "crp", "original_value": "", "extraction_status": "not_found"},
     ])
-    assert not _all_field_results_empty([
+    assert not all_fields_empty([
         {"field_key": "bmi", "original_value": "24.2", "extraction_status": "extracted"},
         {"field_key": "crp", "original_value": "", "extraction_status": "not_found"},
     ])

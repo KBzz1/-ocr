@@ -136,7 +136,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     field_port = None
     if config.get("enable_copd_extractor"):
         from .services.copd_extraction.port import build_default_copd_field_port
-        field_port = build_default_copd_field_port(config, schema_service.get_current)
+        field_port = build_default_copd_field_port(config, schema_service.get_field_order)
 
     orchestrator = ProcessingOrchestrator(
         store=store,

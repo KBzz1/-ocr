@@ -28,7 +28,6 @@ class COPDFieldExtractor:
 
     def _merge_verdicts(self, results: list[dict], verdicts: list[dict]) -> list[dict]:
         verdict_by_key = {item.get("field_key"): item for item in verdicts if isinstance(item, dict)}
-        merged = []
         for item in results:
             verdict = verdict_by_key.get(item["field_key"])
             if verdict:
@@ -39,5 +38,4 @@ class COPDFieldExtractor:
                     item["verification_status"] = "failed"
                 elif value == "suspicious":
                     item["verification_status"] = "suspicious"
-            merged.append(item)
-        return merged
+        return results

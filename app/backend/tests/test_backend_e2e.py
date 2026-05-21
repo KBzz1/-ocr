@@ -45,7 +45,7 @@ algorithms:
     )
     monkeypatch.setattr(
         "app.backend.services.copd_extraction.port.build_default_copd_field_port",
-        lambda config, schema_provider: object(),
+        lambda config, field_keys_provider: object(),
     )
 
     app = create_backend_app(str(config_dir))

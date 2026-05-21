@@ -6,6 +6,13 @@ from datetime import date
 
 NEGATION_OR_UNCERTAIN = ("无", "否认", "未见", "可能", "考虑", "建议复查")
 
+FLAG_VALUE_NOT_IN_EVIDENCE = "value_not_in_evidence"
+FLAG_SUSPICIOUS_DATE = "suspicious_date"
+FLAG_NEGATION_OR_UNCERTAINTY_RISK = "negation_or_uncertainty_risk"
+FLAG_POSSIBLE_DUPLICATE_OR_STITCHING = "possible_duplicate_or_stitching"
+
+SEVERITY_WARNING = "warning"
+
 
 def _numbers(text: str) -> list[str]:
     """提取文本中的数字，仅保留整数部分 >= 2 位的（过滤单数字片段噪声）。"""
@@ -18,7 +25,7 @@ def _number_in_evidence(number: str, evidence: str) -> bool:
     return bool(re.search(rf"(?<!\d){escaped}(?!\d)", evidence))
 
 
-def _flag(flag: str, message: str, severity: str = "warning") -> dict:
+def _flag(flag: str, message: str, severity: str = SEVERITY_WARNING) -> dict:
     return {"flag": flag, "severity": severity, "message": message}
 
 
@@ -29,7 +36,7 @@ def document_quality_flags(text: str) -> list[dict]:
     seen = set()
     for sentence in sentences:
         if len(sentence) >= 8 and sentence in seen:
-            flags.append(_flag("possible_duplicate_or_stitching", "文本中存在高相似重复片段"))
+            flags.append(_flag(FLAG_POSSIBLE_DUPLICATE_OR_STITCHING, "文本中存在高相似重复片段"))
             break
         seen.add(sentence)
     return flags
@@ -62,18 +69,18 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
         for number in _numbers(value):
             if not _number_in_evidence(number, evidence):
                 item["quality_flags"].append(
-                    _flag("value_not_in_evidence", "字段值中的数字未能在 evidence 中直接找到")
+                    _flag(FLAG_VALUE_NOT_IN_EVIDENCE, "字段值中的数字未能在 evidence 中直接找到")
                 )
                 break
 
         if _has_suspicious_date(value) or _has_suspicious_date(evidence):
             item["quality_flags"].append(
-                _flag("suspicious_date", "日期明显晚于当前日期或与上下文不一致")
+                _flag(FLAG_SUSPICIOUS_DATE, "日期明显晚于当前日期或与上下文不一致")
             )
 
         if any(word in evidence for word in NEGATION_OR_UNCERTAIN) and value and value not in ("", "无", "未见", "否认"):
             item["quality_flags"].append(
-                _flag("negation_or_uncertainty_risk", "evidence 附近存在否定或不确定语气")
+                _flag(FLAG_NEGATION_OR_UNCERTAINTY_RISK, "evidence 附近存在否定或不确定语气")
             )
 
         if doc_flags:

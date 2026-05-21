@@ -11,18 +11,24 @@ class COPDFieldPort:
         return self._extractor.extract(text)
 
 
-def _schema_field_keys(schema: dict) -> list[str]:
-    return [
-        field["field_key"]
-        for group in schema.get("field_groups", [])
-        for field in group.get("fields", [])
-    ]
+class _LazyCOPDFieldPort:
+    """Defer LLM model loading until first extraction request."""
+
+    def __init__(self, model_path: str, field_keys: list[str]):
+        self._model_path = model_path
+        self._field_keys = field_keys
+        self._port = None
+
+    def extract(self, input: dict) -> list[dict]:
+        if self._port is None:
+            from .llm_client import build_llama_cpp_client
+
+            llm_client = build_llama_cpp_client(self._model_path)
+            extractor = COPDFieldExtractor(llm_client=llm_client, field_keys=self._field_keys)
+            self._port = COPDFieldPort(extractor)
+        return self._port.extract(input)
 
 
-def build_default_copd_field_port(config: dict, schema_provider):
-    from .llm_client import build_llama_cpp_client
-
-    schema = schema_provider()
-    llm_client = build_llama_cpp_client(config["llm_model_path"])
-    extractor = COPDFieldExtractor(llm_client=llm_client, field_keys=_schema_field_keys(schema))
-    return COPDFieldPort(extractor)
+def build_default_copd_field_port(config: dict, field_keys_provider):
+    field_keys = field_keys_provider()
+    return _LazyCOPDFieldPort(config["llm_model_path"], field_keys)
