@@ -22,7 +22,8 @@ type FieldExtractionPort = {
 
 - `ImageProcessingPort` 未配置或异常时，任务处理失败，错误码为 `ALGORITHM_MODULE_NOT_CONFIGURED` 或 `ALGORITHM_MODULE_FAILED`。
 - `DocumentParsingPort` 未配置、异常或返回空页结果时，任务处理失败。
-- `FieldExtractionPort` 未配置、异常、返回空字段候选、返回 schema 之外字段或返回契约非法字段时，任务处理失败。
+- `FieldExtractionPort` 未配置、异常、返回 schema 之外字段或返回契约非法字段时，任务处理失败。
+- `FieldExtractionPort` 返回局部字段为空或不确定时，任务不失败而是进入 `review`，单字段风险由前端展示供人工核验。
 - 处理流程不得崩溃；但也不得生成"空成功结果"、不得进入人工降级流程、不得允许后端基于 schema 或规则生成替代字段。
 
 契约测试可以使用 fixture 适配器模拟外部团队未来交付结果，但不得在本项目实现识别或抽取算法。

@@ -26,6 +26,15 @@
 
 旧设计中的 `capturing`、`uploaded`、`ready_for_review`、`confirmed`、`exported` 不再作为当前 MVP 目标状态使用。
 
+## 字段抽取元数据
+
+`extraction_status`: `extracted`、`not_found`、`uncertain`
+`verification_status`: `passed`、`suspicious`、`failed`、`not_checked`
+`quality_flags`: 规则化质量核验风险标记列表
+`ocr_correction`: OCR 纠偏审计信息
+
+这些不是人工审核状态；人工审核状态仍使用 `unreviewed`、`confirmed`、`modified`。
+
 ## 字段状态
 
 MVP 字段状态先保持简单，避免审核流程过重。

@@ -14,7 +14,7 @@ Feature: 外部算法模块集成
     Then 任务状态应变为 failed
     And error_code 应为 ALGORITHM_MODULE_NOT_CONFIGURED
     And error_message 应包含 "算法模块未配置"
-    And 任务不应进入 ready_for_review 或任何可审核状态
+    And 任务不应进入 review 或任何可审核状态
 
   Scenario: 图像处理模块返回处理后图像路径
     Given 外部图像处理模块已正确配置
@@ -55,12 +55,19 @@ Feature: 外部算法模块集成
     Then 模块返回的 field_key、original_value、evidence、confidence 应被原样持久化
     And 每个字段应标记为 unreviewed 初始状态
 
-  Scenario: 字段抽取返回空候选时任务失败
-    Given 外部字段抽取模块返回空的字段候选数组
+  Scenario: 字段抽取返回整体无效结果时任务失败
+    Given 外部字段抽取模块返回整体无效、全空字段或无法解析的输出
     When 系统接收该结果
     Then 任务状态应变为 failed
     And 系统不得基于 schema 生成空字段作为替代
-    And 任务不应进入 ready_for_review 状态
+    And 任务不应进入 review 状态
+
+  Scenario: 单字段抽取为空或不确定时进入审核
+    Given 外部字段抽取模块返回的字段候选中存在 extraction_status 为 not_found 或 uncertain 的字段
+    When 系统接收该结果
+    Then 任务状态应变为 review
+    And 每个字段应保留其 extraction_status、verification_status 和 quality_flags 元数据
+    And 前端应能展示单字段风险供人工核验
 
   Scenario: 字段抽取返回 schema 外字段时任务失败
     Given 外部字段抽取模块返回的字段中包含 schema 未定义的 field_key

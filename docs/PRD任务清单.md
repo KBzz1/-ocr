@@ -103,6 +103,38 @@
   - 范围：未配置、异常、空字段、契约非法均进入 `failed`。
   - 边界：不得规则兜底或补造字段。
 
+### BE-COPD-01 慢阻肺专病字段抽取
+
+- [x] **BE-COPD-01-01 慢阻肺专病 schema**
+  - 范围：定义慢阻肺/呼吸系统入院记录结构化字段，含字段 key、中文名、字段组和类型。
+  - 边界：为 MVP 字段来源，后续可扩展其他病种 schema。
+  - 设计：`docs/superpowers/specs/2026-05-17-copd-extraction-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-17-copd-extraction-plan.md`。
+
+- [x] **BE-COPD-01-02 字段结果契约**
+  - 范围：定义结构化字段抽取结果契约，含 `extraction_status`、`verification_status`、`quality_flags`、`ocr_correction` 元数据。
+  - 边界：单字段风险进入 `review`，整任务失败仅限无效/全空/无法解析输出。
+
+- [x] **BE-COPD-01-03 OCR 文本分段**
+  - 范围：基于规则将 OCR 全文切分为入院记录文书段落。
+  - 边界：不实现 OCR 本身；分段为专病抽取提供结构化输入。
+
+- [x] **BE-COPD-01-04 LLM prompt harness**
+  - 范围：构建慢阻肺专病字段抽取 prompt，支持字段级和组级抽取。
+  - 边界：prompt 工程属于本仓库核心业务代码。
+
+- [x] **BE-COPD-01-05 薄规则质量核验**
+  - 范围：规则化校验抽取字段的格式、值域和一致性，生成 `quality_flags` 风险标记。
+  - 边界：规则核验不替代人工审核，风险标记用于辅助前端展示。
+
+- [x] **BE-COPD-01-06 LLM 客户端与抽取编排**
+  - 范围：调用本地 llama.cpp 服务执行字段抽取，含重试、超时和错误映射。
+  - 边界：llama.cpp 为外部本地服务；本仓库负责调用编排和失败处理。
+
+- [x] **BE-COPD-01-07 后端 wiring 与审核元数据保存**
+  - 范围：在后端处理流程中集成 COPD 抽取编排器，保留字段抽取元数据供前端展示。
+  - 边界：先以 fake port 验证契约，再接入真实 llama.cpp 客户端。
+
 ### BE-MVP-05 审核和导出
 
 - [x] **BE-MVP-05-01 审核结果读取和保存**
