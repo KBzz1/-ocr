@@ -77,6 +77,7 @@
   "source_section": "主诉",
   "extraction_status": "extracted",
   "verification_status": "passed",
+  "quality_flags": [],
   "ocr_correction": {
     "applied": false,
     "raw": "反复咳嗽、咳痰15年",
@@ -95,6 +96,7 @@
 - `source_section`：主诉、现病史、既往史、个人史、体格检查、辅助检查等。
 - `extraction_status`：`extracted`、`not_found`、`uncertain`。
 - `verification_status`：`passed`、`suspicious`、`failed`、`not_checked`。
+- `quality_flags`：规则化质量核验输出的风险标记列表。
 - `ocr_correction`：模型是否按上下文理解了 OCR 疑似错误；不得静默改写。
 
 ## 空值和失败原则
@@ -153,6 +155,7 @@ OCR 合并文本
 - 将 LLM 复核封装为同一模型的第二次串行调用。
 - 将嵌套结果转换为扁平全量字段结果列表。
 - 将 evidence 匹配和全空失败作为项目内可测试逻辑。
+- 增加薄规则质量核验框架，只输出字段级风险标记。
 
 建议代码边界：
 
@@ -165,6 +168,7 @@ app/backend/services/copd_extraction/
   verifier.py
   candidate_builder.py
   evidence_validator.py
+  quality_checks.py
 ```
 
 这些模块属于主代码，但只服务慢阻肺专病结构化，不扩展成通用医疗规则引擎。
@@ -191,6 +195,7 @@ app/backend/services/copd_extraction/
   "source_section": "体格检查",
   "extraction_status": "extracted",
   "verification_status": "not_checked",
+  "quality_flags": [],
   "ocr_correction": {
     "applied": true,
     "raw": "BHI",
@@ -245,6 +250,46 @@ OCR 纠偏规则：
 
 复核失败或可疑字段进入审核页，但必须突出显示为需要人工重点核验。只有复核输出整体不可解析、结构非法或全字段不可用时，任务才进入 `failed`。
 
+## 薄规则质量核验
+
+第一版增加一层薄的规则化质量核验，目标是快速搭起框架，发现高风险 OCR/结构问题并给审核页提供风险标记。规则层只做风险提示，不自动纠错、不生成字段值、不删除重复文本、不替代 LLM 抽取。
+
+执行位置：
+
+```text
+LLM 抽取
+  -> 契约校验
+  -> 薄规则质量核验
+  -> LLM 复核
+  -> 字段级状态合并
+  -> 审核页
+```
+
+第一版只做四类轻量检查：
+
+- **数值/evidence 一致性**：抽取值中的数字应能在 evidence 中找到；找不到则标记 `value_not_in_evidence`。
+- **重复/拼接风险**：OCR 合并文本或字段 evidence 中出现高相似重复片段、短窗口重复检验项或重复医嘱时，标记 `possible_duplicate_or_stitching`。
+- **日期范围风险**：字段或 evidence 中日期明显晚于当前日期、年份与同一病历上下文冲突时，标记 `suspicious_date`。
+- **否定/不确定语气风险**：evidence 附近出现“无、否认、未见、可能、考虑、建议复查”等词，而字段值表达为确定阳性时，标记 `negation_or_uncertainty_risk`。
+
+规则输出只追加到字段级 `quality_flags`：
+
+```json
+{
+  "field_key": "blood_gas_pao2",
+  "flag": "value_not_in_evidence",
+  "severity": "warning",
+  "message": "字段值中的数字未能在 evidence 中直接找到"
+}
+```
+
+质量标记合并规则：
+
+- 有 `quality_flags` 的字段默认 `verification_status=suspicious`，除非 LLM 复核给出更严重的 `failed`。
+- `quality_flags` 不直接导致任务失败。
+- 只有规则执行异常、字段结果结构非法、全字段空值或模型输出不可解析时，任务才失败。
+- 规则层后续可以扩展药名、医学短语和机构名小词表，但第一版不做。
+
 ## 校验机制
 
 校验分三层。
@@ -255,15 +300,17 @@ OCR 纠偏规则：
 - 字段 key 必须完整覆盖 schema，且不得重复。
 - 每个字段必须包含 `field_key`、`original_value`、`evidence`、`confidence`、`source_section`、`extraction_status`。
 - 每个字段必须包含 `verification_status`。
+- 每个字段必须包含 `quality_flags`，且必须是列表。
 - `extraction_status` 必须在枚举内。
 - `verification_status` 必须在枚举内。
 - `extracted` 字段必须有非空 `original_value` 和 evidence。
 - 每个字段必须包含 `ocr_correction`，且结构包含 `applied`、`raw`、`normalized`、`reason`。
 
-第二层是 evidence 校验：
+第二层是 evidence 和薄规则质量核验：
 
 - `extracted` 字段的 evidence 应能在 OCR 合并文本中直接找到。
 - 数值字段应保留原单位和原文写法，不做医学换算。
+- 薄规则质量核验只追加 `quality_flags`，不修改字段值。
 - 存在 OCR 纠偏时，复核结果必须判断纠偏理由是否合理。
 - 否定表达不能被转成阳性字段；无法确认时标记为 `suspicious`。
 - 复核模型发现字段级错误时，字段标记为 `failed` 或 `suspicious`，进入审核页高亮。
@@ -302,7 +349,7 @@ OCR 误差族群至少覆盖：
 验收方式：
 
 - 每份样本有期望字段快照。
-- 规则化分段、prompt 输出结构、OCR 纠偏审计、evidence 匹配和全流程抽取分别有测试。
+- 规则化分段、prompt 输出结构、OCR 纠偏审计、evidence 匹配、薄规则质量核验和全流程抽取分别有测试。
 - 模型输出不要求字字相同，但关键字段、数值、否定关系和 evidence 必须正确。
 - 记录失败样本，区分是 prompt harness、模型能力、evidence 校验还是 schema 设计问题。
 - 5 份手工构造样本只作为第一版回归集和冒烟基线，不宣称已经覆盖真实世界泛化；后续拿到脱敏 OCR 文本后再扩展字段级评估集。
@@ -349,8 +396,9 @@ OCR 误差族群至少覆盖：
 - 未抽到的字段在审核页显示为空，且状态为未抽取。
 - 全字段未抽到时任务进入 `failed`。
 - 单字段 evidence 不可信或复核失败时进入审核页高亮；整体结构非法、全字段空值或复核输出不可解析时任务进入 `failed`。
-- 手工制造的真实风格和 OCR 噪声样本通过规则分段、prompt harness、OCR 纠偏审计、evidence 校验和全流程抽取测试。
+- 手工制造的真实风格和 OCR 噪声样本通过规则分段、prompt harness、OCR 纠偏审计、evidence 校验、薄规则质量核验和全流程抽取测试。
 - 模型发生 OCR 纠偏时必须输出 `ocr_correction`，不得静默修改标签、单位或数值。
+- 薄规则质量核验只输出 `quality_flags`，不自动纠错、不抽取字段、不导致任务失败。
 - 手工样本作为第一版回归集，不作为泛化充分性的证明。
 - 后端测试覆盖 schema 外字段、非法结构、全空字段、evidence 失败和正常字段展示。
 - PRD、BDD、TDD 与实现契约一致。
