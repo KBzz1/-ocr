@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../api/client';
 import { getSystemStatus, type SystemStatus as ApiSystemStatus } from '../api/system';
@@ -10,9 +10,11 @@ import {
 import { MOBILE_UPLOAD_PREFIX } from './routes';
 import { ExportPlaceholder } from '../pages/export/ExportPlaceholder';
 import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
+import { ReviewEntryPage } from '../pages/review/ReviewEntryPage';
 import { ReviewPage } from '../pages/review/ReviewPage';
 import { TasksPage } from '../pages/tasks/TasksPage';
 import { WorkstationPage } from '../pages/workstation/WorkstationPage';
+import { useSilentPolling } from '../hooks/useSilentPolling';
 import type {
   SystemReminder,
   SystemStatus,
@@ -20,6 +22,8 @@ import type {
   TaskSummary,
   WorkstationPageData
 } from '../pages/workstation/workstation.types';
+
+const DASHBOARD_POLL_INTERVAL_MS = 5000;
 
 function toSystemStatus(status: ApiSystemStatus | null, error: string | null): SystemStatus {
   if (error) {
@@ -115,6 +119,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+function areTasksEqual(current: ApiTaskSummary[], next: ApiTaskSummary[]) {
+  return JSON.stringify(current) === JSON.stringify(next);
+}
+
+function areSystemStatusesEqual(current: ApiSystemStatus | null, next: ApiSystemStatus | null) {
+  return JSON.stringify(current) === JSON.stringify(next);
+}
+
 function useCurrentPathname() {
   const [pathname, setPathname] = useState(window.location.pathname);
 
@@ -141,7 +153,7 @@ function WorkstationApp() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [isRetryingSystem, setIsRetryingSystem] = useState(false);
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async (mode: 'initial' | 'manual' | 'silent' = 'manual') => {
     const [statusResult, tasksResult] = await Promise.allSettled([
       getSystemStatus(),
       getTasks()
@@ -149,29 +161,35 @@ function WorkstationApp() {
 
     if (statusResult.status === 'fulfilled') {
       const status = statusResult.value;
-      setSystemStatus(status);
+      setSystemStatus((currentStatus) => (areSystemStatusesEqual(currentStatus, status) ? currentStatus : status));
       setSystemError(status.status === 'running' ? null : status.message ?? '系统状态异常');
     } else {
-      setSystemStatus(null);
-      setSystemError(getErrorMessage(statusResult.reason, '服务无响应'));
+      if (mode !== 'silent') {
+        setSystemStatus(null);
+        setSystemError(getErrorMessage(statusResult.reason, '服务无响应'));
+      }
     }
 
     if (tasksResult.status === 'fulfilled') {
-      setTasks(tasksResult.value);
+      setTasks((currentTasks) => (areTasksEqual(currentTasks, tasksResult.value) ? currentTasks : tasksResult.value));
       setTaskError(null);
     } else {
-      setTasks([]);
-      setTaskError(getErrorMessage(tasksResult.reason, '任务列表加载失败'));
+      if (mode !== 'silent') {
+        setTasks([]);
+        setTaskError(getErrorMessage(tasksResult.reason, '任务列表加载失败'));
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
-    void loadDashboard();
-  }, []);
+    void loadDashboard('initial');
+  }, [loadDashboard]);
+
+  useSilentPolling(() => loadDashboard('silent'), DASHBOARD_POLL_INTERVAL_MS);
 
   async function handleRetrySystem() {
     setIsRetryingSystem(true);
-    await loadDashboard();
+    await loadDashboard('manual');
     setIsRetryingSystem(false);
   }
 
@@ -204,7 +222,7 @@ function WorkstationApp() {
       const task = await createTask();
       setCurrentTask(task);
       setIsQrOpen(true);
-      await loadDashboard();
+      await loadDashboard('manual');
     } catch (error) {
       setCurrentTask(null);
       setCreateError(
@@ -229,7 +247,6 @@ function WorkstationApp() {
       onNewCapture={handleCreateSession}
       onViewQr={() => setIsQrOpen(true)}
       onCloseQr={() => setIsQrOpen(false)}
-      onRegenerateQr={handleCreateSession}
       lanAddresses={systemStatus?.lan_addresses ?? []}
     />
   );
@@ -240,6 +257,10 @@ export function App() {
 
   if (pathname.startsWith(MOBILE_UPLOAD_PREFIX)) {
     return <MobileCapturePage />;
+  }
+
+  if (pathname === '/review' || pathname === '/review/') {
+    return <ReviewEntryPage />;
   }
 
   if (/^\/tasks\/[^/]+\/review\/?$/.test(pathname)) {

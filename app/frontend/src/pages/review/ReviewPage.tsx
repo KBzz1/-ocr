@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { getReview, saveReview, type ReviewField, type ReviewResult } from '../../api/review';
+import { getReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
 import { completeTask, type TaskStatus } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
@@ -12,6 +12,7 @@ import './review.css';
 
 type ReviewPageProps = {
   taskId?: string;
+  demoPayload?: ReviewPayload;
 };
 
 function getTaskIdFromPath() {
@@ -19,7 +20,7 @@ function getTaskIdFromPath() {
   return match ? decodeURIComponent(match[1]) : 'task_001';
 }
 
-export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
+export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: ReviewPageProps) {
   const [status, setStatus] = useState<TaskStatus>('review');
   const [review, setReview] = useState<ReviewResult | null>(null);
   const [fields, setFields] = useState<ReviewField[]>([]);
@@ -35,7 +36,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   useEffect(() => {
     let isCurrent = true;
     setIsLoading(true);
-    getReview(taskId)
+    const reviewRequest = demoPayload ? Promise.resolve(demoPayload) : getReview(taskId);
+
+    reviewRequest
       .then((payload) => {
         if (!isCurrent) return;
         setStatus(payload.status);
@@ -55,7 +58,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     return () => {
       isCurrent = false;
     };
-  }, [taskId]);
+  }, [demoPayload, taskId]);
 
   function renderShell(content: ReactNode) {
     return (
@@ -63,7 +66,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
         activeRouteId="review"
         reviewTaskHref={buildReviewPath(taskId)}
         headerKicker="人工审核"
-        headerTitle={`任务 ${taskId}`}
+        headerTitle="人工核验工作台"
       >
         <main className="review-page" aria-label="人工审核页">{content}</main>
       </WorkstationLayout>
@@ -86,6 +89,14 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     savingRef.current = true;
     setSaveStatus('saving');
     try {
+      if (demoPayload) {
+        const nextReview = { ...(review ?? demoPayload.review_result), fields: nextFields };
+        setReview(nextReview);
+        setFields(nextFields);
+        setSaveStatus('saved');
+        return nextFields;
+      }
+
       const saved = await saveReview(taskId, nextFields);
       setReview(saved.review_result);
       setFields(saved.review_result.fields);
@@ -99,7 +110,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   async function handleSave() {
     try {
       await saveFields(fields);
-      setMessage('已保存');
+      setMessage(null);
     } catch (error) {
       setSaveStatus('failed');
       setMessage(error instanceof Error ? error.message : '保存失败，请重试');
@@ -114,6 +125,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
       const unifiedFields = normalizeFieldsForUnifiedReview(fields);
       const savedFields = await saveFields(unifiedFields);
       if (!savedFields) return;
+      if (demoPayload) {
+        setStatus('done');
+        setMessage('已完成');
+        return;
+      }
+
       const task = await completeTask(taskId);
       setStatus(task.status);
       setMessage('已完成');
@@ -173,6 +190,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
   const selectedEvidenceText = selectedField?.evidence?.find((item) => item.text)?.text;
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const unreviewedFieldCount = fields.filter((field) => field.status === 'unreviewed').length;
+  const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const sourceMessage: SourceMessage | null = selectedField
     ? selectedEvidenceText
       ? visibleOcrText.includes(selectedEvidenceText)
@@ -196,30 +214,46 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
     <>
       <header className="review-header">
         <div>
-          <p className="review-eyebrow">人工审核</p>
-          <h1>任务 {taskId}</h1>
-          <div className="review-summary" aria-label="审核摘要">
-            <span>状态：{getTaskStatusLabel(status)}</span>
-            <span>页数：{pages.length}</span>
-            <span>字段：{fields.length}</span>
-            <span>已修改：{modifiedFieldCount}</span>
-            <span>未统一审核：{unreviewedFieldCount}</span>
+          <div className="review-title-line">
+            <h1>任务 {taskId}</h1>
+          </div>
+          <div className="review-status-pill">
+            {demoPayload ? <span className="review-demo-label">演示样本</span> : null}
+            {getTaskStatusLabel(status)}
+          </div>
+        </div>
+        <div className="review-metrics" aria-label="审核摘要">
+          <div>
+            <span>页数</span>
+            <strong>{pages.length} / {pages.length || 0}</strong>
+          </div>
+          <div>
+            <span>字段</span>
+            <strong>{fields.length}</strong>
+          </div>
+          <div className="is-warn">
+            <span>待确认</span>
+            <strong>{unreviewedFieldCount}</strong>
+          </div>
+          <div className="is-info">
+            <span>已修改</span>
+            <strong>{modifiedFieldCount}</strong>
           </div>
         </div>
         <div className="review-header__actions">
-          <span className={`review-save-state review-save-state--${saveStatus}`}>
-            {saveStatus === 'dirty'
-              ? '未保存修改'
-              : saveStatus === 'saving'
-                ? '保存中'
-                : saveStatus === 'saved'
-                  ? '已保存'
-                  : saveStatus === 'failed'
-                    ? '保存失败'
-                    : '无修改'}
-          </span>
+          {saveStatus !== 'idle' ? (
+            <span className={`review-save-state review-save-state--${saveStatus}`} aria-live="polite">
+              {saveStatus === 'dirty'
+                ? '未保存修改'
+                : saveStatus === 'saving'
+                  ? '保存中'
+                  : saveStatus === 'saved'
+                    ? '已保存'
+                    : '保存失败'}
+            </span>
+          ) : null}
           <button type="button" onClick={() => void handleSave()} disabled={saveStatus === 'saving' || isCompleting}>
-            保存
+            保存修改
           </button>
           <button
             type="button"
@@ -227,7 +261,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
             onClick={() => void handleComplete()}
             disabled={isCompleting || saveStatus === 'saving'}
           >
-            {isCompleting ? '完成中' : '统一审核并完成'}
+            {isCompleting ? '确认中' : '确认完成'}
           </button>
         </div>
       </header>
@@ -235,64 +269,87 @@ export function ReviewPage({ taskId = getTaskIdFromPath() }: ReviewPageProps) {
       {message ? <p role="status" className="review-alert">{message}</p> : null}
 
       <div className="review-grid">
-        <section className="review-panel review-panel--image" aria-label="任务图片">
-          <div className="review-panel__heading">
-            <h2>任务图片</h2>
-            <span>{pages.length ? `共 ${pages.length} 页` : '无页面'}</span>
-          </div>
-          {pages.length ? (
-            <div className="review-page-tabs" role="tablist" aria-label="任务页码">
-              {pages.map((page) => (
-                <button
-                  aria-selected={page.page_id === selectedPage?.page_id}
-                  key={page.page_id}
-                  type="button"
-                  onClick={() => setSelectedPageId(page.page_id)}
-                >
-                  第 {page.page_no} 页
-                </button>
-              ))}
+        <div className="review-source-column">
+          <section className="review-panel review-panel--image" aria-label="任务图片">
+            <div className="review-panel__heading">
+              <h2>原图</h2>
+              <span>第 {selectedPage?.page_no ?? 0} 页 / 共 {pages.length} 页</span>
             </div>
-          ) : null}
-          {selectedPage?.preview_url || selectedPage?.image_url ? (
-            <img src={selectedPage.preview_url ?? selectedPage.image_url} alt={`第 ${selectedPage.page_no} 页原图`} />
-          ) : (
-            <p className="review-empty">后端未返回当前页原图</p>
-          )}
-        </section>
-
-        <section className={`review-panel review-panel--ocr${isOcrVisible ? ' is-open' : ''}`} aria-label="OCR 文本">
-          <div className="review-panel__heading">
-            <h2>OCR 文本</h2>
-            <button type="button" onClick={() => setIsOcrVisible((value) => !value)}>
-              {isOcrVisible ? '隐藏 OCR' : '显示 OCR'}
-            </button>
-          </div>
-          {isOcrVisible ? (
-            <>
-              <div className="review-text-actions" aria-label="OCR 文本范围">
-                <button
-                  aria-pressed={ocrMode === 'page'}
-                  type="button"
-                  onClick={() => setOcrMode('page')}
-                >
-                  当前页
-                </button>
-                <button
-                  aria-pressed={ocrMode === 'merged'}
-                  type="button"
-                  onClick={() => setOcrMode('merged')}
-                >
-                  合并文本
-                </button>
+            <div className="review-document-shell">
+              {pages.length ? (
+                <div className="review-page-tabs" role="tablist" aria-label="任务页码">
+                  {pages.map((page) => (
+                    <button
+                      aria-label={`第 ${page.page_no} 页`}
+                      aria-selected={page.page_id === selectedPage?.page_id}
+                      key={page.page_id}
+                      type="button"
+                      onClick={() => setSelectedPageId(page.page_id)}
+                    >
+                      <span>{page.page_no}</span>
+                      {page.preview_url || page.image_url ? (
+                        <img src={page.preview_url ?? page.image_url} alt="" />
+                      ) : (
+                        <span className="review-thumb-placeholder" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="review-document-stage">
+                {selectedPage?.preview_url || selectedPage?.image_url ? (
+                  <img src={selectedPage.preview_url ?? selectedPage.image_url} alt={`第 ${selectedPage.page_no} 页原图`} />
+                ) : (
+                  <div className="review-document-fallback" aria-label="无原图预览">
+                    <h3>重庆大学附属新桥医院</h3>
+                    <h4>住院病历首页</h4>
+                    {(currentPageOcrText || mergedOcrText || '无原图').split('\n').slice(0, 10).map((line, index) => (
+                      <p key={`${line}-${index}`}>{line}</p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <ReviewSourcePanel text={visibleOcrText || '后端未返回 OCR 文本'} sourceMessage={sourceMessage} />
-            </>
-          ) : null}
-        </section>
+            </div>
+          </section>
 
-        <section className="review-panel" aria-label="结构化字段">
-          <h2>结构化字段</h2>
+          <section className={`review-panel review-panel--ocr${isOcrVisible ? ' is-open' : ''}`} aria-label="OCR 文本">
+            <div className="review-panel__heading">
+              <h2>OCR</h2>
+              <button type="button" onClick={() => setIsOcrVisible((value) => !value)}>
+                {isOcrVisible ? '隐藏 OCR' : '显示 OCR'}
+              </button>
+            </div>
+            {isOcrVisible ? (
+              <>
+                <div className="review-text-actions" aria-label="OCR 文本范围">
+                  <button
+                    aria-pressed={ocrMode === 'page'}
+                    type="button"
+                    onClick={() => setOcrMode('page')}
+                  >
+                    当前页
+                  </button>
+                  <button
+                    aria-pressed={ocrMode === 'merged'}
+                    type="button"
+                    onClick={() => setOcrMode('merged')}
+                  >
+                    合并文本
+                  </button>
+                </div>
+                <ReviewSourcePanel text={visibleOcrText || '无 OCR 文本'} sourceMessage={sourceMessage} />
+              </>
+            ) : null}
+          </section>
+        </div>
+
+        <section className="review-panel review-panel--fields" aria-label="结构化字段">
+          <div className="review-panel__heading">
+            <div>
+              <h2>字段校对</h2>
+            </div>
+            <span>{fields.length} 个字段，{confirmedFieldCount} 个已确认</span>
+          </div>
           <FieldList
             fields={fields}
             selectedFieldKey={selectedFieldKey}

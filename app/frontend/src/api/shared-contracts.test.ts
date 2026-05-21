@@ -5,7 +5,7 @@ import { exportTaskExcel, exportTaskJson } from './export';
 import { normalizeApiError } from './errors';
 import { getReviewResult, saveReviewField } from './review';
 import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
-import { createTask, getTaskDetail, processTask, type TaskStatus } from './tasks';
+import { createTask, getTaskDetail, getTasks, processTask, type TaskStatus } from './tasks';
 import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../styles/status';
 import { server } from '../../tests/setupTests';
 
@@ -114,6 +114,36 @@ describe('shared frontend contracts', () => {
 
     await expect(getTaskDetail('task_failed')).resolves.toMatchObject({ status: 'failed' });
     await expect(processTask('task_failed')).resolves.toMatchObject({ status: 'processing' });
+  });
+
+  it('hides empty uploading placeholder tasks from task lists', async () => {
+    server.use(
+      http.get('*/api/tasks', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            tasks: [
+              {
+                task_id: 'task_empty',
+                status: 'uploading',
+                created_at: '2026-05-19T10:00:00+08:00',
+                page_count: 0
+              },
+              {
+                task_id: 'task_uploaded',
+                status: 'uploading',
+                created_at: '2026-05-19T10:01:00+08:00',
+                page_count: 1
+              }
+            ]
+          }
+        })
+      )
+    );
+
+    await expect(getTasks()).resolves.toEqual([
+      expect.objectContaining({ task_id: 'task_uploaded', status: 'uploading', page_count: 1 })
+    ]);
   });
 
   it('loads review result and saves a field', async () => {

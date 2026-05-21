@@ -34,7 +34,6 @@ type WorkstationPageProps = {
   onNewCapture?: () => void;
   onViewQr?: () => void;
   onCloseQr?: () => void;
-  onRegenerateQr?: () => void;
 };
 
 export function WorkstationPage({
@@ -48,11 +47,9 @@ export function WorkstationPage({
   onRetrySystem = () => undefined,
   onNewCapture = () => undefined,
   onViewQr = () => undefined,
-  onCloseQr = () => undefined,
-  onRegenerateQr
+  onCloseQr = () => undefined
 }: WorkstationPageProps) {
   const pageData = data;
-  const regenerateQr = onRegenerateQr ?? onNewCapture;
   const sidebarStatus =
     pageData.systemStatus.startup === 'running'
       ? { tone: 'success' as const, title: '系统已启动', subtitle: '正在运行中' }
@@ -90,7 +87,6 @@ export function WorkstationPage({
         isOpen={isQrOpen}
         task={pageData.currentTask}
         onClose={onCloseQr}
-        onRegenerate={regenerateQr}
         lanAddresses={lanAddresses}
       />
     </WorkstationLayout>

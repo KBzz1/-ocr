@@ -48,14 +48,35 @@ def test_create_uploading_task_has_upload_token_and_empty_images(tmp_path):
 
 def test_list_tasks_does_not_expose_session_id(tmp_path):
     service = make_service(tmp_path)
-    created = service.create_uploading_task(base_url="http://127.0.0.1:8081")
+    created = write_task(
+        tmp_path,
+        images=[{"page_id": "page_001", "page_no": 1}],
+        session_id="legacy_session",
+    )
 
     [summary] = service.list_tasks()
 
     assert summary["task_id"] == created["task_id"]
     assert summary["status"] == "uploading"
-    assert summary["page_count"] == 0
+    assert summary["page_count"] == 1
     assert "session_id" not in summary
+
+
+def test_list_tasks_hides_empty_uploading_placeholders(tmp_path):
+    service = make_service(tmp_path)
+    service.create_uploading_task(base_url="http://127.0.0.1:8081")
+    write_task(
+        tmp_path,
+        task_id="task_002",
+        status="uploading",
+        images=[{"page_id": "page_001", "page_no": 1}],
+    )
+    write_task(tmp_path, task_id="task_003", status="failed")
+
+    summaries = service.list_tasks()
+
+    assert [summary["task_id"] for summary in summaries] == ["task_002", "task_003"]
+    assert service.list_tasks(status="uploading")[0]["task_id"] == "task_002"
 
 
 def test_get_task_normalizes_mvp_shape(tmp_path):

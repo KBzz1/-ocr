@@ -88,25 +88,48 @@ def test_get_task_returns_mvp_shape_without_session(client):
 
 def test_list_tasks_returns_mvp_summaries(client, app):
     write_task(app, task_id="task_001", status="uploading")
-    write_task(app, task_id="task_002", status="failed", error_code="ALGORITHM_MODULE_FAILED")
+    write_task(
+        app,
+        task_id="task_002",
+        status="uploading",
+        images=[{"page_id": "page_001", "page_no": 1}],
+    )
+    write_task(app, task_id="task_003", status="failed", error_code="ALGORITHM_MODULE_FAILED")
 
     response = client.get("/api/tasks")
 
     assert response.status_code == 200
     tasks = response.get_json()["data"]["tasks"]
-    assert [task["task_id"] for task in tasks] == ["task_001", "task_002"]
+    assert [task["task_id"] for task in tasks] == ["task_002", "task_003"]
     assert all("session_id" not in task for task in tasks)
-    assert tasks[0]["page_count"] == 0
+    assert tasks[0]["page_count"] == 1
+    assert tasks[0]["upload_token"] == "token_001"
+    assert tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/task_002?token=token_001"
+    assert "upload_token" not in tasks[1]
+    assert "mobile_upload_url" not in tasks[1]
 
 
 def test_list_tasks_filter_by_status(client, app):
     write_task(app, task_id="task_001", status="uploading")
-    write_task(app, task_id="task_002", status="failed")
+    write_task(
+        app,
+        task_id="task_002",
+        status="uploading",
+        images=[{"page_id": "page_001", "page_no": 1}],
+    )
+    write_task(app, task_id="task_003", status="failed")
 
     response = client.get("/api/tasks?status=failed")
 
     assert response.status_code == 200
-    assert [task["task_id"] for task in response.get_json()["data"]["tasks"]] == ["task_002"]
+    assert [task["task_id"] for task in response.get_json()["data"]["tasks"]] == ["task_003"]
+
+    uploading_response = client.get("/api/tasks?status=uploading")
+
+    assert uploading_response.status_code == 200
+    uploading_tasks = uploading_response.get_json()["data"]["tasks"]
+    assert [task["task_id"] for task in uploading_tasks] == ["task_002"]
+    assert uploading_tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/task_002?token=token_001"
 
 
 def test_get_nonexistent_task_returns_404(client):

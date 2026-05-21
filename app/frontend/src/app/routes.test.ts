@@ -6,6 +6,7 @@ describe('frontend route skeleton', () => {
   it('uses task-bound mobile upload route', () => {
     expect(appRoutes.workstation.path).toBe('/');
     expect(appRoutes.mobileCapture.path).toBe('/mobile/upload/:taskId');
+    expect(appRoutes.review.path).toBe('/review');
     expect(buildMobileUploadPath('task_001')).toBe('/mobile/upload/task_001');
   });
 

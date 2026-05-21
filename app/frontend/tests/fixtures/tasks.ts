@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw';
 
-export const taskFixtures = [
+import type { TaskSummary } from '../../src/api/tasks';
+
+export const taskFixtures: TaskSummary[] = [
   {
     task_id: 'task-uploading',
     status: 'uploading',
@@ -53,7 +55,7 @@ export const taskFixtures = [
   }
 ];
 
-export function mockTasks(tasks = taskFixtures) {
+export function mockTasks(tasks: TaskSummary[] = taskFixtures) {
   return http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks } }));
 }
 

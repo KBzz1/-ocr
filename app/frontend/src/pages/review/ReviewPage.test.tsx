@@ -103,7 +103,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByRole('navigation', { name: '主要模块' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: /工作台总览/ }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: /首页/ }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
     expect(screen.getByRole('link', { name: /人工审核/ }).getAttribute('aria-current')).toBe('page');
   });
@@ -125,22 +125,20 @@ describe('ReviewPage', () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('状态：待审核');
-    expect(screen.getByText('页数：2')).toBeTruthy();
-    expect(screen.getByText('字段：2')).toBeTruthy();
-    expect(screen.getByText('已修改：0')).toBeTruthy();
-    expect(screen.getByText('未统一审核：2')).toBeTruthy();
+    await screen.findByText(/待审核/);
+    expect(screen.getAllByText('字段').length).toBeGreaterThan(0);
+    expect(screen.getByText('待确认')).toBeTruthy();
+    expect(screen.getByText('已修改')).toBeTruthy();
 
     await userEvent.type(screen.getByLabelText('patient_name'), '修正');
-    expect(screen.getByText('已修改：1')).toBeTruthy();
-    expect(screen.getByText('未统一审核：1')).toBeTruthy();
+    expect(screen.getByText('未保存修改')).toBeTruthy();
   });
 
   it('keeps OCR hidden by default and shows current page OCR on demand', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('结构化字段');
+    await screen.findByText('字段校对');
     expect(screen.queryByText('第一页文本')).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: '显示 OCR' }));
@@ -162,7 +160,7 @@ describe('ReviewPage', () => {
     expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
 
     await userEvent.click(screen.getByLabelText('chief_complaint'));
-    expect(screen.getByText('来源：第 2 页')).toBeTruthy();
+    expect(screen.getAllByText('第 2 页').length).toBeGreaterThan(0);
   });
 
   it('highlights selected field evidence in OCR and reports missing source text', async () => {
@@ -260,7 +258,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByLabelText('patient_name');
-    await userEvent.click(screen.getByRole('button', { name: '保存' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
     expect(completeSpy).not.toHaveBeenCalled();
@@ -273,16 +271,16 @@ describe('ReviewPage', () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('OCR 文本')).toBeTruthy();
+    expect(await screen.findByText('OCR')).toBeTruthy();
     const field = screen.getByLabelText('patient_name') as HTMLInputElement;
     expect(field.value).toBe('张三');
 
     await userEvent.clear(field);
     await userEvent.type(field, '李四');
-    await userEvent.click(screen.getByRole('button', { name: '保存' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
 
     expect((await screen.findAllByText('已保存')).length).toBeGreaterThanOrEqual(1);
-    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
+    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
     expect((screen.getByRole('button', { name: '导出 JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '导出 Excel' }) as HTMLButtonElement).disabled).toBe(false);
@@ -317,7 +315,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByText('主诉')).toBeTruthy();
-    expect(screen.getByText('候选值：头痛三天')).toBeTruthy();
+    expect(screen.getByText('头痛三天', { selector: '.review-candidate' })).toBeTruthy();
     expect((screen.getByLabelText('chief_complaint') as HTMLInputElement).value).toBe('头痛三天');
   });
 
@@ -367,7 +365,7 @@ describe('ReviewPage', () => {
     const nameField = await screen.findByLabelText('patient_name');
     await userEvent.clear(nameField);
     await userEvent.type(nameField, '李四');
-    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
+    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
 
     // 保存成功 + 完成 都要通过，页面至少有一个"已完成"
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
@@ -428,8 +426,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('OCR 文本');
-    await userEvent.click(screen.getByRole('button', { name: '统一审核并完成' }));
+    await screen.findByText('OCR');
+    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
 
     expect(await screen.findByText('仍有字段未审核')).toBeTruthy();
   });

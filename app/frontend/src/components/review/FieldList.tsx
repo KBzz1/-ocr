@@ -29,40 +29,58 @@ export function FieldList({ fields, selectedFieldKey, onChange, onFocusField, ge
   }
 
   return (
-    <div className="review-fields">
-      {fields.map((field) => {
-        const sourcePageNo = field.evidence?.find((item) => item.page_no)?.page_no;
-        const isSelected = field.field_key === selectedFieldKey;
+    <div className="review-fields-table-wrap">
+      <table className="review-fields-table">
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>人工值</th>
+            <th>候选值</th>
+            <th>来源</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fields.map((field) => {
+            const sourcePageNo = field.evidence?.find((item) => item.page_no)?.page_no;
+            const isSelected = field.field_key === selectedFieldKey;
 
-        return (
-          <article className={`review-field${isSelected ? ' is-selected' : ''}`} key={field.field_key}>
-            <div className="review-field__header">
-              <label htmlFor={`review-field-${field.field_key}`}>{field.label ?? field.field_key}</label>
-              <span className={`review-field-status review-field-status--${field.status}`}>
-                {getStatusLabel(field.status)}
-              </span>
-            </div>
-            <textarea
-              id={`review-field-${field.field_key}`}
-              value={field.value}
-              aria-label={field.field_key}
-              onChange={(event) => updateField(field.field_key, event.currentTarget.value)}
-              onFocus={() => onFocusField(field)}
-            />
-            {field.candidate_value ? <p className="review-candidate">候选值：{field.candidate_value}</p> : null}
-            {field.verification_status === 'suspicious' && <span className="field-risk">需重点核验</span>}
-            {field.quality_flags?.map((flag, idx) => (
-              <small key={`${flag.flag}-${idx}`} className="field-risk-detail">{flag.message}</small>
-            ))}
-            {field.ocr_correction?.applied && (
-              <small className="field-ocr-correction">
-                OCR: {field.ocr_correction.raw} -&gt; {field.ocr_correction.normalized}，{field.ocr_correction.reason}
-              </small>
-            )}
-            {sourcePageNo ? <p className="review-field__evidence">来源：第 {sourcePageNo} 页</p> : null}
-          </article>
-        );
-      })}
+            return (
+              <tr className={isSelected ? 'is-selected' : ''} key={field.field_key}>
+                <th scope="row">
+                  <label htmlFor={`review-field-${field.field_key}`}>{field.label ?? field.field_key}</label>
+                </th>
+                <td>
+                  <textarea
+                    id={`review-field-${field.field_key}`}
+                    rows={2}
+                    value={field.value}
+                    aria-label={field.field_key}
+                    onChange={(event) => updateField(field.field_key, event.currentTarget.value)}
+                    onFocus={() => onFocusField(field)}
+                  />
+                </td>
+                <td>{field.candidate_value ? <span className="review-candidate">{field.candidate_value}</span> : <span className="review-muted">-</span>}</td>
+                <td>{sourcePageNo ? <span className="review-field__evidence">第 {sourcePageNo} 页</span> : <span className="review-muted">-</span>}</td>
+                <td>
+                  <span className={`review-field-status review-field-status--${field.status}`}>
+                    {getStatusLabel(field.status)}
+                  </span>
+                  {field.verification_status === 'suspicious' && <span className="field-risk">需重点核验</span>}
+                  {field.quality_flags?.map((flag, idx) => (
+                    <small key={`${flag.flag}-${idx}`} className="field-risk-detail">{flag.message}</small>
+                  ))}
+                  {field.ocr_correction?.applied && (
+                    <small className="field-ocr-correction">
+                      OCR: {field.ocr_correction.raw} -&gt; {field.ocr_correction.normalized}，{field.ocr_correction.reason}
+                    </small>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

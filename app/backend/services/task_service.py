@@ -53,24 +53,33 @@ class TaskService:
     def _build_mobile_upload_url(self, base_url: str, task_id: str, upload_token: str) -> str:
         return f"{base_url.rstrip('/')}/mobile/upload/{task_id}?token={upload_token}"
 
-    def list_tasks(self, status: str | None = None) -> list[dict]:
+    def list_tasks(self, status: str | None = None, base_url: str | None = None) -> list[dict]:
         tasks = [self._normalize_task(task) for task in self._store.list_json("tasks")]
+        tasks = [task for task in tasks if self._should_list_task(task)]
         if status is not None:
             tasks = [task for task in tasks if task["status"] == status]
-        return [
-            {
-                "task_id": task["task_id"],
-                "status": task["status"],
-                "created_at": task["created_at"],
-                "updated_at": task["updated_at"],
-                "page_count": task["page_count"],
-                "review_summary": task["review_summary"],
-                "export_summary": task["export_summary"],
-                "error_code": task["error_code"],
-                "error_message": task["error_message"],
-            }
-            for task in sorted(tasks, key=lambda item: item["task_id"])
-        ]
+        return [self._to_task_summary(task, base_url=base_url) for task in sorted(tasks, key=lambda item: item["task_id"])]
+
+    def _should_list_task(self, task: dict) -> bool:
+        return not (task["status"] == TaskStatus.UPLOADING.value and task["page_count"] == 0)
+
+    def _to_task_summary(self, task: dict, base_url: str | None = None) -> dict:
+        summary = {
+            "task_id": task["task_id"],
+            "status": task["status"],
+            "created_at": task["created_at"],
+            "updated_at": task["updated_at"],
+            "page_count": task["page_count"],
+            "review_summary": task["review_summary"],
+            "export_summary": task["export_summary"],
+            "error_code": task["error_code"],
+            "error_message": task["error_message"],
+        }
+        upload_token = task.get("upload_token")
+        if task["status"] == TaskStatus.UPLOADING.value and upload_token and base_url:
+            summary["upload_token"] = upload_token
+            summary["mobile_upload_url"] = self._build_mobile_upload_url(base_url, task["task_id"], upload_token)
+        return summary
 
     def get_task(self, task_id: str) -> dict:
         task = self._read_task(task_id)

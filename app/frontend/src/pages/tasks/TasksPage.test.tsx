@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   mockRetryTaskProcessing,
@@ -19,6 +19,10 @@ function renderTaskList() {
 describe('MVP task list and retry', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/tasks');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders five MVP filters and task operations', async () => {
@@ -128,6 +132,72 @@ describe('MVP task list and retry', () => {
         '待审核'
       )
     );
+  });
+
+  it('opens the upload QR dialog for an uploading task', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks([
+        {
+          task_id: 'task_046',
+          status: 'uploading',
+          created_at: '2026-05-20T20:55:00+08:00',
+          page_count: 1,
+          upload_token: 'token_046',
+          mobile_upload_url: 'http://192.168.1.5:8081/mobile/upload/task_046?token=token_046',
+          review_summary: { status: null, confirmed_count: 0, total_count: 0 },
+          export_summary: { formats: [] },
+          error_code: null,
+          error_message: null
+        }
+      ])
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const row = within(table).getByText('task_046').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: '查看二维码' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
+    const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
+    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/upload/task_046?token=token_046');
+  });
+
+  it('silently polls task data without showing a refresh state', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    });
+    const refreshedTasks = taskFixtures.map((task) =>
+      task.task_id === 'task-processing'
+        ? { ...task, status: 'review' as const }
+        : task
+    );
+    let requestCount = 0;
+
+    server.use(
+      http.get('*/api/tasks', () => {
+        requestCount += 1;
+        return HttpResponse.json({
+          success: true,
+          data: { tasks: requestCount === 1 ? taskFixtures : refreshedTasks }
+        });
+      })
+    );
+
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    expect(processingRow.textContent).toContain('处理中');
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    await waitFor(() => expect(processingRow.textContent).toContain('待审核'));
+    expect(screen.getByRole('button', { name: '刷新' })).toBeTruthy();
   });
 
   it('retries failed tasks, updates the row to processing, and never offers legacy actions', async () => {

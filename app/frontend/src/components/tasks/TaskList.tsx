@@ -24,6 +24,7 @@ type TaskListProps = {
   retryingTaskId: string | null;
   onFilterChange: (filter: TaskStatus | 'all') => void;
   onTaskStatusChange: (taskId: string, status: TaskStatus) => void;
+  onViewUploadQr?: (task: TaskSummary) => void;
 };
 
 function formatDateTime(value: string) {
@@ -58,7 +59,8 @@ export function TaskList({
   activeFilter,
   retryingTaskId,
   onFilterChange,
-  onTaskStatusChange
+  onTaskStatusChange,
+  onViewUploadQr
 }: TaskListProps) {
   const visibleTasks =
     activeFilter === 'all' ? tasks : tasks.filter((task) => task.status === activeFilter);
@@ -137,7 +139,14 @@ export function TaskList({
                     <td>
                       <div className="task-list-actions">
                         {task.status === 'uploading' ? (
-                          <span className="task-list-muted">查看二维码</span>
+                          <button
+                            className="task-list-action"
+                            disabled={!task.mobile_upload_url || !onViewUploadQr}
+                            type="button"
+                            onClick={() => onViewUploadQr?.(task)}
+                          >
+                            查看二维码
+                          </button>
                         ) : null}
                         {task.status === 'processing' ? (
                           <span className="task-list-muted">查看进度</span>

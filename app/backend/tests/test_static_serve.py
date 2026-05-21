@@ -69,6 +69,13 @@ class TestStaticServe:
         assert "text/html" in resp.content_type
         assert b"<!DOCTYPE html>" in resp.data
 
+    def test_spa_index_is_not_cached(self, static_client):
+        """手机扫码入口不能缓存旧 index，否则会继续加载旧 UI 资源。"""
+        resp = static_client.get("/mobile/upload/task_001")
+
+        assert resp.status_code == 200
+        assert resp.headers["Cache-Control"] == "no-store, max-age=0"
+
     def test_api_status_not_eaten_by_fallback(self, static_client):
         """BE-NW-004: GET /api/system/status 不被 fallback 吃掉。"""
         resp = static_client.get("/api/system/status")

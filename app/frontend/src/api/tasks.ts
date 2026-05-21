@@ -15,6 +15,8 @@ export interface TaskSummary {
   created_at: string;
   updated_at?: string;
   page_count: number;
+  upload_token?: string;
+  mobile_upload_url?: string;
   error_code?: string | null;
   error_message?: string | null;
   review_summary?: {
@@ -68,9 +70,13 @@ function normalizeTaskSummary(task: Omit<TaskSummary, 'status'> & { status: stri
   };
 }
 
+function shouldShowTask(task: TaskSummary) {
+  return !(task.status === 'uploading' && task.page_count === 0);
+}
+
 export async function getTasks() {
   const data = await apiRequest<TaskListResponse>('/api/tasks');
-  return data.tasks.map(normalizeTaskSummary);
+  return data.tasks.map(normalizeTaskSummary).filter(shouldShowTask);
 }
 
 export function createTask() {

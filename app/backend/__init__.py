@@ -50,6 +50,11 @@ def _register_static_serve(app: Flask, static_dir: str) -> None:
     from .errors import AppError, ErrorCode
     from .responses import error_response
 
+    def _send_spa_index(index_path: str):
+        response = send_file(index_path)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     @app.before_request
     def _serve_spa():
         if request.path.startswith("/api/"):
@@ -67,7 +72,7 @@ def _register_static_serve(app: Flask, static_dir: str) -> None:
 
         index_path = safe_join(static_dir, "index.html")
         if index_path and os.path.isfile(index_path):
-            return send_file(index_path)
+            return _send_spa_index(index_path)
 
         return error_response(AppError(ErrorCode.REQUEST_NOT_FOUND))
 

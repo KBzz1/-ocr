@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
+import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
+import { useSilentPolling } from '../../hooks/useSilentPolling';
+import type { TaskUploadSummary } from '../workstation/workstation.types';
 import '../../components/tasks/tasks.css';
 
+const TASK_POLL_INTERVAL_MS = 5000;
 const taskStatuses: TaskStatus[] = ['uploading', 'processing', 'review', 'done', 'failed'];
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -17,6 +21,22 @@ function getInitialStatusFilter(): TaskStatus | 'all' {
   return taskStatuses.includes(status as TaskStatus) ? (status as TaskStatus) : 'all';
 }
 
+function areTasksEqual(current: TaskSummary[], next: TaskSummary[]) {
+  return JSON.stringify(current) === JSON.stringify(next);
+}
+
+function toTaskUploadSummary(task: TaskSummary): TaskUploadSummary {
+  return {
+    task_id: task.task_id,
+    status: 'uploading',
+    upload_token: task.upload_token ?? '',
+    mobile_upload_url: task.mobile_upload_url ?? '',
+    id: task.task_id,
+    uploadedPages: task.page_count,
+    createdAtText: '继续上传'
+  };
+}
+
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [activeFilter, setActiveFilter] = useState<TaskStatus | 'all'>(getInitialStatusFilter);
@@ -24,29 +44,40 @@ export function TasksPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qrTask, setQrTask] = useState<TaskUploadSummary | null>(null);
 
-  async function loadTasks(mode: 'initial' | 'refresh' = 'refresh') {
+  const loadTasks = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'refresh') => {
     if (mode === 'initial') {
       setIsLoading(true);
-    } else {
+    } else if (mode === 'refresh') {
       setIsRefreshing(true);
     }
-    setError(null);
+    if (mode !== 'silent') {
+      setError(null);
+    }
 
     try {
       const nextTasks = await getTasks();
-      setTasks(nextTasks);
+      setTasks((currentTasks) => (areTasksEqual(currentTasks, nextTasks) ? currentTasks : nextTasks));
+      setError(null);
     } catch (loadError: unknown) {
-      setError(getErrorMessage(loadError, '任务列表加载失败，请刷新重试'));
+      if (mode !== 'silent') {
+        setError(getErrorMessage(loadError, '任务列表加载失败，请刷新重试'));
+      }
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (mode === 'initial') {
+        setIsLoading(false);
+      } else if (mode === 'refresh') {
+        setIsRefreshing(false);
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadTasks('initial');
-  }, []);
+  }, [loadTasks]);
+
+  useSilentPolling(() => loadTasks('silent'), TASK_POLL_INTERVAL_MS);
 
   async function handleRefresh() {
     await loadTasks('refresh');
@@ -100,9 +131,16 @@ export function TasksPage() {
             tasks={tasks}
             onFilterChange={handleFilterChange}
             onTaskStatusChange={handleTaskStatusChange}
+            onViewUploadQr={(task) => setQrTask(toTaskUploadSummary(task))}
           />
         </div>
       </main>
+
+      <CaptureQrDialog
+        isOpen={Boolean(qrTask)}
+        task={qrTask}
+        onClose={() => setQrTask(null)}
+      />
     </WorkstationLayout>
   );
 }

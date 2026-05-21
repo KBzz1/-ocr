@@ -8,26 +8,38 @@ type CaptureQrDialogProps = {
   isOpen: boolean;
   task: TaskUploadSummary | null;
   onClose: () => void;
-  onRegenerate: () => void;
   lanAddresses?: string[];
 };
 
-export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddresses = [] }: CaptureQrDialogProps) {
+function appendQrRefreshParam(value: string, version: number) {
+  if (version === 0) return value;
+
+  try {
+    const parsed = new URL(value);
+    parsed.searchParams.set('qr_refresh', String(version));
+    return parsed.toString();
+  } catch {
+    const separator = value.includes('?') ? '&' : '?';
+    return `${value}${separator}qr_refresh=${version}`;
+  }
+}
+
+export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps) {
   const [qrSvgDataUrl, setQrSvgDataUrl] = useState<string | null>(null);
+  const [qrVersion, setQrVersion] = useState(0);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [manualUrl, setManualUrl] = useState('');
-  const [qrValueOverride, setQrValueOverride] = useState<string | null>(null);
-  const [manualUrlError, setManualUrlError] = useState<string | null>(null);
-  const qrValue = qrValueOverride ?? task?.mobile_upload_url ?? '';
+  const qrValue = task?.mobile_upload_url ?? '';
+  const qrRenderValue = qrValue ? appendQrRefreshParam(qrValue, qrVersion) : '';
 
   useEffect(() => {
     let isCurrent = true;
     setQrSvgDataUrl(null);
 
-    if (!isOpen || !qrValue) return undefined;
+    if (!isOpen || !qrRenderValue) return undefined;
 
-    QRCode.toString(qrValue, {
+    QRCode.toString(qrRenderValue, {
       type: 'svg',
       margin: 1,
       width: 192,
@@ -44,13 +56,11 @@ export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddres
     return () => {
       isCurrent = false;
     };
-  }, [isOpen, qrValue]);
+  }, [isOpen, qrRenderValue]);
 
   useEffect(() => {
     if (isOpen) {
-      setQrValueOverride(null);
       setManualUrl(task?.mobile_upload_url ?? '');
-      setManualUrlError(null);
     }
   }, [isOpen, task?.mobile_upload_url]);
 
@@ -74,22 +84,8 @@ export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddres
     }
   }
 
-  function buildUrlForAddress(address: string) {
-    if (!task) return '';
-    return `http://${address}/mobile/upload/${encodeURIComponent(task.task_id)}?token=${encodeURIComponent(task.upload_token)}`;
-  }
-
-  function applyManualUrl() {
-    try {
-      const parsed = new URL(manualUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        throw new Error('invalid protocol');
-      }
-      setQrValueOverride(parsed.toString());
-      setManualUrlError(null);
-    } catch {
-      setManualUrlError('请输入有效的手机访问链接');
-    }
+  function handleRegenerateQr() {
+    setQrVersion((version) => version + 1);
   }
 
   return (
@@ -111,52 +107,21 @@ export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddres
         </header>
 
         <div className="qr-dialog__body">
-          <div className="qr-dialog__scan">
-            {qrSvgDataUrl ? (
-              <div className="qr-code-shell">
-                <span className="qr-code-corner qr-code-corner--tl" />
-                <span className="qr-code-corner qr-code-corner--tr" />
-                <span className="qr-code-corner qr-code-corner--bl" />
-                <span className="qr-code-corner qr-code-corner--br" />
-                <img
-                  className="qr-code-image"
-                  src={qrSvgDataUrl}
-                  alt="任务上传二维码"
-                  data-qr-value={qrValue}
-                />
-              </div>
-            ) : (
-              <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
-            )}
-            <button className="secondary-action" type="button" onClick={onRegenerate}>
-              重新生成二维码
-            </button>
-            {qrValue ? <p className="qr-dialog__url">{qrValue}</p> : null}
-          </div>
-
-          <div className="qr-dialog__status">
-            <div className="qr-status-row qr-status-row--success">
-              <span className="qr-status-icon" aria-hidden="true">✓</span>
-              <div>
-                <strong>任务已创建</strong>
-                <span>{task?.createdAtText ?? '等待扫码'}</span>
-              </div>
+          {qrSvgDataUrl ? (
+            <div className="qr-code-shell">
+              <img
+                className="qr-code-image"
+                src={qrSvgDataUrl}
+                alt="任务上传二维码"
+                data-qr-value={qrRenderValue}
+              />
             </div>
-            <div className="qr-status-row qr-status-row--info">
-              <span className="qr-status-icon" aria-hidden="true">◷</span>
-              <div>
-                <strong>{task?.task_id ?? '等待任务编号'}</strong>
-                <span>手机图片将上传到此任务</span>
-              </div>
-            </div>
-            <div className="qr-status-row">
-              <span className="qr-status-icon" aria-hidden="true">↑</span>
-              <div>
-                <strong>已上传 {task?.uploadedPages ?? 0} 张图片</strong>
-                <span>等待手机上传原图</span>
-              </div>
-            </div>
-          </div>
+          ) : (
+            <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
+          )}
+          <button className="secondary-action qr-dialog__regenerate" type="button" onClick={handleRegenerateQr}>
+            重新生成二维码
+          </button>
         </div>
 
         <footer className="qr-dialog__footer">
@@ -170,42 +135,16 @@ export function CaptureQrDialog({ isOpen, task, onClose, onRegenerate, lanAddres
                   value={manualUrl}
                   onChange={(event) => setManualUrl(event.currentTarget.value)}
                 />
-                <button className="secondary-action" type="button" onClick={() => void handleCopyLink()}>
+                <button className="secondary-action qr-help-panel__copy-button" type="button" onClick={() => void handleCopyLink()}>
                   复制链接
                 </button>
               </div>
-              {lanAddresses.length > 0 ? (
-                <div className="qr-help-panel__addresses" aria-label="局域网地址列表">
-                  {lanAddresses.map((address) => (
-                    <button
-                      className="secondary-action"
-                      key={address}
-                      type="button"
-                      onClick={() => {
-                        const nextUrl = buildUrlForAddress(address);
-                        setManualUrl(nextUrl);
-                        setQrValueOverride(nextUrl);
-                        setManualUrlError(null);
-                      }}
-                    >
-                      {address}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <button className="secondary-action" type="button" onClick={applyManualUrl}>
-                更新二维码
-              </button>
-              {manualUrlError ? <span role="alert">{manualUrlError}</span> : null}
               <p>请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。</p>
               {copyStatus ? <span role="status">{copyStatus}</span> : null}
             </div>
           ) : null}
-          <button className="link-action" type="button" onClick={() => setIsHelpOpen((value) => !value)}>
+          <button className="link-action qr-dialog__help-toggle" type="button" onClick={() => setIsHelpOpen((value) => !value)}>
             手机无法连接？
-          </button>
-          <button className="secondary-action" type="button" onClick={onClose}>
-            关闭
           </button>
         </footer>
       </section>

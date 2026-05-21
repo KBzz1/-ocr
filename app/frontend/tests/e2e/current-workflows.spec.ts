@@ -102,8 +102,8 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
 
   await page.goto('/tasks/task_001/review');
   await page.getByLabel('patient_name').fill('李四');
-  await page.getByRole('button', { name: '保存' }).click();
-  await page.getByRole('button', { name: '统一审核并完成' }).click();
+  await page.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('button', { name: '确认完成' }).click();
   await expect(page.getByRole('status')).toContainText('已完成');
   await expect(page.getByRole('button', { name: '导出 JSON' })).toBeEnabled();
   await expect(page.getByRole('button', { name: '导出 Excel' })).toBeEnabled();
@@ -170,7 +170,7 @@ test('MVP failed flow: direct review URL does not render editable fallback field
 
   await expect(page.getByRole('alert')).toContainText('审核数据加载失败');
   await expect(page.getByRole('textbox')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '统一审核并完成' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '确认完成' })).toHaveCount(0);
   await expect(page.getByText('人工补字段')).toHaveCount(0);
   await page.evaluate(() => window.__assertE2eNetworkGate());
 });

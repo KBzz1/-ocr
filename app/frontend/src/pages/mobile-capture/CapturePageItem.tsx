@@ -19,8 +19,8 @@ export function CapturePageItem({ page, index }: CapturePageItemProps) {
         <span className={`page-item__status is-${page.status}`}>
           {isFailed ? '上传失败' : isUploading ? '上传中' : '已上传'}
         </span>
-        {page.fileName ? <span>{page.fileName}</span> : null}
-        {page.errorMessage ? <span role="alert">{page.errorMessage}</span> : null}
+        {page.fileName ? <span className="page-item__filename">{page.fileName}</span> : null}
+        {page.errorMessage ? <span className="page-item__error" role="alert">{page.errorMessage}</span> : null}
         {page.pageId ? <span data-page-id={page.pageId} hidden>{page.pageId}</span> : null}
       </div>
     </li>

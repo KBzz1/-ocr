@@ -1,13 +1,12 @@
 import type { MouseEvent, ReactNode } from 'react';
 
-import chongqingLogo from '../../assets/logos/chongqing-university-logo.webp';
-import xinqiaoLogo from '../../assets/logos/xinqiao-hospital-logo.jpg';
+import chongqingLogo from '../../assets/logos/chongqing-university-logo.png';
+import xinqiaoLogo from '../../assets/logos/xinqiao-hospital-logo.png';
 import { appRoutes } from '../../app/routes';
-import { IconButton } from '../common/IconButton';
 import '../workstation/workstation.css';
 
 const baseNavigationItems = [
-  { id: appRoutes.workstation.id, label: '工作台总览', href: appRoutes.workstation.path },
+  { id: appRoutes.workstation.id, label: '首页', href: appRoutes.workstation.path },
   { id: appRoutes.tasks.id, label: '任务管理', href: appRoutes.tasks.path }
 ];
 
@@ -40,8 +39,8 @@ export function WorkstationLayout({
   children,
   activeRouteId = 'workstation',
   reviewTaskHref,
-  headerKicker = '工作台总览',
-  headerTitle = '病历文书结构化采集',
+  headerKicker = '',
+  headerTitle = '',
   systemStatus = {
     tone: 'success',
     title: '系统已启动',
@@ -50,23 +49,28 @@ export function WorkstationLayout({
   isRetryingSystem = false,
   onRetrySystem
 }: WorkstationLayoutProps) {
-  const navigationItems = reviewTaskHref
-    ? [
-        ...baseNavigationItems,
-        { id: appRoutes.review.id, label: '人工审核', href: reviewTaskHref }
-      ]
-    : baseNavigationItems;
+  const navigationItems = [
+    ...baseNavigationItems,
+    { id: appRoutes.review.id, label: '人工审核', href: reviewTaskHref ?? appRoutes.review.path }
+  ];
+  const hasHeaderText = Boolean(headerKicker || headerTitle);
+
   return (
     <div className="workstation-shell">
       <aside className="workstation-sidebar" aria-label="工作站导航">
         <div>
           <div className="workstation-brand">
-            <div className="workstation-brand__mark" aria-hidden="true">
-              文
-            </div>
-            <div>
-              <div className="workstation-brand__title">病历采集工作站</div>
-              <div className="workstation-brand__subtitle">本地化部署版</div>
+            <div className="workstation-brand__logos" aria-label="合作单位">
+              <img
+                className="workstation-brand__logo workstation-brand__logo--university"
+                src={chongqingLogo}
+                alt="重庆大学"
+              />
+              <img
+                className="workstation-brand__logo workstation-brand__logo--hospital"
+                src={xinqiaoLogo}
+                alt="新桥医院"
+              />
             </div>
           </div>
 
@@ -106,26 +110,14 @@ export function WorkstationLayout({
       </aside>
 
       <div className="workstation-main">
-        <header className="workstation-header">
-          {headerKicker || headerTitle ? (
+        {hasHeaderText ? (
+          <header className="workstation-header">
             <div>
               {headerKicker ? <p className="workstation-header__kicker">{headerKicker}</p> : null}
               {headerTitle ? <h1>{headerTitle}</h1> : null}
             </div>
-          ) : (
-            <div aria-hidden="true" />
-          )}
-
-          <div className="workstation-header__actions">
-            <div className="workstation-header__logos" aria-label="合作单位">
-              <img src={chongqingLogo} alt="重庆大学" />
-              <img src={xinqiaoLogo} alt="新桥医院" />
-            </div>
-            <IconButton label="帮助中心" variant="soft">
-              ?
-            </IconButton>
-          </div>
-        </header>
+          </header>
+        ) : null}
 
         {children}
       </div>
