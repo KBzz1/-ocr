@@ -138,6 +138,20 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
+    image_port = None
+    doc_port = None
+    if config.get("enable_local_ocr"):
+        from .services.algorithm_ports.image_processing import OriginalImagePassthroughPort
+        from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
+
+        image_port = OriginalImagePassthroughPort()
+        doc_port = LocalPaddleOCRDocumentPort(
+            python_executable=config["local_ocr_python_executable"],
+            script_path=config["local_ocr_script_path"],
+            work_root=os.path.join(config["storage_dir"], "ocr_runs"),
+            timeout_seconds=config["local_ocr_timeout_seconds"],
+        )
+
     field_port = None
     if config.get("enable_copd_extractor"):
         from .services.copd_extraction.port import build_default_copd_field_port
@@ -145,6 +159,8 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     orchestrator = ProcessingOrchestrator(
         store=store,
+        image_port=image_port,
+        doc_port=doc_port,
         field_port=field_port,
         schema_validator=schema_service.build_validator(),
     )

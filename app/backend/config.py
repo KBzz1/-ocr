@@ -7,6 +7,7 @@ is backend code that loads, flattens, validates, and normalizes those settings.
 import os
 import yaml
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ DEFAULT_CONFIG = {
     "log_backup_count": 5,
     "enable_copd_extractor": False,
     "llm_model_path": "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+    "enable_local_ocr": False,
+    "local_ocr_python_executable": sys.executable,
+    "local_ocr_script_path": "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py",
+    "local_ocr_timeout_seconds": 1800,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -85,13 +90,30 @@ def _flatten_config(raw: dict) -> dict:
         flattened["enable_copd_extractor"] = algorithms_config["enable_copd_extractor"]
     if "llm_model_path" in algorithms_config:
         flattened["llm_model_path"] = algorithms_config["llm_model_path"]
+    if "enable_local_ocr" in algorithms_config:
+        flattened["enable_local_ocr"] = algorithms_config["enable_local_ocr"]
+    if "local_ocr_python_executable" in algorithms_config:
+        flattened["local_ocr_python_executable"] = algorithms_config["local_ocr_python_executable"]
+    if "local_ocr_script_path" in algorithms_config:
+        flattened["local_ocr_script_path"] = algorithms_config["local_ocr_script_path"]
+    if "local_ocr_timeout_seconds" in algorithms_config:
+        flattened["local_ocr_timeout_seconds"] = algorithms_config["local_ocr_timeout_seconds"]
 
     return flattened
 
 
 def _normalize_paths(config: dict) -> dict:
     """将相对路径转为基于 PROJECT_ROOT 的绝对路径。"""
-    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir", "llm_model_path"):
+    for key in (
+        "data_dir",
+        "log_dir",
+        "model_dir",
+        "storage_dir",
+        "export_dir",
+        "static_dir",
+        "llm_model_path",
+        "local_ocr_script_path",
+    ):
         path = config.get(key)
         if path and not os.path.isabs(path):
             path = os.path.join(PROJECT_ROOT, path)
@@ -130,6 +152,10 @@ def _validate_config(config: dict):
     log_backup_count = config.get("log_backup_count")
     if not isinstance(log_backup_count, int) or log_backup_count < 0:
         raise ValueError(f"log_backup_count 必须为非负整数，当前值: {log_backup_count}")
+
+    ocr_timeout = config.get("local_ocr_timeout_seconds")
+    if not isinstance(ocr_timeout, int) or ocr_timeout <= 0:
+        raise ValueError(f"local_ocr_timeout_seconds 必须为正整数，当前值: {ocr_timeout}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

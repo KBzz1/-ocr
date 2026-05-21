@@ -21,3 +21,11 @@ sessions:
 upload:
   max_file_size_mb: 10
   min_quad_area_ratio: 0.01
+
+algorithms:
+  enable_local_ocr: false
+  local_ocr_python_executable: "python"
+  local_ocr_script_path: "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py"
+  local_ocr_timeout_seconds: 1800
+  enable_copd_extractor: false
+  llm_model_path: "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"

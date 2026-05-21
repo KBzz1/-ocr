@@ -30,3 +30,13 @@ type FieldExtractionPort = {
 - 慢阻肺字段抽取返回局部字段为空或不确定时，任务不失败而是进入 `review`，单字段风险由前端展示供人工核验。
 
 契约测试可以使用 fixture 或可注入 LLM 客户端模拟字段抽取结果。
+
+## 本地 OCR 适配器
+
+第一版真实 OCR 接入使用本机 Python runner 适配 `DocumentParsingPort`：
+
+- 配置项：`algorithms.enable_local_ocr`、`local_ocr_python_executable`、`local_ocr_script_path`、`local_ocr_timeout_seconds`。
+- 后端只负责复制任务图片到 runner 输入目录、执行 runner、读取 `all_results.md` 并转换为 `DocumentResult`。
+- runner 调用外部 `paddleocr.PaddleOCRVL`；本仓库不实现 OCR 模型、图像预处理、裁剪或透视矫正。
+- 输出 Markdown 中缺失某页结果时，该页标记 `failed`，整体任务按文档解析部分失败进入 `failed`。
+- Docker 镜像可作为后续部署方式，但当前默认链路不依赖 Docker。
