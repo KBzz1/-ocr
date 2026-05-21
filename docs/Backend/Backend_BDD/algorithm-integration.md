@@ -62,6 +62,19 @@ Feature: OCR/文档解析与慢阻肺字段抽取
     Then 任务状态应变为 failed
     And 任务不应进入 review 状态
 
+  Scenario: 字段抽取返回整体无效结果时任务失败
+    Given 慢阻肺字段抽取返回整体无效或无法解析的输出
+    When 系统接收该结果
+    Then 任务状态应变为 failed
+    And 任务不应进入 review 状态
+
+  Scenario: 单字段抽取为空或不确定时进入审核
+    Given 慢阻肺字段抽取返回的字段结果中存在 extraction_status 为 not_found 或 uncertain 的字段
+    When 系统接收该结果
+    Then 任务状态应变为 review
+    And 每个字段应保留其 extraction_status、verification_status 和 quality_flags 元数据
+    And 前端应能展示单字段风险供人工核验
+
   Scenario: 单字段复核可疑时进入审核页
     Given 慢阻肺字段抽取生成了字段结果
     And 其中一个字段 evidence 可疑或存在 OCR 风险标记

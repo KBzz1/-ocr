@@ -126,15 +126,21 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.schema_service import SchemaService
 
     schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
-                               "medical_record.v1.yaml")
+                               "copd_admission_record.v1.yaml")
     schema_service = SchemaService(schema_path)
     app.config["SCHEMA_SERVICE"] = schema_service
 
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
+    field_port = None
+    if config.get("enable_copd_extractor"):
+        from .services.copd_extraction.port import build_default_copd_field_port
+        field_port = build_default_copd_field_port(config, schema_service.get_field_order)
+
     orchestrator = ProcessingOrchestrator(
         store=store,
+        field_port=field_port,
         schema_validator=schema_service.build_validator(),
     )
     app.config["TASK_SERVICE"] = TaskService(

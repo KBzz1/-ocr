@@ -26,6 +26,8 @@ DEFAULT_CONFIG = {
     "min_quad_area_ratio": 0.01,
     "log_max_bytes": 10 * 1024 * 1024,
     "log_backup_count": 5,
+    "enable_copd_extractor": False,
+    "llm_model_path": "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -78,16 +80,23 @@ def _flatten_config(raw: dict) -> dict:
     if "min_quad_area_ratio" in upload_config:
         flattened["min_quad_area_ratio"] = upload_config["min_quad_area_ratio"]
 
+    algorithms_config = raw.get("algorithms", {})
+    if "enable_copd_extractor" in algorithms_config:
+        flattened["enable_copd_extractor"] = algorithms_config["enable_copd_extractor"]
+    if "llm_model_path" in algorithms_config:
+        flattened["llm_model_path"] = algorithms_config["llm_model_path"]
+
     return flattened
 
 
 def _normalize_paths(config: dict) -> dict:
     """将相对路径转为基于 PROJECT_ROOT 的绝对路径。"""
-    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir"):
-        path = config[key]
-        if not os.path.isabs(path):
+    for key in ("data_dir", "log_dir", "model_dir", "storage_dir", "export_dir", "static_dir", "llm_model_path"):
+        path = config.get(key)
+        if path and not os.path.isabs(path):
             path = os.path.join(PROJECT_ROOT, path)
-        config[key] = os.path.normpath(path)
+        if path:
+            config[key] = os.path.normpath(path)
     return config
 
 

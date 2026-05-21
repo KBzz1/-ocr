@@ -1,0 +1,90 @@
+version: "1.0.0"
+document_type: copd_admission_record
+field_groups:
+  - group_key: patient_profile
+    group_label: 患者背景
+    fields:
+      - field_key: occupation
+        label: 职业
+        type: string
+      - field_key: smoking_history_raw_text
+        label: 吸烟史原文
+        type: string
+      - field_key: smoking_history_status
+        label: 吸烟状态
+        type: string
+      - field_key: copd_history_years
+        label: 慢阻肺/慢性咳喘病程
+        type: string
+      - field_key: baseline_lung_function
+        label: 基线肺功能
+        type: string
+      - field_key: maintenance_therapy
+        label: 长期维持治疗
+        type: string
+  - group_key: exacerbation_signals
+    group_label: 急性加重信号
+    fields:
+      - field_key: cough_sputum_change
+        label: 咳嗽咳痰变化
+        type: string
+      - field_key: dyspnea_grade_mMRC
+        label: 呼吸困难程度/mMRC
+        type: string
+      - field_key: treatment_failure
+        label: 既往或本次治疗效果不佳
+        type: string
+      - field_key: weight_loss
+        label: 体重下降
+        type: string
+      - field_key: gi_symptoms
+        label: 胃肠道症状
+        type: string
+      - field_key: comorbidities
+        label: 合并症
+        type: string
+  - group_key: physical_exam
+    group_label: 体格检查
+    fields:
+      - field_key: temperature
+        label: 体温
+        type: string
+      - field_key: pulse
+        label: 脉搏
+        type: string
+      - field_key: respiration
+        label: 呼吸
+        type: string
+      - field_key: blood_pressure
+        label: 血压
+        type: string
+      - field_key: bmi
+        label: BMI
+        type: string
+      - field_key: positive_signs
+        label: 阳性体征
+        type: string
+  - group_key: auxiliary_exam
+    group_label: 辅助检查
+    fields:
+      - field_key: blood_gas_ph
+        label: 血气 pH
+        type: string
+      - field_key: blood_gas_pao2
+        label: 血气 PaO2/PO2
+        type: string
+      - field_key: blood_gas_paco2
+        label: 血气 PaCO2/PCO2
+        type: string
+      - field_key: electrolyte_imbalance
+        label: 电解质异常
+        type: string
+      - field_key: wbc
+        label: 白细胞
+        type: string
+      - field_key: crp
+        label: C 反应蛋白
+        type: string
+      - field_key: ct_features
+        label: 胸部 CT 语义
+        type: string

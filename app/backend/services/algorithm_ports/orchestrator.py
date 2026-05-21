@@ -1,6 +1,6 @@
 from ...errors import ErrorCode
 from ...storage.json_store import JsonStore
-from .field_extraction import validate_field_candidates
+from .field_extraction import all_fields_empty, validate_field_candidates
 from .results import AlgorithmResultStore
 
 
@@ -169,12 +169,12 @@ class ProcessingOrchestrator:
                 stage="field_extraction",
                 details={"stage": "field_extraction", "reason": "invalid_candidate_contract"},
             )
-        if not candidates:
+        if not candidates or all_fields_empty(candidates):
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
-                "字段候选结果为空",
+                "字段结果为空",
                 stage="field_extraction",
-                details={"stage": "field_extraction", "reason": "empty_candidates"},
+                details={"stage": "field_extraction", "reason": "empty_field_results"},
             )
         try:
             validate_field_candidates(candidates)

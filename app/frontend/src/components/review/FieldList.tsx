@@ -50,6 +50,15 @@ export function FieldList({ fields, selectedFieldKey, onChange, onFocusField, ge
               onFocus={() => onFocusField(field)}
             />
             {field.candidate_value ? <p className="review-candidate">候选值：{field.candidate_value}</p> : null}
+            {field.verification_status === 'suspicious' && <span className="field-risk">需重点核验</span>}
+            {field.quality_flags?.map((flag, idx) => (
+              <small key={`${flag.flag}-${idx}`} className="field-risk-detail">{flag.message}</small>
+            ))}
+            {field.ocr_correction?.applied && (
+              <small className="field-ocr-correction">
+                OCR: {field.ocr_correction.raw} -&gt; {field.ocr_correction.normalized}，{field.ocr_correction.reason}
+              </small>
+            )}
             {sourcePageNo ? <p className="review-field__evidence">来源：第 {sourcePageNo} 页</p> : null}
           </article>
         );

@@ -45,6 +45,18 @@ upload:
         "        type: string\n",
         encoding="utf-8",
     )
+    (schema_dir / "copd_admission_record.v1.yaml").write_text(
+        "version: \"1.0.0\"\n"
+        "document_type: copd_admission_record\n"
+        "field_groups:\n"
+        "  - group_key: basic\n"
+        "    group_label: 基本信息\n"
+        "    fields:\n"
+        "      - field_key: name\n"
+        "        label: 姓名\n"
+        "        type: string\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr("app.backend.config.PROJECT_ROOT", str(tmp_path / "repo"))
     monkeypatch.setattr("app.backend.PROJECT_ROOT", str(tmp_path / "repo"))
     flask_app = create_backend_app(config_dir=str(config_dir))

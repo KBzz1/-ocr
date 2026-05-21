@@ -38,14 +38,21 @@ Feature: 字段 Schema 管理
     And 任务 T001 的字段展示不应受新 schema 影响
 
   Scenario: 不同文书类型可选择不同 schema
-    Given 存在 general_medical_record 和 admission_record 两种 schema
-    When 创建任务时指定 document_type 为 admission_record
-    Then 系统应使用 admission_record 对应的 schema 配置
-    And 第一版如未指定则默认使用 general_medical_record
+    Given 存在 copd_admission_record 和 general_medical_record 两种 schema
+    When 创建任务时指定 document_type 为 copd_admission_record
+    Then 系统应使用 copd_admission_record 对应的 schema 配置
+    And 当前版本默认使用慢阻肺专病 schema
 
   Scenario: 后端不得用 schema 兜底抽取字段
-    Given 外部字段抽取模块返回空候选
+    Given 外部字段抽取模块返回整体无效/全空/无法解析的输出
     When 系统处理字段结果
     Then 不得基于 schema 的 field_key 生成空值字段
     And 任务必须进入 failed 状态
+
+  Scenario: 单字段为空或不确定时保留元数据进入审核
+    Given 外部字段抽取模块返回的字段中存在 extraction_status 为 not_found 或 uncertain 的字段
+    When 系统处理字段结果
+    Then 任务应进入 review 状态
+    And 每个字段应保留 extraction_status、verification_status 和 quality_flags
+    And 前端应展示风险字段供人工核验
 ```

@@ -182,3 +182,24 @@ class TestSchemaLoaderReject:
         with pytest.raises(AppError) as exc_info:
             load_schema(path)
         assert exc_info.value.code == ErrorCode.INTERNAL_SERVER_ERROR.code
+
+
+def test_load_copd_admission_schema_from_repo():
+    from app.backend.config import PROJECT_ROOT
+    from app.backend.services.schema_loader import load_schema
+    import os
+
+    path = os.path.join(PROJECT_ROOT, "app", "config", "schemas", "copd_admission_record.v1.yaml")
+
+    schema = load_schema(path)
+
+    assert schema["document_type"] == "copd_admission_record"
+    keys = [
+        field["field_key"]
+        for group in schema["field_groups"]
+        for field in group["fields"]
+    ]
+    assert "copd_history_years" in keys
+    assert "blood_gas_pao2" in keys
+    assert "ct_features" in keys
+    assert len(keys) == len(set(keys))
