@@ -1,5 +1,6 @@
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -163,6 +164,47 @@ def test_local_paddleocr_port_emits_runner_diagnostic_events(tmp_path):
     assert events[0][1]["page_count"] == 1
     assert events[1][1]["exit_code"] == 0
     assert events[1][1]["output_exists"] is True
+
+
+def test_local_paddleocr_port_timeout_kills_child_process_group(tmp_path):
+    marker = tmp_path / "child-survived.txt"
+    runner = tmp_path / "spawns_child_then_hangs.py"
+    runner.write_text(
+        textwrap.dedent(
+            f"""
+            import subprocess
+            import sys
+            import time
+
+            subprocess.Popen([
+                sys.executable,
+                "-c",
+                "import pathlib,time; time.sleep(1.2); pathlib.Path({str(marker)!r}).write_text('alive')",
+            ])
+            time.sleep(10)
+            """
+        ),
+        encoding="utf-8",
+    )
+    source = tmp_path / "source-a.jpg"
+    source.write_bytes(b"image-a")
+    port = LocalPaddleOCRDocumentPort(
+        python_executable=sys.executable,
+        script_path=str(runner),
+        work_root=str(tmp_path / "ocr-runs"),
+        timeout_seconds=1,
+    )
+
+    with pytest.raises(RuntimeError, match="执行超时"):
+        port.parse(
+            {
+                "task_id": "task_001",
+                "pages": [{"page_id": "page_a", "page_no": 1, "processed_path": str(source)}],
+            }
+        )
+
+    time.sleep(1.5)
+    assert not marker.exists()
 
 
 def test_local_paddleocr_port_passes_cache_home_to_runner(tmp_path):

@@ -37,12 +37,39 @@ def build_section_group_extraction_prompt(group_name: str, text: str, field_keys
 规则：
 - 找不到的字段可以省略；后端会补成 not_found。
 - original_value 必须简短，只保留字段值本身。
-- source_hint 必须是字段值所在的 OCR 章节标题，例如 主诉、现病史、既往史、体格检查、辅助检查。
+- source_hint 必须是字段值所在的 OCR 章节标题，例如 主诉、现病史、既往史、体格检查、辅助检查；不能输出 history_profile、physical_exam、auxiliary_exam 这类内部分组名。
+- 如果字段值看似可抽取但无法确定 OCR 原文来源，source_hint 输出 "未找到证据"，不要编造章节。
 - 药物、合并症、体征等多项内容用顿号或分号压缩，不要输出长段原文。
 - 不要输出 evidence、confidence、source_section、quality_flags、ocr_correction 等元数据。
 
 OCR 原文：
 {text}
+""".strip()
+
+
+def build_section_group_repair_prompt(
+    text: str,
+    field_keys: list[str],
+    allowed_source_hints: list[str],
+    fields: list[dict],
+) -> str:
+    return f"""
+你需要修正上一轮字段抽取结果的来源指向。
+只允许输出 JSON 对象，顶层键为 `fields`，`fields` 是数组。
+每个字段只输出：field_key, original_value, source_hint。
+
+硬约束：
+- field_key 只允许使用：{json.dumps(field_keys, ensure_ascii=False)}
+- source_hint 只能从这个列表中选择：{json.dumps(allowed_source_hints + ["未找到证据"], ensure_ascii=False)}
+- 不能输出 history_profile、physical_exam、auxiliary_exam 这类内部分组名。
+- 如果 OCR 原文中找不到能支撑字段值的章节，source_hint 必须输出 "未找到证据"，不能编造。
+- 不要输出 evidence、confidence、source_section、quality_flags、ocr_correction 等元数据。
+
+OCR 原文：
+{text}
+
+上一轮字段：
+{json.dumps(fields, ensure_ascii=False)}
 """.strip()
 
 

@@ -1,10 +1,16 @@
 from .field_result import _default_result, all_fields_empty, complete_field_results
-from .prompts import build_extraction_prompt, build_section_group_extraction_prompt, build_verification_prompt
+from .prompts import (
+    build_extraction_prompt,
+    build_section_group_extraction_prompt,
+    build_section_group_repair_prompt,
+    build_verification_prompt,
+)
 from .quality_checks import apply_quality_checks
 from .section_splitter import FULL_TEXT_KEY, split_sections
 
 
 NOT_FOUND_VALUES = {"不详", "未知", "未提及", "未说明", "未记录", "无相关信息"}
+SOURCE_HINT_NOT_FOUND = "未找到证据"
 
 STRATEGY_FIELD_BATCHES = "field_batches"
 STRATEGY_SECTION_GROUPS = "section_groups"
@@ -114,8 +120,33 @@ class COPDFieldExtractor:
             fields = payload.get("fields") if isinstance(payload, dict) else None
             if not isinstance(fields, list):
                 raise ValueError("LLM extraction response must contain fields list")
+            allowed_source_hints = [name for name in section_names if sections.get(name)]
+            fields = self._repair_section_group_fields_if_needed(
+                text,
+                field_keys,
+                allowed_source_hints,
+                fields,
+            )
             raw_results.extend(self._normalize_section_group_fields(fields, group_name))
         return raw_results
+
+    def _repair_section_group_fields_if_needed(
+        self,
+        text: str,
+        field_keys: list[str],
+        allowed_source_hints: list[str],
+        fields: list[dict],
+    ) -> list[dict]:
+        allowed = set(allowed_source_hints)
+        if not _has_invalid_source_hint(fields, allowed):
+            return fields
+        payload = self._llm_client.complete_json(
+            build_section_group_repair_prompt(text, field_keys, allowed_source_hints, fields)
+        )
+        repaired = payload.get("fields") if isinstance(payload, dict) else None
+        if not isinstance(repaired, list):
+            raise ValueError("LLM extraction repair response must contain fields list")
+        return repaired
 
     def _normalize_section_group_fields(self, fields: list[dict], group_name: str) -> list[dict]:
         normalized = []
@@ -130,10 +161,8 @@ class COPDFieldExtractor:
                 continue
             result = _default_result(field_key)
             result.update(item)
-            if not result.get("source_hint"):
-                result["source_hint"] = item.get("source_section") or _infer_source_hint_from_group(group_name)
             result["confidence"] = result.get("confidence") or 0.7
-            result["source_section"] = result.get("source_hint") or group_name
+            result["source_section"] = result.get("source_hint")
             result["extraction_status"] = "extracted"
             normalized.append(result)
         return normalized
@@ -181,19 +210,6 @@ class COPDFieldExtractor:
 
 SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
 
-GROUP_SOURCE_HINTS = {
-    "history_profile": "病史资料",
-    "physical_exam": "体格检查",
-    "auxiliary_exam": "辅助检查",
-}
-
-GROUP_SECTION_NAMES = {
-    "history_profile": ["主诉", "现病史", "既往史", "个人史", "婚育史", "家族史", FULL_TEXT_KEY],
-    "physical_exam": ["体格检查"],
-    "auxiliary_exam": ["辅助检查"],
-}
-
-
 def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[dict]:
     for item in results:
         if item.get("extraction_status") != "extracted":
@@ -202,11 +218,6 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
         if not source_hint:
             continue
         source_text = sections.get(source_hint)
-        if not source_text:
-            group_source = _collect_group_source_text(source_hint, sections)
-            if group_source:
-                source_hint = GROUP_SOURCE_HINTS[source_hint]
-                source_text = group_source
         if source_text:
             item["source_hint"] = source_hint
             item["source_section"] = source_hint
@@ -220,6 +231,18 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
             item["source_group_id"] = _source_group_id(source_hint)
             if not item.get("evidence"):
                 item["evidence"] = sections[FULL_TEXT_KEY]
+            continue
+        if source_hint == SOURCE_HINT_NOT_FOUND:
+            item["source_section"] = None
+            item["evidence"] = None
+            item["source_text"] = None
+            item["source_group_id"] = None
+            item["verification_status"] = "suspicious"
+            _append_quality_flag(
+                item,
+                SOURCE_SECTION_NOT_FOUND,
+                {"comment": "模型明确返回未找到证据"},
+            )
             continue
         item["evidence"] = None
         item["source_text"] = None
@@ -257,20 +280,17 @@ def _source_group_id(source_hint: str) -> str:
     return f"source_group_{source_hint}"
 
 
-def _infer_source_hint_from_group(group_name: str) -> str | None:
-    return GROUP_SOURCE_HINTS.get(group_name)
-
-
-def _collect_group_source_text(group_name: str, sections: dict[str, str]) -> str | None:
-    section_names = GROUP_SECTION_NAMES.get(group_name)
-    if not section_names:
-        return None
-    parts = []
-    for section_name in section_names:
-        text = sections.get(section_name)
-        if text:
-            parts.append(f"【{section_name}】\n{text}")
-    return "\n\n".join(parts) or None
+def _has_invalid_source_hint(fields: list[dict], allowed_source_hints: set[str]) -> bool:
+    for item in fields:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("original_value")
+        if not isinstance(value, str) or not value.strip() or value.strip() in NOT_FOUND_VALUES:
+            continue
+        source_hint = item.get("source_hint")
+        if source_hint not in allowed_source_hints and source_hint != SOURCE_HINT_NOT_FOUND:
+            return True
+    return False
 
 
 def _append_quality_flag(item: dict, flag: str, verdict: dict) -> None:

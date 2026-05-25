@@ -182,7 +182,7 @@ def test_copd_extractor_can_skip_verification_to_keep_llm_calls_bounded():
     assert by_key["bmi"]["extraction_status"] == "not_found"
 
 
-def test_copd_extractor_can_use_section_group_prompts_from_legacy_success_path():
+def test_copd_extractor_can_use_section_group_prompts_with_source_hint():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     class LlmClient:
@@ -200,7 +200,7 @@ def test_copd_extractor_can_use_section_group_prompts_from_legacy_success_path()
                         "original_value": "反复咳嗽、咳痰15年，喘累6年",
                         "evidence": "主诉：反复咳嗽、咳痰15年，喘累6年，加重1月。",
                         "confidence": 0.86,
-                        "source_section": "主诉",
+                        "source_hint": "主诉",
                         "extraction_status": "extracted",
                         "verification_status": "not_checked",
                         "quality_flags": [],
@@ -302,7 +302,7 @@ def test_copd_extractor_marks_missing_source_hint_section_suspicious():
     assert result["quality_flags"][0]["flag"] == "source_section_not_found"
 
 
-def test_copd_extractor_maps_legacy_history_profile_source_to_group_text():
+def test_copd_extractor_accepts_explicit_no_evidence_source_hint():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     class LlmClient:
@@ -312,7 +312,7 @@ def test_copd_extractor_maps_legacy_history_profile_source_to_group_text():
                     {
                         "field_key": "copd_history_years",
                         "original_value": "15年",
-                        "source_section": "history_profile",
+                        "source_hint": "未找到证据",
                     }
                 ]
             }
@@ -324,17 +324,62 @@ def test_copd_extractor_maps_legacy_history_profile_source_to_group_text():
         enable_verification=False,
     )
 
+    result = extractor.extract("主诉：反复咳嗽。")[0]
+
+    assert result["extraction_status"] == "extracted"
+    assert result["evidence"] is None
+    assert result["verification_status"] == "suspicious"
+    assert result["quality_flags"][0]["flag"] == "source_section_not_found"
+
+
+def test_copd_extractor_repairs_invalid_source_hint_with_same_loaded_client():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def __init__(self):
+            self.calls = []
+
+        def complete_json(self, prompt: str):
+            self.calls.append(prompt)
+            if "修正上一轮字段抽取结果" in prompt:
+                return {
+                    "fields": [
+                        {
+                            "field_key": "copd_history_years",
+                            "original_value": "15年",
+                            "source_hint": "主诉",
+                        }
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "source_section": "history_profile",
+                    }
+                ]
+            }
+
+    client = LlmClient()
+    extractor = COPDFieldExtractor(
+        llm_client=client,
+        field_keys=["copd_history_years"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
     result = extractor.extract(
         "主诉：反复咳嗽、咳痰15年。"
         "现病史：肺功能提示中度阻塞性通气功能障碍。"
         "既往史：高血压5+年。"
     )[0]
 
-    assert result["source_hint"] == "病史资料"
-    assert result["source_group_id"] == "source_group_病史资料"
-    assert "【主诉】\n反复咳嗽、咳痰15年。" in result["source_text"]
-    assert "【既往史】\n高血压5+年。" in result["source_text"]
-    assert result["evidence"] == result["source_text"]
+    assert len(client.calls) == 2
+    assert result["source_hint"] == "主诉"
+    assert result["source_group_id"] == "source_group_主诉"
+    assert result["source_text"] == "反复咳嗽、咳痰15年。"
+    assert result["evidence"] == "反复咳嗽、咳痰15年。"
 
 
 def test_copd_extractor_verifies_fields_grouped_by_source_hint():

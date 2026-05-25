@@ -1,5 +1,6 @@
 import os
 import re
+import signal
 import shlex
 import shutil
 import subprocess
@@ -99,14 +100,11 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             command=_summarize_command(command),
         )
         try:
-            completed = subprocess.run(
+            completed = _run_with_process_group_timeout(
                 command,
                 cwd=str(work_dir),
                 env=env,
-                capture_output=True,
-                text=True,
                 timeout=self._timeout_seconds,
-                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             self._emit_event(
@@ -212,6 +210,47 @@ def _summarize_process_failure(completed: subprocess.CompletedProcess) -> str:
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     tail = "\n".join(lines[-8:])
     return f"exit_code={completed.returncode}; {tail[:1200]}"
+
+
+def _run_with_process_group_timeout(
+    command: list[str],
+    cwd: str,
+    env: dict,
+    timeout: int,
+) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _kill_process_group(process)
+        stdout, stderr = process.communicate()
+        exc.stdout = _join_timeout_output(exc.stdout, stdout)
+        exc.stderr = _join_timeout_output(exc.stderr, stderr)
+        raise exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _kill_process_group(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+
+
+def _join_timeout_output(original: str | bytes | None, after_kill: str | bytes | None) -> str | bytes | None:
+    if not original:
+        return after_kill
+    if not after_kill:
+        return original
+    return original + after_kill
 
 
 def _summarize_command(command: list[str]) -> str:
