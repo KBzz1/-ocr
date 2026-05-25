@@ -1,4 +1,5 @@
 # app/backend/__init__.py
+import logging
 import os
 import socket
 from datetime import datetime, timezone
@@ -10,6 +11,9 @@ from werkzeug.utils import safe_join
 
 from .config import PROJECT_ROOT, load_config
 from .errors import register_error_handlers
+from .logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def _is_loopback_ipv4(address: str) -> bool:
@@ -80,6 +84,9 @@ def _register_static_serve(app: Flask, static_dir: str) -> None:
 def create_backend_app(config_dir: str | None = None) -> Flask:
     config = load_config(config_dir)
 
+    setup_logging(config["log_dir"])
+    logger.info("日志系统已初始化: 热日志 backend.log / 冷日志 debug.log access.log")
+
     app = Flask(__name__)
     app.config["BACKEND_CONFIG"] = config
     app.config["STARTED_AT"] = datetime.now(timezone.utc).isoformat()
@@ -143,15 +150,17 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
 
         image_port = OriginalImagePassthroughPort()
+        ocr_work_root = config.get("local_ocr_work_root") or os.path.join(config["storage_dir"], "ocr_runs")
         doc_port = LocalPaddleOCRDocumentPort(
             python_executable=config["local_ocr_python_executable"],
             script_path=config["local_ocr_script_path"],
-            work_root=os.path.join(config["storage_dir"], "ocr_runs"),
+            work_root=ocr_work_root,
             cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
             device=config.get("local_ocr_device"),
-            max_new_tokens=config.get("local_ocr_max_new_tokens"),
+            max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
             max_pixels=config.get("local_ocr_max_pixels"),
             timeout_seconds=config["local_ocr_timeout_seconds"],
+            event_logger=event_log.safe_write,
         )
 
     field_port = None
@@ -166,10 +175,25 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         field_port=field_port,
         schema_validator=schema_service.build_validator(),
     )
+    from threading import Lock
+
+    processing_lock = Lock()
+
+    def run_processing_background(run):
+        from threading import Thread
+
+        def target():
+            with app.app_context():
+                with processing_lock:
+                    run()
+
+        Thread(target=target, daemon=True).start()
+
     app.config["TASK_SERVICE"] = TaskService(
         store=store,
         orchestrator=orchestrator,
         schema_provider=schema_service.get_current,
+        background_runner=run_processing_background,
     )
 
     from .services.review_service import ReviewService

@@ -67,6 +67,37 @@ class TestLocalEventLog:
         assert records[0]["task_id"] == "task-001"
         assert "ts" in records[0]
 
+    def test_writes_ocr_runner_diagnostic_events_without_ocr_text(self, tmp_path):
+        log = LocalEventLog(str(tmp_path))
+
+        log.write(
+            "ocr_runner_started",
+            task_id="task-001",
+            backend="python",
+            page_count=2,
+            timeout_seconds=30,
+            work_dir="/tmp/ocr-runs/task-001",
+            run_log_path="/tmp/ocr-runs/task-001/runner-progress.jsonl",
+            command="python paddleocr_vl_batch_runner.py",
+            merged_text="完整 OCR 文本不应进入日志",
+        )
+        log.write(
+            "ocr_runner_finished",
+            task_id="task-001",
+            backend="python",
+            elapsed_ms=1200,
+            exit_code=0,
+            output_exists=True,
+            output_bytes=128,
+            stdout_tail="done",
+            stderr_tail="",
+        )
+
+        records = read_jsonl(log.current_path)
+        assert [record["event"] for record in records] == ["ocr_runner_started", "ocr_runner_finished"]
+        assert records[0]["page_count"] == 2
+        assert "merged_text" not in records[0]
+
     def test_rejects_unknown_event_name(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
 

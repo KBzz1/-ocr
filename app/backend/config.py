@@ -29,13 +29,18 @@ DEFAULT_CONFIG = {
     "log_backup_count": 5,
     "enable_copd_extractor": False,
     "llm_model_path": "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+    "llm_context_tokens": 8192,
+    "llm_max_tokens": 1024,
+    "llm_extraction_batch_size": 25,
+    "llm_enable_verification": False,
     "enable_local_ocr": False,
     "local_ocr_python_executable": sys.executable,
     "local_ocr_script_path": "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py",
-    "local_ocr_timeout_seconds": 1800,
+    "local_ocr_work_root": None,
+    "local_ocr_max_new_tokens": 1024,
+    "local_ocr_timeout_seconds": 180,
     "local_ocr_device": None,
-    "local_ocr_max_new_tokens": None,
-    "local_ocr_max_pixels": None,
+    "local_ocr_max_pixels": 501760,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,18 +98,28 @@ def _flatten_config(raw: dict) -> dict:
         flattened["enable_copd_extractor"] = algorithms_config["enable_copd_extractor"]
     if "llm_model_path" in algorithms_config:
         flattened["llm_model_path"] = algorithms_config["llm_model_path"]
+    if "llm_context_tokens" in algorithms_config:
+        flattened["llm_context_tokens"] = algorithms_config["llm_context_tokens"]
+    if "llm_max_tokens" in algorithms_config:
+        flattened["llm_max_tokens"] = algorithms_config["llm_max_tokens"]
+    if "llm_extraction_batch_size" in algorithms_config:
+        flattened["llm_extraction_batch_size"] = algorithms_config["llm_extraction_batch_size"]
+    if "llm_enable_verification" in algorithms_config:
+        flattened["llm_enable_verification"] = algorithms_config["llm_enable_verification"]
     if "enable_local_ocr" in algorithms_config:
         flattened["enable_local_ocr"] = algorithms_config["enable_local_ocr"]
     if "local_ocr_python_executable" in algorithms_config:
         flattened["local_ocr_python_executable"] = algorithms_config["local_ocr_python_executable"]
     if "local_ocr_script_path" in algorithms_config:
         flattened["local_ocr_script_path"] = algorithms_config["local_ocr_script_path"]
+    if "local_ocr_work_root" in algorithms_config:
+        flattened["local_ocr_work_root"] = algorithms_config["local_ocr_work_root"]
+    if "local_ocr_max_new_tokens" in algorithms_config:
+        flattened["local_ocr_max_new_tokens"] = algorithms_config["local_ocr_max_new_tokens"]
     if "local_ocr_timeout_seconds" in algorithms_config:
         flattened["local_ocr_timeout_seconds"] = algorithms_config["local_ocr_timeout_seconds"]
     if "local_ocr_device" in algorithms_config:
         flattened["local_ocr_device"] = algorithms_config["local_ocr_device"]
-    if "local_ocr_max_new_tokens" in algorithms_config:
-        flattened["local_ocr_max_new_tokens"] = algorithms_config["local_ocr_max_new_tokens"]
     if "local_ocr_max_pixels" in algorithms_config:
         flattened["local_ocr_max_pixels"] = algorithms_config["local_ocr_max_pixels"]
 
@@ -122,6 +137,7 @@ def _normalize_paths(config: dict) -> dict:
         "static_dir",
         "llm_model_path",
         "local_ocr_script_path",
+        "local_ocr_work_root",
     ):
         path = config.get(key)
         if path and not os.path.isabs(path):
@@ -170,6 +186,12 @@ def _validate_config(config: dict):
         value = config.get(key)
         if value is not None and (not isinstance(value, int) or value <= 0):
             raise ValueError(f"{key} 必须为空或正整数，当前值: {value}")
+
+    extraction_batch_size = config.get("llm_extraction_batch_size")
+    if not isinstance(extraction_batch_size, int) or extraction_batch_size <= 0:
+        raise ValueError(f"llm_extraction_batch_size 必须为正整数，当前值: {extraction_batch_size}")
+    if not isinstance(config.get("llm_enable_verification"), bool):
+        raise ValueError(f"llm_enable_verification 必须为布尔值，当前值: {config.get('llm_enable_verification')}")
 
 
 def load_config(config_dir: str | None = None) -> dict:

@@ -1,4 +1,3 @@
-import os
 import sys
 import textwrap
 
@@ -56,6 +55,8 @@ def test_local_paddleocr_port_runs_script_and_returns_document_result(tmp_path):
             parser = argparse.ArgumentParser()
             parser.add_argument("--input-dir")
             parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
             args = parser.parse_args()
 
             images = sorted(Path(args.input_dir).iterdir())
@@ -115,6 +116,55 @@ def test_local_paddleocr_port_runs_script_and_returns_document_result(tmp_path):
     ]
 
 
+def test_local_paddleocr_port_emits_runner_diagnostic_events(tmp_path):
+    events = []
+    runner = tmp_path / "fake_ocr_runner.py"
+    runner.write_text(
+        textwrap.dedent(
+            """
+            import argparse
+            from pathlib import Path
+
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--input-dir")
+            parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
+            args = parser.parse_args()
+
+            first = sorted(Path(args.input_dir).iterdir())[0]
+            output = Path(args.output_file)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(f"# {first.name}\\n\\nOCR text", encoding="utf-8")
+            """
+        ),
+        encoding="utf-8",
+    )
+    source = tmp_path / "source-a.jpg"
+    source.write_bytes(b"image-a")
+    port = LocalPaddleOCRDocumentPort(
+        python_executable=sys.executable,
+        script_path=str(runner),
+        work_root=str(tmp_path / "ocr-runs"),
+        timeout_seconds=10,
+        event_logger=lambda event, **payload: events.append((event, payload)),
+    )
+
+    port.parse(
+        {
+            "task_id": "task_001",
+            "pages": [{"page_id": "page_a", "page_no": 1, "processed_path": str(source)}],
+        }
+    )
+
+    event_names = [event for event, _ in events]
+    assert event_names == ["ocr_runner_started", "ocr_runner_finished"]
+    assert events[0][1]["task_id"] == "task_001"
+    assert events[0][1]["page_count"] == 1
+    assert events[1][1]["exit_code"] == 0
+    assert events[1][1]["output_exists"] is True
+
+
 def test_local_paddleocr_port_passes_cache_home_to_runner(tmp_path):
     runner = tmp_path / "fake_ocr_runner.py"
     runner.write_text(
@@ -127,6 +177,8 @@ def test_local_paddleocr_port_passes_cache_home_to_runner(tmp_path):
             parser = argparse.ArgumentParser()
             parser.add_argument("--input-dir")
             parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
             args = parser.parse_args()
 
             cache_home = os.environ["PADDLE_PDX_CACHE_HOME"]
@@ -170,6 +222,8 @@ def test_local_paddleocr_port_passes_device_to_runner(tmp_path):
             parser = argparse.ArgumentParser()
             parser.add_argument("--input-dir")
             parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
             parser.add_argument("--device")
             args = parser.parse_args()
 
@@ -259,6 +313,8 @@ def test_local_paddleocr_port_marks_missing_page_output_failed(tmp_path):
             parser = argparse.ArgumentParser()
             parser.add_argument("--input-dir")
             parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
             args = parser.parse_args()
 
             first = sorted(Path(args.input_dir).iterdir())[0]
@@ -305,3 +361,14 @@ def test_local_paddleocr_port_rejects_missing_script(tmp_path):
 
     with pytest.raises(RuntimeError, match="OCR runner 不存在"):
         port.parse({"task_id": "task_001", "pages": []})
+
+
+def test_local_paddleocr_port_default_max_new_tokens_is_1024():
+    port = LocalPaddleOCRDocumentPort(
+        python_executable="python",
+        script_path="runner.py",
+        work_root="/tmp",
+    )
+    assert port._max_new_tokens == 1024
+    assert port._max_pixels == 501760
+    assert port._timeout_seconds == 180

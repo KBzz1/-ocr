@@ -134,6 +134,19 @@ describe('MVP task list and retry', () => {
     );
   });
 
+  it('shows processing stage progress for running tasks', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    const statusCell = processingRow.children[3] as HTMLElement;
+    const actionsCell = processingRow.children[6] as HTMLElement;
+
+    expect(statusCell.textContent).toContain('OCR 文档解析');
+    expect(within(statusCell).getByRole('progressbar', { name: '处理进度' }).getAttribute('aria-valuenow')).toBe('55');
+    expect(within(actionsCell).queryByRole('progressbar', { name: '处理进度' })).toBeNull();
+  });
+
   it('opens the upload QR dialog for an uploading task', async () => {
     const user = userEvent.setup();
     server.use(

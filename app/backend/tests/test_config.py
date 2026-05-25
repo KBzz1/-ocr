@@ -235,6 +235,10 @@ def test_load_config_supports_copd_extractor_settings(tmp_path):
 algorithms:
   enable_copd_extractor: true
   llm_model_path: ./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf
+  llm_context_tokens: 8192
+  llm_max_tokens: 1024
+  llm_extraction_batch_size: 25
+  llm_enable_verification: false
 """,
         encoding="utf-8",
     )
@@ -243,6 +247,10 @@ algorithms:
 
     assert config["enable_copd_extractor"] is True
     assert config["llm_model_path"].endswith("qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf")
+    assert config["llm_context_tokens"] == 8192
+    assert config["llm_max_tokens"] == 1024
+    assert config["llm_extraction_batch_size"] == 25
+    assert config["llm_enable_verification"] is False
 
 
 def test_load_config_supports_local_ocr_settings(tmp_path):
@@ -256,9 +264,10 @@ algorithms:
   enable_local_ocr: true
   local_ocr_python_executable: /opt/conda/envs/manzufei_ocr/bin/python
   local_ocr_script_path: ./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py
+  local_ocr_work_root: /tmp/manzufei_ocr_ocr_runs
+  local_ocr_max_new_tokens: 1024
   local_ocr_timeout_seconds: 1200
   local_ocr_device: gpu:0
-  local_ocr_max_new_tokens: 1024
   local_ocr_max_pixels: 200000
 """,
         encoding="utf-8",
@@ -269,6 +278,8 @@ algorithms:
     assert config["enable_local_ocr"] is True
     assert config["local_ocr_python_executable"] == "/opt/conda/envs/manzufei_ocr/bin/python"
     assert config["local_ocr_script_path"].endswith("paddleocr_vl_batch_runner.py")
+    assert config["local_ocr_work_root"] == "/tmp/manzufei_ocr_ocr_runs"
+    assert config["local_ocr_max_new_tokens"] == 1024
     assert config["local_ocr_timeout_seconds"] == 1200
     assert config["local_ocr_device"] == "gpu:0"
     assert config["local_ocr_max_new_tokens"] == 1024
@@ -306,6 +317,23 @@ algorithms:
     )
 
     with pytest.raises(ValueError, match="local_ocr_max_new_tokens"):
+        load_config(str(config_dir))
+
+
+def test_llm_extraction_batch_size_must_be_positive(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        """
+algorithms:
+  llm_extraction_batch_size: 0
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="llm_extraction_batch_size"):
         load_config(str(config_dir))
 
 

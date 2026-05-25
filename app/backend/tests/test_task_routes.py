@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from app.backend import create_backend_app
@@ -51,6 +53,17 @@ def write_task(app, task_id="task_001", status="uploading", **overrides):
     }
     task.update(overrides)
     store.write(f"tasks/{task_id}.json", task)
+
+
+def wait_for_task_status(client, task_id: str, status: str, timeout: float = 1.0) -> dict:
+    deadline = time.monotonic() + timeout
+    latest = None
+    while time.monotonic() < deadline:
+        latest = client.get(f"/api/tasks/{task_id}").get_json()["data"]
+        if latest["status"] == status:
+            return latest
+        time.sleep(0.01)
+    return latest or client.get(f"/api/tasks/{task_id}").get_json()["data"]
 
 
 def test_post_tasks_creates_uploading_task(client):
@@ -146,6 +159,10 @@ def test_process_task_without_algorithm_returns_failed_payload(client, app):
 
     assert response.status_code == 200
     data = response.get_json()["data"]
+    assert data["status"] == "processing"
+    assert data["processing_summary"]["stage"] == "queued"
+
+    data = wait_for_task_status(client, "task_001", "failed")
     assert data["status"] == "failed"
     assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
     assert data["error_message"] == "图像处理模块未配置"

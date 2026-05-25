@@ -5,11 +5,22 @@ from app.backend.services.task_service import TaskService
 from app.backend.storage.json_store import JsonStore
 
 
+class RecordingOrchestrator:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, task, task_service, schema=None):
+        self.calls.append((task["task_id"], schema))
+        task_service.mark_processing_stage(task["task_id"], "document_parsing", "running", page_count=1)
+        return task_service.get_task(task["task_id"])
+
+
 def make_service(tmp_path, orchestrator=None, schema_provider=None):
     return TaskService(
         JsonStore(str(tmp_path)),
         orchestrator=orchestrator,
         schema_provider=schema_provider,
+        background_runner=lambda run: run(),
     )
 
 
@@ -147,18 +158,78 @@ def test_process_without_algorithm_marks_failed(tmp_path):
     service = make_service(tmp_path)
 
     result = service.process("task_001")
+    persisted = service.get_task("task_001")
 
-    assert result["status"] == "failed"
+    assert result["status"] == "processing"
+    assert result["processing_summary"]["stage"] == "queued"
+    assert persisted["status"] == "failed"
     assert result["processing_at"] is not None
-    assert result["failed_at"] is not None
-    assert result["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
-    assert result["error_message"] == "图像处理模块未配置"
-    assert result["details"]["stage"] == "image_processing"
-    assert result["details"]["reason"] == "module_not_configured"
-    assert [entry["to_status"] for entry in result["status_history"]] == [
+    assert persisted["failed_at"] is not None
+    assert persisted["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
+    assert persisted["error_message"] == "图像处理模块未配置"
+    assert persisted["details"]["stage"] == "image_processing"
+    assert persisted["details"]["reason"] == "module_not_configured"
+    assert [entry["to_status"] for entry in persisted["status_history"]] == [
         "uploading",
         "processing",
         "failed",
+    ]
+
+
+def test_finish_upload_returns_processing_after_dispatching_background_run(tmp_path):
+    write_task(
+        tmp_path,
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page.jpg"}],
+    )
+    orchestrator = RecordingOrchestrator()
+    service = make_service(tmp_path, orchestrator=orchestrator, schema_provider=lambda: {"version": "1.0.0"})
+
+    result = service.finish_upload("task_001")
+    summary = service.list_tasks()[0]
+
+    assert result["status"] == "processing"
+    assert result["processing_summary"]["stage"] == "queued"
+    assert result["processing_summary"]["progress_percent"] == 5
+    assert orchestrator.calls == [("task_001", {"version": "1.0.0"})]
+    assert summary["processing_summary"]["stage"] == "document_parsing"
+    assert summary["processing_summary"]["progress_percent"] == 55
+
+
+def test_background_runner_can_serialize_processing_callbacks(tmp_path):
+    pending = []
+
+    def queue_runner(run):
+        pending.append(run)
+
+    write_task(
+        tmp_path,
+        task_id="task_001",
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}],
+    )
+    write_task(
+        tmp_path,
+        task_id="task_002",
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-2.jpg"}],
+    )
+    orchestrator = RecordingOrchestrator()
+    service = TaskService(
+        JsonStore(str(tmp_path)),
+        orchestrator=orchestrator,
+        schema_provider=lambda: {"version": "1.0.0"},
+        background_runner=queue_runner,
+    )
+
+    service.finish_upload("task_001")
+    service.finish_upload("task_002")
+
+    assert len(pending) == 2
+    assert orchestrator.calls == []
+    pending[0]()
+    assert orchestrator.calls == [("task_001", {"version": "1.0.0"})]
+    pending[1]()
+    assert orchestrator.calls == [
+        ("task_001", {"version": "1.0.0"}),
+        ("task_002", {"version": "1.0.0"}),
     ]
 
 

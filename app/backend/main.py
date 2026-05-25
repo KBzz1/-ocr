@@ -1,6 +1,7 @@
 # app/backend/main.py
 """后端开发/调试启动入口。在生产部署中使用 run.bat。"""
 import atexit
+import logging
 import os
 import signal
 import sys
@@ -8,6 +9,8 @@ import sys
 from app.backend.config import PROJECT_ROOT as _project_root
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+
+logger = logging.getLogger(__name__)
 
 from app.backend import create_backend_app
 
@@ -43,6 +46,15 @@ def _register_pid_cleanup(pid_file):
             pass
 
 
+def _redirect_stdouterr_to_boot_log(log_dir: str) -> None:
+    """将进程 stdout/stderr 重定向到 boot.log（冷），避免污染热日志。"""
+    boot_path = os.path.join(log_dir, "boot.log")
+    os.makedirs(log_dir, exist_ok=True)
+    boot_fh = open(boot_path, "a", encoding="utf-8")
+    os.dup2(boot_fh.fileno(), sys.stdout.fileno())
+    os.dup2(boot_fh.fileno(), sys.stderr.fileno())
+
+
 def main():
     app = create_backend_app()
     config = app.config["BACKEND_CONFIG"]
@@ -52,11 +64,10 @@ def main():
     _write_pid_file(pid_file)
     _register_pid_cleanup(pid_file)
 
-    print("后端服务启动中...")
-    print(f"  PID: {os.getpid()}")
-    print(f"  PID 文件: {pid_file}")
-    print(f"  本地访问: http://{config['local_host']}:{config['port']}")
-    print(f"  健康检查: http://{config['local_host']}:{config['port']}/api/system/status")
+    _redirect_stdouterr_to_boot_log(config["log_dir"])
+
+    logger.info("后端服务启动中... PID=%d PID文件=%s 本地访问=http://%s:%d",
+                os.getpid(), pid_file, config["local_host"], config["port"])
     app.run(host=config["bind_host"], port=config["port"], debug=debug)
 
 

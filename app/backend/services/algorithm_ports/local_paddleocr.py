@@ -1,8 +1,11 @@
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path
+from typing import Callable
 
 from .document_parsing import DocumentParsingPort
 
@@ -41,9 +44,10 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
         work_root: str,
         cache_dir: str | None = None,
         device: str | None = None,
-        max_new_tokens: int | None = None,
-        max_pixels: int | None = None,
-        timeout_seconds: int = 1800,
+        max_new_tokens: int = 1024,
+        max_pixels: int | None = 501760,
+        timeout_seconds: int = 180,
+        event_logger: Callable[..., None] | None = None,
     ):
         self._python_executable = python_executable
         self._script_path = script_path
@@ -53,6 +57,7 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
         self._max_new_tokens = max_new_tokens
         self._max_pixels = max_pixels
         self._timeout_seconds = timeout_seconds
+        self._event_logger = event_logger
 
     def parse(self, input: dict) -> dict:
         if not os.path.isfile(self._script_path):
@@ -74,31 +79,56 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             str(input_dir),
             "--output-file",
             str(output_file),
+            "--max-new-tokens",
+            str(self._max_new_tokens),
         ]
         if self._device:
             command.extend(["--device", self._device])
-        if self._max_new_tokens is not None:
-            command.extend(["--max-new-tokens", str(self._max_new_tokens)])
         if self._max_pixels is not None:
             command.extend(["--max-pixels", str(self._max_pixels)])
         env = os.environ.copy()
         env.setdefault("PADDLE_PDX_CACHE_HOME", self._cache_dir or str(work_dir / "paddlex_cache"))
         env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        completed = subprocess.run(
-            command,
-            cwd=str(work_dir),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=self._timeout_seconds,
-            check=False,
+        started = time.monotonic()
+        self._emit_event(
+            "ocr_runner_started",
+            task_id=task_id,
+            page_count=len(page_files),
+            timeout_seconds=self._timeout_seconds,
+            work_dir=str(work_dir),
+            command=_summarize_command(command),
         )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(work_dir),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            self._emit_event(
+                "ocr_runner_timeout",
+                task_id=task_id,
+                timeout_seconds=self._timeout_seconds,
+                work_dir=str(work_dir),
+                stdout_tail=_tail(exc.stdout),
+                stderr_tail=_tail(exc.stderr),
+            )
+            raise RuntimeError(f"本地 OCR runner 执行超时: {self._timeout_seconds}s") from exc
+        self._emit_runner_finished(task_id, started, completed, output_file)
         if completed.returncode != 0:
-            raise RuntimeError("本地 OCR runner 执行失败")
+            detail = _summarize_process_failure(completed)
+            raise RuntimeError(f"本地 OCR runner 执行失败: {detail}")
         if not output_file.is_file():
             raise RuntimeError("本地 OCR runner 未生成输出文件")
 
         output = output_file.read_text(encoding="utf-8")
+        return self._document_result_from_markdown(output, page_files)
+
+    def _document_result_from_markdown(self, output: str, page_files: list[dict]) -> dict:
         parsed = parse_paddleocr_markdown(output, expected_names={page["filename"] for page in page_files})
         result_pages = []
         merged_parts = []
@@ -151,3 +181,48 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
                 }
             )
         return copied
+
+    def _emit_event(self, event: str, **payload) -> None:
+        if self._event_logger is not None:
+            self._event_logger(event, **payload)
+
+    def _emit_runner_finished(
+        self,
+        task_id: str,
+        started: float,
+        completed: subprocess.CompletedProcess,
+        output_file: Path,
+    ) -> None:
+        self._emit_event(
+            "ocr_runner_finished",
+            task_id=task_id,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            exit_code=completed.returncode,
+            output_exists=output_file.is_file(),
+            output_bytes=output_file.stat().st_size if output_file.exists() else 0,
+            stdout_tail=_tail(completed.stdout),
+            stderr_tail=_tail(completed.stderr),
+        )
+
+
+def _summarize_process_failure(completed: subprocess.CompletedProcess) -> str:
+    output = (completed.stderr or completed.stdout or "").strip()
+    if not output:
+        return f"exit_code={completed.returncode}"
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    tail = "\n".join(lines[-8:])
+    return f"exit_code={completed.returncode}; {tail[:1200]}"
+
+
+def _summarize_command(command: list[str]) -> str:
+    return _tail(shlex.join(command), limit=600)
+
+
+def _tail(value: str | bytes | None, limit: int = 1200) -> str:
+    if not value:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if len(value) > limit:
+        value = value[-limit:]
+    return value.strip()

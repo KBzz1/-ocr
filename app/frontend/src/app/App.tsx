@@ -85,6 +85,8 @@ function toTaskSummary(task: ApiTaskSummary): TaskSummary {
     status: task.status,
     reviewedFields,
     totalFields,
+    processingLabel: task.processing_summary?.label ?? null,
+    processingProgress: task.processing_summary?.progress_percent ?? null,
     errorReason
   };
 }

@@ -54,6 +54,18 @@ function getErrorSummary(task: TaskSummary) {
   return task.error_message || task.error_code || '处理失败，请重新处理';
 }
 
+function getProcessingProgress(task: TaskSummary) {
+  const summary = task.processing_summary;
+  if (!summary) {
+    return { label: '等待处理', progress: 10 };
+  }
+
+  return {
+    label: summary.label || '处理中',
+    progress: Math.max(0, Math.min(100, summary.progress_percent))
+  };
+}
+
 export function TaskList({
   tasks,
   activeFilter,
@@ -114,6 +126,7 @@ export function TaskList({
                 const status = taskStatusMeta[task.status];
                 const errorSummary = getErrorSummary(task);
                 const isRetrying = retryingTaskId === task.task_id;
+                const processingProgress = task.status === 'processing' ? getProcessingProgress(task) : null;
 
                 return (
                   <tr key={task.task_id}>
@@ -121,9 +134,26 @@ export function TaskList({
                     <td>{formatDateTime(task.created_at)}</td>
                     <td>{task.page_count} 页</td>
                     <td>
-                      <span className={`task-status task-status--${status.tone}`}>
-                        {status.label}
-                      </span>
+                      <div className="task-status-cell">
+                        <span className={`task-status task-status--${status.tone}`}>
+                          {status.label}
+                        </span>
+                        {task.status === 'processing' ? (
+                          <div className="task-processing-progress">
+                            <span className="task-processing-progress__label">{processingProgress?.label}</span>
+                            <span
+                              className="task-processing-progress__bar"
+                              role="progressbar"
+                              aria-label="处理进度"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={processingProgress?.progress}
+                            >
+                              <span style={{ width: `${processingProgress?.progress ?? 0}%` }} />
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                     <td>{getReviewLabel(task)}</td>
                     <td>
@@ -149,7 +179,7 @@ export function TaskList({
                           </button>
                         ) : null}
                         {task.status === 'processing' ? (
-                          <span className="task-list-muted">查看进度</span>
+                          <span className="task-list-muted">处理中</span>
                         ) : null}
                         {task.status === 'review' ? (
                           <a className="task-list-action" href={buildReviewPath(task.task_id)}>

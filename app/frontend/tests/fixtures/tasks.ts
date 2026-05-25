@@ -28,6 +28,16 @@ export const taskFixtures: TaskSummary[] = [
     status: 'processing',
     created_at: '2026-05-19T09:20:00+08:00',
     page_count: 2,
+    processing_summary: {
+      stage: 'document_parsing',
+      status: 'running',
+      label: 'OCR 文档解析',
+      progress_percent: 55,
+      page_count: 2,
+      started_at: '2026-05-19T09:20:00+08:00',
+      updated_at: '2026-05-19T09:21:00+08:00',
+      elapsed_seconds: 60
+    },
     review_summary: { status: null },
     export_summary: { formats: [] },
     error_code: null,

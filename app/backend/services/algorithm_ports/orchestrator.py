@@ -1,7 +1,12 @@
+import logging
+
 from ...errors import ErrorCode
+from ...routes import _safe_event
 from ...storage.json_store import JsonStore
 from .field_extraction import all_fields_empty, validate_field_candidates
 from .results import AlgorithmResultStore
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingOrchestrator:
@@ -43,15 +48,16 @@ class ProcessingOrchestrator:
             )
 
         processed_pages = []
+        self._stage_started(task_service, task_id, "image_processing", len(image_inputs))
         for img_input in image_inputs:
             try:
                 result = self._image_port.process(img_input)
-            except Exception:
+            except Exception as exc:
                 return task_service.mark_failed(
                     task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
                     "图像处理模块异常",
                     stage="image_processing",
-                    details={"stage": "image_processing", "reason": "module_exception"},
+                    details={**self._exception_details(exc), "stage": "image_processing", "reason": "module_exception"},
                 )
             proc_path = result.get("processed_path") if isinstance(result, dict) else None
             if not proc_path or not isinstance(proc_path, str):
@@ -67,6 +73,7 @@ class ProcessingOrchestrator:
                 "original_path": img_input["original_path"],
                 "processed_path": proc_path,
             })
+        self._stage_finished(task_id, "image_processing", len(processed_pages), "success")
 
         self._result_store.write_image_result(
             task_id,
@@ -92,14 +99,16 @@ class ProcessingOrchestrator:
                         "processed_path": p["processed_path"]} for p in processed_pages],
         }
         try:
+            self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
             doc_result = self._doc_port.parse(doc_input)
-        except Exception:
+        except Exception as exc:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
                 "文档解析模块异常",
                 stage="document_parsing",
-                details={"stage": "document_parsing", "reason": "module_exception"},
+                details={**self._exception_details(exc), "stage": "document_parsing", "reason": "module_exception"},
             )
+        self._stage_finished(task_id, "document_parsing", len(processed_pages), "success")
 
         if not isinstance(doc_result, dict) or "pages" not in doc_result or not isinstance(doc_result["pages"], list):
             return task_service.mark_failed(
@@ -153,14 +162,16 @@ class ProcessingOrchestrator:
 
         field_input = {"task_id": task_id, "document_result": doc_result, "schema": schema}
         try:
+            self._stage_started(task_service, task_id, "field_extraction", len(pages))
             candidates = self._field_port.extract(field_input)
-        except Exception:
+        except Exception as exc:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
                 "字段抽取模块异常",
                 stage="field_extraction",
-                details={"stage": "field_extraction", "reason": "module_exception"},
+                details={**self._exception_details(exc), "stage": "field_extraction", "reason": "module_exception"},
             )
+        self._stage_finished(task_id, "field_extraction", len(pages), "success")
 
         if not isinstance(candidates, list):
             return task_service.mark_failed(
@@ -178,12 +189,15 @@ class ProcessingOrchestrator:
             )
         try:
             validate_field_candidates(candidates)
-        except Exception:
+        except Exception as exc:
+            logger.error("task=%s validate_field_candidates failed: %s", task_id, exc)
+            _log_candidates_summary(task_id, candidates)
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
                 "字段候选结构非法",
                 stage="field_extraction",
-                details={"stage": "field_extraction", "reason": "invalid_candidate_contract"},
+                details={"stage": "field_extraction", "reason": "invalid_candidate_contract",
+                         "validation_error": str(exc)},
             )
 
         if self._schema_validator:
@@ -225,3 +239,34 @@ class ProcessingOrchestrator:
                 }
             )
         return inputs
+
+    def _stage_started(self, task_service, task_id: str, stage: str, page_count: int) -> None:
+        task_service.mark_processing_stage(task_id, stage, "running", page_count=page_count)
+        _safe_event("processing_stage_started", task_id=task_id, stage=stage, page_count=page_count)
+
+    def _stage_finished(self, task_id: str, stage: str, page_count: int, status: str) -> None:
+        _safe_event("processing_stage_finished", task_id=task_id, stage=stage, page_count=page_count, status=status)
+
+    def _exception_details(self, exc: Exception) -> dict:
+        message = str(exc)
+        if len(message) > 500:
+            message = message[:500] + "...[truncated]"
+        return {"exception_type": type(exc).__name__, "exception_message": message}
+
+
+def _log_candidates_summary(task_id: str, candidates: list) -> None:
+    """记录 candidates 结构摘要，用于排查字段候选校验失败。"""
+    try:
+        for item in candidates:
+            if not isinstance(item, dict):
+                logger.error("task=%s candidate not dict: %s", task_id, type(item).__name__)
+                continue
+            fk = item.get("field_key", "?")
+            issues = []
+            for key in ("quality_flags", "verification_status", "ocr_correction",
+                        "extraction_status", "original_value", "evidence", "confidence", "source_section"):
+                val = item.get(key, "<missing>")
+                issues.append(f"{key}={type(val).__name__}:{repr(val)[:80]}")
+            logger.error("task=%s field=%s %s", task_id, fk, " | ".join(issues))
+    except Exception:
+        logger.exception("task=%s failed to log candidates summary", task_id)

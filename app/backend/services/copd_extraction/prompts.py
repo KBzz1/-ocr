@@ -24,6 +24,26 @@ OCR 分段文本：
 """.strip()
 
 
+def build_section_group_extraction_prompt(group_name: str, text: str, field_keys: list[str]) -> str:
+    return f"""
+你是一个严谨的慢阻肺/呼吸系统入院记录结构化抽取引擎，只处理 `{group_name}` 相关内容。
+只从提供的 OCR 原文中抽取字段，不得推断、补全或改写原文未写的信息。
+字段 key 只允许使用：{json.dumps(field_keys, ensure_ascii=False)}
+
+输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。
+每个字段只输出：field_key, original_value。
+
+规则：
+- 找不到的字段可以省略；后端会补成 not_found。
+- original_value 必须简短，只保留字段值本身。
+- 药物、合并症、体征等多项内容用顿号或分号压缩，不要输出长段原文。
+- 不要输出 evidence、confidence、source_section、quality_flags、ocr_correction 等元数据。
+
+OCR 原文：
+{text}
+""".strip()
+
+
 def build_verification_prompt(original_text: str, field_results: list[dict]) -> str:
     return f"""
 你是字段级复核器。逐字段检查 value/evidence/OCR 纠偏是否可靠。

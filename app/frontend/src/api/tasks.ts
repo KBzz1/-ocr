@@ -15,6 +15,16 @@ export interface TaskSummary {
   created_at: string;
   updated_at?: string;
   page_count: number;
+  processing_summary?: {
+    stage: string;
+    status: string;
+    label: string;
+    progress_percent: number;
+    page_count?: number;
+    started_at?: string | null;
+    updated_at?: string | null;
+    elapsed_seconds?: number;
+  } | null;
   upload_token?: string;
   mobile_upload_url?: string;
   error_code?: string | null;

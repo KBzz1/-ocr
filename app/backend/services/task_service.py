@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from secrets import token_urlsafe
+from threading import Thread
 from typing import Callable
 
 from ..enums import TaskStatus
@@ -14,10 +15,12 @@ class TaskService:
         store: JsonStore,
         orchestrator=None,
         schema_provider: Callable[[], dict] | None = None,
+        background_runner: Callable[[Callable[[], None]], None] | None = None,
     ):
         self._store = store
         self._orchestrator = orchestrator
         self._schema_provider = schema_provider
+        self._background_runner = background_runner or self._run_in_thread
 
     def create_uploading_task(self, base_url: str) -> dict:
         existing_count = len(self._store.list_json("tasks"))
@@ -72,6 +75,7 @@ class TaskService:
             "page_count": task["page_count"],
             "review_summary": task["review_summary"],
             "export_summary": task["export_summary"],
+            "processing_summary": task.get("processing_summary"),
             "error_code": task["error_code"],
             "error_message": task["error_message"],
         }
@@ -87,7 +91,7 @@ class TaskService:
 
     def process(self, task_id: str, schema: dict | None = None) -> dict:
         task = self._start_processing(task_id, "触发任务处理")
-        return self._run_orchestrator(task, schema=schema)
+        return self._dispatch_orchestrator(task, schema=schema)
 
     def retry(self, task_id: str, schema: dict | None = None) -> dict:
         task = self._read_task(task_id)
@@ -97,7 +101,7 @@ class TaskService:
                 details={"current": task["status"], "target": TaskStatus.PROCESSING.value},
             )
         task = self._start_processing(task_id, "失败任务重试")
-        return self._run_orchestrator(task, schema=schema)
+        return self._dispatch_orchestrator(task, schema=schema)
 
     def assert_upload_token(self, task: dict, token: str | None) -> None:
         if not token or token != task.get("upload_token"):
@@ -121,15 +125,27 @@ class TaskService:
         task = self._transition(task, TaskStatus.PROCESSING.value, "完成上传")
         task["processing_at"] = self._now()
         task["updated_at"] = task["processing_at"]
+        task["processing_summary"] = self._build_processing_summary(
+            "queued",
+            "running",
+            task["processing_at"],
+            page_count=len(task.get("images") or []),
+        )
         self._write_task(task)
         _safe_event("task_processing_started", task_id=task_id)
-        return self._run_orchestrator(task)
+        return self._dispatch_orchestrator(task)
 
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
         task = self._transition(task, TaskStatus.REVIEW.value, "算法处理完成")
         task["ready_at"] = self._now()
         task["updated_at"] = task["ready_at"]
+        task["processing_summary"] = self._build_processing_summary(
+            "done",
+            "success",
+            task.get("processing_at"),
+            page_count=len(task.get("images") or []),
+        )
         self._write_task(task)
         _safe_event("task_review_ready", task_id=task_id, schema_version=task.get("schema_version"))
         return task
@@ -149,6 +165,12 @@ class TaskService:
         task["failed_at"] = self._now()
         task["updated_at"] = task["failed_at"]
         task["details"] = {"stage": stage, **(details or {})}
+        task["processing_summary"] = self._build_processing_summary(
+            stage,
+            "failed",
+            task.get("processing_at"),
+            page_count=len(task.get("images") or []),
+        )
         self._write_task(task)
         _safe_event(
             "task_processing_failed",
@@ -204,12 +226,38 @@ class TaskService:
         task = self._read_task(task_id)
         task = self._transition(task, TaskStatus.PROCESSING.value, reason)
         task["processing_at"] = self._now()
+        task["updated_at"] = task["processing_at"]
         task["error_code"] = None
         task["error_message"] = None
         task["failed_at"] = None
+        task["processing_summary"] = self._build_processing_summary(
+            "queued",
+            "running",
+            task["processing_at"],
+            page_count=len(task.get("images") or []),
+        )
         task.pop("details", None)
         self._write_task(task)
         _safe_event("task_processing_started", task_id=task_id)
+        return task
+
+    def _dispatch_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
+        dispatched_task = dict(task)
+        self._background_runner(lambda: self._run_orchestrator(dispatched_task, schema=schema))
+        return task
+
+    def mark_processing_stage(self, task_id: str, stage: str, status: str, page_count: int | None = None) -> dict:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.PROCESSING.value:
+            return task
+        task["processing_summary"] = self._build_processing_summary(
+            stage,
+            status,
+            task.get("processing_at"),
+            page_count=page_count if page_count is not None else len(task.get("images") or []),
+        )
+        task["updated_at"] = self._now()
+        self._write_task(task)
         return task
 
     def _run_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
@@ -266,6 +314,7 @@ class TaskService:
         normalized.setdefault("document_summary", None)
         normalized.setdefault("review_summary", None)
         normalized.setdefault("export_summary", {"last_exported_at": None, "formats": [], "files": []})
+        normalized.setdefault("processing_summary", None)
         return normalized
 
     def _transition(self, task: dict, target: str, reason: str) -> dict:
@@ -299,3 +348,48 @@ class TaskService:
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _build_processing_summary(
+        self,
+        stage: str,
+        status: str,
+        started_at: str | None,
+        page_count: int = 0,
+    ) -> dict:
+        now = self._now()
+        elapsed_seconds = 0
+        if started_at:
+            try:
+                elapsed_seconds = max(0, int((datetime.fromisoformat(now) - datetime.fromisoformat(started_at)).total_seconds()))
+            except ValueError:
+                elapsed_seconds = 0
+        return {
+            "stage": stage,
+            "status": status,
+            "label": _PROCESSING_STAGE_LABELS.get(stage, "处理中"),
+            "progress_percent": _PROCESSING_STAGE_PROGRESS.get(stage, 10),
+            "page_count": page_count,
+            "started_at": started_at,
+            "updated_at": now,
+            "elapsed_seconds": elapsed_seconds,
+        }
+
+    def _run_in_thread(self, run: Callable[[], None]) -> None:
+        Thread(target=run, daemon=True).start()
+
+
+_PROCESSING_STAGE_LABELS = {
+    "queued": "等待处理",
+    "image_processing": "准备图片",
+    "document_parsing": "OCR 文档解析",
+    "field_extraction": "慢阻肺字段抽取",
+    "done": "处理完成",
+}
+
+_PROCESSING_STAGE_PROGRESS = {
+    "queued": 5,
+    "image_processing": 20,
+    "document_parsing": 55,
+    "field_extraction": 85,
+    "done": 100,
+}

@@ -26,6 +26,8 @@ export type TaskSummary = {
   status: TaskStatus;
   reviewedFields: number;
   totalFields: number;
+  processingLabel?: string | null;
+  processingProgress?: number | null;
   errorReason?: string | null;
 };
 

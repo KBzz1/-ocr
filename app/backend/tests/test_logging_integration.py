@@ -1,5 +1,6 @@
 import io
 import json
+import time
 
 import pytest
 
@@ -75,6 +76,16 @@ def events(app):
         return [json.loads(line) for line in f if line.strip()]
 
 
+def wait_for_event(app, event_name: str):
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        found = [item for item in events(app) if item["event"] == event_name]
+        if found:
+            return found
+        time.sleep(0.01)
+    return []
+
+
 def upload_jpeg(client, task):
     return client.post(
         f"/api/mobile-upload/{task['task_id']}/images?token={task['upload_token']}",
@@ -100,6 +111,7 @@ def test_task_upload_finish_events_logged(client, app):
     finish_resp = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}")
     assert finish_resp.status_code == 200
 
+    wait_for_event(app, "task_processing_failed")
     names = [item["event"] for item in events(app)]
     assert "task_processing_started" in names
     assert "task_processing_failed" in names
@@ -110,7 +122,7 @@ def test_task_processing_failure_event_has_context_and_no_sensitive_text(client,
     upload_jpeg(client, task)
     task_id = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}").get_json()["data"]["task_id"]
 
-    failures = [item for item in events(app) if item["event"] == "task_processing_failed"]
+    failures = wait_for_event(app, "task_processing_failed")
     assert failures
     failure = failures[-1]
     assert failure["task_id"] == task_id

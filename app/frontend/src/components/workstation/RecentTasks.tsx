@@ -53,8 +53,12 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const progress =
-                  task.totalFields > 0 ? Math.round((task.reviewedFields / task.totalFields) * 100) : 0;
+                const isProcessing = task.status === 'processing';
+                const progress = isProcessing
+                  ? Math.max(0, Math.min(100, task.processingProgress ?? 10))
+                  : task.totalFields > 0
+                    ? Math.round((task.reviewedFields / task.totalFields) * 100)
+                    : 0;
 
                 return (
                   <tr key={task.id}>
@@ -70,7 +74,7 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
                           <span style={{ width: `${progress}%` }} />
                         </span>
                         <span>
-                          {task.reviewedFields}/{task.totalFields}
+                          {isProcessing ? (task.processingLabel ?? '处理中') : `${task.reviewedFields}/${task.totalFields}`}
                         </span>
                       </div>
                     </td>
