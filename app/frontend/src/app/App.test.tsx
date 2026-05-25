@@ -107,7 +107,8 @@ describe('Workstation data integration', () => {
 
     const table = await screen.findByRole('table');
     const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
-    expect(processingRow.textContent).toContain('处理中');
+    expect(processingRow.textContent).toContain('OCR 文档解析');
+    expect(processingRow.textContent).not.toContain('处理中');
 
     await act(async () => {
       vi.advanceTimersByTime(5000);

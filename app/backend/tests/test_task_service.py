@@ -15,6 +15,16 @@ class RecordingOrchestrator:
         return task_service.get_task(task["task_id"])
 
 
+class CancellationAwareOrchestrator:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, task, task_service, schema=None):
+        self.calls.append(task["task_id"])
+        task_service.mark_ready(task["task_id"])
+        return task_service.get_task(task["task_id"])
+
+
 def make_service(tmp_path, orchestrator=None, schema_provider=None):
     return TaskService(
         JsonStore(str(tmp_path)),
@@ -193,6 +203,53 @@ def test_finish_upload_returns_processing_after_dispatching_background_run(tmp_p
     assert orchestrator.calls == [("task_001", {"version": "1.0.0"})]
     assert summary["processing_summary"]["stage"] == "document_parsing"
     assert summary["processing_summary"]["progress_percent"] == 55
+
+
+def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
+    pending = []
+
+    def queue_runner(run):
+        pending.append(run)
+
+    write_task(
+        tmp_path,
+        task_id="task_001",
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}],
+    )
+    orchestrator = CancellationAwareOrchestrator()
+    service = TaskService(
+        JsonStore(str(tmp_path)),
+        orchestrator=orchestrator,
+        background_runner=queue_runner,
+    )
+
+    started = service.finish_upload("task_001")
+    cancelled = service.cancel_processing("task_001")
+    pending[0]()
+    persisted = service.get_task("task_001")
+
+    assert started["status"] == "processing"
+    assert cancelled["status"] == "failed"
+    assert cancelled["error_code"] == "TASK_PROCESSING_CANCELLED"
+    assert cancelled["error_message"] == "用户取消处理"
+    assert persisted["status"] == "failed"
+    assert orchestrator.calls == []
+    assert [entry["to_status"] for entry in persisted["status_history"]] == [
+        "uploading",
+        "processing",
+        "failed",
+    ]
+
+
+def test_cancel_processing_rejects_non_processing_task(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
+        service.cancel_processing("task_001")
+
+    assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+    assert exc_info.value.details == {"current": "review", "target": "failed"}
 
 
 def test_background_runner_can_serialize_processing_callbacks(tmp_path):

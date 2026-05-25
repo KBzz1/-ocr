@@ -35,3 +35,8 @@ def process_task(task_id):
 @task_bp.route("/api/tasks/<task_id>/retry", methods=["POST"])
 def retry_task(task_id):
     return success(data=_get_task_service().retry(task_id))
+
+
+@task_bp.route("/api/tasks/<task_id>/cancel-processing", methods=["POST"])
+def cancel_processing(task_id):
+    return success(data=_get_task_service().cancel_processing(task_id))

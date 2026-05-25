@@ -47,14 +47,14 @@ OCR 原文：
 """.strip()
 
 
-def build_section_group_repair_prompt(
+def build_source_hint_regeneration_prompt(
     text: str,
     field_keys: list[str],
     allowed_source_hints: list[str],
     fields: list[dict],
 ) -> str:
     return f"""
-你需要修正上一轮字段抽取结果的来源指向。
+你需要重新生成字段来源指向。下面的上一轮字段 JSON 是后端显式传入的输入，不依赖对话历史。
 只允许输出 JSON 对象，顶层键为 `fields`，`fields` 是数组。
 每个字段只输出：field_key, original_value, source_hint。
 

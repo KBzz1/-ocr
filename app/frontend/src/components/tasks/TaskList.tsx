@@ -1,12 +1,11 @@
 import type { TaskStatus, TaskSummary } from '../../api/tasks';
-import { retryTaskProcessing } from '../../api/tasks';
+import { cancelTaskProcessing, retryTaskProcessing } from '../../api/tasks';
 import { buildReviewPath, buildTaskExportPath } from '../../app/routes';
 import { taskStatusMeta } from '../../styles/status';
 
 const statusFilters: Array<{ label: string; value: TaskStatus | 'all' }> = [
   { label: '全部', value: 'all' },
   { label: taskStatusMeta.uploading.label, value: 'uploading' },
-  { label: taskStatusMeta.processing.label, value: 'processing' },
   { label: taskStatusMeta.review.label, value: 'review' },
   { label: taskStatusMeta.done.label, value: 'done' },
   { label: taskStatusMeta.failed.label, value: 'failed' }
@@ -23,7 +22,7 @@ type TaskListProps = {
   activeFilter: TaskStatus | 'all';
   retryingTaskId: string | null;
   onFilterChange: (filter: TaskStatus | 'all') => void;
-  onTaskStatusChange: (taskId: string, status: TaskStatus) => void;
+  onTaskStatusChange: (taskId: string, patch: Partial<TaskSummary> & { status: TaskStatus }) => void;
   onViewUploadQr?: (task: TaskSummary) => void;
 };
 
@@ -61,7 +60,7 @@ function getProcessingProgress(task: TaskSummary) {
   }
 
   return {
-    label: summary.label || '处理中',
+    label: summary.label || '等待处理',
     progress: Math.max(0, Math.min(100, summary.progress_percent))
   };
 }
@@ -79,7 +78,12 @@ export function TaskList({
 
   async function handleRetry(taskId: string) {
     const result = await retryTaskProcessing(taskId);
-    onTaskStatusChange(taskId, result.status);
+    onTaskStatusChange(taskId, result);
+  }
+
+  async function handleCancelProcessing(taskId: string) {
+    const result = await cancelTaskProcessing(taskId);
+    onTaskStatusChange(taskId, result);
   }
 
   return (
@@ -135,9 +139,11 @@ export function TaskList({
                     <td>{task.page_count} 页</td>
                     <td>
                       <div className="task-status-cell">
-                        <span className={`task-status task-status--${status.tone}`}>
-                          {status.label}
-                        </span>
+                        {task.status === 'processing' ? null : (
+                          <span className={`task-status task-status--${status.tone}`}>
+                            {status.label}
+                          </span>
+                        )}
                         {task.status === 'processing' ? (
                           <div className="task-processing-progress">
                             <span className="task-processing-progress__label">{processingProgress?.label}</span>
@@ -179,7 +185,14 @@ export function TaskList({
                           </button>
                         ) : null}
                         {task.status === 'processing' ? (
-                          <span className="task-list-muted">处理中</span>
+                          <button
+                            className="task-list-action task-list-action--warning"
+                            disabled={isRetrying}
+                            type="button"
+                            onClick={() => void handleCancelProcessing(task.task_id)}
+                          >
+                            取消处理
+                          </button>
                         ) : null}
                         {task.status === 'review' ? (
                           <a className="task-list-action" href={buildReviewPath(task.task_id)}>
@@ -203,7 +216,7 @@ export function TaskList({
                             type="button"
                             onClick={() => void handleRetry(task.task_id)}
                           >
-                            {isRetrying ? '重新处理中' : '重新处理'}
+                            {isRetrying ? '提交中' : '重新处理'}
                           </button>
                         ) : null}
                       </div>

@@ -171,3 +171,34 @@ def test_process_task_without_algorithm_returns_failed_payload(client, app):
         "processing",
         "failed",
     ]
+
+
+def test_cancel_processing_route_marks_task_failed(client, app):
+    write_task(
+        app,
+        status="processing",
+        images=[{"page_id": "page_001", "page_no": 1}],
+        processing_summary={
+            "stage": "document_parsing",
+            "status": "running",
+            "label": "OCR 文档解析",
+            "progress_percent": 55,
+        },
+    )
+
+    response = client.post("/api/tasks/task_001/cancel-processing")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == "TASK_PROCESSING_CANCELLED"
+    assert data["error_message"] == "用户取消处理"
+
+
+def test_cancel_processing_route_rejects_non_processing_task(client, app):
+    write_task(app, status="review")
+
+    response = client.post("/api/tasks/task_001/cancel-processing")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"

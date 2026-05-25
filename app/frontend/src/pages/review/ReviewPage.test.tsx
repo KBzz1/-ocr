@@ -8,6 +8,33 @@ import { ReviewPage } from './ReviewPage';
 
 function mockReviewRoutes() {
   server.use(
+    http.get('*/api/tasks/task_001', () =>
+      HttpResponse.json({
+        success: true,
+        data: {
+          task_id: 'task_001',
+          status: 'review',
+          created_at: '2026-05-19T10:00:00+08:00',
+          updated_at: '2026-05-19T10:03:00+08:00',
+          page_count: 2,
+          processing_summary: {
+            stage: 'done',
+            status: 'completed',
+            label: '处理完成',
+            progress_percent: 100
+          },
+          review_summary: {
+            confirmed_count: 0,
+            total_count: 2
+          },
+          status_history: [
+            { status: 'uploading', changed_at: '2026-05-19T10:00:00+08:00', message: '创建上传任务' },
+            { status: 'processing', changed_at: '2026-05-19T10:01:00+08:00', message: '开始处理' },
+            { status: 'review', changed_at: '2026-05-19T10:03:00+08:00', message: '等待人工审核' }
+          ]
+        }
+      })
+    ),
     http.get('*/api/tasks/task_001/review', () =>
       HttpResponse.json({
         success: true,
@@ -126,6 +153,9 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText(/待审核/);
+    expect(screen.getByText('任务详情')).toBeTruthy();
+    expect(screen.getByText('2026/05/19 10:00')).toBeTruthy();
+    expect(screen.getByText('处理完成')).toBeTruthy();
     expect(screen.getAllByText('字段').length).toBeGreaterThan(0);
     expect(screen.getByText('待确认')).toBeTruthy();
     expect(screen.getByText('已修改')).toBeTruthy();
@@ -430,5 +460,84 @@ describe('ReviewPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
 
     expect(await screen.findByText('仍有字段未审核')).toBeTruthy();
+  });
+
+  it('opens a failed task as task detail with failure reason and retry action instead of editable review', async () => {
+    server.use(
+      http.get('*/api/tasks/task_failed', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_failed',
+            status: 'failed',
+            created_at: '2026-05-19T10:00:00+08:00',
+            updated_at: '2026-05-19T10:02:00+08:00',
+            page_count: 2,
+            error_code: 'ALGORITHM_MODULE_NOT_CONFIGURED',
+            error_message: 'OCR/结构化模块未配置，请检查本地配置',
+            status_history: [
+              { to_status: 'uploading', changed_at: '2026-05-19T10:00:00+08:00', reason: '创建上传任务' },
+              { to_status: 'failed', changed_at: '2026-05-19T10:02:00+08:00', reason: '算法模块未配置' }
+            ]
+          }
+        })
+      ),
+      http.post('*/api/tasks/task_failed/process', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_failed',
+            status: 'processing',
+            created_at: '2026-05-19T10:00:00+08:00',
+            page_count: 2,
+            processing_summary: {
+              stage: 'queued',
+              status: 'running',
+              label: '等待处理',
+              progress_percent: 5
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_failed" />);
+
+    expect(await screen.findByText('任务详情')).toBeTruthy();
+    expect(screen.getByText('OCR/结构化模块未配置，请检查本地配置')).toBeTruthy();
+    expect(screen.queryByLabelText('结构化字段')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: '重新处理' }));
+    expect(await screen.findByText('已提交重新处理')).toBeTruthy();
+    expect(screen.getByText('处理中')).toBeTruthy();
+  });
+
+  it('opens a processing task as read-only task detail with progress', async () => {
+    server.use(
+      http.get('*/api/tasks/task_processing', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_processing',
+            status: 'processing',
+            created_at: '2026-05-19T10:00:00+08:00',
+            page_count: 3,
+            processing_summary: {
+              stage: 'document_parsing',
+              status: 'running',
+              label: 'OCR 文档解析',
+              progress_percent: 55
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_processing" />);
+
+    expect(await screen.findByText('OCR 文档解析')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: '任务处理进度' }).getAttribute('aria-valuenow')).toBe('55');
+    expect(screen.queryByLabelText('结构化字段')).toBeNull();
+    expect(screen.queryByRole('button', { name: '确认完成' })).toBeNull();
   });
 });

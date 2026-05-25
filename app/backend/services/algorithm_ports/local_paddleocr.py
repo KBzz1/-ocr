@@ -105,7 +105,15 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
                 cwd=str(work_dir),
                 env=env,
                 timeout=self._timeout_seconds,
+                is_cancelled=input.get("is_cancelled"),
             )
+        except _ProcessingCancelled as exc:
+            self._emit_event(
+                "ocr_runner_cancelled",
+                task_id=task_id,
+                work_dir=str(work_dir),
+            )
+            raise RuntimeError("本地 OCR runner 已取消") from exc
         except subprocess.TimeoutExpired as exc:
             self._emit_event(
                 "ocr_runner_timeout",
@@ -212,11 +220,16 @@ def _summarize_process_failure(completed: subprocess.CompletedProcess) -> str:
     return f"exit_code={completed.returncode}; {tail[:1200]}"
 
 
+class _ProcessingCancelled(Exception):
+    """Internal signal for user-initiated processing cancellation."""
+
+
 def _run_with_process_group_timeout(
     command: list[str],
     cwd: str,
     env: dict,
     timeout: int,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> subprocess.CompletedProcess:
     process = subprocess.Popen(
         command,
@@ -227,14 +240,21 @@ def _run_with_process_group_timeout(
         text=True,
         start_new_session=True,
     )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        _kill_process_group(process)
-        stdout, stderr = process.communicate()
-        exc.stdout = _join_timeout_output(exc.stdout, stdout)
-        exc.stderr = _join_timeout_output(exc.stderr, stderr)
-        raise exc
+    deadline = time.monotonic() + timeout
+    while process.poll() is None:
+        if is_cancelled is not None and is_cancelled():
+            _kill_process_group(process)
+            process.communicate()
+            raise _ProcessingCancelled("OCR runner cancelled")
+        if time.monotonic() >= deadline:
+            _kill_process_group(process)
+            stdout, stderr = process.communicate()
+            exc = subprocess.TimeoutExpired(command, timeout)
+            exc.stdout = stdout
+            exc.stderr = stderr
+            raise exc
+        time.sleep(0.1)
+    stdout, stderr = process.communicate()
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 

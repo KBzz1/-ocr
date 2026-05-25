@@ -150,7 +150,7 @@ test('MVP failed flow: failed task shows reason and no manual fallback', async (
   await expect(page.getByText('查看日志')).toHaveCount(0);
 
   await table.getByRole('button', { name: '重新处理' }).click();
-  await expect(table.getByText('处理中')).toBeVisible();
+  await expect(table.getByRole('button', { name: '取消处理' })).toBeVisible();
   await page.evaluate(() => window.__assertE2eNetworkGate());
 });
 

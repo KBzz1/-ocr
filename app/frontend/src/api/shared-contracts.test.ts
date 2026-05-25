@@ -5,7 +5,7 @@ import { exportTaskExcel, exportTaskJson } from './export';
 import { normalizeApiError } from './errors';
 import { getReviewResult, saveReviewField } from './review';
 import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
-import { createTask, getTaskDetail, getTasks, processTask, type TaskStatus } from './tasks';
+import { cancelTaskProcessing, createTask, getTaskDetail, getTasks, processTask, type TaskStatus } from './tasks';
 import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../styles/status';
 import { server } from '../../tests/setupTests';
 
@@ -114,6 +114,27 @@ describe('shared frontend contracts', () => {
 
     await expect(getTaskDetail('task_failed')).resolves.toMatchObject({ status: 'failed' });
     await expect(processTask('task_failed')).resolves.toMatchObject({ status: 'processing' });
+  });
+
+  it('cancels processing through the cancel-processing endpoint', async () => {
+    server.use(
+      http.post('*/api/tasks/task_processing/cancel-processing', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_processing',
+            status: 'failed',
+            error_code: 'TASK_PROCESSING_CANCELLED',
+            error_message: '用户取消处理'
+          }
+        })
+      )
+    );
+
+    await expect(cancelTaskProcessing('task_processing')).resolves.toMatchObject({
+      status: 'failed',
+      error_code: 'TASK_PROCESSING_CANCELLED'
+    });
   });
 
   it('hides empty uploading placeholder tasks from task lists', async () => {

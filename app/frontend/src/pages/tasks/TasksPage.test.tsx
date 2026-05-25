@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  mockCancelTaskProcessing,
   mockRetryTaskProcessing,
   mockTasks,
   taskFixtures
@@ -30,7 +31,7 @@ describe('MVP task list and retry', () => {
 
     expect(await screen.findByRole('button', { name: '全部' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '上传中' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '处理中' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '处理中' })).toBeNull();
     expect(screen.getByRole('button', { name: '待审核' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '已完成' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '失败' })).toBeTruthy();
@@ -121,9 +122,7 @@ describe('MVP task list and retry', () => {
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    expect((within(table).getByText('task-processing').closest('tr') as HTMLElement).textContent).toContain(
-      '处理中'
-    );
+    expect(within(within(table).getByText('task-processing').closest('tr') as HTMLElement).getByRole('button', { name: '取消处理' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '刷新' }));
 
@@ -142,9 +141,39 @@ describe('MVP task list and retry', () => {
     const statusCell = processingRow.children[3] as HTMLElement;
     const actionsCell = processingRow.children[6] as HTMLElement;
 
+    expect(statusCell.textContent).not.toContain('处理中');
     expect(statusCell.textContent).toContain('OCR 文档解析');
     expect(within(statusCell).getByRole('progressbar', { name: '处理进度' }).getAttribute('aria-valuenow')).toBe('55');
     expect(within(actionsCell).queryByRole('progressbar', { name: '处理进度' })).toBeNull();
+    expect(within(actionsCell).getByRole('button', { name: '取消处理' })).toBeTruthy();
+  });
+
+  it('cancels processing tasks and updates the row to failed', async () => {
+    const user = userEvent.setup();
+    const cancelSpy = vi.fn();
+
+    server.use(
+      mockTasks(),
+      mockCancelTaskProcessing('task-processing', () => {
+        cancelSpy();
+        return {
+          task_id: 'task-processing',
+          status: 'failed',
+          error_code: 'TASK_PROCESSING_CANCELLED',
+          error_message: '用户取消处理'
+        };
+      })
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+
+    await user.click(within(processingRow).getByRole('button', { name: '取消处理' }));
+
+    await waitFor(() => expect(cancelSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(processingRow.textContent).toContain('失败'));
+    expect(processingRow.textContent).toContain('用户取消处理');
   });
 
   it('opens the upload QR dialog for an uploading task', async () => {
@@ -203,7 +232,7 @@ describe('MVP task list and retry', () => {
 
     const table = await screen.findByRole('table', { name: '任务列表' });
     const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
-    expect(processingRow.textContent).toContain('处理中');
+    expect(within(processingRow).getByRole('button', { name: '取消处理' })).toBeTruthy();
 
     await act(async () => {
       vi.advanceTimersByTime(5000);
@@ -236,6 +265,6 @@ describe('MVP task list and retry', () => {
     await user.click(within(failedRow).getByRole('button', { name: '重新处理' }));
 
     await waitFor(() => expect(retrySpy).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(failedRow.textContent).toContain('处理中'));
+    await waitFor(() => expect(within(failedRow).getByRole('button', { name: '取消处理' })).toBeTruthy());
   });
 });

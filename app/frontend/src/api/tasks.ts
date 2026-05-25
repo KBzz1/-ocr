@@ -49,15 +49,20 @@ export type TaskDetail = TaskSummary & {
     status?: string;
   }>;
   status_history?: Array<{
-    status: TaskStatus;
+    status?: TaskStatus;
+    from_status?: TaskStatus | null;
+    to_status?: TaskStatus;
     changed_at: string;
     message?: string;
+    reason?: string;
   }>;
 };
 
 export interface TaskRetryResult {
   task_id: string;
   status: TaskStatus;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 interface TaskListResponse {
@@ -111,4 +116,10 @@ export function completeTask(taskId: string) {
 
 export function retryTaskProcessing(taskId: string) {
   return processTask(taskId) as Promise<TaskRetryResult>;
+}
+
+export function cancelTaskProcessing(taskId: string) {
+  return apiRequest<TaskRetryResult>(`/api/tasks/${encodeURIComponent(taskId)}/cancel-processing`, {
+    method: 'POST'
+  });
 }

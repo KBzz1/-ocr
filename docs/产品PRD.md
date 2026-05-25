@@ -117,7 +117,7 @@ uploading -> processing -> review -> done
 允许操作：
 
 - `uploading`：继续上传图片、完成上传。
-- `processing`：查看处理进度，不允许修改输入图片。
+- `processing`：查看处理进度、取消处理；不允许修改输入图片。
 - `review`：审核字段、保存修改、重新处理、标记完成、导出。
 - `done`：查看结果、导出、必要时重新处理。
 - `failed`：查看失败原因、重新处理；如果图片输入错误，建议新建任务。
@@ -194,7 +194,6 @@ uploading -> processing -> review -> done
 
 - 全部。
 - 上传中。
-- 处理中。
 - 待审核。
 - 已完成。
 - 失败。
@@ -202,7 +201,7 @@ uploading -> processing -> review -> done
 操作：
 
 - `uploading`：查看二维码。
-- `processing`：查看进度。
+- `processing`：取消处理；处理状态列只展示进度条，不展示"处理中"状态标签。
 - `review`：进入审核、重新处理、导出。
 - `done`：查看结果、导出、重新处理。
 - `failed`：查看原因、重新处理。

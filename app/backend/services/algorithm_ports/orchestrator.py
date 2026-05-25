@@ -30,6 +30,8 @@ class ProcessingOrchestrator:
         task_id = task["task_id"]
 
         # -- image processing --
+        if self._is_cancelled(task_service, task_id):
+            return task_service.get_task(task_id)
         if self._image_port is None:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
@@ -50,6 +52,8 @@ class ProcessingOrchestrator:
         processed_pages = []
         self._stage_started(task_service, task_id, "image_processing", len(image_inputs))
         for img_input in image_inputs:
+            if self._is_cancelled(task_service, task_id):
+                return task_service.get_task(task_id)
             try:
                 result = self._image_port.process(img_input)
             except Exception as exc:
@@ -83,6 +87,8 @@ class ProcessingOrchestrator:
         )
 
         # -- document parsing --
+        if self._is_cancelled(task_service, task_id):
+            return task_service.get_task(task_id)
         if self._doc_port is None:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
@@ -97,6 +103,7 @@ class ProcessingOrchestrator:
             "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
                         "source_image_path": p["original_path"],
                         "processed_path": p["processed_path"]} for p in processed_pages],
+            "is_cancelled": lambda: self._is_cancelled(task_service, task_id),
         }
         try:
             self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
@@ -144,6 +151,8 @@ class ProcessingOrchestrator:
             )
 
         # -- field extraction --
+        if self._is_cancelled(task_service, task_id):
+            return task_service.get_task(task_id)
         if self._field_port is None:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
@@ -217,6 +226,11 @@ class ProcessingOrchestrator:
         self._result_store.write_field_candidates(task_id, candidates)
 
         return task_service.mark_ready(task_id)
+
+    def _is_cancelled(self, task_service, task_id: str) -> bool:
+        if not hasattr(task_service, "is_processing_cancelled"):
+            return False
+        return task_service.is_processing_cancelled(task_id)
 
     def _build_image_inputs(self, task: dict) -> list | None:
         images = task.get("images") or []

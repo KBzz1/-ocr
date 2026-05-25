@@ -135,8 +135,33 @@ class TaskService:
         _safe_event("task_processing_started", task_id=task_id)
         return self._dispatch_orchestrator(task)
 
+    def cancel_processing(self, task_id: str) -> dict:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.PROCESSING.value:
+            raise AppError(
+                ErrorCode.INVALID_TASK_TRANSITION,
+                details={"current": task["status"], "target": TaskStatus.FAILED.value},
+            )
+        task = self._transition(task, TaskStatus.FAILED.value, "用户取消处理")
+        task["error_code"] = ErrorCode.TASK_PROCESSING_CANCELLED.code
+        task["error_message"] = "用户取消处理"
+        task["failed_at"] = self._now()
+        task["updated_at"] = task["failed_at"]
+        task["details"] = {"stage": "processing", "reason": "user_cancelled"}
+        task["processing_summary"] = self._build_processing_summary(
+            task.get("processing_summary", {}).get("stage", "processing") if isinstance(task.get("processing_summary"), dict) else "processing",
+            "cancelled",
+            task.get("processing_at"),
+            page_count=len(task.get("images") or []),
+        )
+        self._write_task(task)
+        _safe_event("task_processing_cancelled", task_id=task_id)
+        return self._normalize_task(task)
+
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
+        if task["status"] != TaskStatus.PROCESSING.value and task.get("error_code") == ErrorCode.TASK_PROCESSING_CANCELLED.code:
+            return task
         task = self._transition(task, TaskStatus.REVIEW.value, "算法处理完成")
         task["ready_at"] = self._now()
         task["updated_at"] = task["ready_at"]
@@ -159,6 +184,8 @@ class TaskService:
         details: dict | None = None,
     ) -> dict:
         task = self._read_task(task_id)
+        if task["status"] != TaskStatus.PROCESSING.value and task.get("error_code") == ErrorCode.TASK_PROCESSING_CANCELLED.code:
+            return task
         task = self._transition(task, TaskStatus.FAILED.value, error_message)
         task["error_code"] = error_code
         task["error_message"] = error_message
@@ -261,6 +288,8 @@ class TaskService:
         return task
 
     def _run_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
+        if self.is_processing_cancelled(task["task_id"]):
+            return self.get_task(task["task_id"])
         if self._orchestrator is None:
             return self.mark_failed(
                 task["task_id"],
@@ -279,6 +308,10 @@ class TaskService:
             self._write_task(task)
 
         return self._orchestrator.run(task, self, schema=schema_for_run)
+
+    def is_processing_cancelled(self, task_id: str) -> bool:
+        task = self._read_task(task_id)
+        return task["status"] != TaskStatus.PROCESSING.value
 
     def _read_task(self, task_id: str) -> dict:
         task = self._store.read(f"tasks/{task_id}.json")

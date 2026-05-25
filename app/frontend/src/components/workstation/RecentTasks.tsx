@@ -66,7 +66,7 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
                     <td>{task.createdAtText}</td>
                     <td>{task.pageCount} 页</td>
                     <td>
-                      <StatusBadge status={task.status} />
+                      {isProcessing ? null : <StatusBadge status={task.status} />}
                     </td>
                     <td>
                       <div className="progress-cell">
@@ -74,7 +74,7 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
                           <span style={{ width: `${progress}%` }} />
                         </span>
                         <span>
-                          {isProcessing ? (task.processingLabel ?? '处理中') : `${task.reviewedFields}/${task.totalFields}`}
+                          {isProcessing ? (task.processingLabel ?? '等待处理') : `${task.reviewedFields}/${task.totalFields}`}
                         </span>
                       </div>
                     </td>

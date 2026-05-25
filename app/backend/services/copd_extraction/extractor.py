@@ -2,7 +2,7 @@ from .field_result import _default_result, all_fields_empty, complete_field_resu
 from .prompts import (
     build_extraction_prompt,
     build_section_group_extraction_prompt,
-    build_section_group_repair_prompt,
+    build_source_hint_regeneration_prompt,
     build_verification_prompt,
 )
 from .quality_checks import apply_quality_checks
@@ -121,7 +121,7 @@ class COPDFieldExtractor:
             if not isinstance(fields, list):
                 raise ValueError("LLM extraction response must contain fields list")
             allowed_source_hints = [name for name in section_names if sections.get(name)]
-            fields = self._repair_section_group_fields_if_needed(
+            fields = self._regenerate_section_group_fields_if_needed(
                 text,
                 field_keys,
                 allowed_source_hints,
@@ -130,23 +130,27 @@ class COPDFieldExtractor:
             raw_results.extend(self._normalize_section_group_fields(fields, group_name))
         return raw_results
 
-    def _repair_section_group_fields_if_needed(
+    def _regenerate_section_group_fields_if_needed(
         self,
         text: str,
         field_keys: list[str],
         allowed_source_hints: list[str],
         fields: list[dict],
     ) -> list[dict]:
-        allowed = set(allowed_source_hints)
-        if not _has_invalid_source_hint(fields, allowed):
-            return fields
-        payload = self._llm_client.complete_json(
-            build_section_group_repair_prompt(text, field_keys, allowed_source_hints, fields)
+        context = FieldRegenerationContext(
+            text=text,
+            field_keys=field_keys,
+            allowed_source_hints=allowed_source_hints,
         )
-        repaired = payload.get("fields") if isinstance(payload, dict) else None
-        if not isinstance(repaired, list):
-            raise ValueError("LLM extraction repair response must contain fields list")
-        return repaired
+        for strategy in FIELD_REGENERATION_STRATEGIES:
+            if not strategy.should_regenerate(fields, context):
+                continue
+            payload = self._llm_client.complete_json(strategy.build_prompt(fields, context))
+            regenerated = payload.get("fields") if isinstance(payload, dict) else None
+            if not isinstance(regenerated, list):
+                raise ValueError(f"LLM {strategy.name} response must contain fields list")
+            fields = regenerated
+        return fields
 
     def _normalize_section_group_fields(self, fields: list[dict], group_name: str) -> list[dict]:
         normalized = []
@@ -209,6 +213,32 @@ class COPDFieldExtractor:
 
 
 SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
+
+
+class FieldRegenerationContext:
+    def __init__(self, text: str, field_keys: list[str], allowed_source_hints: list[str]):
+        self.text = text
+        self.field_keys = field_keys
+        self.allowed_source_hints = allowed_source_hints
+
+
+class SourceHintRegenerationStrategy:
+    name = "source_hint_regeneration"
+
+    def should_regenerate(self, fields: list[dict], context: FieldRegenerationContext) -> bool:
+        return _has_invalid_source_hint(fields, set(context.allowed_source_hints))
+
+    def build_prompt(self, fields: list[dict], context: FieldRegenerationContext) -> str:
+        return build_source_hint_regeneration_prompt(
+            context.text,
+            context.field_keys,
+            context.allowed_source_hints,
+            fields,
+        )
+
+
+FIELD_REGENERATION_STRATEGIES = [SourceHintRegenerationStrategy()]
+
 
 def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[dict]:
     for item in results:

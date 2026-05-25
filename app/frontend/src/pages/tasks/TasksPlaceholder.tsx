@@ -10,7 +10,7 @@ import type { TaskUploadSummary } from '../workstation/workstation.types';
 import '../../components/tasks/tasks.css';
 
 const TASK_POLL_INTERVAL_MS = 5000;
-const taskStatuses: TaskStatus[] = ['uploading', 'processing', 'review', 'done', 'failed'];
+const visibleTaskFilters: Array<TaskStatus | 'all'> = ['all', 'uploading', 'review', 'done', 'failed'];
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
@@ -18,7 +18,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function getInitialStatusFilter(): TaskStatus | 'all' {
   const status = new URLSearchParams(window.location.search).get('status');
-  return taskStatuses.includes(status as TaskStatus) ? (status as TaskStatus) : 'all';
+  return visibleTaskFilters.includes(status as TaskStatus) ? (status as TaskStatus) : 'all';
 }
 
 function areTasksEqual(current: TaskSummary[], next: TaskSummary[]) {
@@ -83,12 +83,17 @@ export function TasksPage() {
     await loadTasks('refresh');
   }
 
-  function handleTaskStatusChange(taskId: string, status: TaskStatus) {
+  function handleTaskStatusChange(taskId: string, patch: Partial<TaskSummary> & { status: TaskStatus }) {
     setRetryingTaskId(taskId);
     setTasks((currentTasks) =>
       currentTasks.map((task) =>
         task.task_id === taskId
-          ? { ...task, status, error_code: null, error_message: null }
+          ? {
+              ...task,
+              ...patch,
+              error_code: patch.status === 'processing' ? null : patch.error_code ?? task.error_code,
+              error_message: patch.status === 'processing' ? null : patch.error_message ?? task.error_message
+            }
           : task
       )
     );

@@ -35,3 +35,19 @@ def test_section_group_prompt_asks_for_source_hint_not_evidence():
 
     assert "source_hint" in prompt
     assert "不要输出 evidence" in prompt
+
+
+def test_source_hint_regeneration_prompt_is_explicit_not_history_based():
+    from app.backend.services.copd_extraction.prompts import build_source_hint_regeneration_prompt
+
+    prompt = build_source_hint_regeneration_prompt(
+        "主诉：咳嗽15年。",
+        ["copd_history_years"],
+        ["主诉"],
+        [{"field_key": "copd_history_years", "original_value": "15年", "source_section": "history_profile"}],
+    )
+
+    assert "重新生成字段来源指向" in prompt
+    assert "显式传入" in prompt
+    assert "不依赖对话历史" in prompt
+    assert "history_profile" in prompt

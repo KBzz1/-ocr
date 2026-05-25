@@ -332,7 +332,7 @@ def test_copd_extractor_accepts_explicit_no_evidence_source_hint():
     assert result["quality_flags"][0]["flag"] == "source_section_not_found"
 
 
-def test_copd_extractor_repairs_invalid_source_hint_with_same_loaded_client():
+def test_copd_extractor_regenerates_invalid_source_hint_with_same_loaded_client():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     class LlmClient:
@@ -341,7 +341,7 @@ def test_copd_extractor_repairs_invalid_source_hint_with_same_loaded_client():
 
         def complete_json(self, prompt: str):
             self.calls.append(prompt)
-            if "修正上一轮字段抽取结果" in prompt:
+            if "重新生成字段来源指向" in prompt:
                 return {
                     "fields": [
                         {
@@ -380,6 +380,14 @@ def test_copd_extractor_repairs_invalid_source_hint_with_same_loaded_client():
     assert result["source_group_id"] == "source_group_主诉"
     assert result["source_text"] == "反复咳嗽、咳痰15年。"
     assert result["evidence"] == "反复咳嗽、咳痰15年。"
+
+
+def test_field_regeneration_strategies_are_extensible():
+    from app.backend.services.copd_extraction.extractor import FIELD_REGENERATION_STRATEGIES
+
+    strategy_names = [strategy.name for strategy in FIELD_REGENERATION_STRATEGIES]
+
+    assert strategy_names == ["source_hint_regeneration"]
 
 
 def test_copd_extractor_verifies_fields_grouped_by_source_hint():

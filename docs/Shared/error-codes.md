@@ -10,6 +10,7 @@
 | `TASK_NOT_FOUND` | 404 | 任务不存在 |
 | `TASK_UPLOAD_CLOSED` | 409 | 任务不处于 `uploading`，禁止继续上传图片 |
 | `TASK_EMPTY` | 400 | 任务没有任何已上传图片，不能完成上传或进入处理 |
+| `TASK_PROCESSING_CANCELLED` | 409 | 用户取消本地处理（任务进入 `failed`） |
 | `INVALID_TASK_TRANSITION` | 400 | 非法任务状态流转 |
 | `ALGORITHM_MODULE_NOT_CONFIGURED` | — | OCR/结构化模块未配置（任务进入 `failed`） |
 | `ALGORITHM_MODULE_FAILED` | — | 本地算法模块异常（任务进入 `failed`） |

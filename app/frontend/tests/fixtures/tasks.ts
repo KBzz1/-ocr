@@ -115,3 +115,20 @@ export function mockRetryTaskProcessing(
     })
   );
 }
+
+export function mockCancelTaskProcessing(
+  taskId = 'task-processing',
+  resolve: () => { task_id: string; status: string; error_code?: string; error_message?: string } = () => ({
+    task_id: taskId,
+    status: 'failed',
+    error_code: 'TASK_PROCESSING_CANCELLED',
+    error_message: '用户取消处理'
+  })
+) {
+  return http.post(`*/api/tasks/${taskId}/cancel-processing`, () =>
+    HttpResponse.json({
+      success: true,
+      data: resolve()
+    })
+  );
+}
