@@ -64,6 +64,19 @@ def test_validate_field_result_accepts_full_metadata():
     validate_field_candidates([_valid_field_result()])
 
 
+def test_validate_field_result_allows_extracted_missing_evidence_when_marked_suspicious():
+    item = _valid_field_result()
+    item["evidence"] = None
+    item["source_hint"] = "主诉"
+    item["source_group_id"] = None
+    item["verification_status"] = "suspicious"
+    item["quality_flags"] = [
+        {"flag": "source_section_not_found", "severity": "warning", "message": "source_hint 未定位"}
+    ]
+
+    validate_field_candidates([item])
+
+
 def test_validate_field_result_rejects_missing_ocr_correction():
     item = _valid_field_result()
     del item["ocr_correction"]

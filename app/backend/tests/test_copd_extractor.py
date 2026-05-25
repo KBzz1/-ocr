@@ -65,8 +65,9 @@ def test_copd_extractor_batches_large_field_sets_to_avoid_truncated_json():
 
         def complete_json(self, prompt: str):
             if "字段级复核器" in prompt:
-                marker = "字段结果："
-                fields = json.loads(prompt.split(marker, 1)[1].strip())
+                marker = "来源分组："
+                groups = json.loads(prompt.split(marker, 1)[1].strip())
+                fields = [field for group in groups for field in group["fields"]]
                 self.verification_batches.append([item["field_key"] for item in fields])
                 return {
                     "verifications": [
@@ -129,11 +130,7 @@ def test_copd_extractor_batches_large_field_sets_to_avoid_truncated_json():
         field_keys[5:10],
         field_keys[10:13],
     ]
-    assert llm_client.verification_batches == [
-        field_keys[0:5],
-        field_keys[5:10],
-        field_keys[10:13],
-    ]
+    assert llm_client.verification_batches == [field_keys]
 
 
 def test_copd_extractor_can_skip_verification_to_keep_llm_calls_bounded():
@@ -231,6 +228,164 @@ def test_copd_extractor_can_use_section_group_prompts_from_legacy_success_path()
     assert len(client.calls) == 1
     assert by_key["copd_history_years"]["extraction_status"] == "extracted"
     assert by_key["bmi"]["extraction_status"] == "not_found"
+
+
+def test_copd_extractor_uses_source_hint_to_attach_section_text():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            assert "source_hint" in prompt
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "source_hint": "主诉",
+                    },
+                    {
+                        "field_key": "baseline_lung_function",
+                        "original_value": "中度阻塞性通气功能障碍",
+                        "source_hint": "现病史",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years", "baseline_lung_function"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    results = extractor.extract(
+        "主诉：反复咳嗽、咳痰15年，喘累6年，加重1月。"
+        "现病史：肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
+    )
+
+    by_key = {item["field_key"]: item for item in results}
+    assert by_key["copd_history_years"]["source_hint"] == "主诉"
+    assert by_key["copd_history_years"]["evidence"] == "反复咳嗽、咳痰15年，喘累6年，加重1月。"
+    assert by_key["copd_history_years"]["source_text"] == "反复咳嗽、咳痰15年，喘累6年，加重1月。"
+    assert by_key["baseline_lung_function"]["source_hint"] == "现病史"
+    assert by_key["baseline_lung_function"]["evidence"] == "肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
+    assert by_key["baseline_lung_function"]["source_text"] == "肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
+
+
+def test_copd_extractor_marks_missing_source_hint_section_suspicious():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "source_hint": "主诉",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("现病史：反复咳嗽、咳痰15年。")[0]
+
+    assert result["extraction_status"] == "extracted"
+    assert result["evidence"] is None
+    assert result["verification_status"] == "suspicious"
+    assert result["quality_flags"][0]["flag"] == "source_section_not_found"
+
+
+def test_copd_extractor_maps_legacy_history_profile_source_to_group_text():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "source_section": "history_profile",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract(
+        "主诉：反复咳嗽、咳痰15年。"
+        "现病史：肺功能提示中度阻塞性通气功能障碍。"
+        "既往史：高血压5+年。"
+    )[0]
+
+    assert result["source_hint"] == "病史资料"
+    assert result["source_group_id"] == "source_group_病史资料"
+    assert "【主诉】\n反复咳嗽、咳痰15年。" in result["source_text"]
+    assert "【既往史】\n高血压5+年。" in result["source_text"]
+    assert result["evidence"] == result["source_text"]
+
+
+def test_copd_extractor_verifies_fields_grouped_by_source_hint():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def __init__(self):
+            self.verification_payloads = []
+
+        def complete_json(self, prompt: str):
+            if "字段级复核器" in prompt:
+                marker = "来源分组："
+                self.verification_payloads.append(json.loads(prompt.split(marker, 1)[1].strip()))
+                return {
+                    "verifications": [
+                        {"field_key": "copd_history_years", "verdict": "pass", "checks": {}, "comment": ""},
+                        {"field_key": "dyspnea_grade_mMRC", "verdict": "suspicious", "checks": {}, "comment": "原文表述模糊"},
+                    ]
+                }
+            return {
+                "fields": [
+                    {"field_key": "copd_history_years", "original_value": "15年", "source_hint": "主诉"},
+                    {"field_key": "dyspnea_grade_mMRC", "original_value": "2", "source_hint": "主诉"},
+                ]
+            }
+
+    client = LlmClient()
+    extractor = COPDFieldExtractor(
+        llm_client=client,
+        field_keys=["copd_history_years", "dyspnea_grade_mMRC"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+    )
+
+    results = extractor.extract("主诉：反复咳嗽、咳痰15年，喘累6年，加重1月。")
+
+    by_key = {item["field_key"]: item for item in results}
+    assert by_key["copd_history_years"]["verification_status"] == "passed"
+    assert by_key["dyspnea_grade_mMRC"]["verification_status"] == "suspicious"
+    assert client.verification_payloads == [
+        [
+            {
+                "source_hint": "主诉",
+                "source_text": "反复咳嗽、咳痰15年，喘累6年，加重1月。",
+                "fields": [
+                    {"field_key": "copd_history_years", "original_value": "15年"},
+                    {"field_key": "dyspnea_grade_mMRC", "original_value": "2"},
+                ],
+            }
+        ]
+    ]
 
 
 def test_copd_extractor_treats_llm_unknown_placeholder_as_not_found():

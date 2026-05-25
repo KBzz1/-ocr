@@ -41,6 +41,7 @@ class ReviewService:
             "document_type": schema.get("document_type") or task.get("document_type"),
             "initialized_at": now,
             "updated_at": now,
+            "source_groups": self._build_source_groups(candidates),
             "fields": fields,
             "summary": self._build_summary(fields),
         }
@@ -75,6 +76,9 @@ class ReviewService:
                     "evidence": item.get("evidence"),
                     "page_no": item.get("page_no"),
                     "confidence": item.get("confidence"),
+                    "source_hint": item.get("source_hint"),
+                    "source_text": item.get("source_text"),
+                    "source_group_id": item.get("source_group_id"),
                     "source_section": item.get("source_section"),
                     "extraction_status": item.get("extraction_status", "extracted"),
                     "verification_status": item.get("verification_status", "not_checked"),
@@ -89,6 +93,26 @@ class ReviewService:
                 }
             )
         return result
+
+    def _build_source_groups(self, candidates: list[dict]) -> list[dict]:
+        groups: dict[str, dict] = {}
+        for item in candidates:
+            source_group_id = item.get("source_group_id")
+            source_hint = item.get("source_hint") or item.get("source_section")
+            source_text = item.get("source_text") or item.get("evidence")
+            if not source_group_id or not source_hint or not source_text:
+                continue
+            group = groups.setdefault(
+                source_group_id,
+                {
+                    "source_group_id": source_group_id,
+                    "source_hint": source_hint,
+                    "source_text": source_text,
+                    "field_keys": [],
+                },
+            )
+            group["field_keys"].append(item["field_key"])
+        return list(groups.values())
 
     def _build_summary(self, fields: list[dict]) -> dict:
         return {

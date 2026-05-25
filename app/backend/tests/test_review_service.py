@@ -85,6 +85,9 @@ def test_review_fields_preserve_extraction_metadata(tmp_path):
                 "original_value": "24.2kg/m2",
                 "evidence": "BHI:24.2kg/m2",
                 "confidence": 0.78,
+                "source_hint": "体格检查",
+                "source_text": "体格检查：身高体重后记录 BHI:24.2kg/m2。",
+                "source_group_id": "source_group_体格检查",
                 "source_section": "体格检查",
                 "extraction_status": "extracted",
                 "verification_status": "suspicious",
@@ -109,7 +112,18 @@ def test_review_fields_preserve_extraction_metadata(tmp_path):
     assert field["verification_status"] == "suspicious"
     assert field["quality_flags"][0]["flag"] == "value_not_in_evidence"
     assert field["ocr_correction"]["normalized"] == "BMI"
+    assert field["source_hint"] == "体格检查"
+    assert field["source_text"] == "体格检查：身高体重后记录 BHI:24.2kg/m2。"
+    assert field["source_group_id"] == "source_group_体格检查"
     assert field["source_section"] == "体格检查"
+    assert review["source_groups"] == [
+        {
+            "source_group_id": "source_group_体格检查",
+            "source_hint": "体格检查",
+            "source_text": "体格检查：身高体重后记录 BHI:24.2kg/m2。",
+            "field_keys": ["bmi"],
+        }
+    ]
 
 
 def test_first_read_initializes_review_result_from_candidates(tmp_path):

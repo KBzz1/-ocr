@@ -1,7 +1,7 @@
 from .field_result import _default_result, all_fields_empty, complete_field_results
 from .prompts import build_extraction_prompt, build_section_group_extraction_prompt, build_verification_prompt
 from .quality_checks import apply_quality_checks
-from .section_splitter import split_sections
+from .section_splitter import FULL_TEXT_KEY, split_sections
 
 
 NOT_FOUND_VALUES = {"不详", "未知", "未提及", "未说明", "未记录", "无相关信息"}
@@ -74,13 +74,14 @@ class COPDFieldExtractor:
         else:
             raw_results = self._extract_field_batches(sections)
         results = complete_field_results(raw_results, self._field_keys)
+        results = attach_source_text(results, sections)
         if all_fields_empty(results):
             return results
 
         results = apply_quality_checks(results, text)
         if not self._enable_verification:
             return results
-        verdicts = self._verify_field_batches(text, results)
+        verdicts = self._verify_source_groups(results)
         return self._merge_verdicts(results, verdicts)
 
     def _merge_verdicts(self, results: list[dict], verdicts: list[dict]) -> list[dict]:
@@ -93,8 +94,10 @@ class COPDFieldExtractor:
                     item["verification_status"] = "passed"
                 elif value == "fail":
                     item["verification_status"] = "failed"
+                    _append_quality_flag(item, "llm_review_failed", verdict)
                 elif value == "suspicious":
                     item["verification_status"] = "suspicious"
+                    _append_quality_flag(item, "llm_review_suspicious", verdict)
         return results
 
     def _extract_section_groups(self, sections: dict[str, str]) -> list[dict]:
@@ -127,9 +130,10 @@ class COPDFieldExtractor:
                 continue
             result = _default_result(field_key)
             result.update(item)
-            result.setdefault("evidence", value.strip())
-            result.setdefault("confidence", 0.7)
-            result["source_section"] = group_name
+            if not result.get("source_hint"):
+                result["source_hint"] = item.get("source_section") or _infer_source_hint_from_group(group_name)
+            result["confidence"] = result.get("confidence") or 0.7
+            result["source_section"] = result.get("source_hint") or group_name
             result["extraction_status"] = "extracted"
             normalized.append(result)
         return normalized
@@ -159,14 +163,119 @@ class COPDFieldExtractor:
             for index in range(0, len(self._field_keys), batch_size)
         ]
 
-    def _verify_field_batches(self, text: str, results: list[dict]) -> list[dict]:
+    def _verify_source_groups(self, results: list[dict]) -> list[dict]:
         verdicts = []
+        source_groups = build_source_groups(results)
+        if not source_groups:
+            return verdicts
         batch_size = max(1, self._verification_batch_size)
-        for index in range(0, len(results), batch_size):
-            batch = results[index:index + batch_size]
-            verification_payload = self._llm_client.complete_json(build_verification_prompt(text, batch))
+        for index in range(0, len(source_groups), batch_size):
+            batch = source_groups[index:index + batch_size]
+            verification_payload = self._llm_client.complete_json(build_verification_prompt(batch))
             batch_verdicts = verification_payload.get("verifications") if isinstance(verification_payload, dict) else None
             if not isinstance(batch_verdicts, list):
                 raise ValueError("LLM verification response must contain verifications list")
             verdicts.extend(batch_verdicts)
         return verdicts
+
+
+SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
+
+GROUP_SOURCE_HINTS = {
+    "history_profile": "病史资料",
+    "physical_exam": "体格检查",
+    "auxiliary_exam": "辅助检查",
+}
+
+GROUP_SECTION_NAMES = {
+    "history_profile": ["主诉", "现病史", "既往史", "个人史", "婚育史", "家族史", FULL_TEXT_KEY],
+    "physical_exam": ["体格检查"],
+    "auxiliary_exam": ["辅助检查"],
+}
+
+
+def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[dict]:
+    for item in results:
+        if item.get("extraction_status") != "extracted":
+            continue
+        source_hint = item.get("source_hint") or item.get("source_section")
+        if not source_hint:
+            continue
+        source_text = sections.get(source_hint)
+        if not source_text:
+            group_source = _collect_group_source_text(source_hint, sections)
+            if group_source:
+                source_hint = GROUP_SOURCE_HINTS[source_hint]
+                source_text = group_source
+        if source_text:
+            item["source_hint"] = source_hint
+            item["source_section"] = source_hint
+            item["source_text"] = source_text
+            item["source_group_id"] = _source_group_id(source_hint)
+            if not item.get("evidence"):
+                item["evidence"] = source_text
+            continue
+        if source_hint == FULL_TEXT_KEY and sections.get(FULL_TEXT_KEY):
+            item["source_text"] = sections[FULL_TEXT_KEY]
+            item["source_group_id"] = _source_group_id(source_hint)
+            if not item.get("evidence"):
+                item["evidence"] = sections[FULL_TEXT_KEY]
+            continue
+        item["evidence"] = None
+        item["source_text"] = None
+        item["source_group_id"] = None
+        item["verification_status"] = "suspicious"
+        _append_quality_flag(
+            item,
+            SOURCE_SECTION_NOT_FOUND,
+            {"comment": f"source_hint={source_hint} 未在 OCR 章节中定位"},
+        )
+    return results
+
+
+def build_source_groups(results: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for item in results:
+        if item.get("extraction_status") != "extracted":
+            continue
+        source_hint = item.get("source_hint")
+        source_text = item.get("source_text") or item.get("evidence")
+        if not source_hint or not source_text:
+            continue
+        key = item.get("source_group_id") or _source_group_id(source_hint)
+        group = groups.setdefault(
+            key,
+            {"source_hint": source_hint, "source_text": source_text, "fields": []},
+        )
+        group["fields"].append(
+            {"field_key": item["field_key"], "original_value": item.get("original_value", "")}
+        )
+    return list(groups.values())
+
+
+def _source_group_id(source_hint: str) -> str:
+    return f"source_group_{source_hint}"
+
+
+def _infer_source_hint_from_group(group_name: str) -> str | None:
+    return GROUP_SOURCE_HINTS.get(group_name)
+
+
+def _collect_group_source_text(group_name: str, sections: dict[str, str]) -> str | None:
+    section_names = GROUP_SECTION_NAMES.get(group_name)
+    if not section_names:
+        return None
+    parts = []
+    for section_name in section_names:
+        text = sections.get(section_name)
+        if text:
+            parts.append(f"【{section_name}】\n{text}")
+    return "\n\n".join(parts) or None
+
+
+def _append_quality_flag(item: dict, flag: str, verdict: dict) -> None:
+    flags = item.setdefault("quality_flags", [])
+    if any(existing.get("flag") == flag for existing in flags if isinstance(existing, dict)):
+        return
+    message = verdict.get("comment") or verdict.get("reason") or flag
+    flags.append({"flag": flag, "severity": "warning", "message": message})

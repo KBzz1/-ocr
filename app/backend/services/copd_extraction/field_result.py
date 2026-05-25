@@ -14,6 +14,9 @@ def _default_result(field_key: str) -> dict:
         "field_key": field_key,
         "original_value": "",
         "evidence": None,
+        "source_hint": None,
+        "source_text": None,
+        "source_group_id": None,
         "confidence": 0,
         "source_section": None,
         "extraction_status": "not_found",
@@ -39,6 +42,9 @@ def _normalize_extracted(item: dict) -> dict:
     if result["extraction_status"] == "not_found":
         result["original_value"] = ""
         result["evidence"] = None
+        result["source_hint"] = None
+        result["source_text"] = None
+        result["source_group_id"] = None
     if result["extraction_status"] == "extracted" and not result.get("original_value"):
         result["extraction_status"] = "not_found"
         result["evidence"] = None

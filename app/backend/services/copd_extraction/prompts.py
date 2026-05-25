@@ -12,11 +12,12 @@ OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、单位断裂、表格错
 如果按上下文理解了 OCR 疑似错误，必须输出 ocr_correction.applied=true、raw、normalized、reason。
 
 输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。每个字段包含：
-field_key, original_value, evidence, confidence, source_section, extraction_status, verification_status, quality_flags, ocr_correction。
+field_key, original_value, source_hint, evidence, confidence, source_section, extraction_status, verification_status, quality_flags, ocr_correction。
 
 规则：
 - 未抽到字段 original_value=""、evidence=null、extraction_status="not_found"。
-- 抽到字段必须保留 OCR 原文 evidence。
+- 抽到字段必须输出 source_hint，source_hint 使用 OCR 分段标题，例如 主诉、现病史、既往史、体格检查、辅助检查。
+- evidence 可以保留 OCR 原文片段；如果不确定，不要编造 evidence。
 - verification_status 初始为 "not_checked"。
 
 OCR 分段文本：
@@ -31,11 +32,12 @@ def build_section_group_extraction_prompt(group_name: str, text: str, field_keys
 字段 key 只允许使用：{json.dumps(field_keys, ensure_ascii=False)}
 
 输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。
-每个字段只输出：field_key, original_value。
+每个字段只输出：field_key, original_value, source_hint。
 
 规则：
 - 找不到的字段可以省略；后端会补成 not_found。
 - original_value 必须简短，只保留字段值本身。
+- source_hint 必须是字段值所在的 OCR 章节标题，例如 主诉、现病史、既往史、体格检查、辅助检查。
 - 药物、合并症、体征等多项内容用顿号或分号压缩，不要输出长段原文。
 - 不要输出 evidence、confidence、source_section、quality_flags、ocr_correction 等元数据。
 
@@ -44,16 +46,14 @@ OCR 原文：
 """.strip()
 
 
-def build_verification_prompt(original_text: str, field_results: list[dict]) -> str:
+def build_verification_prompt(source_groups: list[dict]) -> str:
     return f"""
-你是字段级复核器。逐字段检查 value/evidence/OCR 纠偏是否可靠。
-输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, checks, comment。
+你是字段级复核器。逐字段检查字段值是否能被同组 OCR 来源段落支持。
+输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
 verdict 只能是 pass、suspicious、fail。
-checks 必须包含 evidence_supported、ocr_correction_reasonable、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
+reason_code 只能是 original_text_ambiguous、low_ocr_quality、extraction_error、unreliable_result、source_section_not_found、none。
+checks 必须包含 source_text_supported、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
 
-原始 OCR 文本：
-{original_text}
-
-字段结果：
-{json.dumps(field_results, ensure_ascii=False)}
+来源分组：
+{json.dumps(source_groups, ensure_ascii=False)}
 """.strip()

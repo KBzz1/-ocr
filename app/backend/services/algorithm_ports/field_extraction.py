@@ -60,6 +60,18 @@ def validate_field_candidates(candidates: list) -> None:
         if source_section is not None and not isinstance(source_section, str):
             logger.error("field=%s source_section type=%s value=%s", fk, type(source_section).__name__, repr(source_section))
             raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: source_section 必须是字符串或 None，实际为 {type(source_section).__name__}")
+        source_hint = item.get("source_hint")
+        if source_hint is not None and not isinstance(source_hint, str):
+            logger.error("field=%s source_hint type=%s value=%s", fk, type(source_hint).__name__, repr(source_hint))
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: source_hint 必须是字符串或 None，实际为 {type(source_hint).__name__}")
+        source_text = item.get("source_text")
+        if source_text is not None and not isinstance(source_text, str):
+            logger.error("field=%s source_text type=%s value=%s", fk, type(source_text).__name__, repr(source_text))
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: source_text 必须是字符串或 None，实际为 {type(source_text).__name__}")
+        source_group_id = item.get("source_group_id")
+        if source_group_id is not None and not isinstance(source_group_id, str):
+            logger.error("field=%s source_group_id type=%s value=%s", fk, type(source_group_id).__name__, repr(source_group_id))
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: source_group_id 必须是字符串或 None，实际为 {type(source_group_id).__name__}")
         ocr_correction = item.get("ocr_correction")
         if not isinstance(ocr_correction, dict):
             logger.error("field=%s ocr_correction type=%s value=%s", fk, type(ocr_correction).__name__, repr(ocr_correction))
@@ -69,6 +81,6 @@ def validate_field_candidates(candidates: list) -> None:
         for key in ("raw", "normalized", "reason"):
             if not isinstance(ocr_correction.get(key), str):
                 raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: ocr_correction.{key} 必须是字符串")
-        if extraction_status == "extracted" and (not original_value or not item.get("evidence")):
+        if extraction_status == "extracted" and not original_value:
             logger.error("field=%s extracted but missing value/evidence: value=%s evidence=%s", fk, repr(original_value), repr(item.get("evidence")))
-            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: extracted 字段必须包含值和 evidence")
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: extracted 字段必须包含值")
