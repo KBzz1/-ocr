@@ -20,6 +20,9 @@ Daily use:
 Logs:
 - Double-click 03_logs.bat to watch container logs.
 - Runtime logs are also written under the logs folder.
+- 00_import_image.bat and 01_start.bat write troubleshooting logs under
+  deploy_debug_logs. If startup, Docker, or GPU detection fails, send the whole
+  deploy_debug_logs folder for debugging.
 
 Data folders:
 - data: uploaded files and processing results.
