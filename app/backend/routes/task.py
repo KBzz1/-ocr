@@ -1,5 +1,6 @@
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, request, send_file
 
+from ..errors import AppError, ErrorCode
 from ..responses import success
 from . import _get_task_service
 
@@ -27,6 +28,13 @@ def get_task(task_id):
     return success(data=_get_task_service().get_task(task_id))
 
 
+@task_bp.route("/api/tasks/<task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    task = _get_task_service().delete_task(task_id)
+    current_app.config["CLEANUP_SERVICE"].cleanup_task(task_id, confirm=True)
+    return success(data={"task_id": task_id, "deleted": True})
+
+
 @task_bp.route("/api/tasks/<task_id>/process", methods=["POST"])
 def process_task(task_id):
     return success(data=_get_task_service().process(task_id))
@@ -40,3 +48,23 @@ def retry_task(task_id):
 @task_bp.route("/api/tasks/<task_id>/cancel-processing", methods=["POST"])
 def cancel_processing(task_id):
     return success(data=_get_task_service().cancel_processing(task_id))
+
+
+@task_bp.route("/api/tasks/<task_id>/rename", methods=["PATCH"])
+def rename_task(task_id):
+    body = request.get_json(silent=True) or {}
+    display_name = body.get("display_name", "").strip()
+    if not display_name:
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="display_name 不能为空")
+    return success(data=_get_task_service().rename_task(task_id, display_name))
+
+
+@task_bp.route("/api/tasks/<task_id>/images/<page_id>", methods=["GET"])
+def serve_task_image(task_id, page_id):
+    task = _get_task_service().get_task(task_id)
+    for img in task.get("images", []):
+        if img.get("page_id") == page_id:
+            path = img.get("original_image_path")
+            if path:
+                return send_file(path)
+    raise AppError(ErrorCode.REQUEST_NOT_FOUND, message="图片不存在")

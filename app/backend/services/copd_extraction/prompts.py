@@ -73,9 +73,16 @@ OCR 原文：
 """.strip()
 
 
-def build_verification_prompt(source_groups: list[dict]) -> str:
+def build_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
     return f"""
-你是字段级复核器。逐字段检查字段值是否能被同组 OCR 来源段落支持。
+你是字段级复核器。
+问题：逐字段判断字段值是否能被提供的 OCR 事实支持。
+事实：
+- 原始 OCR 上下文：{document_context or "未提供"}
+- 来源分组中的 source_text 是主要证据；原始 OCR 上下文只用于理解同一病历的局部语境。
+
+问题：逐字段判断字段值是否能被提供的 OCR 事实支持。
+只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
 输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
 verdict 只能是 pass、suspicious、fail。
 reason_code 只能是 original_text_ambiguous、low_ocr_quality、extraction_error、unreliable_result、source_section_not_found、none。

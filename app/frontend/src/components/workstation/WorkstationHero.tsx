@@ -67,7 +67,7 @@ export function WorkstationHero({
                 上传任务已创建
               </div>
               <div className="session-summary__meta">
-                {currentTask.id} · 已上传 {currentTask.uploadedPages} 张图片
+                {currentTask.displayName} · 已上传 {currentTask.uploadedPages} 张图片
               </div>
             </div>
             <div className="session-summary__actions">

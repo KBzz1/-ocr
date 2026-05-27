@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
     "llm_context_tokens": 8192,
     "llm_max_tokens": 1024,
     "llm_extraction_batch_size": 25,
-    "llm_enable_verification": False,
+    "llm_enable_verification": True,
     "enable_local_ocr": False,
     "local_ocr_python_executable": sys.executable,
     "local_ocr_script_path": "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py",

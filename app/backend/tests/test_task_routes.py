@@ -38,7 +38,7 @@ def client(app):
     return app.test_client()
 
 
-def write_task(app, task_id="task_001", status="uploading", **overrides):
+def write_task(app, task_id="1", status="uploading", **overrides):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     task = {
         "task_id": task_id,
@@ -71,7 +71,8 @@ def test_post_tasks_creates_uploading_task(client):
 
     assert response.status_code == 201
     data = response.get_json()["data"]
-    assert data["task_id"].startswith("task_")
+    assert data["task_id"] == "1"
+    assert data["display_name"] == "1"
     assert data["status"] == "uploading"
     assert data["upload_token"]
     assert f"/mobile/upload/{data['task_id']}?token={data['upload_token']}" in data["mobile_upload_url"]
@@ -100,49 +101,49 @@ def test_get_task_returns_mvp_shape_without_session(client):
 
 
 def test_list_tasks_returns_mvp_summaries(client, app):
-    write_task(app, task_id="task_001", status="uploading")
+    write_task(app, task_id="1", status="uploading")
     write_task(
         app,
-        task_id="task_002",
+        task_id="2",
         status="uploading",
         images=[{"page_id": "page_001", "page_no": 1}],
     )
-    write_task(app, task_id="task_003", status="failed", error_code="ALGORITHM_MODULE_FAILED")
+    write_task(app, task_id="3", status="failed", error_code="ALGORITHM_MODULE_FAILED")
 
     response = client.get("/api/tasks")
 
     assert response.status_code == 200
     tasks = response.get_json()["data"]["tasks"]
-    assert [task["task_id"] for task in tasks] == ["task_002", "task_003"]
+    assert [task["task_id"] for task in tasks] == ["2", "3"]
     assert all("session_id" not in task for task in tasks)
     assert tasks[0]["page_count"] == 1
     assert tasks[0]["upload_token"] == "token_001"
-    assert tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/task_002?token=token_001"
+    assert tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/2?token=token_001"
     assert "upload_token" not in tasks[1]
     assert "mobile_upload_url" not in tasks[1]
 
 
 def test_list_tasks_filter_by_status(client, app):
-    write_task(app, task_id="task_001", status="uploading")
+    write_task(app, task_id="1", status="uploading")
     write_task(
         app,
-        task_id="task_002",
+        task_id="2",
         status="uploading",
         images=[{"page_id": "page_001", "page_no": 1}],
     )
-    write_task(app, task_id="task_003", status="failed")
+    write_task(app, task_id="3", status="failed")
 
     response = client.get("/api/tasks?status=failed")
 
     assert response.status_code == 200
-    assert [task["task_id"] for task in response.get_json()["data"]["tasks"]] == ["task_003"]
+    assert [task["task_id"] for task in response.get_json()["data"]["tasks"]] == ["3"]
 
     uploading_response = client.get("/api/tasks?status=uploading")
 
     assert uploading_response.status_code == 200
     uploading_tasks = uploading_response.get_json()["data"]["tasks"]
-    assert [task["task_id"] for task in uploading_tasks] == ["task_002"]
-    assert uploading_tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/task_002?token=token_001"
+    assert [task["task_id"] for task in uploading_tasks] == ["2"]
+    assert uploading_tasks[0]["mobile_upload_url"] == "http://192.168.1.5:8081/mobile/upload/2?token=token_001"
 
 
 def test_get_nonexistent_task_returns_404(client):
@@ -155,14 +156,14 @@ def test_get_nonexistent_task_returns_404(client):
 def test_process_task_without_algorithm_returns_failed_payload(client, app):
     write_task(app, status="uploading")
 
-    response = client.post("/api/tasks/task_001/process")
+    response = client.post("/api/tasks/1/process")
 
     assert response.status_code == 200
     data = response.get_json()["data"]
     assert data["status"] == "processing"
     assert data["processing_summary"]["stage"] == "queued"
 
-    data = wait_for_task_status(client, "task_001", "failed")
+    data = wait_for_task_status(client, "1", "failed")
     assert data["status"] == "failed"
     assert data["error_code"] == "ALGORITHM_MODULE_NOT_CONFIGURED"
     assert data["error_message"] == "图像处理模块未配置"
@@ -186,7 +187,7 @@ def test_cancel_processing_route_marks_task_failed(client, app):
         },
     )
 
-    response = client.post("/api/tasks/task_001/cancel-processing")
+    response = client.post("/api/tasks/1/cancel-processing")
 
     assert response.status_code == 200
     data = response.get_json()["data"]
@@ -198,7 +199,82 @@ def test_cancel_processing_route_marks_task_failed(client, app):
 def test_cancel_processing_route_rejects_non_processing_task(client, app):
     write_task(app, status="review")
 
-    response = client.post("/api/tasks/task_001/cancel-processing")
+    response = client.post("/api/tasks/1/cancel-processing")
 
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+
+def test_rename_task_route_updates_display_name(client, app):
+    write_task(app, status="review")
+
+    response = client.patch(
+        "/api/tasks/1/rename",
+        json={"display_name": "张三入院记录"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["display_name"] == "张三入院记录"
+    assert data["task_id"] == "1"
+
+    persisted = client.get("/api/tasks/1").get_json()["data"]
+    assert persisted["display_name"] == "张三入院记录"
+
+
+def test_rename_task_route_rejects_empty_display_name(client, app):
+    write_task(app, status="review")
+
+    response = client.patch(
+        "/api/tasks/1/rename",
+        json={"display_name": "  "},
+    )
+
+    assert response.status_code == 400
+
+
+def test_delete_task_removes_from_listing(client, app):
+    write_task(app, task_id="1", status="review")
+    write_task(app, task_id="2", status="failed")
+
+    response = client.delete("/api/tasks/1")
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["task_id"] == "1"
+    assert response.get_json()["data"]["deleted"] is True
+
+    tasks = client.get("/api/tasks").get_json()["data"]["tasks"]
+    assert [t["task_id"] for t in tasks] == ["2"]
+
+    response = client.get("/api/tasks/1")
+    assert response.status_code == 404
+
+
+def test_delete_task_with_cleanup(client, app):
+    write_task(app, task_id="1", status="review", session_id="session_abc")
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    storage_dir = app.config["BACKEND_CONFIG"]["storage_dir"]
+    import os
+    os.makedirs(os.path.join(storage_dir, "results", "1"), exist_ok=True)
+    os.makedirs(os.path.join(storage_dir, "pages", "session_abc"), exist_ok=True)
+
+    response = client.delete("/api/tasks/1")
+
+    assert response.status_code == 200
+    assert not store.exists("tasks/1.json")
+
+
+def test_delete_processing_task_returns_400(client, app):
+    write_task(app, task_id="1", status="processing", images=[{"page_id": "page_001"}])
+
+    response = client.delete("/api/tasks/1")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+
+def test_delete_nonexistent_task_returns_404(client):
+    response = client.delete("/api/tasks/missing")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"

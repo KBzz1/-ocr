@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   mockCancelTaskProcessing,
+  mockDeleteTask,
   mockRetryTaskProcessing,
   mockTasks,
   taskFixtures
@@ -44,8 +45,8 @@ describe('MVP task list and retry', () => {
     renderTaskList();
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const readyRow = within(table).getByText('task-ready').closest('tr');
-    const failedRow = within(table).getByText('task-failed').closest('tr');
+    const readyRow = within(table).getByText('2').closest('tr');
+    const failedRow = within(table).getByText('4').closest('tr');
 
     expect(readyRow).not.toBeNull();
     expect((readyRow as HTMLElement).textContent).toContain('2026/05/19 09:30');
@@ -67,15 +68,15 @@ describe('MVP task list and retry', () => {
     await screen.findByRole('table', { name: '任务列表' });
     await user.click(screen.getByRole('button', { name: '待审核' }));
 
-    expect(screen.getByText('task-ready')).not.toBeNull();
-    expect(screen.queryByText('task-failed')).toBeNull();
-    expect(screen.queryByText('task-processing')).toBeNull();
+    expect(screen.getByText('2')).not.toBeNull();
+    expect(screen.queryByText('4')).toBeNull();
+    expect(screen.queryByText('3')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: '失败' }));
 
-    expect(screen.getByText('task-failed')).not.toBeNull();
-    expect(screen.queryByText('task-ready')).toBeNull();
-    expect(screen.queryByText('task-processing')).toBeNull();
+    expect(screen.getByText('4')).not.toBeNull();
+    expect(screen.queryByText('2')).toBeNull();
+    expect(screen.queryByText('3')).toBeNull();
   });
 
   it('uses the status query parameter when opening failed task reasons', async () => {
@@ -87,23 +88,23 @@ describe('MVP task list and retry', () => {
     await screen.findByRole('table', { name: '任务列表' });
 
     expect(screen.getByRole('button', { name: '失败' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('task-failed')).not.toBeNull();
+    expect(screen.getByText('4')).not.toBeNull();
     expect(screen.getAllByText('图像处理模块未配置').length).toBeGreaterThan(0);
-    expect(screen.queryByText('task-ready')).toBeNull();
-    expect(screen.queryByText('task-processing')).toBeNull();
+    expect(screen.queryByText('2')).toBeNull();
+    expect(screen.queryByText('3')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: '全部' }));
 
     expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-pressed')).toBe('true');
     expect(window.location.pathname + window.location.search).toBe('/tasks');
-    expect(screen.getByText('task-ready')).not.toBeNull();
-    expect(screen.getByText('task-processing')).not.toBeNull();
+    expect(screen.getByText('2')).not.toBeNull();
+    expect(screen.getByText('3')).not.toBeNull();
   });
 
   it('refreshes task data and shows backend status changes', async () => {
     const user = userEvent.setup();
     const refreshedTasks = taskFixtures.map((task) =>
-      task.task_id === 'task-processing'
+      task.task_id === '3'
         ? { ...task, status: 'review' as const }
         : task
     );
@@ -122,12 +123,12 @@ describe('MVP task list and retry', () => {
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    expect(within(within(table).getByText('task-processing').closest('tr') as HTMLElement).getByRole('button', { name: '取消处理' })).toBeTruthy();
+    expect(within(within(table).getByText('3').closest('tr') as HTMLElement).getByRole('button', { name: '取消处理' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '刷新' }));
 
     await waitFor(() =>
-      expect((within(table).getByText('task-processing').closest('tr') as HTMLElement).textContent).toContain(
+      expect((within(table).getByText('3').closest('tr') as HTMLElement).textContent).toContain(
         '待审核'
       )
     );
@@ -137,7 +138,7 @@ describe('MVP task list and retry', () => {
     renderTaskList();
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
     const statusCell = processingRow.children[3] as HTMLElement;
     const actionsCell = processingRow.children[6] as HTMLElement;
 
@@ -154,10 +155,10 @@ describe('MVP task list and retry', () => {
 
     server.use(
       mockTasks(),
-      mockCancelTaskProcessing('task-processing', () => {
+      mockCancelTaskProcessing('3', () => {
         cancelSpy();
         return {
-          task_id: 'task-processing',
+          task_id: '3',
           status: 'failed',
           error_code: 'TASK_PROCESSING_CANCELLED',
           error_message: '用户取消处理'
@@ -167,7 +168,7 @@ describe('MVP task list and retry', () => {
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
 
     await user.click(within(processingRow).getByRole('button', { name: '取消处理' }));
 
@@ -181,12 +182,13 @@ describe('MVP task list and retry', () => {
     server.use(
       mockTasks([
         {
-          task_id: 'task_046',
+          task_id: '46',
+          display_name: '46',
           status: 'uploading',
           created_at: '2026-05-20T20:55:00+08:00',
           page_count: 1,
           upload_token: 'token_046',
-          mobile_upload_url: 'http://192.168.1.5:8081/mobile/upload/task_046?token=token_046',
+          mobile_upload_url: 'http://192.168.1.5:8081/mobile/upload/46?token=token_046',
           review_summary: { status: null, confirmed_count: 0, total_count: 0 },
           export_summary: { formats: [] },
           error_code: null,
@@ -197,12 +199,12 @@ describe('MVP task list and retry', () => {
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const row = within(table).getByText('task_046').closest('tr') as HTMLElement;
+    const row = within(table).getByText('46').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: '查看二维码' }));
 
     const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
     const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
-    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/upload/task_046?token=token_046');
+    expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/upload/46?token=token_046');
   });
 
   it('silently polls task data without showing a refresh state', async () => {
@@ -212,7 +214,7 @@ describe('MVP task list and retry', () => {
       value: 'visible'
     });
     const refreshedTasks = taskFixtures.map((task) =>
-      task.task_id === 'task-processing'
+      task.task_id === '3'
         ? { ...task, status: 'review' as const }
         : task
     );
@@ -231,7 +233,7 @@ describe('MVP task list and retry', () => {
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
     expect(within(processingRow).getByRole('button', { name: '取消处理' })).toBeTruthy();
 
     await act(async () => {
@@ -248,15 +250,15 @@ describe('MVP task list and retry', () => {
 
     server.use(
       mockTasks(),
-      mockRetryTaskProcessing('task-failed', () => {
+      mockRetryTaskProcessing('4', () => {
         retrySpy();
-        return { task_id: 'task-failed', status: 'processing' };
+        return { task_id: '4', status: 'processing' };
       })
     );
     render(<TasksPage />);
 
     const table = await screen.findByRole('table', { name: '任务列表' });
-    const failedRow = within(table).getByText('task-failed').closest('tr') as HTMLElement;
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
 
     expect(within(failedRow).queryByRole('link', { name: '进入审核' })).toBeNull();
     expect(document.body.textContent ?? '').not.toContain('修订采集');
@@ -266,5 +268,106 @@ describe('MVP task list and retry', () => {
 
     await waitFor(() => expect(retrySpy).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(within(failedRow).getByRole('button', { name: '取消处理' })).toBeTruthy());
+  });
+});
+
+describe('Delete task with confirmation dialog', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/tasks');
+  });
+
+  it('shows delete button for non-processing tasks and not for processing tasks', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    const doneRow = within(table).getByText('5').closest('tr') as HTMLElement;
+
+    expect(within(reviewRow).getByRole('button', { name: '删除' })).toBeTruthy();
+    expect(within(processingRow).queryByRole('button', { name: '删除' })).toBeNull();
+    expect(within(failedRow).getByRole('button', { name: '删除' })).toBeTruthy();
+    expect(within(doneRow).getByRole('button', { name: '删除' })).toBeTruthy();
+  });
+
+  it('opens confirmation dialog when delete button is clicked', async () => {
+    const user = userEvent.setup();
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    await user.click(within(failedRow).getByRole('button', { name: '删除' }));
+
+    expect(screen.getByRole('alertdialog', { name: '确认删除任务' })).toBeTruthy();
+    expect(screen.getByText('4', { selector: 'strong' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '确认删除' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+  });
+
+  it('closes confirmation dialog when cancel is clicked', async () => {
+    const user = userEvent.setup();
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    await user.click(within(failedRow).getByRole('button', { name: '删除' }));
+
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('deletes the task and removes it from the list after confirmation', async () => {
+    const user = userEvent.setup();
+    server.use(mockTasks(), mockDeleteTask('4'));
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    await user.click(within(failedRow).getByRole('button', { name: '删除' }));
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => expect(screen.queryByText('4')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('shows an error when delete confirmation fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks(),
+      http.delete('*/api/tasks/4', () =>
+        HttpResponse.json(
+          { error: { code: 'TASK_DELETE_FAILED', message: '删除任务失败', details: {} } },
+          { status: 500 }
+        )
+      )
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    await user.click(within(failedRow).getByRole('button', { name: '删除' }));
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+
+    expect(await screen.findByText('删除任务失败')).toBeTruthy();
+    expect(screen.getByText('4')).toBeTruthy();
+  });
+
+  it('closes confirmation dialog when backdrop is clicked', async () => {
+    const user = userEvent.setup();
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    await user.click(within(failedRow).getByRole('button', { name: '删除' }));
+
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+
+    await user.click(screen.getByRole('presentation'));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 });

@@ -36,4 +36,4 @@ algorithms:
   llm_context_tokens: 8192
   llm_max_tokens: 1024
   llm_extraction_batch_size: 25
-  llm_enable_verification: false
+  llm_enable_verification: true

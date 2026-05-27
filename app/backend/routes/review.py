@@ -48,3 +48,10 @@ def confirm_review(task_id):
     review_summary = task.get("review_summary") or {}
     _safe_event("review_completed", task_id=task_id, field_count=review_summary.get("total_count"))
     return success(data=task)
+
+
+@review_bp.route("/api/tasks/<task_id>/review/reopen", methods=["POST"])
+def reopen_review(task_id):
+    task = _get_task_service().reopen_review(task_id)
+    _safe_event("review_reopened", task_id=task_id)
+    return success(data=task)

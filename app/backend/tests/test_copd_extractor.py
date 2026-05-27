@@ -382,6 +382,64 @@ def test_copd_extractor_regenerates_invalid_source_hint_with_same_loaded_client(
     assert result["evidence"] == "反复咳嗽、咳痰15年。"
 
 
+def test_copd_extractor_treats_no_evidence_as_not_found_in_section_groups():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "未找到证据",
+                        "source_hint": "未找到证据",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("主诉：反复咳嗽。")[0]
+
+    assert result["extraction_status"] == "not_found"
+    assert result["original_value"] == ""
+
+
+def test_copd_extractor_treats_no_evidence_as_not_found_in_field_batches():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "未找到证据",
+                        "source_hint": "现病史",
+                        "extraction_status": "extracted",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years"],
+        extraction_strategy="field_batches",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("主诉：反复咳嗽。")[0]
+
+    assert result["extraction_status"] == "not_found"
+    assert result["original_value"] == ""
+    assert result["evidence"] is None
+
+
 def test_field_regeneration_strategies_are_extensible():
     from app.backend.services.copd_extraction.extractor import FIELD_REGENERATION_STRATEGIES
 
@@ -439,6 +497,35 @@ def test_copd_extractor_verifies_fields_grouped_by_source_hint():
             }
         ]
     ]
+
+
+def test_copd_extractor_passes_bounded_original_ocr_context_to_verification():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def __init__(self):
+            self.verification_prompt = ""
+
+        def complete_json(self, prompt: str):
+            if "字段级复核器" in prompt:
+                self.verification_prompt = prompt
+                return {"verifications": [{"field_key": "bmi", "verdict": "pass", "checks": {}, "comment": ""}]}
+            return {"fields": [{"field_key": "bmi", "original_value": "24.2kg/m2", "source_hint": "体格检查"}]}
+
+    client = LlmClient()
+    extractor = COPDFieldExtractor(
+        llm_client=client,
+        field_keys=["bmi"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+    )
+    long_tail = "补充描述" * 500
+
+    extractor.extract(f"主诉：咳嗽。体格检查：BMI:24.2kg/m2。辅助检查：{long_tail}")
+
+    assert "原始 OCR 上下文" in client.verification_prompt
+    assert "体格检查：BMI:24.2kg/m2" in client.verification_prompt
+    assert len(client.verification_prompt) < 5000
 
 
 def test_copd_extractor_treats_llm_unknown_placeholder_as_not_found():

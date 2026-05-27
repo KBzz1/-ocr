@@ -27,7 +27,7 @@ export function ReviewSourcePanel({ text, sourceMessage }: ReviewSourcePanelProp
   return (
     <div className="review-source">
       {sourceMessage ? <p className={`review-source__message review-source__message--${sourceMessage.kind}`}>{sourceMessage.text}</p> : null}
-      <pre>{renderTextWithHighlight(text, sourceMessage?.evidenceText)}</pre>
+      <pre aria-label="合并 OCR 文本">{renderTextWithHighlight(text, sourceMessage?.evidenceText)}</pre>
     </div>
   );
 }

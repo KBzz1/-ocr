@@ -43,7 +43,7 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
           <table className="recent-tasks__table">
             <thead>
               <tr>
-                <th>任务编号</th>
+                <th>任务名称</th>
                 <th>创建时间</th>
                 <th>页数</th>
                 <th>当前状态</th>
@@ -62,7 +62,7 @@ export function RecentTasks({ tasks }: RecentTasksProps) {
 
                 return (
                   <tr key={task.id}>
-                    <td className="recent-tasks__id">{task.id}</td>
+                    <td className="recent-tasks__id">{task.displayName}</td>
                     <td>{task.createdAtText}</td>
                     <td>{task.pageCount} 页</td>
                     <td>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ApiError } from '../../api/client';
-import { getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { deleteTask, getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
 import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
@@ -28,10 +28,12 @@ function areTasksEqual(current: TaskSummary[], next: TaskSummary[]) {
 function toTaskUploadSummary(task: TaskSummary): TaskUploadSummary {
   return {
     task_id: task.task_id,
+    display_name: task.display_name ?? task.task_id,
     status: 'uploading',
     upload_token: task.upload_token ?? '',
     mobile_upload_url: task.mobile_upload_url ?? '',
     id: task.task_id,
+    displayName: task.display_name ?? task.task_id,
     uploadedPages: task.page_count,
     createdAtText: '继续上传'
   };
@@ -43,6 +45,8 @@ export function TasksPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrTask, setQrTask] = useState<TaskUploadSummary | null>(null);
 
@@ -100,6 +104,29 @@ export function TasksPage() {
     setRetryingTaskId(null);
   }
 
+  function handleDeleteTask(task: TaskSummary) {
+    setError(null);
+    setDeleteTarget(task);
+  }
+
+  function handleCancelDelete() {
+    setDeleteTarget(null);
+  }
+
+  async function handleConfirmDelete(task: TaskSummary) {
+    setDeletingTaskId(task.task_id);
+    setDeleteTarget(null);
+    try {
+      await deleteTask(task.task_id);
+      setTasks((currentTasks) => currentTasks.filter((t) => t.task_id !== task.task_id));
+      setError(null);
+    } catch (deleteError: unknown) {
+      setError(getErrorMessage(deleteError, '删除任务失败，请稍后重试'));
+    } finally {
+      setDeletingTaskId(null);
+    }
+  }
+
   function handleFilterChange(filter: TaskStatus | 'all') {
     setActiveFilter(filter);
 
@@ -133,9 +160,14 @@ export function TasksPage() {
           <TaskList
             activeFilter={activeFilter}
             retryingTaskId={retryingTaskId}
+            deletingTaskId={deletingTaskId}
+            deleteTarget={deleteTarget}
             tasks={tasks}
             onFilterChange={handleFilterChange}
             onTaskStatusChange={handleTaskStatusChange}
+            onDeleteTask={handleDeleteTask}
+            onCancelDelete={handleCancelDelete}
+            onConfirmDelete={handleConfirmDelete}
             onViewUploadQr={(task) => setQrTask(toTaskUploadSummary(task))}
           />
         </div>

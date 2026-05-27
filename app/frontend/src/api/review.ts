@@ -33,10 +33,17 @@ export interface ReviewField {
   };
 }
 
+export interface FieldGroupDef {
+  group_key: string;
+  group_label: string;
+  fields: Array<{ field_key: string; label: string }>;
+}
+
 export interface ReviewResult {
   fields: ReviewField[];
   ocr_text?: string;
   pages?: Array<{ page_id: string; page_no: number; preview_url?: string; parsed_text?: string; image_url?: string }>;
+  field_groups?: FieldGroupDef[];
 }
 
 export interface ReviewPayload {
@@ -56,6 +63,12 @@ export interface SaveReviewFieldResult {
   status: FieldStatus;
 }
 
+function normalizeEvidence(raw: unknown): ReviewEvidence[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.length > 0) return [{ text: raw }];
+  return [];
+}
+
 function normalizeReviewField(field: ReviewField): ReviewField {
   const label = field.label ?? field.field_name;
   const candidateValue = field.candidate_value ?? field.auto_value;
@@ -66,7 +79,7 @@ function normalizeReviewField(field: ReviewField): ReviewField {
     value,
     candidate_value: candidateValue,
     final_value: value,
-    evidence: field.evidence ?? []
+    evidence: normalizeEvidence(field.evidence)
   };
 }
 
@@ -125,4 +138,10 @@ export async function saveReviewField(
   );
   await saveReview(taskId, fields);
   return { field_key: fieldKey, final_value: input.final_value, status: input.status };
+}
+
+export async function reopenReview(taskId: string) {
+  return apiRequest<unknown>(`/api/tasks/${encodeURIComponent(taskId)}/review/reopen`, {
+    method: 'POST'
+  });
 }

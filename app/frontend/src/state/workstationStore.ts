@@ -28,7 +28,7 @@ export function buildSystemReminders(tasks: TaskSummary[]) {
   const failedTask = tasks.find((task) => task.status === 'failed');
 
   if (failedTask) {
-    reminders.push(`任务 ${failedTask.task_id} 处理失败，请查看原因后重新处理。`);
+    reminders.push(`任务 ${failedTask.display_name ?? failedTask.task_id} 处理失败，请查看原因后重新处理。`);
   }
 
   return reminders;

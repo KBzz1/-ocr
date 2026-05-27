@@ -223,6 +223,7 @@ def test_static_dir_default_normalized(tmp_path):
     assert "static_dir" in config
     assert os.path.isabs(config["static_dir"])
     assert config["static_dir"].endswith(os.path.join("app", "frontend", "dist"))
+    assert config["llm_enable_verification"] is True
 
 
 def test_load_config_supports_copd_extractor_settings(tmp_path):

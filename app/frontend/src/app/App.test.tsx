@@ -16,11 +16,11 @@ function renderWorkstation() {
 }
 
 function mockReadyTaskReview() {
-  return http.get('*/api/tasks/task-ready/review', () =>
+  return http.get('*/api/tasks/2/review', () =>
     HttpResponse.json({
       success: true,
       data: {
-        task_id: 'task-ready',
+        task_id: '2',
         status: 'review',
         review_result: {
           ocr_text: '姓名：张三',
@@ -42,7 +42,7 @@ describe('Workstation data integration', () => {
   });
 
   it('renders mobile upload page for scanned task upload paths', async () => {
-    window.history.pushState({}, '', `${buildMobileUploadPath('task_001')}?token=token_001`);
+    window.history.pushState({}, '', `${buildMobileUploadPath('1')}?token=token_001`);
     render(<App />);
 
     expect(await screen.findByText(/病历文书采集|手机上传/)).toBeTruthy();
@@ -64,7 +64,7 @@ describe('Workstation data integration', () => {
     expect(screen.queryByLabelText('任务概览')).toBeNull();
 
     const table = screen.getByRole('table');
-    expect(within(table).getByText('task-ready')).toBeTruthy();
+    expect(within(table).getByText('2')).toBeTruthy();
     expect(within(table).getByText('进入审核')).toBeTruthy();
     expect(within(table).getByText('查看原因')).toBeTruthy();
     expect(within(table).getByText('重新处理')).toBeTruthy();
@@ -75,7 +75,7 @@ describe('Workstation data integration', () => {
     renderWorkstation();
 
     const table = await screen.findByRole('table');
-    const failedRow = within(table).getByText('task-failed').closest('tr') as HTMLElement;
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
 
     expect(failedRow.textContent).not.toContain('图像处理模块未配置');
     expect(within(failedRow).getByText('查看原因')).toBeTruthy();
@@ -88,7 +88,7 @@ describe('Workstation data integration', () => {
       value: 'visible'
     });
     const refreshedTasks = taskFixtures.map((task) =>
-      task.task_id === 'task-processing'
+      task.task_id === '3'
         ? { ...task, status: 'review' as const }
         : task
     );
@@ -106,7 +106,7 @@ describe('Workstation data integration', () => {
     render(<App />);
 
     const table = await screen.findByRole('table');
-    const processingRow = within(table).getByText('task-processing').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
     expect(processingRow.textContent).toContain('OCR 文档解析');
     expect(processingRow.textContent).not.toContain('处理中');
 
@@ -132,37 +132,76 @@ describe('Workstation data integration', () => {
     server.use(mockReadyTaskReview());
     renderWorkstation();
 
-    await user.click(await screen.findByRole('link', { name: /人工审核/ }));
+    await user.click(await screen.findByRole('link', { name: /任务详情/ }));
 
     expect(await screen.findByRole('main', { name: '人工审核页' })).toBeTruthy();
     expect(screen.queryByRole('main', { name: '任务列表页' })).toBeNull();
     expect(window.location.pathname).toBe('/review');
-    expect(screen.getAllByText('任务 task-ready').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('patient_name')).toBeTruthy();
   });
 
-  it('shows a local demo review sample when no real task is waiting for review', async () => {
+  it('opens an existing non-review task instead of falling back to the demo sample', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockSystemStatus(),
+      mockTasks([
+        {
+          task_id: '99',
+          display_name: '99',
+          status: 'done',
+          created_at: '2026-05-19T10:00:00+08:00',
+          updated_at: '2026-05-19T10:03:00+08:00',
+          page_count: 1
+        }
+      ]),
+      http.get('*/api/tasks/99', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: '99',
+            display_name: '99',
+            status: 'done',
+            created_at: '2026-05-19T10:00:00+08:00',
+            page_count: 1
+          }
+        })
+      ),
+      http.get('*/api/tasks/99/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: '99',
+            status: 'done',
+            review_result: {
+              ocr_text: '姓名：张三',
+              pages: [{ page_id: 'page_001', page_no: 1, parsed_text: '姓名：张三' }],
+              fields: [{ field_key: 'patient_name', label: '姓名', value: '张三', status: 'confirmed' }]
+            }
+          }
+        })
+      )
+    );
+    render(<App />);
+
+    await user.click(await screen.findByRole('link', { name: /任务详情/ }));
+
+    expect(await screen.findByRole('main', { name: '人工审核页' })).toBeTruthy();
+    expect(screen.queryByText('演示样本')).toBeNull();
+    expect(screen.queryByText('任务 demo-review')).toBeNull();
+    expect(screen.getAllByText('99').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('patient_name')).toBeTruthy();
+  });
+
+  it('shows an empty task detail state when there are no real tasks', async () => {
     const user = userEvent.setup();
     server.use(mockSystemStatus(), mockTasks([]));
     render(<App />);
 
-    await user.click(await screen.findByRole('link', { name: /人工审核/ }));
+    await user.click(await screen.findByRole('link', { name: /任务详情/ }));
 
-    expect(await screen.findByRole('main', { name: '人工审核页' })).toBeTruthy();
-    expect(screen.queryByText('暂无待审核任务')).toBeNull();
-    expect(screen.getByText('演示样本')).toBeTruthy();
-    expect(screen.getAllByText('任务 task-demo-review').length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('patient_name')).toBeTruthy();
-    expect(screen.getByLabelText('chief_complaint')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: '显示 OCR' }));
-    expect(screen.getAllByText(/模拟 OCR 文本/).length).toBeGreaterThan(0);
-
-    await user.type(screen.getByLabelText('patient_name'), '修改');
-    await user.click(screen.getByRole('button', { name: '保存修改' }));
-    expect((await screen.findAllByText('已保存')).length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole('button', { name: '确认完成' }));
-    expect((await screen.findAllByText('已完成')).length).toBeGreaterThan(0);
+    expect(await screen.findByText('暂无任务可查看')).toBeTruthy();
+    expect(screen.queryByText('任务 demo-review')).toBeNull();
   });
 
   it('renders workstation navigation and task actions as connected links', async () => {
@@ -170,10 +209,10 @@ describe('Workstation data integration', () => {
 
     expect(await screen.findByText('系统已启动')).toBeTruthy();
     expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
-    expect(screen.getByRole('link', { name: /人工审核/ }).getAttribute('href')).toBe('/review');
+    expect(screen.getByRole('link', { name: /任务详情/ }).getAttribute('href')).toBe('/review');
     expect(screen.getByRole('link', { name: '全部任务' }).getAttribute('href')).toBe('/tasks');
-    expect(screen.getByRole('link', { name: '进入审核' }).getAttribute('href')).toBe('/tasks/task-ready/review');
-    expect(screen.getByRole('link', { name: '导出' }).getAttribute('href')).toBe('/tasks/task-done/export');
+    expect(screen.getByRole('link', { name: '进入审核' }).getAttribute('href')).toBe('/tasks/2/review');
+    expect(screen.getByRole('link', { name: '导出' }).getAttribute('href')).toBe('/tasks/5/export');
   });
 
   it('places partner logos in the sidebar brand area without the old text brand', async () => {
@@ -200,11 +239,11 @@ describe('Workstation data integration', () => {
     const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
     const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
     expect(qrImage.src).toMatch(/^data:image\/svg\+xml/);
-    expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:8081/mobile/upload/task_001?token=token_001');
+    expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:8081/mobile/upload/1?token=token_001');
     expect(within(dialog).getByRole('button', { name: '重新生成二维码' })).toBeTruthy();
     expect(within(dialog).queryByText('任务已创建')).toBeNull();
-    expect(within(dialog).queryByText('task_001')).toBeNull();
-    expect(within(dialog).queryByText('http://127.0.0.1:8081/mobile/upload/task_001?token=token_001')).toBeNull();
+    expect(within(dialog).queryByText('1')).toBeNull();
+    expect(within(dialog).queryByText('http://127.0.0.1:8081/mobile/upload/1?token=token_001')).toBeNull();
     expect(within(dialog).queryByText(/已上传 0 张图片/)).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '关闭' })).toBeNull();
     expect(dialog.querySelector('.qr-dialog__illustration')).toBeNull();
@@ -222,10 +261,11 @@ describe('Workstation data integration', () => {
         return HttpResponse.json({
           success: true,
           data: {
-            task_id: 'task_001',
+            task_id: '1',
+            display_name: '1',
             status: 'uploading',
             upload_token: 'token_001',
-            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001'
+            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/1?token=token_001'
           }
         });
       })
@@ -244,9 +284,9 @@ describe('Workstation data integration', () => {
 
     expect(createCount).toBe(1);
     expect(screen.getByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
-    expect(firstQrValue).toBe('http://127.0.0.1:8081/mobile/upload/task_001?token=token_001');
+    expect(firstQrValue).toBe('http://127.0.0.1:8081/mobile/upload/1?token=token_001');
     expect(regeneratedQrImage.dataset.qrValue).toBe(
-      'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001&qr_refresh=1'
+      'http://127.0.0.1:8081/mobile/upload/1?token=token_001&qr_refresh=1'
     );
   });
 
@@ -263,7 +303,7 @@ describe('Workstation data integration', () => {
     await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
 
     expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
-      'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001'
+      'http://127.0.0.1:8081/mobile/upload/1?token=token_001'
     );
     expect(within(dialog).getByRole('button', { name: '复制链接' })).toBeTruthy();
     expect(within(dialog).getByText('请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。')).toBeTruthy();

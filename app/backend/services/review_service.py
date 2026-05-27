@@ -18,6 +18,37 @@ class ReviewService:
         self._task_service = task_service
         self._schema_provider = schema_provider
 
+    def _load_document_result(self, task_id: str) -> dict | None:
+        wrapper = self._store.read(f"results/{task_id}/document_result.json")
+        if not isinstance(wrapper, dict):
+            return None
+        return wrapper
+
+    def _enrich_with_ocr(self, review: dict, task_id: str) -> dict:
+        doc = self._load_document_result(task_id)
+        if not doc:
+            return review
+        merged_text = doc.get("merged_text", "")
+        doc_pages = doc.get("pages") or []
+        review["ocr_text"] = merged_text
+        review["pages"] = [
+            {
+                "page_id": p.get("page_id", f"page_{i+1:03d}"),
+                "page_no": p.get("page_no", i + 1),
+                "parsed_text": p.get("text", ""),
+            }
+            for i, p in enumerate(doc_pages)
+        ]
+        return review
+
+    def _enrich_with_schema(self, review: dict) -> dict:
+        if self._schema_provider is None:
+            return review
+        schema = self._schema_provider()
+        if schema and "field_groups" in schema:
+            review["field_groups"] = schema["field_groups"]
+        return review
+
     def get_or_init(self, task_id: str, task: dict | None = None) -> dict:
         if task is None:
             task = self._task_service.get_task(task_id)
@@ -25,7 +56,7 @@ class ReviewService:
 
         existing = self._store.read(f"results/{task_id}/review_result.json")
         if existing is not None:
-            return existing
+            return self._enrich_with_schema(self._enrich_with_ocr(existing, task_id))
 
         wrapper = self._store.read(f"results/{task_id}/field_candidates.json")
         candidates = wrapper.get("candidates") if isinstance(wrapper, dict) else None
@@ -46,7 +77,7 @@ class ReviewService:
             "summary": self._build_summary(fields),
         }
         self._store.write(f"results/{task_id}/review_result.json", review)
-        return review
+        return self._enrich_with_schema(self._enrich_with_ocr(review, task_id))
 
     def _build_fields(self, candidates: list[dict], schema: dict) -> list[dict]:
         labels = {}

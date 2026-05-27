@@ -51,7 +51,7 @@ export function WorkstationLayout({
 }: WorkstationLayoutProps) {
   const navigationItems = [
     ...baseNavigationItems,
-    { id: appRoutes.review.id, label: '人工审核', href: reviewTaskHref ?? appRoutes.review.path }
+    { id: appRoutes.review.id, label: '任务详情', href: reviewTaskHref ?? appRoutes.review.path }
   ];
   const hasHeaderText = Boolean(headerKicker || headerTitle);
 

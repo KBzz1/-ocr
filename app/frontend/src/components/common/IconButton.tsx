@@ -5,9 +5,10 @@ type IconButtonProps = {
   children: ReactNode;
   onClick?: () => void;
   variant?: 'plain' | 'soft' | 'primary';
+  disabled?: boolean;
 };
 
-export function IconButton({ label, children, onClick, variant = 'plain' }: IconButtonProps) {
+export function IconButton({ label, children, onClick, variant = 'plain', disabled }: IconButtonProps) {
   return (
     <button
       className={`icon-button icon-button--${variant}`}
@@ -15,6 +16,7 @@ export function IconButton({ label, children, onClick, variant = 'plain' }: Icon
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </button>

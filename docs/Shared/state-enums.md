@@ -9,7 +9,7 @@
 | `uploading` | 上传中。任务已创建，手机端可继续拍照或选择图片上传，多图页序按上传成功顺序确定 | `processing`, `failed` |
 | `processing` | 处理中。后端正在调用本地 OCR/文档解析并执行慢阻肺专病字段抽取 | `review`, `failed` |
 | `review` | 待审核。OCR 文本和结构化字段已生成，等待电脑端人工核对 | `processing`, `done`, `failed` |
-| `done` | 已完成。人工审核结果已保存，可导出或查看结果 | `processing` |
+| `done` | 已完成。人工审核结果已保存，可导出或查看结果 | `processing`, `review` |
 | `failed` | 失败。上传、处理或导出前置步骤失败，保留错误原因 | `processing` |
 
 非法状态转换必须被拒绝并返回 `INVALID_TASK_TRANSITION`。

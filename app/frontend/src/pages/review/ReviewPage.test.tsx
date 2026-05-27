@@ -13,6 +13,7 @@ function mockReviewRoutes() {
         success: true,
         data: {
           task_id: 'task_001',
+          display_name: 'task_001',
           status: 'review',
           created_at: '2026-05-19T10:00:00+08:00',
           updated_at: '2026-05-19T10:03:00+08:00',
@@ -31,6 +32,31 @@ function mockReviewRoutes() {
             { status: 'uploading', changed_at: '2026-05-19T10:00:00+08:00', message: '创建上传任务' },
             { status: 'processing', changed_at: '2026-05-19T10:01:00+08:00', message: '开始处理' },
             { status: 'review', changed_at: '2026-05-19T10:03:00+08:00', message: '等待人工审核' }
+          ]
+        }
+      })
+    ),
+    http.get('*/api/tasks', () =>
+      HttpResponse.json({
+        success: true,
+        data: {
+          tasks: [
+            {
+              task_id: 'task_001',
+              display_name: 'task_001',
+              status: 'review',
+              created_at: '2026-05-19T10:00:00+08:00',
+              updated_at: '2026-05-19T10:03:00+08:00',
+              page_count: 2
+            },
+            {
+              task_id: 'task_002',
+              display_name: 'task_002',
+              status: 'done',
+              created_at: '2026-05-20T10:00:00+08:00',
+              updated_at: '2026-05-20T10:03:00+08:00',
+              page_count: 1
+            }
           ]
         }
       })
@@ -132,15 +158,18 @@ describe('ReviewPage', () => {
     expect(await screen.findByRole('navigation', { name: '主要模块' })).toBeTruthy();
     expect(screen.getByRole('link', { name: /首页/ }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: /任务管理/ }).getAttribute('href')).toBe('/tasks');
-    expect(screen.getByRole('link', { name: /人工审核/ }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: /任务详情/ }).getAttribute('aria-current')).toBe('page');
   });
 
-  it('shows one current page image and switches pages without rendering all images', async () => {
+  it('shows one current page image inside the task summary card and switches pages', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
+    const summary = await screen.findByLabelText('任务信息');
+    expect(summary).toBeTruthy();
     expect(await screen.findByRole('img', { name: '第 1 页原图' })).toBeTruthy();
     expect(screen.queryByRole('img', { name: '第 2 页原图' })).toBeNull();
+    expect(screen.queryByLabelText('任务图片')).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: '第 2 页' }));
 
@@ -153,44 +182,84 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText(/待审核/);
-    expect(screen.getByText('任务详情')).toBeTruthy();
+    expect(screen.getByLabelText('任务信息')).toBeTruthy();
     expect(screen.getByText('2026/05/19 10:00')).toBeTruthy();
     expect(screen.getByText('处理完成')).toBeTruthy();
     expect(screen.getAllByText('字段').length).toBeGreaterThan(0);
     expect(screen.getByText('待确认')).toBeTruthy();
     expect(screen.getByText('已修改')).toBeTruthy();
+    expect(screen.getByLabelText('切换任务')).toBeTruthy();
 
     await userEvent.type(screen.getByLabelText('patient_name'), '修正');
     expect(screen.getByText('未保存修改')).toBeTruthy();
   });
 
-  it('keeps OCR hidden by default and shows current page OCR on demand', async () => {
+  it('shows cleaned merged OCR text by default in the review workspace', async () => {
     mockReviewRoutes();
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '<div style="text-align: center;">第一页文本</div><br><div>第二页文本</div>',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '<div>第一页文本</div>'
+                },
+                {
+                  page_id: 'page_002',
+                  page_no: 2,
+                  preview_url: '/api/tasks/task_001/images/page_002',
+                  parsed_text: '<div>第二页文本</div>'
+                }
+              ],
+              fields: [
+                {
+                  field_key: 'patient_name',
+                  label: '姓名',
+                  value: '张三',
+                  status: 'unreviewed',
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '张三' }]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText('字段校对');
-    expect(screen.queryByText('第一页文本')).toBeNull();
-
-    await userEvent.click(screen.getByRole('button', { name: '显示 OCR' }));
-    expect(screen.getByText('第一页文本')).toBeTruthy();
-
-    await userEvent.click(screen.getByRole('button', { name: '第 2 页' }));
-    expect(screen.getByText('第二页文本')).toBeTruthy();
-    expect(screen.queryByText('第一页文本')).toBeNull();
-
-    await userEvent.click(screen.getByRole('button', { name: '隐藏 OCR' }));
-    expect(screen.queryByText('第二页文本')).toBeNull();
+    expect(screen.getByText(/第一页文本/)).toBeTruthy();
+    expect(screen.getByText(/第二页文本/)).toBeTruthy();
+    expect(screen.queryByText(/text-align/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '当前页' })).toBeNull();
   });
 
-  it('does not require per-field confirmation and tracks field focus', async () => {
+  it('reviews an individual field from its checkbox and tracks field focus', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByLabelText('patient_name')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
+    const reviewCheck = screen.getByRole('button', { name: '审核 姓名' });
+    expect(reviewCheck.getAttribute('aria-pressed')).toBe('false');
+    expect(reviewCheck.closest('.field-card__value-row')?.querySelector('.field-card__input')).toBe(screen.getByLabelText('patient_name'));
+
+    await userEvent.click(reviewCheck);
+
+    expect(screen.getByRole('button', { name: '取消审核 姓名' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('2 个字段，1 个已确认')).toBeTruthy();
+    expect(screen.getByText('未保存修改')).toBeTruthy();
 
     await userEvent.click(screen.getByLabelText('chief_complaint'));
-    expect(screen.getAllByText('第 2 页').length).toBeGreaterThan(0);
+    expect(screen.getByRole('img', { name: '第 2 页原图' })).toBeTruthy();
   });
 
   it('highlights selected field evidence in OCR and reports missing source text', async () => {
@@ -241,11 +310,10 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await userEvent.click(await screen.findByRole('button', { name: '显示 OCR' }));
-    expect(screen.getByText('已定位来源文本')).toBeTruthy();
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
     expect(screen.getByText('张三', { selector: 'mark' })).toBeTruthy();
 
-    await userEvent.click(screen.getByLabelText('chief_complaint'));
+    await userEvent.click(screen.getByTestId('review-field-card-chief_complaint'));
     expect(screen.getByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
   });
 
@@ -301,7 +369,7 @@ describe('ReviewPage', () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('OCR')).toBeTruthy();
+    expect(await screen.findByText('OCR 合并文本')).toBeTruthy();
     const field = screen.getByLabelText('patient_name') as HTMLInputElement;
     expect(field.value).toBe('张三');
 
@@ -310,7 +378,7 @@ describe('ReviewPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
 
     expect((await screen.findAllByText('已保存')).length).toBeGreaterThanOrEqual(1);
-    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    await userEvent.click(screen.getByRole('button', { name: '一键审核' }));
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
     expect((screen.getByRole('button', { name: '导出 JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '导出 Excel' }) as HTMLButtonElement).disabled).toBe(false);
@@ -345,18 +413,17 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByText('主诉')).toBeTruthy();
-    expect(screen.getByText('头痛三天', { selector: '.review-candidate' })).toBeTruthy();
     expect((screen.getByLabelText('chief_complaint') as HTMLInputElement).value).toBe('头痛三天');
   });
 
-  it('saves unmodified fields as confirmed and modified fields as modified before completing', async () => {
+  it('saves every field as confirmed before completing from one-click review', async () => {
     mockReviewRoutes();
     server.use(
       http.put('*/api/tasks/task_001/review', async ({ request }) => {
         const body = (await request.json()) as { fields: Array<Record<string, unknown>> };
         expect(body).toMatchObject({
           fields: expect.arrayContaining([
-            expect.objectContaining({ field_key: 'patient_name', value: '李四', status: 'modified' }),
+            expect.objectContaining({ field_key: 'patient_name', value: '李四', status: 'confirmed' }),
             expect.objectContaining({ field_key: 'chief_complaint', value: '头痛三天', status: 'confirmed' })
           ])
         });
@@ -395,13 +462,13 @@ describe('ReviewPage', () => {
     const nameField = await screen.findByLabelText('patient_name');
     await userEvent.clear(nameField);
     await userEvent.type(nameField, '李四');
-    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    await userEvent.click(screen.getByRole('button', { name: '一键审核' }));
 
     // 保存成功 + 完成 都要通过，页面至少有一个"已完成"
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows extraction risk warnings and OCR correction hints for COPD fields', async () => {
+  it('only shows instant evidence-missing risk indicators', async () => {
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -410,8 +477,8 @@ describe('ReviewPage', () => {
             task_id: 'task_001',
             status: 'review',
             review_result: {
-              ocr_text: 'BHI:24.2kg/m2',
-              pages: [{ page_id: 'page_001', page_no: 1, preview_url: '/api/tasks/task_001/images/page_001', parsed_text: 'BHI:24.2kg/m2' }],
+              ocr_text: 'BHI:24.2kg/m2\n否认发热\n重复重复',
+              pages: [{ page_id: 'page_001', page_no: 1, preview_url: '/api/tasks/task_001/images/page_001', parsed_text: 'BHI:24.2kg/m2\n否认发热\n重复重复' }],
               fields: [
                 {
                   field_key: 'bmi',
@@ -422,6 +489,22 @@ describe('ReviewPage', () => {
                   verification_status: 'suspicious',
                   quality_flags: [{ flag: 'value_not_in_evidence', severity: 'warning', message: '字段值中的数字未能在 evidence 中直接找到' }],
                   ocr_correction: { applied: true, raw: 'BHI', normalized: 'BMI', reason: '单位 kg/m2' }
+                },
+                {
+                  field_key: 'fever',
+                  label: '发热',
+                  value: '无',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'negation_or_uncertainty_risk', severity: 'warning', message: 'evidence 附近存在否定或不确定语气' }]
+                },
+                {
+                  field_key: 'duplicate',
+                  label: '重复片段',
+                  value: '重复',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'possible_duplicate_or_stitching', severity: 'warning', message: '文本中存在高相似重复片段' }]
                 }
               ]
             }
@@ -432,9 +515,16 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('需重点核验')).toBeTruthy();
-    expect(screen.getByText('字段值中的数字未能在 evidence 中直接找到')).toBeTruthy();
-    expect(screen.getByText(/OCR.*BHI.*BMI/)).toBeTruthy();
+    const riskFlag = await screen.findByLabelText('重点核验：未找到证据；最开始提取片段：24.2kg/m2');
+    expect(riskFlag).toBeTruthy();
+    expect(riskFlag.getAttribute('data-tooltip')).toBe('未找到证据；最开始提取片段：24.2kg/m2');
+    expect(riskFlag.getAttribute('title')).toBeNull();
+    expect(screen.queryByText('需核验')).toBeNull();
+    expect(screen.queryByText('需重点核验')).toBeNull();
+    expect(screen.queryByText('字段值中的数字未能在 evidence 中直接找到')).toBeNull();
+    expect(screen.queryByText(/OCR.*BHI.*BMI/)).toBeNull();
+    expect(screen.queryByLabelText(/否定或不确定语气/)).toBeNull();
+    expect(screen.queryByLabelText(/高相似重复片段/)).toBeNull();
   });
 
   it('shows a message when task completion validation fails', async () => {
@@ -456,8 +546,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('OCR');
-    await userEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    await screen.findByText('OCR 合并文本');
+    await userEvent.click(screen.getByRole('button', { name: '一键审核' }));
 
     expect(await screen.findByText('仍有字段未审核')).toBeTruthy();
   });
@@ -469,6 +559,7 @@ describe('ReviewPage', () => {
           success: true,
           data: {
             task_id: 'task_failed',
+            display_name: 'task_failed',
             status: 'failed',
             created_at: '2026-05-19T10:00:00+08:00',
             updated_at: '2026-05-19T10:02:00+08:00',
@@ -503,7 +594,7 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_failed" />);
 
-    expect(await screen.findByText('任务详情')).toBeTruthy();
+    expect(await screen.findByLabelText('任务信息')).toBeTruthy();
     expect(screen.getByText('OCR/结构化模块未配置，请检查本地配置')).toBeTruthy();
     expect(screen.queryByLabelText('结构化字段')).toBeNull();
 
@@ -519,6 +610,7 @@ describe('ReviewPage', () => {
           success: true,
           data: {
             task_id: 'task_processing',
+            display_name: 'task_processing',
             status: 'processing',
             created_at: '2026-05-19T10:00:00+08:00',
             page_count: 3,
@@ -538,6 +630,6 @@ describe('ReviewPage', () => {
     expect(await screen.findByText('OCR 文档解析')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: '任务处理进度' }).getAttribute('aria-valuenow')).toBe('55');
     expect(screen.queryByLabelText('结构化字段')).toBeNull();
-    expect(screen.queryByRole('button', { name: '确认完成' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '一键审核' })).toBeNull();
   });
 });

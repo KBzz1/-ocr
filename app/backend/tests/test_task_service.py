@@ -34,7 +34,7 @@ def make_service(tmp_path, orchestrator=None, schema_provider=None):
     )
 
 
-def write_task(tmp_path, task_id="task_001", status="uploading", **overrides):
+def write_task(tmp_path, task_id="1", status="uploading", **overrides):
     task = {
         "task_id": task_id,
         "status": status,
@@ -56,7 +56,8 @@ def test_create_uploading_task_has_upload_token_and_empty_images(tmp_path):
 
     task = service.create_uploading_task(base_url="http://192.168.1.5:8081")
 
-    assert task["task_id"].startswith("task_")
+    assert task["task_id"] == "1"
+    assert task["display_name"] == "1"
     assert task["status"] == "uploading"
     assert task["upload_token"]
     assert task["mobile_upload_url"] == (
@@ -88,16 +89,16 @@ def test_list_tasks_hides_empty_uploading_placeholders(tmp_path):
     service.create_uploading_task(base_url="http://127.0.0.1:8081")
     write_task(
         tmp_path,
-        task_id="task_002",
+        task_id="2",
         status="uploading",
         images=[{"page_id": "page_001", "page_no": 1}],
     )
-    write_task(tmp_path, task_id="task_003", status="failed")
+    write_task(tmp_path, task_id="3", status="failed")
 
     summaries = service.list_tasks()
 
-    assert [summary["task_id"] for summary in summaries] == ["task_002", "task_003"]
-    assert service.list_tasks(status="uploading")[0]["task_id"] == "task_002"
+    assert [summary["task_id"] for summary in summaries] == ["2", "3"]
+    assert service.list_tasks(status="uploading")[0]["task_id"] == "2"
 
 
 def test_get_task_normalizes_mvp_shape(tmp_path):
@@ -108,7 +109,7 @@ def test_get_task_normalizes_mvp_shape(tmp_path):
     )
     service = make_service(tmp_path)
 
-    task = service.get_task("task_001")
+    task = service.get_task("1")
 
     assert task["status"] == "uploading"
     assert task["page_count"] == 1
@@ -167,8 +168,8 @@ def test_process_without_algorithm_marks_failed(tmp_path):
     write_task(tmp_path, status="uploading")
     service = make_service(tmp_path)
 
-    result = service.process("task_001")
-    persisted = service.get_task("task_001")
+    result = service.process("1")
+    persisted = service.get_task("1")
 
     assert result["status"] == "processing"
     assert result["processing_summary"]["stage"] == "queued"
@@ -194,13 +195,13 @@ def test_finish_upload_returns_processing_after_dispatching_background_run(tmp_p
     orchestrator = RecordingOrchestrator()
     service = make_service(tmp_path, orchestrator=orchestrator, schema_provider=lambda: {"version": "1.0.0"})
 
-    result = service.finish_upload("task_001")
+    result = service.finish_upload("1")
     summary = service.list_tasks()[0]
 
     assert result["status"] == "processing"
     assert result["processing_summary"]["stage"] == "queued"
     assert result["processing_summary"]["progress_percent"] == 5
-    assert orchestrator.calls == [("task_001", {"version": "1.0.0"})]
+    assert orchestrator.calls == [("1", {"version": "1.0.0"})]
     assert summary["processing_summary"]["stage"] == "document_parsing"
     assert summary["processing_summary"]["progress_percent"] == 55
 
@@ -213,7 +214,7 @@ def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
 
     write_task(
         tmp_path,
-        task_id="task_001",
+        task_id="1",
         images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}],
     )
     orchestrator = CancellationAwareOrchestrator()
@@ -223,10 +224,10 @@ def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
         background_runner=queue_runner,
     )
 
-    started = service.finish_upload("task_001")
-    cancelled = service.cancel_processing("task_001")
+    started = service.finish_upload("1")
+    cancelled = service.cancel_processing("1")
     pending[0]()
-    persisted = service.get_task("task_001")
+    persisted = service.get_task("1")
 
     assert started["status"] == "processing"
     assert cancelled["status"] == "failed"
@@ -246,7 +247,7 @@ def test_cancel_processing_rejects_non_processing_task(tmp_path):
     service = make_service(tmp_path)
 
     with pytest.raises(AppError) as exc_info:
-        service.cancel_processing("task_001")
+        service.cancel_processing("1")
 
     assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
     assert exc_info.value.details == {"current": "review", "target": "failed"}
@@ -260,12 +261,12 @@ def test_background_runner_can_serialize_processing_callbacks(tmp_path):
 
     write_task(
         tmp_path,
-        task_id="task_001",
+        task_id="1",
         images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}],
     )
     write_task(
         tmp_path,
-        task_id="task_002",
+        task_id="2",
         images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-2.jpg"}],
     )
     orchestrator = RecordingOrchestrator()
@@ -276,17 +277,17 @@ def test_background_runner_can_serialize_processing_callbacks(tmp_path):
         background_runner=queue_runner,
     )
 
-    service.finish_upload("task_001")
-    service.finish_upload("task_002")
+    service.finish_upload("1")
+    service.finish_upload("2")
 
     assert len(pending) == 2
     assert orchestrator.calls == []
     pending[0]()
-    assert orchestrator.calls == [("task_001", {"version": "1.0.0"})]
+    assert orchestrator.calls == [("1", {"version": "1.0.0"})]
     pending[1]()
     assert orchestrator.calls == [
-        ("task_001", {"version": "1.0.0"}),
-        ("task_002", {"version": "1.0.0"}),
+        ("1", {"version": "1.0.0"}),
+        ("2", {"version": "1.0.0"}),
     ]
 
 
@@ -295,6 +296,83 @@ def test_process_invalid_state_raises_invalid_transition(tmp_path):
     service = make_service(tmp_path)
 
     with pytest.raises(AppError) as exc_info:
-        service.mark_failed("task_001", "ALGORITHM_MODULE_FAILED", "算法模块异常")
+        service.mark_failed("1", "ALGORITHM_MODULE_FAILED", "算法模块异常")
 
     assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+def test_reopen_review_transitions_done_to_review(tmp_path):
+    write_task(tmp_path, status="done")
+    service = make_service(tmp_path)
+
+    task = service.reopen_review("1")
+
+    assert task["status"] == "review"
+
+
+def test_reopen_review_rejects_non_done_task(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
+        service.reopen_review("1")
+
+    assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+def test_rename_task_updates_display_name(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+
+    task = service.rename_task("1", "张三入院记录")
+
+    assert task["display_name"] == "张三入院记录"
+    persisted = service.get_task("1")
+    assert persisted["display_name"] == "张三入院记录"
+
+    summary = service.list_tasks()[0]
+    assert summary["display_name"] == "张三入院记录"
+    assert summary["task_id"] == "1"
+
+
+def test_delete_task_removes_from_store(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+
+    result = service.delete_task("1")
+
+    assert result["task_id"] == "1"
+    assert service.list_tasks() == []
+    with pytest.raises(AppError) as exc_info:
+        service.get_task("1")
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+def test_delete_task_rejects_processing_status(tmp_path):
+    write_task(tmp_path, status="processing")
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
+        service.delete_task("1")
+
+    assert exc_info.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+def test_delete_task_nonexistent_raises_not_found(tmp_path):
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc_info:
+        service.delete_task("missing")
+
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+@pytest.mark.parametrize("status", ["uploading", "review", "done", "failed"])
+def test_delete_task_works_for_non_processing_statuses(tmp_path, status):
+    write_task(tmp_path, status=status)
+    service = make_service(tmp_path)
+
+    result = service.delete_task("1")
+
+    assert result["task_id"] == "1"
+    assert service.list_tasks() == []

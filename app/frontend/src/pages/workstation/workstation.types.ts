@@ -15,12 +15,14 @@ export type SystemStatus = {
 
 export type TaskUploadSummary = CreateTaskResult & {
   id: string;
+  displayName: string;
   uploadedPages: number;
   createdAtText: string;
 };
 
 export type TaskSummary = {
   id: string;
+  displayName: string;
   createdAtText: string;
   pageCount: number;
   status: TaskStatus;

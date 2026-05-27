@@ -1,86 +1,248 @@
+import { useLayoutEffect, useRef } from 'react';
 import type { ReviewField } from '../../api/review';
-import type { FieldStatus } from '../../styles/status';
+
+type FieldGroupDef = {
+  group_key: string;
+  group_label: string;
+  fields: Array<{ field_key: string; label: string }>;
+};
 
 type FieldListProps = {
   fields: ReviewField[];
+  fieldGroups?: FieldGroupDef[];
   selectedFieldKey: string | null;
   onChange: (fields: ReviewField[]) => void;
   onFocusField: (field: ReviewField) => void;
-  getStatusLabel: (status: FieldStatus) => string;
+  onToggleReviewed: (field: ReviewField) => void;
 };
 
-function nextStatus(field: ReviewField, value: string): FieldStatus {
-  return value === (field.final_value ?? field.value) ? field.status : 'modified';
+function groupFields(
+  fields: ReviewField[],
+  fieldGroups: FieldGroupDef[] | undefined,
+): Array<{ groupKey: string; groupLabel: string; fields: ReviewField[] }> {
+  if (!fieldGroups || fieldGroups.length === 0) {
+    return [{ groupKey: '_all', groupLabel: '全部字段', fields }];
+  }
+
+  const fieldMap = new Map<string, ReviewField>();
+  for (const f of fields) {
+    fieldMap.set(f.field_key, f);
+  }
+
+  const usedKeys = new Set<string>();
+  const groups: Array<{ groupKey: string; groupLabel: string; fields: ReviewField[] }> = [];
+
+  for (const group of fieldGroups) {
+    const groupFields: ReviewField[] = [];
+    for (const fdef of group.fields) {
+      const field = fieldMap.get(fdef.field_key);
+      if (field) {
+        groupFields.push({ ...field, field_name: fdef.label || field.field_name });
+        usedKeys.add(fdef.field_key);
+      }
+    }
+    if (groupFields.length > 0) {
+      groups.push({ groupKey: group.group_key, groupLabel: group.group_label, fields: groupFields });
+    }
+  }
+
+  const orphans: ReviewField[] = [];
+  for (const f of fields) {
+    if (!usedKeys.has(f.field_key)) {
+      orphans.push(f);
+    }
+  }
+  if (orphans.length > 0) {
+    groups.push({ groupKey: '_other', groupLabel: '其他', fields: orphans });
+  }
+
+  return groups;
 }
 
-export function FieldList({ fields, selectedFieldKey, onChange, onFocusField, getStatusLabel }: FieldListProps) {
+function getFieldValueLengthClass(value: string) {
+  if (value.length > 56 || value.includes('\n')) return 'field-card__item--long';
+  if (value.length > 18) return 'field-card__item--medium';
+  return 'field-card__item--short';
+}
+
+const evidenceRiskFlags = new Set([
+  'value_not_in_evidence',
+  'missing_evidence',
+  'evidence_missing',
+  'evidence_not_found',
+  'source_not_found',
+]);
+
+function getInitialExtractedSnippet(field: ReviewField) {
+  return (field.candidate_value ?? field.auto_value ?? field.final_value ?? field.value ?? '').trim();
+}
+
+function hasEvidenceText(field: ReviewField) {
+  return (field.evidence ?? []).some((evidence) => (evidence.text ?? '').trim().length > 0);
+}
+
+function isEvidenceRiskFlag(flag: { flag: string; message: string }) {
+  const flagName = flag.flag.toLowerCase();
+  const message = flag.message.toLowerCase();
+  return (
+    evidenceRiskFlags.has(flag.flag) ||
+    flagName.includes('evidence') ||
+    flagName.includes('source') ||
+    message.includes('未找到证据') ||
+    message.includes('未能在 evidence') ||
+    message.includes('无 evidence')
+  );
+}
+
+function shouldShowRiskFlag(field: ReviewField) {
+  const flags = field.quality_flags ?? [];
+  if (flags.some(isEvidenceRiskFlag)) return true;
+  if (flags.length > 0) return false;
+  return (
+    field.verification_status === 'suspicious' &&
+    getInitialExtractedSnippet(field).length > 0 &&
+    !hasEvidenceText(field)
+  );
+}
+
+function getFieldRiskDescription(field: ReviewField) {
+  const snippet = getInitialExtractedSnippet(field);
+  return snippet ? `未找到证据；最开始提取片段：${snippet}` : '未找到证据';
+}
+
+function AutoGrowTextarea({
+  field,
+  value,
+  onChange,
+  onFocus,
+}: {
+  field: ReviewField;
+  value: string;
+  onChange: (value: string) => void;
+  onFocus: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 34)}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      id={`review-field-${field.field_key}`}
+      className="field-card__input"
+      rows={1}
+      value={value}
+      aria-label={field.field_key}
+      onChange={(e) => onChange(e.currentTarget.value)}
+      onFocus={onFocus}
+    />
+  );
+}
+
+export function FieldList({
+  fields,
+  fieldGroups,
+  selectedFieldKey,
+  onChange,
+  onFocusField,
+  onToggleReviewed,
+}: FieldListProps) {
   if (fields.length === 0) {
     return <p className="review-empty">后端未返回可审核字段</p>;
   }
 
+  const groups = groupFields(fields, fieldGroups);
+
   function updateField(fieldKey: string, value: string) {
     onChange(
-      fields.map((field) =>
-        field.field_key === fieldKey
-          ? { ...field, value, final_value: value, status: nextStatus(field, value) }
-          : field
-      )
+      fields.map((f) =>
+        f.field_key === fieldKey
+          ? {
+              ...f,
+              value,
+              final_value: value,
+              status: value === (f.final_value ?? f.auto_value ?? '') ? f.status : ('modified' as const),
+            }
+          : f,
+      ),
     );
   }
 
   return (
-    <div className="review-fields-table-wrap">
-      <table className="review-fields-table">
-        <thead>
-          <tr>
-            <th>字段</th>
-            <th>人工值</th>
-            <th>候选值</th>
-            <th>来源</th>
-            <th>状态</th>
-          </tr>
-        </thead>
-        <tbody>
-          {fields.map((field) => {
-            const sourcePageNo = field.evidence?.find((item) => item.page_no)?.page_no;
-            const isSelected = field.field_key === selectedFieldKey;
+    <div className="field-cards">
+      {groups.map((group) => (
+        <section key={group.groupKey} className="field-card" aria-label={group.groupLabel}>
+          <header className="field-card__header">
+            <h3>{group.groupLabel}</h3>
+            <span>{group.fields.length} 个字段</span>
+          </header>
 
-            return (
-              <tr className={isSelected ? 'is-selected' : ''} key={field.field_key}>
-                <th scope="row">
-                  <label htmlFor={`review-field-${field.field_key}`}>{field.label ?? field.field_key}</label>
-                </th>
-                <td>
-                  <textarea
-                    id={`review-field-${field.field_key}`}
-                    rows={2}
-                    value={field.value}
-                    aria-label={field.field_key}
-                    onChange={(event) => updateField(field.field_key, event.currentTarget.value)}
-                    onFocus={() => onFocusField(field)}
-                  />
-                </td>
-                <td>{field.candidate_value ? <span className="review-candidate">{field.candidate_value}</span> : <span className="review-muted">-</span>}</td>
-                <td>{sourcePageNo ? <span className="review-field__evidence">第 {sourcePageNo} 页</span> : <span className="review-muted">-</span>}</td>
-                <td>
-                  <span className={`review-field-status review-field-status--${field.status}`}>
-                    {getStatusLabel(field.status)}
-                  </span>
-                  {field.verification_status === 'suspicious' && <span className="field-risk">需重点核验</span>}
-                  {field.quality_flags?.map((flag, idx) => (
-                    <small key={`${flag.flag}-${idx}`} className="field-risk-detail">{flag.message}</small>
-                  ))}
-                  {field.ocr_correction?.applied && (
-                    <small className="field-ocr-correction">
-                      OCR: {field.ocr_correction.raw} -&gt; {field.ocr_correction.normalized}，{field.ocr_correction.reason}
-                    </small>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+          <div className="field-card__body">
+            {group.fields.map((field) => {
+              const isSuspicious = field.verification_status === 'suspicious';
+              const isSelected = field.field_key === selectedFieldKey;
+              const isReviewed = field.status === 'confirmed';
+              const value = field.final_value ?? field.auto_value ?? '';
+              const fieldLabel = field.field_name ?? field.label ?? field.field_key;
+              const riskDescription = shouldShowRiskFlag(field) ? getFieldRiskDescription(field) : null;
+
+              return (
+                <div
+                  key={field.field_key}
+                  className={`field-card__item ${getFieldValueLengthClass(value)}${isSelected ? ' is-focused' : ''}${isSuspicious ? ' is-suspicious' : ''}${isReviewed ? ' is-reviewed' : ''}`}
+                  data-testid={`review-field-card-${field.field_key}`}
+                  onClick={() => onFocusField(field)}
+                >
+                  <div className="field-card__topline">
+                    <label
+                      className="field-card__label"
+                      htmlFor={`review-field-${field.field_key}`}
+                    >
+                      {fieldLabel}
+                    </label>
+                    {riskDescription ? (
+                      <span
+                        className="field-card__flag"
+                        aria-label={`重点核验：${riskDescription}`}
+                        data-tooltip={riskDescription}
+                        tabIndex={0}
+                      >
+                        !
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="field-card__value-row">
+                    <AutoGrowTextarea
+                      field={field}
+                      value={value}
+                      onChange={(nextValue) => updateField(field.field_key, nextValue)}
+                      onFocus={() => onFocusField(field)}
+                    />
+                    <button
+                      type="button"
+                      className="field-card__review-check"
+                      aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
+                      aria-pressed={isReviewed}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onFocusField(field);
+                        onToggleReviewed(field);
+                      }}
+                    >
+                      {isReviewed ? '✓' : ''}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

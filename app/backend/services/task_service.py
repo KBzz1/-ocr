@@ -24,11 +24,12 @@ class TaskService:
 
     def create_uploading_task(self, base_url: str) -> dict:
         existing_count = len(self._store.list_json("tasks"))
-        task_id = f"task_{existing_count + 1:03d}"
+        task_id = str(existing_count + 1)
         now = self._now()
         upload_token = token_urlsafe(24)
         task = {
             "task_id": task_id,
+            "display_name": task_id,
             "status": TaskStatus.UPLOADING.value,
             "created_at": now,
             "updated_at": now,
@@ -66,9 +67,32 @@ class TaskService:
     def _should_list_task(self, task: dict) -> bool:
         return not (task["status"] == TaskStatus.UPLOADING.value and task["page_count"] == 0)
 
+    def delete_task(self, task_id: str) -> dict:
+        """永久删除任务：校验状态后移除任务 JSON 文件。
+
+        processing 状态的任务不可删除，需先取消处理。
+        关联的 pages/results/exports 目录由 CleanupService 清理。
+        """
+        task = self._read_task(task_id)
+        if task["status"] == TaskStatus.PROCESSING.value:
+            raise AppError(
+                ErrorCode.INVALID_TASK_TRANSITION,
+                details={"current": task["status"], "target": "deleted"},
+            )
+        self._store.delete(f"tasks/{task_id}.json")
+        return task
+
+    def rename_task(self, task_id: str, display_name: str) -> dict:
+        task = self._read_task(task_id)
+        task["display_name"] = display_name
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        return self._normalize_task(task)
+
     def _to_task_summary(self, task: dict, base_url: str | None = None) -> dict:
         summary = {
             "task_id": task["task_id"],
+            "display_name": task.get("display_name", task["task_id"]),
             "status": task["status"],
             "created_at": task["created_at"],
             "updated_at": task["updated_at"],
@@ -219,6 +243,13 @@ class TaskService:
         self._write_task(task)
         return task
 
+    def reopen_review(self, task_id: str) -> dict:
+        task = self._read_task(task_id)
+        task = self._transition(task, TaskStatus.REVIEW.value, "重新审核")
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        return task
+
     def record_export(self, task_id: str, format: str, relative_path: str) -> dict:
         task = self._read_task(task_id)
         self._update_export_summary(task, format=format, relative_path=relative_path)
@@ -324,6 +355,7 @@ class TaskService:
 
     def _normalize_task(self, task: dict) -> dict:
         normalized = dict(task)
+        normalized.setdefault("display_name", task["task_id"])
         normalized.setdefault("images", [])
         normalized.setdefault("error_code", None)
         normalized.setdefault("error_message", None)

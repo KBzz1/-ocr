@@ -4,7 +4,8 @@ import type { TaskSummary } from '../../src/api/tasks';
 
 export const taskFixtures: TaskSummary[] = [
   {
-    task_id: 'task-uploading',
+    task_id: '1',
+    display_name: '1',
     status: 'uploading',
     created_at: '2026-05-19T09:40:00+08:00',
     page_count: 0,
@@ -14,7 +15,8 @@ export const taskFixtures: TaskSummary[] = [
     error_message: null
   },
   {
-    task_id: 'task-ready',
+    task_id: '2',
+    display_name: '2',
     status: 'review',
     created_at: '2026-05-19T09:30:00+08:00',
     page_count: 3,
@@ -24,7 +26,8 @@ export const taskFixtures: TaskSummary[] = [
     error_message: null
   },
   {
-    task_id: 'task-processing',
+    task_id: '3',
+    display_name: '3',
     status: 'processing',
     created_at: '2026-05-19T09:20:00+08:00',
     page_count: 2,
@@ -44,7 +47,8 @@ export const taskFixtures: TaskSummary[] = [
     error_message: null
   },
   {
-    task_id: 'task-failed',
+    task_id: '4',
+    display_name: '4',
     status: 'failed',
     created_at: '2026-05-19T09:10:00+08:00',
     page_count: 1,
@@ -54,7 +58,8 @@ export const taskFixtures: TaskSummary[] = [
     error_message: '图像处理模块未配置'
   },
   {
-    task_id: 'task-done',
+    task_id: '5',
+    display_name: '5',
     status: 'done',
     created_at: '2026-05-19T09:00:00+08:00',
     page_count: 5,
@@ -71,10 +76,11 @@ export function mockTasks(tasks: TaskSummary[] = taskFixtures) {
 
 export function mockCreateTask(
   result = {
-    task_id: 'task_001',
+    task_id: '1',
+    display_name: '1',
     status: 'uploading' as const,
     upload_token: 'token_001',
-    mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001'
+    mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/1?token=token_001'
   }
 ) {
   return http.post('*/api/tasks', () => HttpResponse.json({ success: true, data: result }));
@@ -129,6 +135,17 @@ export function mockCancelTaskProcessing(
     HttpResponse.json({
       success: true,
       data: resolve()
+    })
+  );
+}
+
+export function mockDeleteTask(
+  taskId = 'task-to-delete'
+) {
+  return http.delete(`*/api/tasks/${taskId}`, () =>
+    HttpResponse.json({
+      success: true,
+      data: { task_id: taskId, deleted: true }
     })
   );
 }

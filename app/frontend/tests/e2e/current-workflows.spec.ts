@@ -29,6 +29,21 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
     }
     await fulfillJson(route, { tasks: [] });
   });
+  await page.route('**/api/tasks/task_001', async (route) => {
+    await fulfillJson(route, {
+      task_id: 'task_001',
+      status: 'review',
+      created_at: '2026-05-19T10:00:00+08:00',
+      updated_at: '2026-05-19T10:03:00+08:00',
+      page_count: uploadedPages || 1,
+      processing_summary: {
+        stage: 'done',
+        status: 'completed',
+        label: '处理完成',
+        progress_percent: 100
+      }
+    });
+  });
   await page.route('**/api/mobile-upload/task_001/images?token=token_001', async (route) => {
     uploadedPages += 1;
     await fulfillJson(route, {
@@ -37,6 +52,19 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
       page_no: uploadedPages,
       uploaded_at: '2026-05-19T10:00:00+08:00'
     }, 201);
+  });
+  await page.route('**/api/mobile-upload/task_001?token=token_001', async (route) => {
+    await fulfillJson(route, {
+      task_id: 'task_001',
+      status: 'uploading',
+      page_count: uploadedPages,
+      images: Array.from({ length: uploadedPages }, (_, index) => ({
+        page_id: `page_${index + 1}`,
+        task_id: 'task_001',
+        page_no: index + 1,
+        uploaded_at: '2026-05-19T10:00:00+08:00'
+      }))
+    });
   });
   await page.route('**/api/mobile-upload/task_001/finish?token=token_001', async (route) => {
     await fulfillJson(route, { task_id: 'task_001', status: 'processing', created_at: '2026-05-19T10:00:00+08:00', page_count: uploadedPages });
@@ -90,8 +118,9 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
 
   await page.goto('/');
   await page.getByRole('button', { name: '新建任务' }).click();
-  await expect(page.getByText('task_001', { exact: true })).toBeVisible();
-  await expect(page.getByText('http://127.0.0.1:8081/mobile/upload/task_001?token=token_001')).toBeVisible();
+  await expect(page.getByText('上传任务已创建')).toBeVisible();
+  await expect(page.getByText(/task_001/)).toBeVisible();
+  await expect(page.getByRole('img', { name: '任务上传二维码' })).toBeVisible();
 
   await page.goto('/mobile/upload/task_001?token=token_001');
   await page.getByLabel('拍照/选择图片').setInputFiles([imageFixture, imageFixture, imageFixture]);
@@ -103,7 +132,7 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
   await page.goto('/tasks/task_001/review');
   await page.getByLabel('patient_name').fill('李四');
   await page.getByRole('button', { name: '保存修改' }).click();
-  await page.getByRole('button', { name: '确认完成' }).click();
+  await page.getByRole('button', { name: '一键审核' }).click();
   await expect(page.getByRole('status')).toContainText('已完成');
   await expect(page.getByRole('button', { name: '导出 JSON' })).toBeEnabled();
   await expect(page.getByRole('button', { name: '导出 Excel' })).toBeEnabled();
@@ -156,6 +185,12 @@ test('MVP failed flow: failed task shows reason and no manual fallback', async (
 
 test('MVP failed flow: direct review URL does not render editable fallback fields', async ({ page }) => {
   await mockSystemStatus(page);
+  await page.route('**/api/tasks', async (route) => {
+    await fulfillJson(route, { tasks: [] });
+  });
+  await page.route('**/api/tasks/task_failed', async (route) => {
+    await fulfillError(route, 'TASK_NOT_FOUND', '任务不存在', 404);
+  });
   await page.route('**/api/tasks/task_failed/review', async (route) => {
     await fulfillError(
       route,
@@ -170,7 +205,7 @@ test('MVP failed flow: direct review URL does not render editable fallback field
 
   await expect(page.getByRole('alert')).toContainText('审核数据加载失败');
   await expect(page.getByRole('textbox')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '确认完成' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '一键审核' })).toHaveCount(0);
   await expect(page.getByText('人工补字段')).toHaveCount(0);
   await page.evaluate(() => window.__assertE2eNetworkGate());
 });

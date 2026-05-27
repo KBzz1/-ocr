@@ -5,7 +5,7 @@ TASK_STATUS_TRANSITIONS = {
     "uploading": ["processing", "failed"],
     "processing": ["review", "failed"],
     "review": ["processing", "done", "failed"],
-    "done": ["processing"],
+    "done": ["processing", "review"],
     "failed": ["processing"],
 }
 

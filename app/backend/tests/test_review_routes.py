@@ -43,9 +43,9 @@ def client(app):
 def review_task(app):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     store.write(
-        "tasks/task_001.json",
+        "tasks/1.json",
         {
-            "task_id": "task_001",
+            "task_id": "1",
             "status": "review",
             "created_at": "2026-05-19T10:00:00+00:00",
             "updated_at": "2026-05-19T10:00:00+00:00",
@@ -57,9 +57,9 @@ def review_task(app):
         },
     )
     store.write(
-        "results/task_001/field_candidates.json",
+        "results/1/field_candidates.json",
         {
-            "task_id": "task_001",
+            "task_id": "1",
             "stage": "field_extraction",
             "status": "success",
             "candidates": [
@@ -68,7 +68,7 @@ def review_task(app):
             ],
         },
     )
-    return {"task_id": "task_001"}
+    return {"task_id": "1"}
 
 
 def test_get_review_initializes_result(client, review_task):
@@ -76,7 +76,7 @@ def test_get_review_initializes_result(client, review_task):
 
     assert response.status_code == 200
     data = response.get_json()["data"]
-    assert data["task_id"] == "task_001"
+    assert data["task_id"] == "1"
     assert data["status"] == "review"
     assert data["review_result"]["summary"]["unreviewed_count"] == 2
 
@@ -114,12 +114,31 @@ def test_complete_review_route_marks_done(client, review_task):
     assert response.get_json()["data"]["status"] == "done"
 
 
+def test_reopen_review_transitions_done_to_review(client, app, review_task):
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    client.put(
+        f"/api/tasks/{review_task['task_id']}/review",
+        json={
+            "fields": [
+                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
+                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+            ]
+        },
+    )
+    client.post(f"/api/tasks/{review_task['task_id']}/complete")
+
+    response = client.post(f"/api/tasks/{review_task['task_id']}/review/reopen")
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["status"] == "review"
+
+
 def test_failed_task_cannot_enter_review_flow(client, app):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     store.write(
-        "tasks/task_001.json",
+        "tasks/1.json",
         {
-            "task_id": "task_001",
+            "task_id": "1",
             "status": "failed",
             "created_at": "2026-05-19T10:00:00+00:00",
             "updated_at": "2026-05-19T10:00:00+00:00",
@@ -127,7 +146,7 @@ def test_failed_task_cannot_enter_review_flow(client, app):
         },
     )
 
-    response = client.get("/api/tasks/task_001/review")
+    response = client.get("/api/tasks/1/review")
 
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"

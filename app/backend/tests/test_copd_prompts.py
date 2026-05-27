@@ -14,18 +14,24 @@ def test_extraction_prompt_contains_ocr_constraints_and_schema_keys():
 def test_verification_prompt_requires_structured_field_verdicts():
     from app.backend.services.copd_extraction.prompts import build_verification_prompt
 
-    prompt = build_verification_prompt([
-        {
-            "source_hint": "体格检查",
-            "source_text": "BMI:24.2kg/m2",
-            "fields": [{"field_key": "bmi", "original_value": "24.2"}],
-        }
-    ])
+    prompt = build_verification_prompt(
+        [
+            {
+                "source_hint": "体格检查",
+                "source_text": "BMI:24.2kg/m2",
+                "fields": [{"field_key": "bmi", "original_value": "24.2"}],
+            }
+        ],
+        document_context="体格检查：BMI:24.2kg/m2。",
+    )
 
     assert "verdict" in prompt
     assert "source_text_supported" in prompt
     assert "numeric_value_preserved" in prompt
     assert "reason_code" in prompt
+    assert prompt.count("问题：逐字段判断字段值是否能被提供的 OCR 事实支持。") == 2
+    assert "事实：" in prompt
+    assert "原始 OCR 上下文" in prompt
 
 
 def test_section_group_prompt_asks_for_source_hint_not_evidence():

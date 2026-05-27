@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { getReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
-import { completeTask, getTaskDetail, retryTaskProcessing, type TaskDetail, type TaskStatus } from '../../api/tasks';
+import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
+import { completeTask, getTaskDetail, getTasks, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
 import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
-import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
+import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
 import { buildReviewPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import './review.css';
@@ -17,7 +17,7 @@ type ReviewPageProps = {
 
 function getTaskIdFromPath() {
   const match = window.location.pathname.match(/^\/tasks\/([^/]+)\/review\/?$/);
-  return match ? decodeURIComponent(match[1]) : 'task_001';
+  return match ? decodeURIComponent(match[1]) : '1';
 }
 
 function formatDateTime(value?: string | null) {
@@ -33,9 +33,24 @@ function formatDateTime(value?: string | null) {
   return `${year}/${month}/${day} ${hour}:${minute}`;
 }
 
+function stripOcrMarkup(text: string) {
+  return text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|tr|li|h[1-6]|section|article|table)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {
   return {
     task_id: taskId,
+    display_name: taskId,
     status: payload.status,
     created_at: '演示样本',
     page_count: payload.review_result.pages?.length ?? 0,
@@ -55,6 +70,7 @@ function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail
 function buildReviewTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {
   return {
     task_id: taskId,
+    display_name: taskId,
     status: payload.status,
     created_at: '',
     page_count: payload.review_result.pages?.length ?? 0,
@@ -74,15 +90,16 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [review, setReview] = useState<ReviewResult | null>(null);
   const [fields, setFields] = useState<ReviewField[]>([]);
+  const [taskOptions, setTaskOptions] = useState<TaskSummary[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
-  const [isOcrVisible, setIsOcrVisible] = useState(false);
-  const [ocrMode, setOcrMode] = useState<'page' | 'merged'>('page');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'failed'>('idle');
   const [isCompleting, setIsCompleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
 
   useEffect(() => {
     let isCurrent = true;
@@ -91,6 +108,16 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     setReview(null);
     setFields([]);
     setTaskDetail(null);
+
+    if (!demoPayload) {
+      getTasks()
+        .then((tasks) => {
+          if (isCurrent) setTaskOptions(tasks);
+        })
+        .catch(() => {
+          if (isCurrent) setTaskOptions([]);
+        });
+    }
 
     async function loadTask() {
       if (demoPayload) {
@@ -150,11 +177,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   }
 
   function normalizeFieldsForUnifiedReview(currentFields: ReviewField[]) {
-    return currentFields.map((field) =>
-      field.status === 'unreviewed'
-        ? { ...field, status: 'confirmed' as const }
-        : field
-    );
+    return currentFields.map((field) => ({ ...field, status: 'confirmed' as const }));
   }
 
   const savingRef = useRef(false);
@@ -220,9 +243,46 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     }
   }
 
+  async function handleMarkUnreviewed() {
+    if (savingRef.current || completingRef.current) return;
+    try {
+      const resetFields = fields.map((field) => ({ ...field, status: 'unreviewed' as const }));
+      const savedFields = await saveFields(resetFields);
+      if (!savedFields) return;
+      if (!demoPayload) {
+        await reopenReview(taskId);
+      }
+      setStatus('review');
+      setTaskDetail((current) => current ? { ...current, status: 'review' } : current);
+      setMessage('已标记为未审核');
+    } catch (error) {
+      setSaveStatus('failed');
+      setMessage(error instanceof Error ? error.message : '标记未审核失败');
+    }
+  }
+
   function handleFieldsChange(nextFields: ReviewField[]) {
     setFields(nextFields);
     setSaveStatus('dirty');
+  }
+
+  function handleToggleFieldReviewed(field: ReviewField) {
+    setFields((currentFields) =>
+      currentFields.map((currentField) =>
+        currentField.field_key === field.field_key
+          ? {
+              ...currentField,
+              status: currentField.status === 'confirmed' ? ('unreviewed' as const) : ('confirmed' as const),
+            }
+          : currentField,
+      ),
+    );
+    setSaveStatus('dirty');
+  }
+
+  function handleTaskSwitch(nextTaskId: string) {
+    if (!nextTaskId || nextTaskId === taskId) return;
+    window.location.href = buildReviewPath(nextTaskId);
   }
 
   async function handleRetryProcessing() {
@@ -231,12 +291,35 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     try {
       const task = await retryTaskProcessing(taskId);
       setStatus(task.status);
-      setTaskDetail((current) => current ? { ...current, ...task } : { ...task, created_at: '', page_count: 0 });
+      setTaskDetail((current) => current ? { ...current, ...task } : { ...task, display_name: taskId, created_at: '', page_count: 0 });
       setMessage('已提交重新处理');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '重新处理失败，请重试');
     } finally {
       setIsRetrying(false);
+    }
+  }
+
+  const displayName = taskDetail?.display_name ?? taskId;
+
+  function handleStartRename() {
+    if (demoPayload) return;
+    setRenameDraft(displayName);
+    setIsRenaming(true);
+  }
+
+  async function handleCommitRename() {
+    const trimmed = renameDraft.trim();
+    setIsRenaming(false);
+    if (!trimmed || trimmed === displayName) return;
+    try {
+      const updated = await renameTask(taskId, trimmed);
+      setTaskDetail((current) => current ? { ...current, display_name: updated.display_name } : current);
+      setTaskOptions((current) =>
+        current.map((t) => t.task_id === taskId ? { ...t, display_name: updated.display_name } : t)
+      );
+    } catch {
+      setMessage('重命名失败');
     }
   }
 
@@ -264,7 +347,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   }, []);
 
   if (isLoading) {
-    return renderShell(<>正在加载任务详情</>);
+    return renderShell(
+      <div className="review-readonly-panel">
+        <h2>正在加载任务详情</h2>
+        <p>请稍候，正在获取任务信息...</p>
+      </div>
+    );
   }
 
   if (!taskDetail && !review) {
@@ -273,20 +361,32 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     );
   }
 
-  const pages = review?.pages ?? [];
+  const taskImages = taskDetail?.images ?? [];
+  const reviewPages = review?.pages ?? [];
+  const pages = taskImages.length > 0
+    ? taskImages.map((img) => {
+        const rp = reviewPages.find((p) => p.page_id === img.page_id);
+        return {
+          page_id: img.page_id,
+          page_no: img.page_no ?? 1,
+          preview_url: img.preview_url ?? img.image_url,
+          image_url: img.image_url,
+          parsed_text: rp?.parsed_text
+        };
+      })
+    : reviewPages;
   const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
-  const mergedOcrText = review?.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
-  const currentPageOcrText = selectedPage?.parsed_text ?? mergedOcrText;
-  const visibleOcrText = ocrMode === 'page' ? currentPageOcrText : mergedOcrText;
+  const mergedOcrText = stripOcrMarkup(review?.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n'));
+  const visibleOcrText = mergedOcrText;
   const selectedField = fields.find((field) => field.field_key === selectedFieldKey) ?? fields[0] ?? null;
   const selectedEvidenceText = selectedField?.evidence?.find((item) => item.text)?.text;
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
-  const unreviewedFieldCount = fields.filter((field) => field.status === 'unreviewed').length;
+  const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
   const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const sourceMessage: SourceMessage | null = selectedField
-    ? selectedEvidenceText
+      ? selectedEvidenceText
       ? visibleOcrText.includes(selectedEvidenceText)
-        ? { kind: 'located', text: '已定位来源文本', evidenceText: selectedEvidenceText }
+        ? { kind: 'located', text: '点击字段可定位原文', evidenceText: selectedEvidenceText }
         : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
       : { kind: 'unavailable', text: '当前字段未返回来源文本' }
     : null;
@@ -312,118 +412,197 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const failureReason = effectiveStatus === 'failed'
     ? detail?.error_message || detail?.error_code || '处理失败，请重新处理'
     : null;
-  const latestHistory = detail?.status_history?.slice(-3).reverse() ?? [];
   const canReview = canLoadReview(effectiveStatus) && Boolean(review);
 
   return renderShell(
     <>
-      <header className="review-header">
-        <div>
-          <div className="review-title-line">
-            <h1>任务 {taskId}</h1>
+      <section className="review-task-card" aria-label="任务信息">
+        <div className="review-task-card__media">
+          <div className="review-task-card__media-heading">
+            <h2>采集图片</h2>
+            <span>第 {selectedPage?.page_no ?? 0} 页 / 共 {pages.length} 页</span>
           </div>
-          <div className="review-status-pill">
-            {demoPayload ? <span className="review-demo-label">演示样本</span> : null}
-            {getTaskStatusLabel(effectiveStatus)}
+          <div className="review-document-shell">
+            {pages.length ? (
+              <div className="review-page-tabs" role="tablist" aria-label="任务页码">
+                {pages.map((page) => (
+                  <button
+                    aria-label={`第 ${page.page_no} 页`}
+                    aria-selected={page.page_id === selectedPage?.page_id}
+                    key={page.page_id}
+                    type="button"
+                    onClick={() => setSelectedPageId(page.page_id)}
+                  >
+                    <span>{page.page_no}</span>
+                    {page.preview_url || page.image_url ? (
+                      <img src={page.preview_url ?? page.image_url} alt="" />
+                    ) : (
+                      <span>{page.page_no}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="review-document-stage">
+              {selectedPage?.preview_url || selectedPage?.image_url ? (
+                <img
+                  src={selectedPage.preview_url ?? selectedPage.image_url}
+                  alt={`第 ${selectedPage.page_no} 页原图`}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    el.style.display = 'none';
+                    const err = document.createElement('p');
+                    err.className = 'review-empty';
+                    err.textContent = '图片加载失败';
+                    el.parentNode?.insertBefore(err, el);
+                  }}
+                />
+              ) : (
+                <p className="review-empty">图片加载失败</p>
+              )}
+            </div>
           </div>
         </div>
-        <div className="review-metrics" aria-label="审核摘要">
-          <div>
-            <span>页数</span>
-            <strong>{pages.length} / {pages.length || 0}</strong>
+
+        <div className="review-task-card__body">
+          <div className="review-task-card__topline">
+            <div>
+              <p className="review-detail-card__label">当前任务</p>
+              {isRenaming ? (
+                <input
+                  className="review-task-name-input"
+                  value={renameDraft}
+                  autoFocus
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onBlur={() => void handleCommitRename()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); void handleCommitRename(); }
+                    if (e.key === 'Escape') setIsRenaming(false);
+                  }}
+                />
+              ) : (
+                <h1 className="review-task-name" onClick={handleStartRename} title="点击重命名">
+                  {displayName}
+                </h1>
+              )}
+            </div>
+            <div className="review-status-pill" data-tone={statusMeta.tone}>
+              {demoPayload ? <span className="review-demo-label">演示样本</span> : null}
+              {getTaskStatusLabel(effectiveStatus)}
+            </div>
           </div>
-          <div>
-            <span>字段</span>
-            <strong>{fields.length}</strong>
+
+          <label className="review-task-switch">
+            <span>切换任务</span>
+            <select
+              aria-label="切换任务"
+              value={taskId}
+              onChange={(event) => handleTaskSwitch(event.currentTarget.value)}
+              disabled={demoPayload ? true : false}
+            >
+              <option value={taskId}>{displayName}</option>
+              {taskOptions
+                .filter((task) => task.task_id !== taskId)
+                .map((task) => (
+                  <option key={task.task_id} value={task.task_id}>
+                    {task.display_name ?? task.task_id} · {getTaskStatusLabel(task.status)}
+                  </option>
+                ))}
+            </select>
+          </label>
+
+          <div className="review-task-metrics" aria-label="审核摘要">
+            <div>
+              <span>创建时间</span>
+              <strong>{formatDateTime(detail?.created_at)}</strong>
+            </div>
+            <div>
+              <span>页数</span>
+              <strong>{detail?.page_count ?? pages.length} 页</strong>
+            </div>
+            <div>
+              <span>当前进度</span>
+              <strong>{detailStageLabel}</strong>
+            </div>
+            <div>
+              <span>字段</span>
+              <strong>{fields.length}</strong>
+            </div>
+            <div className="is-warn">
+              <span>待确认</span>
+              <strong>{pendingReviewFieldCount}</strong>
+            </div>
+            <div className="is-info">
+              <span>已修改</span>
+              <strong>{modifiedFieldCount}</strong>
+            </div>
           </div>
-          <div className="is-warn">
-            <span>待确认</span>
-            <strong>{unreviewedFieldCount}</strong>
-          </div>
-          <div className="is-info">
-            <span>已修改</span>
-            <strong>{modifiedFieldCount}</strong>
-          </div>
-        </div>
-        <div className="review-header__actions">
-          {saveStatus !== 'idle' ? (
-            <span className={`review-save-state review-save-state--${saveStatus}`} aria-live="polite">
-              {saveStatus === 'dirty'
-                ? '未保存修改'
-                : saveStatus === 'saving'
-                  ? '保存中'
-                  : saveStatus === 'saved'
-                    ? '已保存'
-                    : '保存失败'}
+
+          <div className="review-detail-card__progress">
+            <span
+              aria-label="任务处理进度"
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={detailProgress}
+              role="progressbar"
+            >
+              <span style={{ width: `${detailProgress}%` }} />
             </span>
+          </div>
+
+          <div className="review-header__actions">
+            {saveStatus !== 'idle' ? (
+              <span className={`review-save-state review-save-state--${saveStatus}`} aria-live="polite">
+                {saveStatus === 'dirty'
+                  ? '未保存修改'
+                  : saveStatus === 'saving'
+                    ? '保存中'
+                    : saveStatus === 'saved'
+                      ? '已保存'
+                      : '保存失败'}
+              </span>
+            ) : null}
+            {canReview ? (
+              <>
+                <button type="button" onClick={() => void handleSave()} disabled={saveStatus === 'saving' || isCompleting}>
+                  保存修改
+                </button>
+                {effectiveStatus === 'done' ? (
+                  <button type="button" onClick={() => void handleMarkUnreviewed()} disabled={saveStatus === 'saving' || isCompleting}>
+                    标记未审核
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="review-confirm-button"
+                    onClick={() => void handleComplete()}
+                    disabled={isCompleting || saveStatus === 'saving'}
+                  >
+                    {isCompleting ? '确认中' : '一键审核'}
+                  </button>
+                )}
+                {effectiveStatus === 'done' ? (
+                  <ExportPanel task={{ task_id: taskId, status: effectiveStatus, export_summary: detail?.export_summary }} />
+                ) : null}
+              </>
+            ) : null}
+          </div>
+
+          {failureReason ? (
+            <div className="review-failure-box" role="alert">
+              <div>
+                <p className="review-detail-card__label">失败原因</p>
+                <strong>{failureReason}</strong>
+              </div>
+              <button type="button" disabled={isRetrying} onClick={() => void handleRetryProcessing()}>
+                {isRetrying ? '提交中' : '重新处理'}
+              </button>
+            </div>
           ) : null}
-          <button type="button" onClick={() => void handleSave()} disabled={saveStatus === 'saving' || isCompleting}>
-            保存修改
-          </button>
-          <button
-            type="button"
-            className="review-confirm-button"
-            onClick={() => void handleComplete()}
-            disabled={isCompleting || saveStatus === 'saving'}
-          >
-            {isCompleting ? '确认中' : '确认完成'}
-          </button>
         </div>
-      </header>
+      </section>
 
       {message ? <p role="status" className="review-alert">{message}</p> : null}
-
-      <section className="review-detail-card" aria-label="任务详情">
-        <div className="review-detail-card__main">
-          <div>
-            <p className="review-detail-card__label">任务详情</p>
-            <strong>{statusMeta.label}</strong>
-          </div>
-          <div>
-            <p className="review-detail-card__label">创建时间</p>
-            <strong>{formatDateTime(detail?.created_at)}</strong>
-          </div>
-          <div>
-            <p className="review-detail-card__label">页数</p>
-            <strong>{detail?.page_count ?? pages.length} 页</strong>
-          </div>
-          <div>
-            <p className="review-detail-card__label">当前进度</p>
-            <strong>{detailStageLabel}</strong>
-          </div>
-        </div>
-        <div className="review-detail-card__progress">
-          <span
-            aria-label="任务处理进度"
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={detailProgress}
-            role="progressbar"
-          >
-            <span style={{ width: `${detailProgress}%` }} />
-          </span>
-        </div>
-        {failureReason ? (
-          <div className="review-failure-box" role="alert">
-            <div>
-              <p className="review-detail-card__label">失败原因</p>
-              <strong>{failureReason}</strong>
-            </div>
-            <button type="button" disabled={isRetrying} onClick={() => void handleRetryProcessing()}>
-              {isRetrying ? '提交中' : '重新处理'}
-            </button>
-          </div>
-        ) : null}
-        {latestHistory.length ? (
-          <div className="review-history-strip" aria-label="最近任务动态">
-            {latestHistory.map((item, index) => (
-              <span key={`${item.changed_at}-${index}`}>
-                {formatDateTime(item.changed_at)} · {item.message ?? item.reason ?? item.to_status ?? item.status}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </section>
 
       {!canReview ? (
         <section className="review-readonly-panel" aria-label="任务当前状态">
@@ -436,79 +615,13 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
         </section>
       ) : (
         <div className="review-grid">
-          <div className="review-source-column">
-            <section className="review-panel review-panel--image" aria-label="任务图片">
-              <div className="review-panel__heading">
-                <h2>原图</h2>
-                <span>第 {selectedPage?.page_no ?? 0} 页 / 共 {pages.length} 页</span>
-              </div>
-              <div className="review-document-shell">
-                {pages.length ? (
-                  <div className="review-page-tabs" role="tablist" aria-label="任务页码">
-                    {pages.map((page) => (
-                      <button
-                        aria-label={`第 ${page.page_no} 页`}
-                        aria-selected={page.page_id === selectedPage?.page_id}
-                        key={page.page_id}
-                        type="button"
-                        onClick={() => setSelectedPageId(page.page_id)}
-                      >
-                        <span>{page.page_no}</span>
-                        {page.preview_url || page.image_url ? (
-                          <img src={page.preview_url ?? page.image_url} alt="" />
-                        ) : (
-                          <span className="review-thumb-placeholder" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="review-document-stage">
-                  {selectedPage?.preview_url || selectedPage?.image_url ? (
-                    <img src={selectedPage.preview_url ?? selectedPage.image_url} alt={`第 ${selectedPage.page_no} 页原图`} />
-                  ) : (
-                    <div className="review-document-fallback" aria-label="无原图预览">
-                      <h3>重庆大学附属新桥医院</h3>
-                      <h4>住院病历首页</h4>
-                      {(currentPageOcrText || mergedOcrText || '无原图').split('\n').slice(0, 10).map((line, index) => (
-                        <p key={`${line}-${index}`}>{line}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className={`review-panel review-panel--ocr${isOcrVisible ? ' is-open' : ''}`} aria-label="OCR 文本">
-              <div className="review-panel__heading">
-                <h2>OCR</h2>
-                <button type="button" onClick={() => setIsOcrVisible((value) => !value)}>
-                  {isOcrVisible ? '隐藏 OCR' : '显示 OCR'}
-                </button>
-              </div>
-              {isOcrVisible ? (
-                <>
-                  <div className="review-text-actions" aria-label="OCR 文本范围">
-                    <button
-                      aria-pressed={ocrMode === 'page'}
-                      type="button"
-                      onClick={() => setOcrMode('page')}
-                    >
-                      当前页
-                    </button>
-                    <button
-                      aria-pressed={ocrMode === 'merged'}
-                      type="button"
-                      onClick={() => setOcrMode('merged')}
-                    >
-                      合并文本
-                    </button>
-                  </div>
-                  <ReviewSourcePanel text={visibleOcrText || '无 OCR 文本'} sourceMessage={sourceMessage} />
-                </>
-              ) : null}
-            </section>
-          </div>
+          <section className="review-panel review-panel--ocr" aria-label="OCR 文本">
+            <div className="review-panel__heading">
+              <h2>OCR 合并文本</h2>
+              <span>{pages.length} 页合并</span>
+            </div>
+            <ReviewSourcePanel text={visibleOcrText || '无 OCR 文本'} sourceMessage={sourceMessage} />
+          </section>
 
           <section className="review-panel review-panel--fields" aria-label="结构化字段">
             <div className="review-panel__heading">
@@ -519,12 +632,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
             </div>
             <FieldList
               fields={fields}
+              fieldGroups={review?.field_groups}
               selectedFieldKey={selectedFieldKey}
               onChange={handleFieldsChange}
               onFocusField={handleFocusField}
-              getStatusLabel={(fieldStatus) => fieldStatusMeta[fieldStatus].label}
+              onToggleReviewed={handleToggleFieldReviewed}
             />
-            <ExportPanel task={{ task_id: taskId, status: effectiveStatus }} />
           </section>
         </div>
       )}

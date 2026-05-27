@@ -8,7 +8,7 @@ export const appRoutes = {
   workstation: { id: 'workstation', label: '首页', path: '/' },
   mobileCapture: { id: 'mobileCapture', label: '手机上传', path: '/mobile/upload/:taskId' },
   tasks: { id: 'tasks', label: '任务管理', path: '/tasks' },
-  review: { id: 'review', label: '人工审核', path: '/review' },
+  review: { id: 'review', label: '任务详情', path: '/review' },
   export: { id: 'export', label: '导出结果', path: '/tasks/:taskId/export' }
 } as const satisfies Record<string, AppRoute>;
 

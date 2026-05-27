@@ -9,8 +9,9 @@ from .quality_checks import apply_quality_checks
 from .section_splitter import FULL_TEXT_KEY, split_sections
 
 
-NOT_FOUND_VALUES = {"不详", "未知", "未提及", "未说明", "未记录", "无相关信息"}
+NOT_FOUND_VALUES = {"不详", "未知", "未提及", "未说明", "未记录", "无相关信息", "未找到证据"}
 SOURCE_HINT_NOT_FOUND = "未找到证据"
+MAX_VERIFICATION_DOCUMENT_CONTEXT_CHARS = 1600
 
 STRATEGY_FIELD_BATCHES = "field_batches"
 STRATEGY_SECTION_GROUPS = "section_groups"
@@ -87,7 +88,7 @@ class COPDFieldExtractor:
         results = apply_quality_checks(results, text)
         if not self._enable_verification:
             return results
-        verdicts = self._verify_source_groups(results)
+        verdicts = self._verify_source_groups(results, text)
         return self._merge_verdicts(results, verdicts)
 
     def _merge_verdicts(self, results: list[dict], verdicts: list[dict]) -> list[dict]:
@@ -196,15 +197,18 @@ class COPDFieldExtractor:
             for index in range(0, len(self._field_keys), batch_size)
         ]
 
-    def _verify_source_groups(self, results: list[dict]) -> list[dict]:
+    def _verify_source_groups(self, results: list[dict], document_text: str = "") -> list[dict]:
         verdicts = []
         source_groups = build_source_groups(results)
         if not source_groups:
             return verdicts
+        document_context = _bounded_document_context(document_text)
         batch_size = max(1, self._verification_batch_size)
         for index in range(0, len(source_groups), batch_size):
             batch = source_groups[index:index + batch_size]
-            verification_payload = self._llm_client.complete_json(build_verification_prompt(batch))
+            verification_payload = self._llm_client.complete_json(
+                build_verification_prompt(batch, document_context=document_context)
+            )
             batch_verdicts = verification_payload.get("verifications") if isinstance(verification_payload, dict) else None
             if not isinstance(batch_verdicts, list):
                 raise ValueError("LLM verification response must contain verifications list")
@@ -308,6 +312,15 @@ def build_source_groups(results: list[dict]) -> list[dict]:
 
 def _source_group_id(source_hint: str) -> str:
     return f"source_group_{source_hint}"
+
+
+def _bounded_document_context(text: str, max_chars: int = MAX_VERIFICATION_DOCUMENT_CONTEXT_CHARS) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    head_chars = max_chars * 3 // 4
+    tail_chars = max_chars - head_chars
+    return f"{text[:head_chars]}\n...[已截断]...\n{text[-tail_chars:]}"
 
 
 def _has_invalid_source_hint(fields: list[dict], allowed_source_hints: set[str]) -> bool:

@@ -65,6 +65,7 @@ function toTaskUploadSummary(task: CreateTaskResult | null): TaskUploadSummary |
   return {
     ...task,
     id: task.task_id,
+    displayName: task.display_name ?? task.task_id,
     uploadedPages: 0,
     createdAtText: '刚刚'
   };
@@ -80,6 +81,7 @@ function toTaskSummary(task: ApiTaskSummary): TaskSummary {
 
   return {
     id: task.task_id,
+    displayName: task.display_name ?? task.task_id,
     createdAtText: formatDateTime(task.created_at),
     pageCount: task.page_count,
     status: task.status,

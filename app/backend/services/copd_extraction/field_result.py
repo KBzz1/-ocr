@@ -35,6 +35,13 @@ def _normalize_extracted(item: dict) -> dict:
         logger.warning("field=%s LLM returned non-str verification_status: %s", item["field_key"], repr(item.get("verification_status")))
     if not isinstance(item.get("ocr_correction"), dict) and item.get("ocr_correction") is not None:
         logger.warning("field=%s LLM returned non-dict ocr_correction: %s", item["field_key"], repr(item.get("ocr_correction")))
+    if result.get("original_value", "").strip() in {"未找到证据"}:
+        result["extraction_status"] = "not_found"
+        result["original_value"] = ""
+        result["evidence"] = None
+        result["source_hint"] = None
+        result["source_text"] = None
+        result["source_group_id"] = None
     if "extraction_status" not in item and result.get("original_value"):
         result["extraction_status"] = "extracted"
     if result.get("extraction_status") not in EXTRACTION_STATUSES:

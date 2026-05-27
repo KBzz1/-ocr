@@ -4,6 +4,7 @@ export type TaskStatus = 'uploading' | 'processing' | 'review' | 'done' | 'faile
 
 export interface CreateTaskResult {
   task_id: string;
+  display_name: string;
   status: 'uploading';
   upload_token: string;
   mobile_upload_url: string;
@@ -11,6 +12,7 @@ export interface CreateTaskResult {
 
 export interface TaskSummary {
   task_id: string;
+  display_name: string;
   status: TaskStatus;
   created_at: string;
   updated_at?: string;
@@ -47,6 +49,13 @@ export type TaskDetail = TaskSummary & {
     page_no?: number;
     page_index?: number;
     status?: string;
+  }>;
+  images?: Array<{
+    page_id: string;
+    page_no?: number;
+    preview_url?: string;
+    image_url?: string;
+    original_image_path?: string;
   }>;
   status_history?: Array<{
     status?: TaskStatus;
@@ -121,5 +130,24 @@ export function retryTaskProcessing(taskId: string) {
 export function cancelTaskProcessing(taskId: string) {
   return apiRequest<TaskRetryResult>(`/api/tasks/${encodeURIComponent(taskId)}/cancel-processing`, {
     method: 'POST'
+  });
+}
+
+export function renameTask(taskId: string, displayName: string) {
+  return apiRequest<TaskSummary>(`/api/tasks/${encodeURIComponent(taskId)}/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName })
+  });
+}
+
+export interface DeleteTaskResult {
+  task_id: string;
+  deleted: boolean;
+}
+
+export function deleteTask(taskId: string) {
+  return apiRequest<DeleteTaskResult>(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE'
   });
 }

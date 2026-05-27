@@ -1,6 +1,7 @@
 import type { TaskStatus, TaskSummary } from '../../api/tasks';
 import { cancelTaskProcessing, retryTaskProcessing } from '../../api/tasks';
 import { buildReviewPath, buildTaskExportPath } from '../../app/routes';
+import { IconButton } from '../common/IconButton';
 import { taskStatusMeta } from '../../styles/status';
 
 const statusFilters: Array<{ label: string; value: TaskStatus | 'all' }> = [
@@ -21,8 +22,13 @@ type TaskListProps = {
   tasks: TaskSummary[];
   activeFilter: TaskStatus | 'all';
   retryingTaskId: string | null;
+  deletingTaskId: string | null;
+  deleteTarget: TaskSummary | null;
   onFilterChange: (filter: TaskStatus | 'all') => void;
   onTaskStatusChange: (taskId: string, patch: Partial<TaskSummary> & { status: TaskStatus }) => void;
+  onDeleteTask: (task: TaskSummary) => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: (task: TaskSummary) => void;
   onViewUploadQr?: (task: TaskSummary) => void;
 };
 
@@ -69,8 +75,13 @@ export function TaskList({
   tasks,
   activeFilter,
   retryingTaskId,
+  deletingTaskId,
+  deleteTarget,
   onFilterChange,
   onTaskStatusChange,
+  onDeleteTask,
+  onCancelDelete,
+  onConfirmDelete,
   onViewUploadQr
 }: TaskListProps) {
   const visibleTasks =
@@ -116,7 +127,7 @@ export function TaskList({
           <table className="task-list-table" aria-label="任务列表">
             <thead>
               <tr>
-                <th>任务编号</th>
+                <th>任务名称</th>
                 <th>创建时间</th>
                 <th>页数</th>
                 <th>处理状态</th>
@@ -130,11 +141,12 @@ export function TaskList({
                 const status = taskStatusMeta[task.status];
                 const errorSummary = getErrorSummary(task);
                 const isRetrying = retryingTaskId === task.task_id;
+                const isDeleting = deletingTaskId === task.task_id;
                 const processingProgress = task.status === 'processing' ? getProcessingProgress(task) : null;
 
                 return (
                   <tr key={task.task_id}>
-                    <td className="task-list-table__id">{task.task_id}</td>
+                    <td className="task-list-table__id">{task.display_name ?? task.task_id}</td>
                     <td>{formatDateTime(task.created_at)}</td>
                     <td>{task.page_count} 页</td>
                     <td>
@@ -219,6 +231,18 @@ export function TaskList({
                             {isRetrying ? '提交中' : '重新处理'}
                           </button>
                         ) : null}
+                        {task.status !== 'processing' ? (
+                          <IconButton
+                            label={isDeleting ? '删除中' : '删除'}
+                            variant="plain"
+                            onClick={() => onDeleteTask(task)}
+                            disabled={isDeleting}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 0 1 1.34-1.34h2.66a1.33 1.33 0 0 1 1.34 1.34V4m2 0v9.33a1.33 1.33 0 0 1-1.34 1.34H4.67a1.33 1.33 0 0 1-1.34-1.34V4h9.34Z" />
+                            </svg>
+                          </IconButton>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -228,6 +252,37 @@ export function TaskList({
           </table>
         </div>
       )}
+
+      {deleteTarget ? (
+        <div className="confirm-dialog-backdrop" role="presentation" onMouseDown={onCancelDelete}>
+          <section
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-delete-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="confirm-dialog__header">
+              <h2 id="confirm-delete-title">确认删除任务</h2>
+            </header>
+            <div className="confirm-dialog__body">
+              <p>任务 <strong>{deleteTarget.display_name ?? deleteTarget.task_id}</strong> 将被永久删除，此操作不可恢复。</p>
+            </div>
+            <footer className="confirm-dialog__footer">
+              <button className="confirm-dialog__cancel" type="button" onClick={onCancelDelete}>
+                取消
+              </button>
+              <button
+                className="confirm-dialog__confirm"
+                type="button"
+                onClick={() => onConfirmDelete(deleteTarget)}
+              >
+                确认删除
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
