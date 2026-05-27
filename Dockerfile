@@ -16,6 +16,9 @@ RUN apt-get update \
 
 COPY requirements.docker.txt /app/requirements.docker.txt
 RUN python -m pip install --upgrade pip \
+    && python -m pip install paddlepaddle-gpu==3.2.1 \
+        -i https://www.paddlepaddle.org.cn/packages/stable/cu126/ \
+        --extra-index-url https://pypi.org/simple \
     && python -m pip install -r /app/requirements.docker.txt
 
 COPY app/backend /app/app/backend
