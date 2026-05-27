@@ -317,6 +317,46 @@ describe('ReviewPage', () => {
     expect(screen.getByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
   });
 
+  it('highlights OCR evidence after stripping markup from long source text', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '体温：36.7℃ 脉搏：99次/分\n\n发育正常，营养良好。',
+              pages: [],
+              fields: [
+                {
+                  field_key: 'temperature',
+                  label: '体温',
+                  value: '36.7℃',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      text: '体温：36.7℃ 脉搏：99次/分<br><div style="text-align: center;"><img src="imgs/physical.jpg" /></div>发育正常，营养良好。'
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+  });
+
   it('does not complete from shortcut while a save request is in flight', async () => {
     mockReviewRoutes();
     const completeSpy = vi.fn();
@@ -468,7 +508,7 @@ describe('ReviewPage', () => {
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('only shows instant evidence-missing risk indicators', async () => {
+  it('shows instant evidence-missing and OCR ambiguity risk indicators', async () => {
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -505,6 +545,30 @@ describe('ReviewPage', () => {
                   status: 'unreviewed',
                   verification_status: 'suspicious',
                   quality_flags: [{ flag: 'possible_duplicate_or_stitching', severity: 'warning', message: '文本中存在高相似重复片段' }]
+                },
+                {
+                  field_key: 'blood_gas_pao2',
+                  label: '血气 PaO2/PO2',
+                  value: '76.00mmHg',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'ocr_label_ambiguity', severity: 'warning', message: 'OCR 中检验项目名疑似错读，请核对原文' }]
+                },
+                {
+                  field_key: 'pulse',
+                  label: '脉搏',
+                  value: '9次/分',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'ocr_numeric_conflict', severity: 'warning', message: '同一字段附近存在不一致数值，请核对原文' }]
+                },
+                {
+                  field_key: 'wbc',
+                  label: '白细胞',
+                  value: '6.63+10^9/L',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [{ flag: 'unit_symbol_ambiguity', severity: 'warning', message: '检验单位符号需核对' }]
                 }
               ]
             }
@@ -519,6 +583,9 @@ describe('ReviewPage', () => {
     expect(riskFlag).toBeTruthy();
     expect(riskFlag.getAttribute('data-tooltip')).toBe('未找到证据；最开始提取片段：24.2kg/m2');
     expect(riskFlag.getAttribute('title')).toBeNull();
+    expect(await screen.findByLabelText('重点核验：OCR 中检验项目名疑似错读，请核对原文')).toBeTruthy();
+    expect(await screen.findByLabelText('重点核验：同一字段附近存在不一致数值，请核对原文')).toBeTruthy();
+    expect(await screen.findByLabelText('重点核验：检验单位符号需核对')).toBeTruthy();
     expect(screen.queryByText('需核验')).toBeNull();
     expect(screen.queryByText('需重点核验')).toBeNull();
     expect(screen.queryByText('字段值中的数字未能在 evidence 中直接找到')).toBeNull();

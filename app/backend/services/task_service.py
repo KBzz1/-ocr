@@ -447,7 +447,7 @@ _PROCESSING_STAGE_LABELS = {
     "queued": "等待处理",
     "image_processing": "准备图片",
     "document_parsing": "OCR 文档解析",
-    "field_extraction": "慢阻肺字段抽取",
+    "field_extraction": "正在利用LLM结构化提取",
     "done": "处理完成",
 }
 

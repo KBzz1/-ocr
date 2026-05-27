@@ -67,11 +67,25 @@ exit /b 0
 if exist "%PID_FILE%" (
     set /p BACKEND_PID=<"%PID_FILE%"
     echo Found existing PID file: %PID_FILE%
-    call :check_url "%HEALTH_URL%"
-    if !ERRORLEVEL! EQU 0 goto backend_ready_existing
-    echo Existing backend PID is stale. Cleaning PID file.
+    echo Stopping existing backend before restart: !BACKEND_PID!
+    taskkill /PID !BACKEND_PID! /T /F >nul 2>nul
     del "%PID_FILE%" >nul 2>nul
 )
+
+:wait_backend_port_free
+call :check_url "%HEALTH_URL%"
+if !ERRORLEVEL! NEQ 0 goto backend_port_free
+if not defined STOP_WAITED set "STOP_WAITED=0"
+if !STOP_WAITED! GEQ 10 goto backend_port_still_busy
+timeout /t 1 /nobreak >nul
+set /a STOP_WAITED+=1
+goto wait_backend_port_free
+
+:backend_port_still_busy
+echo Backend port is already in use without a valid PID file: http://127.0.0.1:8081
+exit /b 1
+
+:backend_port_free
 
 echo [%date% %time%] Starting manzufei_ocr backend... >> "%BACKEND_LOG%"
 start "manzufei_ocr_backend" /MIN cmd /d /c ""%PYTHON_EXE%" -m app.backend.main >> "%BACKEND_LOG%" 2>&1"
@@ -109,10 +123,6 @@ exit /b 1
 
 :backend_ready
 echo Backend is ready: http://127.0.0.1:8081
-exit /b 0
-
-:backend_ready_existing
-echo Backend is already running (PID: %BACKEND_PID%)
 exit /b 0
 
 :check_url

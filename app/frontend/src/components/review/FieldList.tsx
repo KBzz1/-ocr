@@ -73,6 +73,15 @@ const evidenceRiskFlags = new Set([
   'source_not_found',
 ]);
 
+const ocrRiskFlags = new Set([
+  'ocr_label_ambiguity',
+  'unit_symbol_ambiguity',
+  'ocr_numeric_conflict',
+  'low_ocr_quality',
+  'llm_review_suspicious',
+  'llm_review_failed',
+]);
+
 function getInitialExtractedSnippet(field: ReviewField) {
   return (field.candidate_value ?? field.auto_value ?? field.final_value ?? field.value ?? '').trim();
 }
@@ -81,22 +90,37 @@ function hasEvidenceText(field: ReviewField) {
   return (field.evidence ?? []).some((evidence) => (evidence.text ?? '').trim().length > 0);
 }
 
-function isEvidenceRiskFlag(flag: { flag: string; message: string }) {
+function isRiskFlag(
+  flag: { flag: string; message: string },
+  flagSet: Set<string>,
+  keywords: string[],
+) {
   const flagName = flag.flag.toLowerCase();
   const message = flag.message.toLowerCase();
   return (
-    evidenceRiskFlags.has(flag.flag) ||
-    flagName.includes('evidence') ||
-    flagName.includes('source') ||
-    message.includes('未找到证据') ||
-    message.includes('未能在 evidence') ||
-    message.includes('无 evidence')
+    flagSet.has(flag.flag) ||
+    keywords.some((kw) => flagName.includes(kw) || message.includes(kw))
   );
+}
+
+function isEvidenceRiskFlag(flag: { flag: string; message: string }) {
+  return isRiskFlag(flag, evidenceRiskFlags, [
+    'evidence',
+    'source',
+    '未找到证据',
+    '未能在 evidence',
+    '无 evidence',
+  ]);
+}
+
+function isOcrRiskFlag(flag: { flag: string; message: string }) {
+  return isRiskFlag(flag, ocrRiskFlags, ['ocr', '错读', '纠偏']);
 }
 
 function shouldShowRiskFlag(field: ReviewField) {
   const flags = field.quality_flags ?? [];
   if (flags.some(isEvidenceRiskFlag)) return true;
+  if (flags.some(isOcrRiskFlag)) return true;
   if (flags.length > 0) return false;
   return (
     field.verification_status === 'suspicious' &&
@@ -106,6 +130,11 @@ function shouldShowRiskFlag(field: ReviewField) {
 }
 
 function getFieldRiskDescription(field: ReviewField) {
+  const flags = field.quality_flags ?? [];
+  const ocrFlag = flags.find(isOcrRiskFlag);
+  if (ocrFlag) {
+    return ocrFlag.message || 'OCR 结果需重点核验';
+  }
   const snippet = getInitialExtractedSnippet(field);
   return snippet ? `未找到证据；最开始提取片段：${snippet}` : '未找到证据';
 }

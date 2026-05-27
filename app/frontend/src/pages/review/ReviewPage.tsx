@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
 import { completeTask, getTaskDetail, getTasks, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
@@ -45,6 +45,20 @@ function stripOcrMarkup(text: string) {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function findLocatedEvidenceText(ocrText: string, evidenceText?: string) {
+  if (!evidenceText) return undefined;
+  const cleanedEvidence = stripOcrMarkup(evidenceText);
+  if (!cleanedEvidence) return undefined;
+  if (ocrText.includes(cleanedEvidence)) return cleanedEvidence;
+
+  return cleanedEvidence
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 4)
+    .sort((a, b) => b.length - a.length)
+    .find((line) => ocrText.includes(line));
 }
 
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {
@@ -100,6 +114,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const [isRetrying, setIsRetrying] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
+  const fieldsPanelRef = useRef<HTMLElement | null>(null);
+  const [ocrPanelHeight, setOcrPanelHeight] = useState<number | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -175,6 +191,30 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       </WorkstationLayout>
     );
   }
+
+  useEffect(() => {
+    if (!canLoadReview(status)) {
+      setOcrPanelHeight(null);
+      return undefined;
+    }
+
+    const fieldsPanel = fieldsPanelRef.current;
+    if (!fieldsPanel) return undefined;
+
+    const syncHeight = () => {
+      const nextHeight = Math.ceil(fieldsPanel.getBoundingClientRect().height);
+      if (nextHeight > 0) setOcrPanelHeight(nextHeight);
+    };
+
+    syncHeight();
+
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(syncHeight) : null;
+    resizeObserver?.observe(fieldsPanel);
+
+    return () => {
+      resizeObserver?.disconnect();
+    };
+  }, [fields.length, review?.field_groups, status]);
 
   function normalizeFieldsForUnifiedReview(currentFields: ReviewField[]) {
     return currentFields.map((field) => ({ ...field, status: 'confirmed' as const }));
@@ -380,16 +420,20 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const visibleOcrText = mergedOcrText;
   const selectedField = fields.find((field) => field.field_key === selectedFieldKey) ?? fields[0] ?? null;
   const selectedEvidenceText = selectedField?.evidence?.find((item) => item.text)?.text;
+  const locatedEvidenceText = findLocatedEvidenceText(visibleOcrText, selectedEvidenceText);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
   const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const sourceMessage: SourceMessage | null = selectedField
       ? selectedEvidenceText
-      ? visibleOcrText.includes(selectedEvidenceText)
-        ? { kind: 'located', text: '点击字段可定位原文', evidenceText: selectedEvidenceText }
+      ? locatedEvidenceText
+        ? { kind: 'located', text: '点击字段可定位原文', evidenceText: locatedEvidenceText }
         : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
       : { kind: 'unavailable', text: '当前字段未返回来源文本' }
     : null;
+  const ocrPanelStyle = ocrPanelHeight
+    ? ({ '--review-ocr-panel-height': `${ocrPanelHeight}px` } as CSSProperties)
+    : undefined;
 
   function handleFocusField(field: ReviewField) {
     setSelectedFieldKey(field.field_key);
@@ -615,7 +659,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
         </section>
       ) : (
         <div className="review-grid">
-          <section className="review-panel review-panel--ocr" aria-label="OCR 文本">
+          <section className="review-panel review-panel--ocr" aria-label="OCR 文本" style={ocrPanelStyle}>
             <div className="review-panel__heading">
               <h2>OCR 合并文本</h2>
               <span>{pages.length} 页合并</span>
@@ -623,7 +667,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
             <ReviewSourcePanel text={visibleOcrText || '无 OCR 文本'} sourceMessage={sourceMessage} />
           </section>
 
-          <section className="review-panel review-panel--fields" aria-label="结构化字段">
+          <section className="review-panel review-panel--fields" aria-label="结构化字段" ref={fieldsPanelRef}>
             <div className="review-panel__heading">
               <div>
                 <h2>字段校对</h2>

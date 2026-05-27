@@ -411,12 +411,15 @@ def test_run_bat_rebuilds_frontend_dist_before_backend_start():
     assert "if exist \"%FRONTEND_DIST_INDEX%\"" not in content
 
 
-def test_run_bat_handles_stale_pid_before_starting_backend():
-    """run.bat 启动前必须处理旧 PID，避免把脏 PID 当成启动成功。"""
+def test_run_bat_restarts_existing_backend_before_starting_backend():
+    """run.bat 每次启动必须重启旧后端，避免前端新 bundle 调到旧 API 路由。"""
     content = open("run.bat").read()
     assert "Found existing PID file" in content
     assert 'del "%PID_FILE%"' in content
-    assert "backend_ready_existing" in content
+    assert "Stopping existing backend before restart" in content
+    assert "taskkill /PID" in content
+    assert "Backend port is already in use without a valid PID file" in content
+    assert "backend_ready_existing" not in content
 
 
 def test_run_bat_uses_pushd_for_unc_project_paths():
@@ -444,6 +447,14 @@ def test_wsl_run_script_starts_backend_without_vite_dev_server():
     assert "http://127.0.0.1:8081/" in content
     assert "cmd.exe" not in content
     assert "start " not in content
+
+
+def test_wsl_run_script_restarts_existing_backend_before_starting_backend():
+    """run.sh 每次启动必须重启旧后端，避免源码更新后继续跑旧路由。"""
+    content = open("run.sh").read()
+    assert "Stopping existing backend before restart" in content
+    assert "kill" in content
+    assert "Backend is already running" not in content
 
 
 def test_wsl_stop_script_stops_backend_and_frontend_pids():

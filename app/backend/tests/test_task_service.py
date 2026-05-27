@@ -206,6 +206,15 @@ def test_finish_upload_returns_processing_after_dispatching_background_run(tmp_p
     assert summary["processing_summary"]["progress_percent"] == 55
 
 
+def test_field_extraction_stage_label_describes_llm_structuring(tmp_path):
+    write_task(tmp_path, status="processing", processing_at="2026-05-19T10:00:00+00:00")
+    service = make_service(tmp_path)
+
+    updated = service.mark_processing_stage("1", "field_extraction", "running", page_count=1)
+
+    assert updated["processing_summary"]["label"] == "正在利用LLM结构化提取"
+
+
 def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
     pending = []
 

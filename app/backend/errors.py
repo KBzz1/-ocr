@@ -3,6 +3,7 @@ from enum import Enum
 
 class ErrorCode(Enum):
     REQUEST_NOT_FOUND = ("REQUEST_NOT_FOUND", 404, "请求路径不存在")
+    METHOD_NOT_ALLOWED = ("METHOD_NOT_ALLOWED", 405, "请求方法不允许")
     INTERNAL_SERVER_ERROR = ("INTERNAL_SERVER_ERROR", 500, "服务器内部错误")
     INVALID_REQUEST_PARAMS = ("INVALID_REQUEST_PARAMS", 400, "请求参数缺失、类型错误、格式错误或取值非法")
     UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", 400, "不支持的文件类型")
@@ -69,6 +70,9 @@ def register_error_handlers(app):
     def handle_http_exception(error):
         if error.code == 404:
             app_error = AppError(ErrorCode.REQUEST_NOT_FOUND)
+            return error_response(app_error)
+        if error.code == 405:
+            app_error = AppError(ErrorCode.METHOD_NOT_ALLOWED)
             return error_response(app_error)
         return jsonify({
             "error": {

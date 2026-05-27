@@ -9,6 +9,14 @@ def test_extraction_prompt_contains_ocr_constraints_and_schema_keys():
     assert "bmi" in prompt
     assert "1/I/l" in prompt
     assert "0/O/o" in prompt
+    assert "P62" in prompt
+    assert "PC02" in prompt
+    assert "血气项目名" in prompt
+    assert "药名" in prompt
+    assert "噻托溴铵" in prompt
+    assert "二羟丙茶碱" in prompt
+    assert "+10^9/L" in prompt
+    assert "脉搏：9次/分" in prompt
 
 
 def test_verification_prompt_requires_structured_field_verdicts():
@@ -28,6 +36,12 @@ def test_verification_prompt_requires_structured_field_verdicts():
     assert "verdict" in prompt
     assert "source_text_supported" in prompt
     assert "numeric_value_preserved" in prompt
+    assert "ocr_correction_reasonable" in prompt
+    assert "low_ocr_quality" in prompt
+    assert "P62" in prompt
+    assert "药名" in prompt
+    assert "单位符号" in prompt
+    assert "同一字段" in prompt
     assert "reason_code" in prompt
     assert prompt.count("问题：逐字段判断字段值是否能被提供的 OCR 事实支持。") == 2
     assert "事实：" in prompt

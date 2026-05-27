@@ -7,9 +7,12 @@ def build_extraction_prompt(sections: dict[str, str], field_keys: list[str]) -> 
 只从 OCR 原文中抽取字段，不得推断原文未写的信息。
 字段 key 必须完整覆盖：{json.dumps(field_keys, ensure_ascii=False)}
 
-OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、单位断裂、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。
+OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、药名和医学词近形/同音/缺字错读、单位断裂、单位符号错读（例如 +10^9/L 可能是 ×10^9/L）、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。
 硬约束：不得静默修正 OCR；不得改写数值；不得医学换算；不得把"无、否认、未见、可能、考虑、建议复查"等表达改成确定阳性。
 如果按上下文理解了 OCR 疑似错误，必须输出 ocr_correction.applied=true、raw、normalized、reason。
+如果把 P62、P02、PC02 等疑似错读标签理解为 PO2/PaO2/PCO2/PaCO2，必须保留原始 evidence，并在 ocr_correction 中记录原始标签和标准标签；没有把握时将 verification_status 置为 "suspicious" 并添加 quality_flags。
+如果把嗜托溴铵理解为噻托溴铵、二程丙苯碱理解为二羟丙茶碱等药名纠偏，必须记录 ocr_correction；没有把握时标记 suspicious。
+如果同一字段在 evidence 中出现前后矛盾数值，例如脉搏：9次/分但后文心率99次/分，不得自行选择一个确定值，应标记 suspicious。
 
 输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。每个字段包含：
 field_key, original_value, source_hint, evidence, confidence, source_section, extraction_status, verification_status, quality_flags, ocr_correction。
@@ -83,10 +86,13 @@ def build_verification_prompt(source_groups: list[dict], document_context: str =
 
 问题：逐字段判断字段值是否能被提供的 OCR 事实支持。
 只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
+必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 low_ocr_quality。
+药名、医学词和单位符号也必须检查 OCR 纠偏合理性，例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L。若字段值看起来依赖错读纠偏但未说明，输出 suspicious。
+同一字段附近出现前后矛盾数值时，例如脉搏：9次/分但同段另有心率99次/分，输出 suspicious，不得静默选值。
 输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
 verdict 只能是 pass、suspicious、fail。
 reason_code 只能是 original_text_ambiguous、low_ocr_quality、extraction_error、unreliable_result、source_section_not_found、none。
-checks 必须包含 source_text_supported、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
+checks 必须包含 source_text_supported、ocr_correction_reasonable、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
 
 来源分组：
 {json.dumps(source_groups, ensure_ascii=False)}

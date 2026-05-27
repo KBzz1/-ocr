@@ -38,14 +38,31 @@ wait_for_url() {
 }
 
 ensure_backend() {
-  if check_url "$BACKEND_HEALTH_URL"; then
-    echo "Backend is already running: http://127.0.0.1:8081"
-    return 0
+  if [ -f "$BACKEND_PID_FILE" ]; then
+    old_pid="$(cat "$BACKEND_PID_FILE" 2>/dev/null || true)"
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" >/dev/null 2>&1; then
+      echo "Stopping existing backend before restart: $old_pid"
+      kill "$old_pid" >/dev/null 2>&1 || true
+      sleep 1
+      if kill -0 "$old_pid" >/dev/null 2>&1; then
+        kill -9 "$old_pid" >/dev/null 2>&1 || true
+      fi
+    else
+      echo "Removing stale backend PID file: $BACKEND_PID_FILE"
+    fi
+    rm -f "$BACKEND_PID_FILE"
   fi
 
-  if [ -f "$BACKEND_PID_FILE" ]; then
-    echo "Removing stale backend PID file: $BACKEND_PID_FILE"
-    rm -f "$BACKEND_PID_FILE"
+  for _ in $(seq 1 10); do
+    if ! check_url "$BACKEND_HEALTH_URL"; then
+      break
+    fi
+    sleep 1
+  done
+
+  if check_url "$BACKEND_HEALTH_URL"; then
+    echo "Backend port is already in use without a valid PID file: http://127.0.0.1:8081"
+    return 1
   fi
 
   echo "Starting backend..."
