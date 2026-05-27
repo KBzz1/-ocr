@@ -15,11 +15,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.docker.txt /app/requirements.docker.txt
-RUN python -m pip install --upgrade pip \
-    && python -m pip install paddlepaddle-gpu==3.2.1 \
+RUN python -m pip install --upgrade pip --retries 10 --timeout 120 \
+    && python -m pip install paddlepaddle-gpu==3.2.1 --retries 10 --timeout 120 \
         -i https://www.paddlepaddle.org.cn/packages/stable/cu126/ \
         --extra-index-url https://pypi.org/simple \
-    && python -m pip install -r /app/requirements.docker.txt
+    && python -m pip install -r /app/requirements.docker.txt --retries 10 --timeout 120
 
 COPY app/backend /app/app/backend
 COPY app/config/default.yaml /app/app/config/default.yaml
