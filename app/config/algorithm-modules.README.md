@@ -42,9 +42,7 @@ algorithms:
 
 2026-05-25 复发根因定位：手机上传原图 1800x4000，比此前验证样本 1919x1080 大很多。即使限制了 `max_new_tokens`，视觉输入过大仍会让显存接近满载并长时间低利用率。`local_ocr_max_pixels=1003520` 仍存在长尾卡死，当前默认传入 `local_ocr_max_pixels=501760`（28*28*640）作为 8GB 显卡保守上限。
 
-`local_ocr_timeout_seconds` 默认 180。单页 OCR 超过 180 秒视为外部模块异常并进入失败，避免界面长期停在“处理中”。
-
-本机 Python runner 默认不要配置 `local_ocr_device`。不传 `device` 让 `PaddleOCRVL()` 自动选择设备时表现最稳定；显式传入 `gpu:0` 会让同一张图超过 90 秒未返回。
+`local_ocr_timeout_seconds` 默认 180，表示单页 OCR 超时预算；多页任务的 runner 超时按页数线性放大。单页 OCR 超过 180 秒视为外部模块异常并进入失败，避免界面长期停在“处理中”。
 
 同一图片放在 `/tmp` 工作目录下可正常返回，而放在 `data/ocr_runs` 下出现过 120 秒超时；当前配置将 `local_ocr_work_root` 指向 `/tmp/manzufei_ocr_ocr_runs`。
 

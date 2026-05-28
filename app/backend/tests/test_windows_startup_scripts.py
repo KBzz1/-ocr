@@ -435,20 +435,40 @@ def test_docker_start_sets_public_base_url_for_mobile_qr():
     compose_content = open("docker-compose.yml").read()
 
     assert "detect_public_base_url" in start_content
-    assert "MANZUFEI_PUBLIC_BASE_URL=http://%HOST_LAN_IP%:8081" in start_content
-    assert 'findstr /R "^[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*$"' in start_content
+    assert "log_ip_candidates" in start_content
+    assert "MANZUFEI_PUBLIC_BASE_URL=http://!HOST_LAN_IP!:8081" in start_content
+    assert ":validate_ipv4" in start_content
+    assert "$env:HOST_LAN_IP.Trim()" in start_content
+    assert "Where-Object { $_ -lt 0 -or $_ -gt 255 }" in start_content
+    assert "IPv4 candidates" in start_content
+    assert "IPv4DefaultGateway -and" not in start_content
+    assert "^| Sort-Object" not in start_content
+    assert "docker|wsl|vEthernet" in start_content
+    assert "hotspot|ethernet" in start_content
+    assert 'echo(!HOST_LAN_IP! | findstr' not in start_content
     assert 'if not "!HOST_LAN_IP!"==""' in start_content
     assert "set /p HOST_LAN_IP=Enter Windows IPv4 for phone access" in start_content
-    assert "ERROR: Valid Windows IPv4 is required for phone QR access." in start_content
+    assert "WARNING: Phone QR access is disabled for this run." in start_content
+    detect_section = start_content.split("\n:detect_public_base_url", 1)[1].split("\n:log_ip_candidates", 1)[0]
+    assert "exit /b 1" not in detect_section
     assert "172\\.18" in start_content
     assert 'MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"' in compose_content
+
+
+def test_docker_start_bat_uses_ascii_and_crlf_for_cmd_compatibility():
+    """Windows CMD parses batch files most reliably with ASCII output and CRLF."""
+    content = open("deploy/windows/01_start.bat", "rb").read()
+
+    assert content.decode("ascii")
+    assert b"\r\n" in content
+    assert b"\n" not in content.replace(b"\r\n", b"")
 
 
 def test_docker_requirements_include_paddlex_ocr_extra_for_paddleocr_vl():
     """PaddleOCR-VL pipeline requires the paddlex[ocr] extra, not only ocr-core."""
     content = open("requirements.docker.txt", encoding="utf-8").read()
 
-    assert "paddlex[ocr]==3.5.2" in content
+    assert "paddlex[ocr]==3.5.0" in content
 
 
 def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():

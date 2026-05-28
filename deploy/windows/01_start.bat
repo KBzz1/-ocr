@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-pushd "%~dp0" || exit /b 1
+pushd "%~dp0" | exit /b 1
 
 if not exist "deploy_debug_logs" md "deploy_debug_logs"
 for /f %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_ID=%%I"
@@ -94,31 +94,40 @@ exit /b 0
 
 :detect_public_base_url
 set "HOST_LAN_IP="
-for /f "usebackq tokens=* delims= " %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ip = Get-NetIPConfiguration ^| Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } ^| ForEach-Object { $_.IPv4Address ^| Where-Object { $_.IPAddress -match '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' -and $_.IPAddress -notmatch '^(127|169\.254|172\.18)\.' } ^| Select-Object -First 1 -ExpandProperty IPAddress } ^| Select-Object -First 1; if ($ip) { Write-Output $ip.Trim() }"`) do if not "%%~I"=="" set "HOST_LAN_IP=%%~I"
-echo(!HOST_LAN_IP! | findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+call :log_ip_candidates
+for /f "usebackq tokens=* delims= " %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$excludedAlias = '(?i)(docker|wsl|vEthernet|virtualbox|vmware|loopback)'; $best = $null; foreach ($cfg in Get-NetIPConfiguration) { $alias = [string]$cfg.InterfaceAlias; $adapter = $cfg.NetAdapter; if (-not $adapter -or $adapter.Status -ne 'Up' -or $alias -match $excludedAlias) { continue }; foreach ($addr in @($cfg.IPv4Address)) { $ip = [string]$addr.IPAddress; if ($ip -notmatch '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' -or $ip -match '^(127|169\.254|172\.18)\.') { continue }; $score = 0; if ($cfg.IPv4DefaultGateway) { $score += 100 }; if ($alias -match '(?i)(wi-fi|wifi|wlan|wireless|hotspot|ethernet|local area connection)') { $score += 50 }; if ($ip -match '^(10|192\.168|172\.(1[6-9]|2[0-9]|3[0-1]))\.') { $score += 10 }; $candidate = [pscustomobject]@{ IPAddress = $ip; Score = $score }; if ($null -eq $best -or $candidate.Score -gt $best.Score) { $best = $candidate } } }; if ($best) { Write-Output $best.IPAddress.Trim() }"`) do if not "%%~I"=="" set "HOST_LAN_IP=%%~I"
+call :validate_ipv4
 if errorlevel 1 set "HOST_LAN_IP="
 if "!HOST_LAN_IP!"=="" (
   call :log "WARNING: Could not auto-detect host LAN IPv4."
   echo.
   echo Could not auto-detect the Windows IPv4 for phone access.
-  echo Run ipconfig and enter the IPv4 address of the Wi-Fi / hotspot adapter.
+  echo Run ipconfig and enter the IPv4 address of the Wi-Fi or hotspot adapter.
   echo Example: 172.20.10.5 or 192.168.43.10
   set /p HOST_LAN_IP=Enter Windows IPv4 for phone access, or press Enter to skip: 
-  echo(!HOST_LAN_IP! | findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+  call :validate_ipv4
   if errorlevel 1 set "HOST_LAN_IP="
 )
 if not "!HOST_LAN_IP!"=="" (
-  set "MANZUFEI_PUBLIC_BASE_URL=http://%HOST_LAN_IP%:8081"
-  call :log "Mobile upload public URL base: %MANZUFEI_PUBLIC_BASE_URL%"
+  set "MANZUFEI_PUBLIC_BASE_URL=http://!HOST_LAN_IP!:8081"
+  call :log "Mobile upload public URL base: !MANZUFEI_PUBLIC_BASE_URL!"
 ) else (
   set "MANZUFEI_PUBLIC_BASE_URL="
-  call :log "ERROR: Valid Windows IPv4 is required for phone QR access."
-  echo ERROR: Valid Windows IPv4 is required for phone QR access.
-  echo Run ipconfig, then rerun 01_start.bat and enter the Wi-Fi / hotspot IPv4 address.
-  pause
-  exit /b 1
+  call :log "WARNING: Phone QR access is disabled for this run."
+  echo WARNING: Phone QR access is disabled for this run.
+  echo The workstation will still start at http://127.0.0.1:8081/.
+  echo Rerun 01_start.bat later and enter the Wi-Fi or hotspot IPv4 address to enable phone access.
 )
 exit /b 0
+
+:log_ip_candidates
+call :section "IPv4 candidates"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetIPConfiguration | ForEach-Object { $alias = [string]$_.InterfaceAlias; $status = if ($_.NetAdapter) { $_.NetAdapter.Status } else { '' }; $gateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) -join ',' } else { '' }; foreach ($addr in @($_.IPv4Address)) { [pscustomobject]@{ Alias = $alias; Status = $status; IPv4 = $addr.IPAddress; Gateway = $gateway } } } | Format-Table -AutoSize" >> "%LOG_FILE%" 2>&1
+exit /b 0
+
+:validate_ipv4
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ip = $env:HOST_LAN_IP.Trim(); if ($ip -notmatch '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') { exit 1 }; $parts = $ip.Split('.') | ForEach-Object { [int]$_ }; if (($parts | Where-Object { $_ -lt 0 -or $_ -gt 255 }).Count -gt 0) { exit 1 }; exit 0" >nul 2>nul
+exit /b %ERRORLEVEL%
 
 :log
 echo [%date% %time%] %~1

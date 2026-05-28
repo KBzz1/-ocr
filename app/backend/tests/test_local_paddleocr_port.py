@@ -1,9 +1,11 @@
 import sys
+import subprocess
 import textwrap
 import time
 
 import pytest
 
+from app.backend.services.algorithm_ports import local_paddleocr
 from app.backend.services.algorithm_ports.local_paddleocr import (
     LocalPaddleOCRDocumentPort,
     parse_paddleocr_markdown,
@@ -170,6 +172,54 @@ def test_local_paddleocr_port_emits_runner_diagnostic_events(tmp_path):
     assert events[0][1]["input_files"][0]["bytes"] == 7
     assert events[1][1]["exit_code"] == 0
     assert events[1][1]["output_exists"] is True
+
+
+def test_local_paddleocr_port_scales_timeout_by_page_count(tmp_path, monkeypatch):
+    events = []
+    observed_timeout = None
+    runner = tmp_path / "fake_ocr_runner.py"
+    runner.write_text("raise SystemExit('should be monkeypatched')", encoding="utf-8")
+    sources = []
+    for page_no in range(1, 4):
+        source = tmp_path / f"source-{page_no}.jpg"
+        source.write_bytes(f"image-{page_no}".encode("utf-8"))
+        sources.append(source)
+
+    def fake_run(command, cwd, env, timeout, is_cancelled):
+        nonlocal observed_timeout
+        observed_timeout = timeout
+        output = tmp_path / "ocr-runs" / "task_001" / "output" / "all_results.md"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            "\n\n---\n\n".join(
+                f"# {page_no:03d}_page_{page_no}.jpg\n\nOCR text {page_no}"
+                for page_no in range(1, 4)
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(local_paddleocr, "_run_with_process_group_timeout", fake_run)
+    port = LocalPaddleOCRDocumentPort(
+        python_executable=sys.executable,
+        script_path=str(runner),
+        work_root=str(tmp_path / "ocr-runs"),
+        timeout_seconds=10,
+        event_logger=lambda event, **payload: events.append((event, payload)),
+    )
+
+    port.parse(
+        {
+            "task_id": "task_001",
+            "pages": [
+                {"page_id": f"page_{page_no}", "page_no": page_no, "processed_path": str(source)}
+                for page_no, source in enumerate(sources, start=1)
+            ],
+        }
+    )
+
+    assert observed_timeout == 30
+    assert events[0][1]["timeout_seconds"] == 30
 
 
 def test_local_paddleocr_port_emits_failure_diagnostic_event_on_nonzero_exit(tmp_path):

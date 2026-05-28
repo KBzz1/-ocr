@@ -90,12 +90,13 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
         env = os.environ.copy()
         env.setdefault("PADDLE_PDX_CACHE_HOME", self._cache_dir or str(work_dir / "paddlex_cache"))
         env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+        timeout_seconds = self._timeout_seconds * max(1, len(page_files))
         started = time.monotonic()
         self._emit_event(
             "ocr_runner_started",
             task_id=task_id,
             page_count=len(page_files),
-            timeout_seconds=self._timeout_seconds,
+            timeout_seconds=timeout_seconds,
             work_dir=str(work_dir),
             command=_summarize_command(command),
             python_executable=self._python_executable,
@@ -111,7 +112,7 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
                 command,
                 cwd=str(work_dir),
                 env=env,
-                timeout=self._timeout_seconds,
+                timeout=timeout_seconds,
                 is_cancelled=input.get("is_cancelled"),
             )
         except _ProcessingCancelled as exc:
@@ -125,12 +126,12 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             self._emit_event(
                 "ocr_runner_timeout",
                 task_id=task_id,
-                timeout_seconds=self._timeout_seconds,
+                timeout_seconds=timeout_seconds,
                 work_dir=str(work_dir),
                 stdout_tail=_tail(exc.stdout),
                 stderr_tail=_tail(exc.stderr),
             )
-            raise RuntimeError(f"本地 OCR runner 执行超时: {self._timeout_seconds}s") from exc
+            raise RuntimeError(f"本地 OCR runner 执行超时: {timeout_seconds}s") from exc
         self._emit_runner_finished(task_id, started, completed, output_file)
         if completed.returncode != 0:
             self._emit_runner_failed(task_id, started, completed, output_file)
