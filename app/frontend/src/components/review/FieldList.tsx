@@ -105,11 +105,13 @@ function isRiskFlag(
 
 function isEvidenceRiskFlag(flag: { flag: string; message: string }) {
   return isRiskFlag(flag, evidenceRiskFlags, [
-    'evidence',
-    'source',
     '未找到证据',
     '未能在 evidence',
     '无 evidence',
+    'source_not_found',
+    'evidence_not_found',
+    'missing_evidence',
+    'value_not_in_evidence',
   ]);
 }
 
@@ -134,6 +136,10 @@ function getFieldRiskDescription(field: ReviewField) {
   const ocrFlag = flags.find(isOcrRiskFlag);
   if (ocrFlag) {
     return ocrFlag.message || 'OCR 结果需重点核验';
+  }
+  const evidenceFlag = flags.find(isEvidenceRiskFlag);
+  if (evidenceFlag) {
+    return evidenceFlag.message || '证据风险';
   }
   const snippet = getInitialExtractedSnippet(field);
   return snippet ? `未找到证据；最开始提取片段：${snippet}` : '未找到证据';
