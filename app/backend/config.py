@@ -8,6 +8,7 @@ import os
 import yaml
 import logging
 import sys
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ DEFAULT_CONFIG = {
     "bind_host": "0.0.0.0",
     "local_host": "127.0.0.1",
     "port": 8081,
+    "public_base_url": None,
     "data_dir": "./data",
     "log_dir": "./logs",
     "model_dir": "./models",
@@ -69,6 +71,8 @@ def _flatten_config(raw: dict) -> dict:
         flattened["bind_host"] = server_config["bind_host"]
     if "port" in server_config:
         flattened["port"] = server_config["port"]
+    if "public_base_url" in server_config:
+        flattened["public_base_url"] = server_config["public_base_url"]
     if "data_dir" in paths_config:
         flattened["data_dir"] = paths_config["data_dir"]
         flattened["storage_dir"] = paths_config["data_dir"]
@@ -153,6 +157,18 @@ def _validate_config(config: dict):
     if not isinstance(port, int) or port < 1024 or port > 65535:
         raise ValueError(f"端口号必须在 1024-65535 之间，当前值: {port}")
 
+    public_base_url = config.get("public_base_url")
+    if public_base_url is not None:
+        parsed_public_base_url = urlparse(public_base_url) if isinstance(public_base_url, str) else None
+        if (
+            not isinstance(public_base_url, str)
+            or parsed_public_base_url is None
+            or parsed_public_base_url.scheme not in {"http", "https"}
+            or not parsed_public_base_url.hostname
+            or any(char.isspace() for char in public_base_url)
+        ):
+            raise ValueError(f"public_base_url 必须是 http(s) URL，当前值: {public_base_url}")
+
     for key in ("data_dir", "log_dir", "storage_dir", "export_dir"):
         path = config[key]
         try:
@@ -221,6 +237,10 @@ def load_config(config_dir: str | None = None) -> dict:
         with open(local_yaml_path, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         merged = _deep_merge(merged, _flatten_config(raw))
+
+    public_base_url = os.environ.get("MANZUFEI_PUBLIC_BASE_URL", "").strip()
+    if public_base_url:
+        merged["public_base_url"] = public_base_url
 
     result = _normalize_paths(merged)
     _validate_config(result)

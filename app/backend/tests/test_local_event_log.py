@@ -67,6 +67,19 @@ class TestLocalEventLog:
         assert records[0]["task_id"] == "task-001"
         assert "ts" in records[0]
 
+    def test_writes_system_started_public_base_url(self, tmp_path):
+        log = LocalEventLog(str(tmp_path))
+
+        log.write(
+            "system_started",
+            port=8081,
+            lan_addresses_count=1,
+            public_base_url="http://172.20.10.5:8081",
+        )
+
+        record = read_jsonl(log.current_path)[0]
+        assert record["public_base_url"] == "http://172.20.10.5:8081"
+
     def test_writes_ocr_runner_diagnostic_events_without_ocr_text(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
 
@@ -97,6 +110,28 @@ class TestLocalEventLog:
         assert [record["event"] for record in records] == ["ocr_runner_started", "ocr_runner_finished"]
         assert records[0]["page_count"] == 2
         assert "merged_text" not in records[0]
+
+    def test_preserves_ocr_runner_error_tail_for_diagnostics(self, tmp_path):
+        log = LocalEventLog(str(tmp_path))
+        stderr_tail = (
+            "Traceback...\n"
+            "paddlex.utils.deps.DependencyError: `PaddleOCR-VL-1.5` requires additional dependencies. "
+            "To install them, run `pip install \"paddlex[ocr]==<PADDLEX_VERSION>\"`."
+        )
+
+        log.write(
+            "ocr_runner_failed",
+            task_id="task-001",
+            exit_code=1,
+            output_exists=False,
+            output_bytes=0,
+            stderr_tail=stderr_tail,
+        )
+
+        record = read_jsonl(log.current_path)[0]
+        assert "PaddleOCR-VL-1.5" in record["stderr_tail"]
+        assert "paddlex[ocr]" in record["stderr_tail"]
+        assert not record["stderr_tail"].endswith("...[truncated]")
 
     def test_rejects_unknown_event_name(self, tmp_path):
         log = LocalEventLog(str(tmp_path))

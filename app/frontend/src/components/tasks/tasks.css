@@ -32,9 +32,9 @@
 
 .tasks-page__content {
   width: 100%;
-  max-width: 1440px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 0 32px 36px;
+  padding: 0 20px 28px;
 }
 
 .tasks-page__status {
@@ -84,7 +84,7 @@
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .task-list-panel__toolbar {
@@ -124,11 +124,15 @@
 
 .task-list-table th,
 .task-list-table td {
-  min-height: 56px;
-  padding: 14px 18px;
+  min-height: 52px;
+  padding: 12px 16px;
   border-bottom: 1px solid #edf1f7;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.task-status-cell-td {
+  text-align: center;
 }
 
 .task-list-table th {
@@ -181,23 +185,33 @@
   width: 160px;
   display: grid;
   gap: 8px;
+  justify-items: center;
 }
 
-.task-error-details {
-  max-width: 360px;
+.task-review-badge {
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.task-error-details summary {
-  cursor: pointer;
-  color: #c2410c;
+.task-review-badge--unreviewed {
+  color: #ea580c;
+}
+
+.task-review-badge--confirmed {
+  color: #16a34a;
+}
+
+.task-review-badge--modified {
+  color: #2563eb;
+}
+
+.task-error-text {
+  color: #dc2626;
   font-weight: 700;
-}
-
-.task-error-details p {
-  margin: 8px 0 0;
-  color: #475569;
-  line-height: 1.55;
-  white-space: normal;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .task-list-muted {

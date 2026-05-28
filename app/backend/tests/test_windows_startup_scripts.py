@@ -429,6 +429,28 @@ def test_run_bat_uses_pushd_for_unc_project_paths():
     assert 'cd /d "%~dp0"' not in content
 
 
+def test_docker_start_sets_public_base_url_for_mobile_qr():
+    """Docker 部署必须把 Windows 主机 IPv4 传入容器，避免二维码使用 172.18 容器地址。"""
+    start_content = open("deploy/windows/01_start.bat").read()
+    compose_content = open("docker-compose.yml").read()
+
+    assert "detect_public_base_url" in start_content
+    assert "MANZUFEI_PUBLIC_BASE_URL=http://%HOST_LAN_IP%:8081" in start_content
+    assert 'findstr /R "^[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*$"' in start_content
+    assert 'if not "!HOST_LAN_IP!"==""' in start_content
+    assert "set /p HOST_LAN_IP=Enter Windows IPv4 for phone access" in start_content
+    assert "ERROR: Valid Windows IPv4 is required for phone QR access." in start_content
+    assert "172\\.18" in start_content
+    assert 'MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"' in compose_content
+
+
+def test_docker_requirements_include_paddlex_ocr_extra_for_paddleocr_vl():
+    """PaddleOCR-VL pipeline requires the paddlex[ocr] extra, not only ocr-core."""
+    content = open("requirements.docker.txt", encoding="utf-8").read()
+
+    assert "paddlex[ocr]==3.5.2" in content
+
+
 def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():
     """run.bat 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
     content = open("run.bat", encoding="utf-8").read()

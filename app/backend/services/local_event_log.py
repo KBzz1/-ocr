@@ -13,6 +13,7 @@ SENSITIVE_KEYS = {
     "base64",
     "image_base64",
 }
+LONG_DIAGNOSTIC_KEYS = {"stdout_tail", "stderr_tail", "command"}
 ID_CARD_RE = re.compile(r"(?<!\d)\d{6}\d{8}\d{3}[\dXx](?!\d)")
 PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 BASE64_RE = re.compile(
@@ -30,6 +31,7 @@ ALLOWED_EVENTS = {
     "processing_stage_finished",
     "ocr_runner_started",
     "ocr_runner_finished",
+    "ocr_runner_failed",
     "ocr_runner_timeout",
     "task_processing_failed",
     "task_review_ready",
@@ -40,7 +42,7 @@ ALLOWED_EVENTS = {
 }
 
 EVENT_FIELDS = {
-    "system_started": {"port", "lan_addresses_count"},
+    "system_started": {"port", "lan_addresses_count", "public_base_url"},
     "config_default_used": {"config_key"},
     "algorithm_module_not_configured": {"stage"},
     "page_uploaded": {"task_id", "page_id", "image_width", "image_height"},
@@ -56,8 +58,25 @@ EVENT_FIELDS = {
         "run_log_path",
         "container_name",
         "command",
+        "python_executable",
+        "script_path",
+        "cache_dir",
+        "device",
+        "max_new_tokens",
+        "max_pixels",
+        "input_files",
     },
     "ocr_runner_finished": {
+        "task_id",
+        "backend",
+        "elapsed_ms",
+        "exit_code",
+        "output_exists",
+        "output_bytes",
+        "stdout_tail",
+        "stderr_tail",
+    },
+    "ocr_runner_failed": {
         "task_id",
         "backend",
         "elapsed_ms",
@@ -99,8 +118,9 @@ def _sanitize_value(key: str, value):
         text = ID_CARD_RE.sub("[id_card]", text)
         text = PHONE_RE.sub("[phone]", text)
         text = BASE64_RE.sub("[base64]", text)
-        if len(text) > 120:
-            text = text[:80] + "...[truncated]"
+        limit = 2000 if lowered in LONG_DIAGNOSTIC_KEYS else 120
+        if len(text) > limit:
+            text = text[:limit] + "...[truncated]"
         return text
     if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float) or value is None:
         return value

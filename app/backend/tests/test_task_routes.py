@@ -87,6 +87,18 @@ def test_post_tasks_uses_lan_address_for_mobile_upload_url(client):
     assert "127.0.0.1" not in data["mobile_upload_url"]
 
 
+def test_post_tasks_prefers_public_base_url_over_container_lan_address(client, app):
+    app.config["BACKEND_CONFIG"]["public_base_url"] = "http://172.20.10.5:8081"
+    app.config["LAN_ADDRESSES"] = ["172.18.0.2:8081"]
+
+    response = client.post("/api/tasks", base_url="http://127.0.0.1:8081")
+
+    assert response.status_code == 201
+    data = response.get_json()["data"]
+    assert data["mobile_upload_url"].startswith("http://172.20.10.5:8081/mobile/upload/")
+    assert "172.18.0.2" not in data["mobile_upload_url"]
+
+
 def test_get_task_returns_mvp_shape_without_session(client):
     created = client.post("/api/tasks").get_json()["data"]
 

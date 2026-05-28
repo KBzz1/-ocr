@@ -98,6 +98,13 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             timeout_seconds=self._timeout_seconds,
             work_dir=str(work_dir),
             command=_summarize_command(command),
+            python_executable=self._python_executable,
+            script_path=self._script_path,
+            cache_dir=env["PADDLE_PDX_CACHE_HOME"],
+            device=self._device,
+            max_new_tokens=self._max_new_tokens,
+            max_pixels=self._max_pixels,
+            input_files=_input_file_diagnostics(page_files, input_dir),
         )
         try:
             completed = _run_with_process_group_timeout(
@@ -126,6 +133,7 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             raise RuntimeError(f"本地 OCR runner 执行超时: {self._timeout_seconds}s") from exc
         self._emit_runner_finished(task_id, started, completed, output_file)
         if completed.returncode != 0:
+            self._emit_runner_failed(task_id, started, completed, output_file)
             detail = _summarize_process_failure(completed)
             raise RuntimeError(f"本地 OCR runner 执行失败: {detail}")
         if not output_file.is_file():
@@ -210,6 +218,24 @@ class LocalPaddleOCRDocumentPort(DocumentParsingPort):
             stderr_tail=_tail(completed.stderr),
         )
 
+    def _emit_runner_failed(
+        self,
+        task_id: str,
+        started: float,
+        completed: subprocess.CompletedProcess,
+        output_file: Path,
+    ) -> None:
+        self._emit_event(
+            "ocr_runner_failed",
+            task_id=task_id,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            exit_code=completed.returncode,
+            output_exists=output_file.is_file(),
+            output_bytes=output_file.stat().st_size if output_file.exists() else 0,
+            stdout_tail=_tail(completed.stdout),
+            stderr_tail=_tail(completed.stderr),
+        )
+
 
 def _summarize_process_failure(completed: subprocess.CompletedProcess) -> str:
     output = (completed.stderr or completed.stdout or "").strip()
@@ -218,6 +244,22 @@ def _summarize_process_failure(completed: subprocess.CompletedProcess) -> str:
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     tail = "\n".join(lines[-8:])
     return f"exit_code={completed.returncode}; {tail[:1200]}"
+
+
+def _input_file_diagnostics(page_files: list[dict], input_dir: Path) -> list[dict]:
+    diagnostics = []
+    for page in page_files:
+        path = input_dir / page["filename"]
+        diagnostics.append(
+            {
+                "page_id": page["page_id"],
+                "page_no": page["page_no"],
+                "filename": page["filename"],
+                "bytes": path.stat().st_size if path.exists() else None,
+                "exists": path.exists(),
+            }
+        )
+    return diagnostics
 
 
 class _ProcessingCancelled(Exception):

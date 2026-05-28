@@ -54,6 +54,15 @@ function getReviewLabel(task: TaskSummary) {
   return '未审核';
 }
 
+function getReviewStatusKey(task: TaskSummary) {
+  const status = task.review_summary?.status;
+  if (status && reviewStatusLabels[status]) return status;
+  const confirmed = task.review_summary?.confirmed_count ?? 0;
+  const total = task.review_summary?.total_count ?? 0;
+  if (total > 0 && confirmed >= total) return 'confirmed';
+  return 'unreviewed';
+}
+
 function getErrorSummary(task: TaskSummary) {
   if (task.status !== 'failed') return '';
   return task.error_message || task.error_code || '处理失败，请重新处理';
@@ -149,7 +158,7 @@ export function TaskList({
                     <td className="task-list-table__id">{task.display_name ?? task.task_id}</td>
                     <td>{formatDateTime(task.created_at)}</td>
                     <td>{task.page_count} 页</td>
-                    <td>
+                    <td className="task-status-cell-td">
                       <div className="task-status-cell">
                         {task.status === 'processing' ? null : (
                           <span className={`task-status task-status--${status.tone}`}>
@@ -173,13 +182,14 @@ export function TaskList({
                         ) : null}
                       </div>
                     </td>
-                    <td>{getReviewLabel(task)}</td>
+                    <td>
+                      <span className={`task-review-badge task-review-badge--${getReviewStatusKey(task)}`}>
+                        {getReviewLabel(task)}
+                      </span>
+                    </td>
                     <td>
                       {errorSummary ? (
-                        <details className="task-error-details">
-                          <summary>{errorSummary}</summary>
-                          <p>{errorSummary}</p>
-                        </details>
+                        <span className="task-error-text">{errorSummary}</span>
                       ) : (
                         <span className="task-list-muted">无</span>
                       )}

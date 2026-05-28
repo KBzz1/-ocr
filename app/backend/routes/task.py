@@ -8,6 +8,9 @@ task_bp = Blueprint("task", __name__)
 
 
 def _mobile_base_url():
+    public_base_url = (current_app.config.get("BACKEND_CONFIG") or {}).get("public_base_url")
+    if public_base_url:
+        return public_base_url.rstrip("/")
     lan_addresses = current_app.config.get("LAN_ADDRESSES") or []
     return f"{request.scheme}://{lan_addresses[0]}" if lan_addresses else request.host_url.rstrip("/")
 

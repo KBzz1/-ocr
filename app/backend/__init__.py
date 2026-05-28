@@ -118,6 +118,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         "system_started",
         port=config["port"],
         lan_addresses_count=len(app.config["LAN_ADDRESSES"]),
+        public_base_url=config.get("public_base_url"),
     )
     from .services.file_validator import FileValidator
     from .services.page_service import PageService

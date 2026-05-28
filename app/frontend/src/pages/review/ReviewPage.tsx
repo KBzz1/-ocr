@@ -184,8 +184,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       <WorkstationLayout
         activeRouteId="review"
         reviewTaskHref={buildReviewPath(taskId)}
-        headerKicker="任务详情"
-        headerTitle="任务详情与人工审核"
       >
         <main className="review-page" aria-label="人工审核页">{content}</main>
       </WorkstationLayout>

@@ -44,6 +44,7 @@ if not exist "data" md "data"
 if not exist "exports" md "exports"
 if not exist "logs" md "logs"
 
+call :detect_public_base_url
 call :log "Validating docker compose config"
 docker compose config >> "%LOG_FILE%" 2>&1
 
@@ -89,6 +90,34 @@ call :log "Workstation is ready: %WORKSTATION_URL%"
 call :log "Keep this log if OCR/GPU processing later fails: %LOG_FILE%"
 start "" "%WORKSTATION_URL%"
 popd
+exit /b 0
+
+:detect_public_base_url
+set "HOST_LAN_IP="
+for /f "usebackq tokens=* delims= " %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ip = Get-NetIPConfiguration ^| Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } ^| ForEach-Object { $_.IPv4Address ^| Where-Object { $_.IPAddress -match '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' -and $_.IPAddress -notmatch '^(127|169\.254|172\.18)\.' } ^| Select-Object -First 1 -ExpandProperty IPAddress } ^| Select-Object -First 1; if ($ip) { Write-Output $ip.Trim() }"`) do if not "%%~I"=="" set "HOST_LAN_IP=%%~I"
+echo(!HOST_LAN_IP! | findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+if errorlevel 1 set "HOST_LAN_IP="
+if "!HOST_LAN_IP!"=="" (
+  call :log "WARNING: Could not auto-detect host LAN IPv4."
+  echo.
+  echo Could not auto-detect the Windows IPv4 for phone access.
+  echo Run ipconfig and enter the IPv4 address of the Wi-Fi / hotspot adapter.
+  echo Example: 172.20.10.5 or 192.168.43.10
+  set /p HOST_LAN_IP=Enter Windows IPv4 for phone access, or press Enter to skip: 
+  echo(!HOST_LAN_IP! | findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+  if errorlevel 1 set "HOST_LAN_IP="
+)
+if not "!HOST_LAN_IP!"=="" (
+  set "MANZUFEI_PUBLIC_BASE_URL=http://%HOST_LAN_IP%:8081"
+  call :log "Mobile upload public URL base: %MANZUFEI_PUBLIC_BASE_URL%"
+) else (
+  set "MANZUFEI_PUBLIC_BASE_URL="
+  call :log "ERROR: Valid Windows IPv4 is required for phone QR access."
+  echo ERROR: Valid Windows IPv4 is required for phone QR access.
+  echo Run ipconfig, then rerun 01_start.bat and enter the Wi-Fi / hotspot IPv4 address.
+  pause
+  exit /b 1
+)
 exit /b 0
 
 :log

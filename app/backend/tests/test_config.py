@@ -287,6 +287,31 @@ algorithms:
     assert config["local_ocr_max_pixels"] == 200000
 
 
+def test_load_config_supports_public_base_url_from_environment(tmp_path, monkeypatch):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text("", encoding="utf-8")
+    monkeypatch.setenv("MANZUFEI_PUBLIC_BASE_URL", "http://172.20.10.5:8081")
+
+    config = load_config(str(config_dir))
+
+    assert config["public_base_url"] == "http://172.20.10.5:8081"
+
+
+def test_public_base_url_rejects_blank_host_from_environment(tmp_path, monkeypatch):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text("", encoding="utf-8")
+    monkeypatch.setenv("MANZUFEI_PUBLIC_BASE_URL", "http:// :8081")
+
+    with pytest.raises(ValueError, match="public_base_url"):
+        load_config(str(config_dir))
+
+
 def test_local_ocr_timeout_must_be_positive(tmp_path):
     from app.backend.config import load_config
 

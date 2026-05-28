@@ -13,4 +13,5 @@ services:
       - ./app/config/local.yaml:/app/app/config/local.yaml:ro
     environment:
       MANZUFEI_BACKEND_DEBUG: "0"
+      MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"
     gpus: all

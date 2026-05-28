@@ -162,8 +162,54 @@ def test_local_paddleocr_port_emits_runner_diagnostic_events(tmp_path):
     assert event_names == ["ocr_runner_started", "ocr_runner_finished"]
     assert events[0][1]["task_id"] == "task_001"
     assert events[0][1]["page_count"] == 1
+    assert events[0][1]["python_executable"] == sys.executable
+    assert events[0][1]["script_path"] == str(runner)
+    assert events[0][1]["max_new_tokens"] == 1024
+    assert events[0][1]["max_pixels"] == 501760
+    assert events[0][1]["input_files"][0]["filename"] == "001_page_a.jpg"
+    assert events[0][1]["input_files"][0]["bytes"] == 7
     assert events[1][1]["exit_code"] == 0
     assert events[1][1]["output_exists"] is True
+
+
+def test_local_paddleocr_port_emits_failure_diagnostic_event_on_nonzero_exit(tmp_path):
+    events = []
+    runner = tmp_path / "fake_ocr_runner.py"
+    runner.write_text(
+        textwrap.dedent(
+            """
+            import sys
+
+            print("runner stdout before failure")
+            print("runner stderr before failure", file=sys.stderr)
+            raise SystemExit(7)
+            """
+        ),
+        encoding="utf-8",
+    )
+    source = tmp_path / "source-a.jpg"
+    source.write_bytes(b"image-a")
+    port = LocalPaddleOCRDocumentPort(
+        python_executable=sys.executable,
+        script_path=str(runner),
+        work_root=str(tmp_path / "ocr-runs"),
+        timeout_seconds=10,
+        event_logger=lambda event, **payload: events.append((event, payload)),
+    )
+
+    with pytest.raises(RuntimeError, match="exit_code=7"):
+        port.parse(
+            {
+                "task_id": "task_001",
+                "pages": [{"page_id": "page_a", "page_no": 1, "processed_path": str(source)}],
+            }
+        )
+
+    event_names = [event for event, _ in events]
+    assert event_names == ["ocr_runner_started", "ocr_runner_finished", "ocr_runner_failed"]
+    assert events[2][1]["exit_code"] == 7
+    assert "runner stdout before failure" in events[2][1]["stdout_tail"]
+    assert "runner stderr before failure" in events[2][1]["stderr_tail"]
 
 
 def test_local_paddleocr_port_timeout_kills_child_process_group(tmp_path):
