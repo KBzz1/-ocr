@@ -53,12 +53,19 @@ function findLocatedEvidenceText(ocrText: string, evidenceText?: string) {
   if (!cleanedEvidence) return undefined;
   if (ocrText.includes(cleanedEvidence)) return cleanedEvidence;
 
-  return cleanedEvidence
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length >= 4)
-    .sort((a, b) => b.length - a.length)
-    .find((line) => ocrText.includes(line));
+  const candidates = Array.from(new Set([
+    ...cleanedEvidence.split(/\n+/),
+    ...cleanedEvidence.split(/[，,；;。！？!?]+/),
+    ...cleanedEvidence.split(/[、"'“”‘’（）()]+/)
+  ]
+    .map((line) => line.trim().replace(/^[\s"'“”‘’（）()]+|[\s"'“”‘’（）()]+$/g, ''))
+    .filter((line) => line.length >= 4)));
+  const located = candidates
+    .map((line) => ({ line, index: ocrText.indexOf(line) }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index || b.line.length - a.line.length);
+
+  return located[0]?.line;
 }
 
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {

@@ -357,6 +357,56 @@ describe('ReviewPage', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 
+  it('highlights the first locatable OCR fragment when evidence is a summarized phrase', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '既往史：患者自诉心前区隐痛10+年，一直未予以重视；高血压5+年，最高血压160/92mmHg。现病史：予以“噻托溴铵粉雾剂18ug经口吸入1/日、布地奈德福莫特罗吸入粉雾剂320ug经口吸入2/日”等治疗。',
+              pages: [],
+              fields: [
+                {
+                  field_key: 'comorbidities',
+                  label: '合并症',
+                  value: '心前区隐痛10+年、高血压5+年',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      text: '心前区隐痛10+年，一直未予以重视，高血压5+年，最高血压160/92mmHg'
+                    }
+                  ]
+                },
+                {
+                  field_key: 'maintenance_therapy',
+                  label: '长期维持治疗',
+                  value: '噻托溴铵粉雾剂18ug经口吸入1/日、布地奈德福莫特罗吸入粉雾剂320ug经口吸入2/日',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      text: '予以‘噻托溴铵粉雾剂18ug经口吸入1/日、布地奈德福莫特罗吸入粉雾剂320ug经口吸入2/日’等治疗'
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    expect(screen.getByText('心前区隐痛10+年', { selector: 'mark' })).toBeTruthy();
+
+    await userEvent.click(screen.getByTestId('review-field-card-maintenance_therapy'));
+    expect(screen.getByText('噻托溴铵粉雾剂18ug经口吸入1/日', { selector: 'mark' })).toBeTruthy();
+  });
+
   it('does not complete from shortcut while a save request is in flight', async () => {
     mockReviewRoutes();
     const completeSpy = vi.fn();
