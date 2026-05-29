@@ -57,6 +57,42 @@ def test_complete_field_results_normalizes_model_status_and_ocr_correction_shape
     }
 
 
+def test_complete_field_results_normalizes_string_confidence_from_llm():
+    from app.backend.services.copd_extraction.field_result import complete_field_results
+
+    results = complete_field_results(
+        [
+            {
+                "field_key": "smoking_history_raw_text",
+                "original_value": "吸烟40年",
+                "evidence": "吸烟40年",
+                "confidence": "0.82",
+            }
+        ],
+        ["smoking_history_raw_text"],
+    )
+
+    assert results[0]["confidence"] == 0.82
+
+
+def test_complete_field_results_resets_invalid_confidence_from_llm():
+    from app.backend.services.copd_extraction.field_result import complete_field_results
+
+    results = complete_field_results(
+        [
+            {
+                "field_key": "smoking_history_raw_text",
+                "original_value": "吸烟40年",
+                "evidence": "吸烟40年",
+                "confidence": "较高",
+            }
+        ],
+        ["smoking_history_raw_text"],
+    )
+
+    assert results[0]["confidence"] == 0
+
+
 def test_all_empty_detects_full_empty_result():
     from app.backend.services.copd_extraction.field_result import all_fields_empty
 

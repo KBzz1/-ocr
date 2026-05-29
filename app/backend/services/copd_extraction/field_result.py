@@ -55,6 +55,7 @@ def _normalize_extracted(item: dict) -> dict:
     if result["extraction_status"] == "extracted" and not result.get("original_value"):
         result["extraction_status"] = "not_found"
         result["evidence"] = None
+    result["confidence"] = _normalize_confidence(result.get("confidence"), item["field_key"])
     if not isinstance(result.get("quality_flags"), list):
         logger.warning("field=%s quality_flags is not a list (got %s), resetting to []",
                        item["field_key"], type(result.get("quality_flags")).__name__)
@@ -68,6 +69,23 @@ def _normalize_extracted(item: dict) -> dict:
                        item["field_key"], type(result.get("ocr_correction")).__name__)
         result["ocr_correction"] = {"applied": False, "raw": "", "normalized": "", "reason": ""}
     return result
+
+
+def _normalize_confidence(value, field_key: str) -> int | float:
+    if isinstance(value, bool):
+        logger.warning("field=%s confidence is bool, resetting to 0", field_key)
+        return 0
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            return float(stripped)
+        except ValueError:
+            logger.warning("field=%s confidence is not numeric (got %s), resetting to 0", field_key, repr(value))
+            return 0
+    logger.warning("field=%s confidence has invalid type %s, resetting to 0", field_key, type(value).__name__)
+    return 0
 
 
 def complete_field_results(raw_results: list[dict], field_keys: list[str]) -> list[dict]:
