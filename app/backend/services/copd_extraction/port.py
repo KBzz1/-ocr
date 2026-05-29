@@ -1,3 +1,5 @@
+import threading
+
 from .extractor import COPDFieldExtractor, STRATEGY_SECTION_GROUPS
 
 
@@ -33,11 +35,13 @@ class _LazyCOPDFieldPort:
         self._extraction_strategy = extraction_strategy
         self._port = None
         self._llm_client = None
+        self._lock = threading.Lock()
 
     def extract(self, input: dict) -> list[dict]:
-        if self._port is None:
-            self._build_port()
-        return self._port.extract(input)
+        with self._lock:
+            if self._port is None:
+                self._build_port()
+            return self._port.extract(input)
 
     def _build_port(self) -> None:
         from .llm_client import build_llama_cpp_client
@@ -59,11 +63,12 @@ class _LazyCOPDFieldPort:
         self._port = COPDFieldPort(extractor)
 
     def close(self) -> None:
-        close = getattr(self._llm_client, "close", None)
-        if callable(close):
-            close()
-        self._llm_client = None
-        self._port = None
+        with self._lock:
+            close = getattr(self._llm_client, "close", None)
+            if callable(close):
+                close()
+            self._llm_client = None
+            self._port = None
 
 
 def build_default_copd_field_port(config: dict, field_keys_provider):

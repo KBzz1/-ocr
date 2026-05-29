@@ -1,3 +1,8 @@
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+
 def test_lazy_copd_field_port_reuses_llm_client_until_closed(monkeypatch):
     from app.backend.services.copd_extraction import llm_client as llm_module
     from app.backend.services.copd_extraction.port import _LazyCOPDFieldPort
@@ -124,3 +129,37 @@ def test_lazy_copd_field_port_rebuilds_client_after_close(monkeypatch):
     assert len(built_clients) == 2
     assert built_clients[0].closed is True
     assert built_clients[1].closed is False
+
+
+def test_lazy_copd_field_port_builds_single_client_for_concurrent_first_requests(monkeypatch):
+    from app.backend.services.copd_extraction import llm_client as llm_module
+    from app.backend.services.copd_extraction.port import _LazyCOPDFieldPort
+
+    class FakeLlmClient:
+        def complete_json(self, prompt: str):
+            return {"fields": [{"field_key": "copd_history_years", "original_value": "15年", "source_hint": "主诉"}]}
+
+        def close(self):
+            pass
+
+    built_clients = []
+
+    def build_client(*args, **kwargs):
+        time.sleep(0.05)
+        client = FakeLlmClient()
+        built_clients.append(client)
+        return client
+
+    monkeypatch.setattr(llm_module, "build_llama_cpp_client", build_client)
+    port = _LazyCOPDFieldPort(model_path="/tmp/model.gguf", field_keys=["copd_history_years"])
+    barrier = threading.Barrier(2)
+
+    def extract_once():
+        barrier.wait()
+        return port.extract({"document_result": {"merged_text": "主诉：反复咳嗽、咳痰15年。"}})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: extract_once(), range(2)))
+
+    assert len(results) == 2
+    assert len(built_clients) == 1
