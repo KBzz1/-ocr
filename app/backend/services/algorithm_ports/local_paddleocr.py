@@ -274,31 +274,45 @@ def _run_with_process_group_timeout(
     timeout: int,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> subprocess.CompletedProcess:
-    process = subprocess.Popen(
-        command,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    deadline = time.monotonic() + timeout
-    while process.poll() is None:
-        if is_cancelled is not None and is_cancelled():
-            _kill_process_group(process)
-            process.communicate()
-            raise _ProcessingCancelled("OCR runner cancelled")
-        if time.monotonic() >= deadline:
-            _kill_process_group(process)
-            stdout, stderr = process.communicate()
-            exc = subprocess.TimeoutExpired(command, timeout)
-            exc.stdout = stdout
-            exc.stderr = stderr
-            raise exc
-        time.sleep(0.1)
-    stdout, stderr = process.communicate()
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    cwd_path = Path(cwd)
+    stdout_path = cwd_path / "runner_stdout.log"
+    stderr_path = cwd_path / "runner_stderr.log"
+    with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_file, stderr_path.open(
+        "w", encoding="utf-8", errors="replace"
+    ) as stderr_file:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + timeout
+        while process.poll() is None:
+            if is_cancelled is not None and is_cancelled():
+                _kill_process_group(process)
+                process.wait()
+                raise _ProcessingCancelled("OCR runner cancelled")
+            if time.monotonic() >= deadline:
+                _kill_process_group(process)
+                process.wait()
+                stdout_file.flush()
+                stderr_file.flush()
+                exc = subprocess.TimeoutExpired(command, timeout)
+                exc.stdout = _read_file_tail(stdout_path)
+                exc.stderr = _read_file_tail(stderr_path)
+                raise exc
+            time.sleep(0.1)
+        stdout_file.flush()
+        stderr_file.flush()
+        return subprocess.CompletedProcess(
+            command,
+            process.returncode,
+            _read_file_tail(stdout_path),
+            _read_file_tail(stderr_path),
+        )
 
 
 def _kill_process_group(process: subprocess.Popen) -> None:
@@ -328,3 +342,16 @@ def _tail(value: str | bytes | None, limit: int = 1200) -> str:
     if len(value) > limit:
         value = value[-limit:]
     return value.strip()
+
+
+def _read_file_tail(path: Path, limit: int = 1200) -> str:
+    if not path.exists():
+        return ""
+    with path.open("rb") as file:
+        try:
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            file.seek(max(0, size - limit))
+        except OSError:
+            file.seek(0)
+        return file.read().decode("utf-8", errors="replace").strip()

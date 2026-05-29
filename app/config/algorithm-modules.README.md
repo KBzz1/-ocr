@@ -46,6 +46,8 @@ algorithms:
 
 2026-05-28 Windows Docker 部署根因定位：同一参数在 WSL conda 环境正常，但 Windows Docker 离线包中 OCR 子进程在加载 PaddleOCR-VL 权重后长时间低 GPU 利用率并最终 540 秒超时。日志确认 runner 参数为 `--device gpu:0 --max-new-tokens 1024 --max-pixels 501760`，镜像和代码已同步；差异为 Docker 镜像安装了 `paddlex==3.5.2`，而已验证 WSL 环境为 `paddlex==3.5.0`。将 Docker 依赖回退并锁定到 `paddlex[ocr]==3.5.0` 后，Windows OCR 验证通过。
 
+2026-05-29 Windows Docker 复发根因定位：显存已被 PaddleOCR-VL 加载满，但 GPU 利用率低且事件流停在 `ocr_runner_started`。复现发现 OCR 子进程 stdout/stderr 使用 `PIPE`，父进程在子进程退出前不读取；PaddleOCR/PaddleX 日志写满管道后会阻塞推理进程。后端改为将 runner stdout/stderr 写入工作目录日志文件，并只把尾部摘要写入事件日志，避免日志管道反压导致假性 GPU 卡死。
+
 `local_ocr_timeout_seconds` 默认 180，表示单页 OCR 超时预算；多页任务的 runner 超时按页数线性放大。单页 OCR 超过 180 秒视为外部模块异常并进入失败，避免界面长期停在“处理中”。
 
 同一图片放在 `/tmp` 工作目录下可正常返回，而放在 `data/ocr_runs` 下出现过 120 秒超时；当前配置将 `local_ocr_work_root` 指向 `/tmp/manzufei_ocr_ocr_runs`。

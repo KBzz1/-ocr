@@ -303,6 +303,55 @@ def test_local_paddleocr_port_timeout_kills_child_process_group(tmp_path):
     assert not marker.exists()
 
 
+def test_local_paddleocr_port_does_not_block_when_runner_writes_large_stderr(tmp_path):
+    runner = tmp_path / "writes_large_stderr.py"
+    runner.write_text(
+        textwrap.dedent(
+            """
+            import argparse
+            import sys
+            from pathlib import Path
+
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--input-dir")
+            parser.add_argument("--output-file")
+            parser.add_argument("--max-new-tokens")
+            parser.add_argument("--max-pixels")
+            args = parser.parse_args()
+
+            sys.stderr.write("x" * (1024 * 1024 * 2))
+            sys.stderr.flush()
+            first = sorted(Path(args.input_dir).iterdir())[0]
+            output = Path(args.output_file)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(f"# {first.name}\\n\\nOCR text", encoding="utf-8")
+            """
+        ),
+        encoding="utf-8",
+    )
+    source = tmp_path / "source-a.jpg"
+    source.write_bytes(b"image-a")
+    events = []
+    port = LocalPaddleOCRDocumentPort(
+        python_executable=sys.executable,
+        script_path=str(runner),
+        work_root=str(tmp_path / "ocr-runs"),
+        timeout_seconds=3,
+        event_logger=lambda event, **payload: events.append((event, payload)),
+    )
+
+    result = port.parse(
+        {
+            "task_id": "task_001",
+            "pages": [{"page_id": "page_a", "page_no": 1, "processed_path": str(source)}],
+        }
+    )
+
+    assert result["pages"][0]["text"] == "OCR text"
+    assert events[-1][0] == "ocr_runner_finished"
+    assert events[-1][1]["stderr_tail"].endswith("x" * 100)
+
+
 def test_local_paddleocr_port_passes_cache_home_to_runner(tmp_path):
     runner = tmp_path / "fake_ocr_runner.py"
     runner.write_text(

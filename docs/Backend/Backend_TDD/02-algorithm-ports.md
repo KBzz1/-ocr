@@ -43,6 +43,7 @@ type FieldExtractionPort = {
 - `local_ocr_max_new_tokens` 默认 1024。PaddleX VLM 推理默认 `max_new_tokens=8192`，在 8GB 显存 GPU 上 KV cache 超出显存容量导致极慢甚至卡死；1024 对单页病历足够完整。2026-05-23 验证：RTX 4060 上约 46 秒完成。
 - `local_ocr_max_pixels` 默认 501760（28*28*640），限制 PaddleOCR-VL 视觉输入尺寸。2026-05-25 复发根因：手机上传原图 1800x4000，显著大于此前 1919x1080 验证样本；1003520 仍可能触发 PaddleOCR-VL 显存接近满载且长时间低利用率，501760 作为 8GB 显卡保守默认值。
 - 2026-05-28 Windows Docker 复发根因：镜像中 `paddlex==3.5.2` 与 WSL 已验证的 `paddlex==3.5.0` 不一致，导致同一 runner 参数在 Windows Docker 下加载权重后长时间低 GPU 利用率并超时。日志排除旧镜像、旧代码和 CPU-only 配置后，将 Docker 依赖锁回 `paddlex[ocr]==3.5.0`，Windows OCR 验证通过。
+- 2026-05-29 Windows Docker 复发根因：OCR runner stdout/stderr 由父进程用 `PIPE` 接收但运行期间不读取；PaddleOCR/PaddleX 输出较多时管道缓冲区写满，子进程会在已加载模型和占满显存后阻塞，表现为显存满、GPU 利用率低且无 `ocr_runner_finished`。后端必须把 runner stdout/stderr 写入工作目录日志文件，只在事件中记录尾部摘要，避免管道阻塞。
 - `local_ocr_timeout_seconds` 默认 180，表示单页 OCR 超时预算；多页任务 runner 超时按页数线性放大。OCR 单页超过 180 秒视为外部模块异常并进入 `failed`，避免前端长期停留在“处理中”。
 - `local_ocr_work_root` 指向 `/tmp/manzufei_ocr_ocr_runs`，避免 `data/ocr_runs` 下出现过 120 秒超时。
 - OCR runner 执行超时或异常时，事件日志记录 `ocr_runner_started`、`ocr_runner_finished`、`ocr_runner_timeout`，包含退出码和 stdout/stderr 尾部。
