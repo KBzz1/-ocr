@@ -1,4 +1,6 @@
 import json
+import io
+import zipfile
 
 import pytest
 
@@ -44,10 +46,14 @@ def client(app):
 
 def seed_exportable_task(app, status="review"):
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    seed_exportable_task_with_id(store, "task_001", status=status)
+
+
+def seed_exportable_task_with_id(store, task_id, status="review"):
     store.write(
-        "tasks/task_001.json",
+        f"tasks/{task_id}.json",
         {
-            "task_id": "task_001",
+            "task_id": task_id,
             "status": status,
             "created_at": "2026-05-19T10:00:00+00:00",
             "updated_at": "2026-05-19T10:00:00+00:00",
@@ -59,9 +65,9 @@ def seed_exportable_task(app, status="review"):
         },
     )
     store.write(
-        "results/task_001/review_result.json",
+        f"results/{task_id}/review_result.json",
         {
-            "task_id": "task_001",
+            "task_id": task_id,
             "schema_version": "1.0.0",
             "document_type": "general_medical_record",
             "fields": [
@@ -125,3 +131,28 @@ def test_export_route_rejects_uploading_task(client, app):
 
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "EXPORT_VALIDATION_FAILED"
+
+
+def test_batch_zip_route_returns_zip_download(client, app):
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    seed_exportable_task_with_id(store, "task_001", status="review")
+    seed_exportable_task_with_id(store, "task_002", status="done")
+
+    response = client.post(
+        "/api/tasks/export/batch-zip",
+        json={"task_ids": ["task_001", "task_002"]},
+    )
+
+    assert response.status_code == 200
+    assert response.content_type == "application/zip"
+    assert "batch-review-export.zip" in response.headers.get("Content-Disposition", "")
+
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert "task_001/task_001.review.json" in archive.namelist()
+
+
+def test_batch_zip_route_rejects_empty_task_ids(client):
+    response = client.post("/api/tasks/export/batch-zip", json={"task_ids": []})
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_REQUEST_PARAMS"

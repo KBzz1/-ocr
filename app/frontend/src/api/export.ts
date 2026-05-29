@@ -28,3 +28,20 @@ export function exportTaskJson(taskId: string) {
 export function exportTaskExcel(taskId: string) {
   return downloadTaskExport(taskId, 'excel');
 }
+
+export async function exportTasksBatchZip(taskIds: string[]) {
+  const response = await fetch(new URL('/api/tasks/export/batch-zip', window.location.origin).toString(), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/zip',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ task_ids: taskIds })
+  });
+
+  if (!response.ok) {
+    throw new ApiError('批量导出失败', 'EXPORT_FAILED', response.status);
+  }
+
+  return response.blob();
+}

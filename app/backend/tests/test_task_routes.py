@@ -285,6 +285,30 @@ def test_delete_processing_task_returns_400(client, app):
     assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
 
 
+def test_reextract_task_route_returns_run_metadata(client, app):
+    class FakeReextractionService:
+        def reextract(self, task_id):
+            return {
+                "task_id": task_id,
+                "status": "review",
+                "run_id": "reextract_001",
+                "source": "ocr_text_only",
+                "schema_version": "copd.v1",
+                "prompt_version": "copd.prompt.v1",
+                "candidate_count": 1,
+            }
+
+    app.config["REEXTRACTION_SERVICE"] = FakeReextractionService()
+
+    response = client.post("/api/tasks/1/reextract")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["source"] == "ocr_text_only"
+    assert data["schema_version"] == "copd.v1"
+    assert data["prompt_version"] == "copd.prompt.v1"
+
+
 def test_delete_nonexistent_task_returns_404(client):
     response = client.delete("/api/tasks/missing")
 

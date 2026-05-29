@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 
-import { exportTaskExcel, exportTaskJson } from './export';
+import { exportTaskExcel, exportTaskJson, exportTasksBatchZip } from './export';
 import { normalizeApiError } from './errors';
 import { getReviewResult, saveReviewField } from './review';
 import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
-import { cancelTaskProcessing, createTask, getTaskDetail, getTasks, processTask, type TaskStatus } from './tasks';
+import { cancelTaskProcessing, createTask, getTaskDetail, getTasks, processTask, reextractTaskFromOcr, type TaskStatus } from './tasks';
 import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../styles/status';
 import { server } from '../../tests/setupTests';
 
@@ -248,5 +248,43 @@ describe('shared frontend contracts', () => {
 
     await expect(exportTaskJson('task_review')).resolves.toBeInstanceOf(Blob);
     await expect(exportTaskExcel('task_review')).resolves.toBeInstanceOf(Blob);
+  });
+
+  it('exports multiple tasks through batch zip endpoint', async () => {
+    server.use(
+      http.post('*/api/tasks/export/batch-zip', async ({ request }) => {
+        await expect(request.json()).resolves.toEqual({ task_ids: ['task_001', 'task_002'] });
+        return new HttpResponse(new Blob(['zip'], { type: 'application/zip' }), {
+          headers: { 'content-type': 'application/zip' }
+        });
+      })
+    );
+
+    await expect(exportTasksBatchZip(['task_001', 'task_002'])).resolves.toBeInstanceOf(Blob);
+  });
+
+  it('requests OCR-only reextraction and receives version metadata', async () => {
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            run_id: 'reextract_001',
+            source: 'ocr_text_only',
+            schema_version: 'copd.v1',
+            prompt_version: 'copd.prompt.v1',
+            candidate_count: 3
+          }
+        })
+      )
+    );
+
+    await expect(reextractTaskFromOcr('task_001')).resolves.toMatchObject({
+      source: 'ocr_text_only',
+      schema_version: 'copd.v1',
+      prompt_version: 'copd.prompt.v1'
+    });
   });
 });

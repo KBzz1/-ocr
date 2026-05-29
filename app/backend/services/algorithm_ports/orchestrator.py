@@ -97,25 +97,27 @@ class ProcessingOrchestrator:
                 details={"stage": "document_parsing", "reason": "module_not_configured"},
             )
 
-        doc_input = {
-            "task_id": task_id,
-            "image_paths": [p["processed_path"] for p in processed_pages],
-            "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
-                        "source_image_path": p["original_path"],
-                        "processed_path": p["processed_path"]} for p in processed_pages],
-            "is_cancelled": lambda: self._is_cancelled(task_service, task_id),
-        }
-        try:
-            self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
-            doc_result = self._doc_port.parse(doc_input)
-        except Exception as exc:
-            return task_service.mark_failed(
-                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
-                "文档解析模块异常",
-                stage="document_parsing",
-                details={**self._exception_details(exc), "stage": "document_parsing", "reason": "module_exception"},
-            )
-        self._stage_finished(task_id, "document_parsing", len(processed_pages), "success")
+        doc_result = self._result_store.read_success_document_result(task_id)
+        if doc_result is None:
+            doc_input = {
+                "task_id": task_id,
+                "image_paths": [p["processed_path"] for p in processed_pages],
+                "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
+                            "source_image_path": p["original_path"],
+                            "processed_path": p["processed_path"]} for p in processed_pages],
+                "is_cancelled": lambda: self._is_cancelled(task_service, task_id),
+            }
+            try:
+                self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
+                doc_result = self._doc_port.parse(doc_input)
+            except Exception as exc:
+                return task_service.mark_failed(
+                    task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                    "文档解析模块异常",
+                    stage="document_parsing",
+                    details={**self._exception_details(exc), "stage": "document_parsing", "reason": "module_exception"},
+                )
+            self._stage_finished(task_id, "document_parsing", len(processed_pages), "success")
 
         if not isinstance(doc_result, dict) or "pages" not in doc_result or not isinstance(doc_result["pages"], list):
             return task_service.mark_failed(

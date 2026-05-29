@@ -74,6 +74,16 @@ export interface TaskRetryResult {
   error_message?: string | null;
 }
 
+export interface TaskReextractResult {
+  task_id: string;
+  status: 'review';
+  run_id: string;
+  source: 'ocr_text_only';
+  schema_version?: string;
+  prompt_version?: string;
+  candidate_count: number;
+}
+
 interface TaskListResponse {
   tasks: Array<Omit<TaskSummary, 'status'> & { status: string }>;
 }
@@ -125,6 +135,12 @@ export function completeTask(taskId: string) {
 
 export function retryTaskProcessing(taskId: string) {
   return processTask(taskId) as Promise<TaskRetryResult>;
+}
+
+export function reextractTaskFromOcr(taskId: string) {
+  return apiRequest<TaskReextractResult>(`/api/tasks/${encodeURIComponent(taskId)}/reextract`, {
+    method: 'POST'
+  });
 }
 
 export function cancelTaskProcessing(taskId: string) {

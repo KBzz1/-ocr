@@ -86,12 +86,16 @@ class LlamaCppClient(LlmClient):
             max_tokens=self._max_tokens,
             response_format={"type": "json_object"},
         )
-        content = response["choices"][0]["message"]["content"]
+        choice = response["choices"][0]
+        content = choice["message"]["content"]
         if content:
             tail = content[-200:] if len(content) > 200 else content
             logger.debug("LLM raw response len=%d tail=%s", len(content), tail)
         else:
             logger.warning("LLM returned empty content")
+        if choice.get("finish_reason") == "length":
+            logger.error("LLM response truncated by max_tokens=%d", self._max_tokens)
+            raise ValueError(f"LLM 输出超过 max_tokens={self._max_tokens} 被截断")
         return _parse_json_response(content)
 
     def close(self) -> None:

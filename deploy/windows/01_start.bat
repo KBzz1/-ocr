@@ -159,7 +159,7 @@ docker compose ps >> "%LOG_FILE%" 2>&1
 docker inspect manzufei-ocr >> "%LOG_FILE%" 2>&1
 docker exec manzufei-ocr python -c "import sys; print(sys.version)" >> "%LOG_FILE%" 2>&1
 docker exec manzufei-ocr python -c "import paddle; print('paddle', paddle.__version__); print('cuda', paddle.version.cuda()); print('compiled_cuda', paddle.device.is_compiled_with_cuda()); print('device_count', paddle.device.cuda.device_count())" >> "%LOG_FILE%" 2>&1
-docker exec manzufei-ocr python -c "import llama_cpp; print('llama_cpp import ok')" >> "%LOG_FILE%" 2>&1
+docker exec manzufei-ocr python -c "import glob, os, llama_cpp; libdir=os.path.join(os.path.dirname(llama_cpp.__file__),'lib'); print('llama_cpp', getattr(llama_cpp,'__version__',None)); print('llama_libs', sorted(os.path.basename(p) for p in glob.glob(os.path.join(libdir,'libggml*'))))" >> "%LOG_FILE%" 2>&1
 docker compose logs --tail 120 >> "%LOG_FILE%" 2>&1
 exit /b 0
 
@@ -169,4 +169,5 @@ docker compose ps >> "%LOG_FILE%" 2>&1
 docker inspect manzufei-ocr >> "%LOG_FILE%" 2>&1
 docker compose logs --tail 300 >> "%LOG_FILE%" 2>&1
 docker exec manzufei-ocr python -c "import paddle; print('paddle', paddle.__version__); print('cuda', paddle.version.cuda()); print('compiled_cuda', paddle.device.is_compiled_with_cuda()); print('device_count', paddle.device.cuda.device_count())" >> "%LOG_FILE%" 2>&1
+docker exec manzufei-ocr python -c "import glob, os, llama_cpp; libdir=os.path.join(os.path.dirname(llama_cpp.__file__),'lib'); print('llama_cpp', getattr(llama_cpp,'__version__',None)); print('llama_libs', sorted(os.path.basename(p) for p in glob.glob(os.path.join(libdir,'libggml*'))))" >> "%LOG_FILE%" 2>&1
 exit /b 0

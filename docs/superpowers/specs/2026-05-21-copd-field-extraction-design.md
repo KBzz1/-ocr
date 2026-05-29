@@ -271,6 +271,7 @@ LLM 抽取
 - **重复/拼接风险**：OCR 合并文本或字段 evidence 中出现高相似重复片段、短窗口重复检验项或重复医嘱时，标记 `possible_duplicate_or_stitching`。
 - **日期范围风险**：字段或 evidence 中日期明显晚于当前日期、年份与同一病历上下文冲突时，标记 `suspicious_date`。
 - **否定/不确定语气风险**：evidence 附近出现“无、否认、未见、可能、考虑、建议复查”等词，而字段值表达为确定阳性时，标记 `negation_or_uncertainty_risk`。
+- **反直觉零值风险**：`weight_loss` 字段抽到 `0g`、`0kg`、`0克` 等与“体重下降/减轻”语义矛盾的值时，标记 `counterintuitive_zero_weight_loss`；只提示人工核对，不自动改写。
 
 规则输出只追加到字段级 `quality_flags`：
 

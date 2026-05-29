@@ -205,6 +205,18 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
     )
 
+    from .services.copd_extraction.prompts import COPD_EXTRACTION_PROMPT_VERSION
+    from .services.reextraction_service import ReextractionService
+
+    app.config["REEXTRACTION_SERVICE"] = ReextractionService(
+        store=store,
+        task_service=app.config["TASK_SERVICE"],
+        field_port=field_port,
+        schema_provider=schema_service.get_current,
+        schema_validator=schema_service.build_validator(),
+        prompt_version_provider=lambda: COPD_EXTRACTION_PROMPT_VERSION,
+    )
+
     if image_port is None or doc_port is None or field_port is None:
         missing_stages = []
         if image_port is None:

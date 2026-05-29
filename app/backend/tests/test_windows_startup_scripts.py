@@ -471,6 +471,24 @@ def test_docker_requirements_include_paddlex_ocr_extra_for_paddleocr_vl():
     assert "paddlex[ocr]==3.5.0" in content
 
 
+def test_docker_build_compiles_llama_cpp_with_cuda():
+    """LLM extraction must offload to GPU in the Windows Docker package."""
+    dockerfile = open("Dockerfile", encoding="utf-8").read()
+    compose_content = open("docker-compose.yml", encoding="utf-8").read()
+    requirements = open("requirements.docker.txt", encoding="utf-8").read()
+    start_content = open("deploy/windows/01_start.bat", encoding="ascii").read()
+
+    assert "llama-cpp-python" not in requirements
+    assert "FROM nvidia/cuda:12.6.3-devel-ubuntu24.04" in dockerfile
+    assert "python3-dev" in dockerfile
+    assert "GGML_CUDA=on" in dockerfile
+    assert "CMAKE_CUDA_ARCHITECTURES=89" in dockerfile
+    assert "rpath-link,/usr/local/cuda/compat" in dockerfile
+    assert "--no-binary llama-cpp-python llama-cpp-python==0.3.22" in dockerfile
+    assert "gpus: all" in compose_content
+    assert "libggml" in start_content
+
+
 def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():
     """run.bat 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
     content = open("run.bat", encoding="utf-8").read()

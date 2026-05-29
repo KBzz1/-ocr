@@ -25,11 +25,13 @@
 | BE-MVP-04 OCR/文档解析和慢阻肺专病抽取 | 需收敛 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析来自本地模块；慢阻肺专病字段抽取纳入主代码 |
 | BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态先保留 `unreviewed / confirmed / modified` |
 | BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值 |
+| BE-MVP-07 批量导出与 OCR 文本重抽取框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 先支持批量 JSON zip 和基于已保存 OCR 文本重新触发 LLM 字段抽取；不重新跑 OCR，不做汇总 Excel |
 | FE-MVP-01 工作台总览 | 已完成 | `app/frontend/src/pages/workstation/` | 新建任务、二维码、最近任务、状态统计 |
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
 | FE-MVP-04 审核界面 | 已完成 | `app/frontend/src/pages/review/` | 原图、OCR 文本、结构化字段编辑、保存、完成、导出 |
-| REL-MVP-01 本地运行包 | 延后 | `run.bat`、`stop.bat`、配置目录 / 后续 Docker 方案 | 近期不投入 Windows 运行包细节；优先完成 E2E 主流程闭环，运行形态后续按 Docker 或本地脚本重新设计 |
+| FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
+| REL-MVP-01 本地运行包 | 已完成 | `scripts/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过容器内子进程调用 PaddleOCR-VL |
 
 ## 后端任务
 
@@ -107,6 +109,16 @@
   - 范围：按慢阻肺/呼吸系统入院记录 schema 生成全量字段结果，支持未抽取、可疑、复核失败和质量风险提示。
   - 边界：只做当前专病，不扩展为通用医学规则引擎。
 
+- [x] **BE-MVP-04-05 基于已保存 OCR 文本重新抽取框架**
+  - 范围：新增 `POST /api/tasks/{task_id}/reextract`，读取已保存 `document_result.json` 或审核结果中的 OCR 文本，复用现有 LLM 字段抽取端口和 schema 校验，生成新的字段候选。
+  - 边界：不重新跑 OCR，不重新处理图片，不覆盖已保存的人工审核最终值；缺少 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`。
+  - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
+
+- [x] **BE-MVP-04-06 schema/prompt 版本元数据框架**
+  - 范围：重抽取记录 `schema_version`、`prompt_version`、`source=ocr_text_only`、`run_id` 和候选数量，prompt 版本由 COPD prompt 模块显式常量化。
+  - 边界：当前只记录版本和审计元数据；字段方案编辑、prompt 模板管理和版本切换 UI 后置。
+
 ### BE-COPD-01 慢阻肺专病字段抽取
 
 - [x] **BE-COPD-01-01 慢阻肺专病 schema**
@@ -157,6 +169,20 @@
   - 范围：`review` 和 `done` 任务可导出人工最终值。
   - 边界：导出失败不破坏审核数据。
 
+- [x] **BE-MVP-05-05 批量 JSON zip 导出框架**
+  - 范围：新增 `POST /api/tasks/export/batch-zip`，接收 `task_ids`，复用现有单任务 JSON 导出模型，生成 `batch-review-export.zip`。
+  - 边界：只纳入 `review` / `done` 任务；任一任务不可导出则整体失败；暂不打包 Excel，避免放大当前 Excel 字段不完整问题。
+  - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
+
+- [ ] **BE-MVP-05-06 Excel 导出字段完整性修复**
+  - 范围：排查当前 Excel 只能看到少数字段的问题，确保导出字段数量、字段顺序、sheet 分组和 JSON 导出模型一致。
+  - 边界：修复单任务 Excel 后，再考虑是否把 Excel 纳入批量 zip；不得在前端拼 Excel。
+
+- [ ] **BE-MVP-05-07 批量导出清单与失败报告**
+  - 范围：批量 zip 内增加 manifest 或导出摘要，记录任务数、成功任务、跳过/失败原因和生成时间。
+  - 边界：不引入独立 `exported` 状态；导出失败不修改审核数据。
+
 ## 前端任务
 
 ### FE-MVP-01 工作台总览
@@ -201,6 +227,14 @@
   - 范围：查看二维码、查看进度、进入审核、重新处理、导出、查看原因。
   - 边界：不提供修订采集或取消会话。
 
+- [ ] **FE-MVP-03-04 批量导出多选入口**
+  - 范围：任务管理页支持选择多个 `review` / `done` 任务并调用批量 zip 下载 API。
+  - 边界：当前前端已具备 `exportTasksBatchZip(taskIds)` API client；完整多选 UI、禁用态、失败提示和下载反馈后续实现。
+
+- [ ] **FE-MVP-03-05 字段方案管理入口占位**
+  - 范围：为后续字段方案/版本选择预留入口，展示当前 schema/prompt 版本和重抽取来源。
+  - 边界：前端不得从 schema、OCR 文本或页面内容推断、补造结构化字段；字段方案保存和版本切换必须走后端受控 API。
+
 ### FE-MVP-04 审核界面
 
 - [x] **FE-MVP-04-01 审核页面布局**
@@ -219,9 +253,17 @@
   - 范围：审核页触发 JSON/Excel 导出。
   - 边界：不在前端拼 Excel。
 
+- [ ] **FE-MVP-04-05 OCR 文本重抽取确认入口**
+  - 范围：审核页或任务详情页提供“基于现有 OCR 文本重新抽取”入口，调用 `reextractTaskFromOcr(taskId)`，展示 `schema_version`、`prompt_version`、`run_id` 和候选数量。
+  - 边界：当前前端已具备 API client；UI 必须明确说明不重新识别图片、不覆盖人工已修改最终值，重抽取结果需回到审核页人工确认。
+
+- [ ] **FE-MVP-04-06 重抽取结果对比与采用**
+  - 范围：对比旧人工最终值、新候选值和证据，支持逐字段采用或保留原人工结果。
+  - 边界：不得自动覆盖 `confirmed` / `modified` 字段；不得由前端推断字段值。
+
 ## E2E 和发布任务
 
-近期推进顺序：先完成 MVP 成功/失败主流程 E2E 验收，再决定运行形态。Windows 本地运行包优先级降低；如果后续采用 Docker，应先补充 Docker 运行形态设计，再更新发布任务。
+近期推进顺序：MVP 成功/失败主流程 E2E 已完成；运行形态收敛为 Windows 离线 Docker 包。后续发布工作重点是离线验收、依赖锁定和现场排障记录。
 
 - [x] **E2E-MVP-01 成功主流程**
   - 范围：工作台新建任务 → 手机上传 3 张图片 → 完成上传 → processing → review → 审核保存 → done → JSON/Excel 导出。
@@ -235,15 +277,18 @@
   - 设计：`docs/superpowers/specs/2026-05-20-mvp-e2e-acceptance-design.md`。
   - 计划：`docs/superpowers/plans/2026-05-20-mvp-e2e-acceptance-plan.md`。
 
-- [ ] **REL-MVP-01 Windows 本地运行包**
-  - 状态：延后。
-  - 范围：后端、前端、配置、运行时目录、启动脚本整合。
-  - 边界：暂不作为近期主线；后续可能由 Docker 运行方案替代或简化，不要求现在收敛 Windows 打包细节。
+- [x] **REL-MVP-01 Windows 本地运行包**
+  - 状态：已形成 Windows 离线 Docker 包。
+  - 范围：后端、前端、配置、模型挂载目录、运行数据目录、Docker 镜像、Windows 导入/启动/停止/日志脚本整合。
+  - 边界：不在运行时联网下载模型或依赖；OCR runner 在后端容器内作为子进程调用，不单独起 OCR 容器；真实运行数据仍只落在 `data/`、`exports/`、`logs/`。
+  - 经验：2026-05-28 Windows OCR 验证发现 Docker 依赖版本漂移会导致同一参数在 Windows Docker 下超时，部署镜像需锁定 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`。
+  - 经验：2026-05-29 Windows LLM 验证发现默认 `llama-cpp-python` wheel 可能是 CPU-only，字段抽取阶段显存为空且 CPU 占用高；部署镜像需在 CUDA devel 镜像内以 `GGML_CUDA=on` 源码编译 `llama-cpp-python==0.3.22`，并用 `gpus: all` 运行。
+  - 经验：2026-05-29 完整流程验证通过；字段复核 JSON 需使用 `llm_max_tokens=4096` 并限制短 comment，失败重试需复用已成功 OCR 的 `document_result.json`，避免字段抽取失败后重复触发 OCR 长尾。
 
 - [ ] **REL-MVP-02 离线验收**
-  - 状态：延后到运行形态明确之后。
-  - 范围：断网启动、前端加载、无外部请求、手机同网可上传。
-  - 边界：验收标准保持离线运行、不联网下载任何内容；具体执行方式跟随后续 Docker 或本地脚本方案。
+  - 状态：Windows 桌面离线部署包已跑通完整流程，待整理为正式验收记录。
+  - 范围：断网启动、前端加载、无外部请求、手机同网可上传、GPU OCR 可完成、导出可用。
+  - 边界：验收标准保持离线运行、不联网下载任何内容；验收基线使用 Windows 离线 Docker 包。
 
 ## 后置能力
 
@@ -256,6 +301,16 @@
 - 复杂导出前质控流程。
 - 导出前复杂完整性预警面板。
 - 多医生协同、云同步、医院系统接口。
+
+## 已规划的后续增强
+
+以下能力已经有后端框架或 API 基础，但完整产品化仍需继续排期：
+
+- 批量导出完整 UI：任务多选、批量 zip 下载、失败提示和导出摘要。
+- Excel 导出字段完整性修复：先修复单任务 Excel 只能看到少数字段的问题，再评估是否纳入批量 zip。
+- 基于 OCR 文本重新抽取完整 UI：在审核页或任务详情页增加确认入口、版本信息展示和重抽取结果对比。
+- 字段方案/schema/prompt 版本管理：后端受控维护字段 schema 和 prompt 版本，支持选择版本后基于已保存 OCR 文本重新抽取。
+- 重抽取结果采用策略：新候选结果不得静默覆盖人工已审核字段，需支持逐字段采用、保留和审计。
 
 ## 全局边界
 

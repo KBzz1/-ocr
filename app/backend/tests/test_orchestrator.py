@@ -85,3 +85,90 @@ def test_orchestrator_detects_all_empty_field_results(tmp_path):
         {"field_key": "bmi", "original_value": "24.2", "extraction_status": "extracted"},
         {"field_key": "crp", "original_value": "", "extraction_status": "not_found"},
     ])
+
+
+def test_orchestrator_reuses_successful_document_result_on_retry(tmp_path):
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
+    store = JsonStore(str(tmp_path))
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "success",
+            "pages": [{"page_id": "page_001", "page_no": 1, "status": "success", "text": "主诉：咳嗽"}],
+            "merged_text": "主诉：咳嗽",
+        },
+    )
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        called = False
+
+        def parse(self, input):
+            self.called = True
+            raise AssertionError("document parser should not run")
+
+    class FieldPort:
+        def __init__(self):
+            self.seen_text = None
+
+        def extract(self, input):
+            self.seen_text = input["document_result"]["merged_text"]
+            return [_valid_candidate()]
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+    doc_port = DocPort()
+    field_port = FieldPort()
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=doc_port,
+        field_port=field_port,
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "images": [{"page_id": "page_001", "page_no": 1, "original_image_path": str(source)}],
+        },
+        TaskService(),
+        schema={"fields": [{"field_key": "chief_complaint"}]},
+    )
+
+    assert result["status"] == "review"
+    assert doc_port.called is False
+    assert field_port.seen_text == "主诉：咳嗽"
+
+
+def _valid_candidate():
+    return {
+        "field_key": "chief_complaint",
+        "original_value": "咳嗽",
+        "evidence": "主诉：咳嗽",
+        "confidence": 0.8,
+        "extraction_status": "extracted",
+        "verification_status": "not_checked",
+        "quality_flags": [],
+        "source_section": "主诉",
+        "source_hint": "主诉",
+        "source_text": "主诉：咳嗽",
+        "source_group_id": "主诉",
+        "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+    }

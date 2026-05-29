@@ -93,6 +93,42 @@ class ExportService:
     def export_excel(self, task_id: str) -> dict:
         return self._do_export(task_id, "excel", "xlsx", self._write_xlsx)
 
+    def export_batch_zip(self, task_ids: list[str]) -> dict:
+        models = []
+        for task_id in task_ids:
+            task = self._task_service.get_task(task_id)
+            models.append((task_id, self._build_export_model(task_id, task=task)))
+
+        filename = "batch-review-export.zip"
+        relative_path = f"batch/{filename}"
+        batch_dir = os.path.join(self._export_dir, "batch")
+        filepath = os.path.join(batch_dir, filename)
+
+        try:
+            os.makedirs(batch_dir, exist_ok=True)
+            with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as archive:
+                for task_id, model in models:
+                    archive.writestr(
+                        f"{task_id}/{task_id}.review.json",
+                        json.dumps(model, ensure_ascii=False, indent=2),
+                    )
+        except OSError as e:
+            raise AppError(
+                ErrorCode.EXPORT_FAILED,
+                message="批量导出文件写入失败",
+                details={"format": "batch_zip", "reason": str(e)},
+            )
+
+        for task_id, _model in models:
+            self._task_service.record_export(task_id, format="batch_zip", relative_path=relative_path)
+
+        return {
+            "format": "batch_zip",
+            "path": filepath,
+            "relative_path": relative_path,
+            "filename": filename,
+        }
+
     def _do_export(self, task_id: str, format: str, ext: str, writer: Callable) -> dict:
         task = self._task_service.get_task(task_id)
         model = self._build_export_model(task_id, task=task)

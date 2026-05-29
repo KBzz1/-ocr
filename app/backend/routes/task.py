@@ -2,7 +2,7 @@ from flask import Blueprint, current_app, request, send_file
 
 from ..errors import AppError, ErrorCode
 from ..responses import success
-from . import _get_task_service
+from . import _get_reextraction_service, _get_task_service, _safe_event
 
 task_bp = Blueprint("task", __name__)
 
@@ -46,6 +46,20 @@ def process_task(task_id):
 @task_bp.route("/api/tasks/<task_id>/retry", methods=["POST"])
 def retry_task(task_id):
     return success(data=_get_task_service().retry(task_id))
+
+
+@task_bp.route("/api/tasks/<task_id>/reextract", methods=["POST"])
+def reextract_task(task_id):
+    result = _get_reextraction_service().reextract(task_id)
+    _safe_event(
+        "task_reextracted",
+        task_id=task_id,
+        source=result.get("source"),
+        schema_version=result.get("schema_version"),
+        prompt_version=result.get("prompt_version"),
+        candidate_count=result.get("candidate_count"),
+    )
+    return success(data=result)
 
 
 @task_bp.route("/api/tasks/<task_id>/cancel-processing", methods=["POST"])

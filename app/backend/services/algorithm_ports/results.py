@@ -30,6 +30,15 @@ class AlgorithmResultStore:
             "merged_text": merged_text,
         })
 
+    def read_success_document_result(self, task_id: str) -> dict | None:
+        result = self._store.read(f"results/{task_id}/document_result.json")
+        if not isinstance(result, dict) or result.get("status") != "success":
+            return None
+        pages = result.get("pages")
+        if not isinstance(pages, list) or not pages:
+            return None
+        return {"pages": pages, "merged_text": result.get("merged_text", "")}
+
     def write_field_candidates(self, task_id: str, candidates: list[dict]) -> None:
         self._store.write(f"results/{task_id}/field_candidates.json", {
             "task_id": task_id,

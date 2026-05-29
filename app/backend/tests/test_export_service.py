@@ -1,5 +1,6 @@
 import json
 import os
+import zipfile
 
 import pytest
 
@@ -125,3 +126,37 @@ def test_export_json_file_uses_final_value(tmp_path):
     assert content["fields"][0]["final_value"] == "张三"
     assert "auto_value" not in content["fields"][0]
     assert os.path.isabs(info["path"])
+
+
+def test_batch_zip_exports_json_files_for_multiple_tasks(tmp_path):
+    export_service, task_service = make_export_service(tmp_path)
+    write_task(export_service._store, task_id="task_001", status="review")
+    write_review_result(export_service._store, task_id="task_001")
+    write_task(export_service._store, task_id="task_002", status="done")
+    write_review_result(export_service._store, task_id="task_002")
+
+    info = export_service.export_batch_zip(["task_001", "task_002"])
+
+    assert info["filename"].endswith(".zip")
+    with zipfile.ZipFile(info["path"]) as archive:
+        assert sorted(archive.namelist()) == [
+            "task_001/task_001.review.json",
+            "task_002/task_002.review.json",
+        ]
+        exported = json.loads(archive.read("task_001/task_001.review.json").decode("utf-8"))
+    assert exported["fields"][0]["final_value"] == "张三"
+    assert "batch_zip" in task_service.get_task("task_001")["export_summary"]["formats"]
+    assert "batch_zip" in task_service.get_task("task_002")["export_summary"]["formats"]
+
+
+def test_batch_zip_rejects_non_exportable_task(tmp_path):
+    export_service, _task_service = make_export_service(tmp_path)
+    write_task(export_service._store, task_id="task_001", status="review")
+    write_review_result(export_service._store, task_id="task_001")
+    write_task(export_service._store, task_id="task_002", status="uploading")
+    write_review_result(export_service._store, task_id="task_002")
+
+    with pytest.raises(AppError) as exc:
+        export_service.export_batch_zip(["task_001", "task_002"])
+
+    assert exc.value.code == ErrorCode.EXPORT_VALIDATION_FAILED.code

@@ -1,6 +1,6 @@
-from flask import Blueprint, send_file
+from flask import Blueprint, request, send_file
 
-from ..errors import AppError
+from ..errors import AppError, ErrorCode
 from ..responses import success
 from . import _get_export_service, _safe_event
 
@@ -43,6 +43,28 @@ def export_excel(task_id: str):
     return send_file(
         info["path"],
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=info["filename"],
+    )
+
+
+@export_bp.route("/api/tasks/export/batch-zip", methods=["POST"])
+def export_batch_zip():
+    payload = request.get_json(silent=True) or {}
+    task_ids = payload.get("task_ids")
+    if not isinstance(task_ids, list) or not task_ids or not all(isinstance(item, str) and item for item in task_ids):
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="task_ids 必须是非空字符串列表")
+
+    svc = _get_export_service()
+    try:
+        info = svc.export_batch_zip(task_ids)
+    except AppError as exc:
+        _safe_event("export_failed", level="ERROR", format="batch_zip", error_code=exc.code)
+        raise
+    _safe_event("export_succeeded", format="batch_zip", relative_path=info["relative_path"], task_count=len(task_ids))
+    return send_file(
+        info["path"],
+        mimetype="application/zip",
         as_attachment=True,
         download_name=info["filename"],
     )

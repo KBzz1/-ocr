@@ -237,7 +237,7 @@ algorithms:
   enable_copd_extractor: true
   llm_model_path: ./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf
   llm_context_tokens: 8192
-  llm_max_tokens: 1024
+  llm_max_tokens: 4096
   llm_extraction_batch_size: 25
   llm_enable_verification: false
 """,
@@ -249,7 +249,7 @@ algorithms:
     assert config["enable_copd_extractor"] is True
     assert config["llm_model_path"].endswith("qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf")
     assert config["llm_context_tokens"] == 8192
-    assert config["llm_max_tokens"] == 1024
+    assert config["llm_max_tokens"] == 4096
     assert config["llm_extraction_batch_size"] == 25
     assert config["llm_enable_verification"] is False
 
