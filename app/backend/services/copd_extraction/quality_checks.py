@@ -13,13 +13,16 @@ FLAG_POSSIBLE_DUPLICATE_OR_STITCHING = "possible_duplicate_or_stitching"
 FLAG_OCR_LABEL_AMBIGUITY = "ocr_label_ambiguity"
 FLAG_UNIT_SYMBOL_AMBIGUITY = "unit_symbol_ambiguity"
 FLAG_OCR_NUMERIC_CONFLICT = "ocr_numeric_conflict"
+FLAG_COUNTERINTUITIVE_ZERO_WEIGHT_LOSS = "counterintuitive_zero_weight_loss"
+FLAG_PHYSIOLOGIC_RANGE_RISK = "physiologic_range_risk"
+FLAG_BLOOD_GAS_LABEL_NOT_WHITELISTED = "blood_gas_label_not_whitelisted"
 
 SEVERITY_WARNING = "warning"
 
 
 def _numbers(text: str) -> list[str]:
-    """提取文本中的数字，仅保留整数部分 >= 2 位的（过滤单数字片段噪声）。"""
-    return [n for n in re.findall(r"\d+(?:\.\d+)?", text or "") if len(n.split(".")[0]) >= 2]
+    """提取文本中的数字，保留单数字以覆盖 mMRC、pH 等字段。"""
+    return re.findall(r"\d+(?:\.\d+)?", text or "")
 
 
 def _number_in_evidence(number: str, evidence: str) -> bool:
@@ -98,6 +101,57 @@ def _has_numeric_conflict(field_key: str, value: str, evidence: str) -> bool:
     return False
 
 
+def _has_counterintuitive_zero_weight_loss(field_key: str, value: str, evidence: str) -> bool:
+    if field_key != "weight_loss":
+        return False
+    text = f"{value} {evidence}"
+    if not re.search(r"(?:体重|体质量).{0,8}(?:下降|减轻|降低|减少)", text):
+        return False
+    return bool(re.search(r"(?<!\d)0(?:\.\s*0+)?\s*(?:g|kg|克|千克|公斤)\b", text, flags=re.IGNORECASE))
+
+
+def _first_number(value: str) -> float | None:
+    numbers = _numbers(value)
+    if not numbers:
+        return None
+    try:
+        return float(numbers[0])
+    except ValueError:
+        return None
+
+
+def _has_physiologic_range_risk(field_key: str, value: str) -> bool:
+    number = _first_number(value)
+    if number is None:
+        return False
+    if field_key == "temperature":
+        return number < 32 or number > 43
+    if field_key == "pulse":
+        return number < 20 or number > 240
+    if field_key == "respiration":
+        return number < 5 or number > 80
+    if field_key == "bmi":
+        return number < 8 or number > 80
+    if field_key == "blood_gas_ph":
+        return number < 6.9 or number > 7.8
+    if field_key == "blood_gas_pao2":
+        return number < 20 or number > 700
+    if field_key == "blood_gas_paco2":
+        return number < 10 or number > 150
+    if field_key == "blood_pressure":
+        return _has_blood_pressure_range_risk(value)
+    return False
+
+
+def _has_blood_pressure_range_risk(value: str) -> bool:
+    match = re.search(r"(?<!\d)(\d{2,3})\s*/\s*(\d{2,3})(?!\d)", value or "")
+    if not match:
+        return False
+    systolic = int(match.group(1))
+    diastolic = int(match.group(2))
+    return systolic < 50 or systolic > 260 or diastolic < 30 or diastolic > 160
+
+
 def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str) -> bool:
     """检测血气字段数值前的项目名是否疑似 OCR 错读。
 
@@ -120,6 +174,33 @@ def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str
                 if re.search(r"(?i)\bpa?c[0O]2\s*$", prefix):
                     return True
     return False
+
+
+def _has_blood_gas_label_not_whitelisted(field_key: str, value: str, evidence: str) -> bool:
+    if field_key not in {"blood_gas_pao2", "blood_gas_paco2"}:
+        return False
+    label = _blood_gas_label_before_value(value, evidence)
+    if not label:
+        return False
+    normalized = label.upper().replace("０", "0").replace("Ｏ", "O")
+    whitelists = {
+        "blood_gas_pao2": {"PO2", "PAO2", "P02", "P62"},
+        "blood_gas_paco2": {"PCO2", "PACO2", "PC02", "PAC02"},
+    }
+    return normalized not in whitelists[field_key]
+
+
+def _blood_gas_label_before_value(value: str, evidence: str) -> str:
+    numbers = _numbers(value)
+    if not numbers or not evidence:
+        return ""
+    number = numbers[0]
+    for match in re.finditer(rf"(?<!\d){re.escape(number)}(?!\d)", evidence):
+        prefix = evidence[max(0, match.start() - 16):match.start()]
+        label_match = re.search(r"([A-Za-z0-9]{1,6})\s*$", prefix)
+        if label_match:
+            return label_match.group(1)
+    return ""
 
 
 def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
@@ -158,6 +239,11 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
                 _flag(FLAG_OCR_LABEL_AMBIGUITY, "OCR 中检验项目名疑似错读，请核对原文")
             )
 
+        if _has_blood_gas_label_not_whitelisted(item.get("field_key", ""), value, evidence):
+            item["quality_flags"].append(
+                _flag(FLAG_BLOOD_GAS_LABEL_NOT_WHITELISTED, "血气项目标签不在白名单内，请核对原文")
+            )
+
         if _has_unit_symbol_ambiguity(item.get("field_key", ""), value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_UNIT_SYMBOL_AMBIGUITY, "检验单位符号疑似 OCR 错读，请核对原文")
@@ -166,6 +252,16 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
         if _has_numeric_conflict(item.get("field_key", ""), value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_OCR_NUMERIC_CONFLICT, "同一字段附近存在不一致数值，请核对原文")
+            )
+
+        if _has_counterintuitive_zero_weight_loss(item.get("field_key", ""), value, evidence):
+            item["quality_flags"].append(
+                _flag(FLAG_COUNTERINTUITIVE_ZERO_WEIGHT_LOSS, "体重下降/减轻为 0 与字段含义相矛盾，请核对原文")
+            )
+
+        if _has_physiologic_range_risk(item.get("field_key", ""), value):
+            item["quality_flags"].append(
+                _flag(FLAG_PHYSIOLOGIC_RANGE_RISK, "字段数值超出生理合理范围，请核对原文")
             )
 
         evidence_flags = document_quality_flags(evidence) if evidence else []

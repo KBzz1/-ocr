@@ -117,17 +117,21 @@ class COPDFieldExtractor:
             text = self._collect_sections(sections, section_names)
             if not text.strip():
                 continue
-            payload = self._llm_client.complete_json(build_section_group_extraction_prompt(group_name, text, field_keys))
-            fields = payload.get("fields") if isinstance(payload, dict) else None
-            if not isinstance(fields, list):
-                raise ValueError("LLM extraction response must contain fields list")
-            allowed_source_hints = [name for name in section_names if sections.get(name)]
-            fields = self._regenerate_section_group_fields_if_needed(
-                text,
-                field_keys,
-                allowed_source_hints,
-                fields,
-            )
+            try:
+                payload = self._llm_client.complete_json(build_section_group_extraction_prompt(group_name, text, field_keys))
+                fields = payload.get("fields") if isinstance(payload, dict) else None
+                if not isinstance(fields, list):
+                    raise ValueError("LLM extraction response must contain fields list")
+                allowed_source_hints = [name for name in section_names if sections.get(name)]
+                fields = self._regenerate_section_group_fields_if_needed(
+                    text,
+                    field_keys,
+                    allowed_source_hints,
+                    fields,
+                )
+            except Exception as exc:
+                raw_results.extend(_group_failed_results(field_keys, group_name, exc))
+                continue
             raw_results.extend(self._normalize_section_group_fields(fields, group_name))
         return raw_results
 
@@ -166,7 +170,10 @@ class COPDFieldExtractor:
                 continue
             result = _default_result(field_key)
             result.update(item)
-            result["confidence"] = result.get("confidence") or 0.7
+            if result.get("evidence_phrase") and not result.get("evidence"):
+                result["evidence"] = result["evidence_phrase"]
+            if "confidence" not in item or item.get("confidence") is None:
+                result["confidence"] = 0.7
             result["source_section"] = result.get("source_hint")
             result["extraction_status"] = "extracted"
             normalized.append(result)
@@ -217,6 +224,10 @@ class COPDFieldExtractor:
 
 
 SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
+EVIDENCE_MISSING_FALLBACK = "evidence_missing_fallback"
+EVIDENCE_NOT_IN_SOURCE_TEXT = "evidence_not_in_source_text"
+EVIDENCE_TOO_LONG = "evidence_too_long"
+MAX_EVIDENCE_PHRASE_CHARS = 50
 
 
 class FieldRegenerationContext:
@@ -259,12 +270,28 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
             item["source_group_id"] = _source_group_id(source_hint)
             if not item.get("evidence"):
                 item["evidence"] = source_text
+                _append_quality_flag(
+                    item,
+                    EVIDENCE_MISSING_FALLBACK,
+                    {"comment": "缺少短 evidence，已回退章节原文"},
+                )
+                item["verification_status"] = "suspicious"
+            else:
+                _validate_evidence_against_source_text(item, source_text)
             continue
         if source_hint == FULL_TEXT_KEY and sections.get(FULL_TEXT_KEY):
             item["source_text"] = sections[FULL_TEXT_KEY]
             item["source_group_id"] = _source_group_id(source_hint)
             if not item.get("evidence"):
                 item["evidence"] = sections[FULL_TEXT_KEY]
+                _append_quality_flag(
+                    item,
+                    EVIDENCE_MISSING_FALLBACK,
+                    {"comment": "缺少短 evidence，已回退全文"},
+                )
+                item["verification_status"] = "suspicious"
+            else:
+                _validate_evidence_against_source_text(item, sections[FULL_TEXT_KEY])
             continue
         if source_hint == SOURCE_HINT_NOT_FOUND:
             item["source_section"] = None
@@ -310,6 +337,26 @@ def build_source_groups(results: list[dict]) -> list[dict]:
     return list(groups.values())
 
 
+def _validate_evidence_against_source_text(item: dict, source_text: str) -> None:
+    evidence = item.get("evidence")
+    if not isinstance(evidence, str) or not evidence.strip():
+        return
+    if len(evidence) > MAX_EVIDENCE_PHRASE_CHARS:
+        _append_quality_flag(
+            item,
+            EVIDENCE_TOO_LONG,
+            {"comment": "evidence 超过50字"},
+        )
+    if evidence.strip() not in source_text:
+        _append_quality_flag(
+            item,
+            EVIDENCE_NOT_IN_SOURCE_TEXT,
+            {"comment": "evidence 未在来源章节中定位"},
+        )
+    if item.get("quality_flags") and item.get("verification_status") != "failed":
+        item["verification_status"] = "suspicious"
+
+
 def _source_group_id(source_hint: str) -> str:
     return f"source_group_{source_hint}"
 
@@ -342,3 +389,16 @@ def _append_quality_flag(item: dict, flag: str, verdict: dict) -> None:
         return
     message = verdict.get("comment") or verdict.get("reason") or flag
     flags.append({"flag": flag, "severity": "warning", "message": message})
+
+
+def _group_failed_results(field_keys: list[str], group_name: str, exc: Exception) -> list[dict]:
+    results = []
+    message = f"{group_name} 抽取失败: {type(exc).__name__}"
+    for field_key in field_keys:
+        item = _default_result(field_key)
+        item["verification_status"] = "suspicious"
+        item["quality_flags"] = [
+            {"flag": "llm_group_failed", "severity": "warning", "message": message}
+        ]
+        results.append(item)
+    return results

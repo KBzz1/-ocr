@@ -272,6 +272,153 @@ def test_copd_extractor_uses_source_hint_to_attach_section_text():
     assert by_key["baseline_lung_function"]["source_text"] == "肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
 
 
+def test_copd_extractor_prefers_section_group_evidence_phrase_over_section_text():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "78次/分",
+                        "evidence_phrase": "脉搏78次/分",
+                        "source_hint": "体格检查",
+                        "confidence": 0,
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分，呼吸20次/分。")[0]
+
+    assert result["evidence"] == "脉搏78次/分"
+    assert result["source_text"] == "体温36.7℃，脉搏78次/分，呼吸20次/分。"
+    assert result["confidence"] == 0
+
+
+def test_copd_extractor_flags_missing_evidence_phrase_fallback():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {"fields": [{"field_key": "pulse", "original_value": "78次/分", "source_hint": "体格检查"}]}
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分，呼吸20次/分。")[0]
+
+    assert result["evidence"] == "体温36.7℃，脉搏78次/分，呼吸20次/分。"
+    assert result["verification_status"] == "suspicious"
+    assert any(flag["flag"] == "evidence_missing_fallback" for flag in result["quality_flags"])
+
+
+def test_copd_extractor_flags_evidence_phrase_not_in_source_text():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "78次/分",
+                        "evidence_phrase": "脉搏88次/分",
+                        "source_hint": "体格检查",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分。")[0]
+
+    assert result["verification_status"] == "suspicious"
+    assert any(flag["flag"] == "evidence_not_in_source_text" for flag in result["quality_flags"])
+
+
+def test_copd_extractor_flags_evidence_phrase_too_long():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    long_evidence = "体温36.7℃，脉搏78次/分，呼吸20次/分，血压128/76mmHg，神志清楚，双肺呼吸音粗，双下肢无水肿。"
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "78次/分",
+                        "evidence_phrase": long_evidence,
+                        "source_hint": "体格检查",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract(f"体格检查：{long_evidence}")[0]
+
+    assert len(result["evidence"]) > 50
+    assert result["verification_status"] == "suspicious"
+    assert any(flag["flag"] == "evidence_too_long" for flag in result["quality_flags"])
+
+
+def test_copd_extractor_degrades_failed_section_group_to_suspicious_not_found():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "`physical_exam`" in prompt:
+                raise RuntimeError("llm oom")
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "evidence_phrase": "咳嗽15年",
+                        "source_hint": "主诉",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years", "pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    results = extractor.extract("主诉：咳嗽15年。体格检查：脉搏78次/分。")
+    by_key = {item["field_key"]: item for item in results}
+
+    assert by_key["copd_history_years"]["extraction_status"] == "extracted"
+    assert by_key["pulse"]["extraction_status"] == "not_found"
+    assert by_key["pulse"]["verification_status"] == "suspicious"
+    assert by_key["pulse"]["quality_flags"][0]["flag"] == "llm_group_failed"
+
+
 def test_copd_extractor_marks_missing_source_hint_section_suspicious():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
@@ -467,8 +614,18 @@ def test_copd_extractor_verifies_fields_grouped_by_source_hint():
                 }
             return {
                 "fields": [
-                    {"field_key": "copd_history_years", "original_value": "15年", "source_hint": "主诉"},
-                    {"field_key": "dyspnea_grade_mMRC", "original_value": "2", "source_hint": "主诉"},
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "evidence_phrase": "反复咳嗽、咳痰15年",
+                        "source_hint": "主诉",
+                    },
+                    {
+                        "field_key": "dyspnea_grade_mMRC",
+                        "original_value": "2",
+                        "evidence_phrase": "喘累6年",
+                        "source_hint": "主诉",
+                    },
                 ]
             }
 

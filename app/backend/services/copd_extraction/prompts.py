@@ -1,5 +1,7 @@
 import json
 
+COPD_EXTRACTION_PROMPT_VERSION = "copd_extraction_prompt.v1"
+
 
 def build_extraction_prompt(sections: dict[str, str], field_keys: list[str]) -> str:
     return f"""
@@ -34,16 +36,21 @@ def build_section_group_extraction_prompt(group_name: str, text: str, field_keys
 只从提供的 OCR 原文中抽取字段，不得推断、补全或改写原文未写的信息。
 字段 key 只允许使用：{json.dumps(field_keys, ensure_ascii=False)}
 
+OCR 风险提示：1/I/l、0/O/o、BHI/BMI、血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、药名近形/同音/缺字错读、单位断裂、项目和值跨行、小数点和逗号异常。
+硬约束：不得静默修正 OCR；不得改写数值；不得医学换算；不得把"无、否认、未见、可能、考虑、建议复查"等表达改成确定阳性。
+如果按上下文理解了 OCR 疑似错误，必须输出 ocr_correction.applied=true、raw、normalized、reason；没有纠偏时 applied=false。
+
 输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。
-每个字段只输出：field_key, original_value, source_hint。
+每个字段输出：field_key, original_value, source_hint, evidence_phrase, confidence, ocr_correction。
 
 规则：
 - 找不到的字段可以省略；后端会补成 not_found。
 - original_value 必须简短，只保留字段值本身。
 - source_hint 必须是字段值所在的 OCR 章节标题，例如 主诉、现病史、既往史、体格检查、辅助检查；不能输出 history_profile、physical_exam、auxiliary_exam 这类内部分组名。
 - 如果字段值看似可抽取但无法确定 OCR 原文来源，source_hint 输出 "未找到证据"，不要编造章节。
+- evidence_phrase 必须是支撑字段值的 OCR 原文短片段，不超过50字；必须保留原文写法，不要输出整段章节。
 - 药物、合并症、体征等多项内容用顿号或分号压缩，不要输出长段原文。
-- 不要输出 evidence、confidence、source_section、quality_flags、ocr_correction 等元数据。
+- 不要输出 source_section、quality_flags 等其他元数据。
 
 OCR 原文：
 {text}
@@ -84,15 +91,16 @@ def build_verification_prompt(source_groups: list[dict], document_context: str =
 - 原始 OCR 上下文：{document_context or "未提供"}
 - 来源分组中的 source_text 是主要证据；原始 OCR 上下文只用于理解同一病历的局部语境。
 
-问题：逐字段判断字段值是否能被提供的 OCR 事实支持。
 只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
 必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 low_ocr_quality。
 药名、医学词和单位符号也必须检查 OCR 纠偏合理性，例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L。若字段值看起来依赖错读纠偏但未说明，输出 suspicious。
 同一字段附近出现前后矛盾数值时，例如脉搏：9次/分但同段另有心率99次/分，输出 suspicious，不得静默选值。
+体重下降/体重减轻字段若输出 0g、0kg、0克等数值，与字段含义明显矛盾；例如体重减轻0g 应输出 suspicious，并提示核对原文，不得主动改成其他数值。
 输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
+comment 不超过 20 个汉字，只写必要原因；通过项可以写 "一致"。
 verdict 只能是 pass、suspicious、fail。
 reason_code 只能是 original_text_ambiguous、low_ocr_quality、extraction_error、unreliable_result、source_section_not_found、none。
-checks 必须包含 source_text_supported、ocr_correction_reasonable、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
+checks 必须是对象，且包含 source_text_supported、ocr_correction_reasonable、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
 
 来源分组：
 {json.dumps(source_groups, ensure_ascii=False)}
