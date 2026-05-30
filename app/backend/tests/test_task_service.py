@@ -395,6 +395,17 @@ class FakeDocumentProfiles:
     def get_default_document_type(self):
         return self.default_document_type
 
+    def get_profile(self, document_type):
+        return type("Profile", (), {
+            "document_type": document_type or self.default_document_type,
+            "schema": {
+                "version": f"{document_type or self.default_document_type}.v1",
+                "document_type": document_type or self.default_document_type,
+            },
+            "prompt_version": f"{document_type or self.default_document_type}.prompt.v1",
+            "field_port": object(),
+        })()
+
     def to_task_document_summary(self, document_type):
         return {
             "document_type": document_type,
@@ -406,6 +417,15 @@ class FakeDocumentProfiles:
 
     def remember_last_document_type(self, document_type):
         self.remembered.append(document_type)
+
+
+class ProfileAwareOrchestrator:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, task, task_service, schema=None):
+        self.calls.append((task["task_id"], task.get("document_type"), schema))
+        return task
 
 
 def test_create_task_uses_last_document_type_default(tmp_path):
@@ -444,3 +464,25 @@ def test_change_document_type_rejects_non_uploading_task(tmp_path):
         service.change_document_type(task["task_id"], "progress_note")
 
     assert exc.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
+
+
+def test_processing_uses_task_document_profile_without_overwriting_document_type(tmp_path):
+    profiles = FakeDocumentProfiles()
+    profiles.default_document_type = "progress_note"
+    orchestrator = ProfileAwareOrchestrator()
+    service = TaskService(
+        JsonStore(str(tmp_path)),
+        orchestrator=orchestrator,
+        document_profiles=profiles,
+        background_runner=lambda run: run(),
+    )
+    task = service.create_uploading_task("http://127.0.0.1:8081")
+    persisted = service.get_task(task["task_id"])
+    persisted["status"] = "processing"
+    persisted["images"] = [{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}]
+    JsonStore(str(tmp_path)).write(f"tasks/{task['task_id']}.json", persisted)
+
+    service._run_orchestrator(persisted, schema=None)
+
+    assert orchestrator.calls[0][1] == "progress_note"
+    assert orchestrator.calls[0][2]["version"] == "progress_note.v1"

@@ -65,3 +65,28 @@ def test_registry_rejects_unknown_document_type(tmp_path):
 
     assert exc.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
     assert exc.value.details["document_type"] == "progress_note"
+
+
+def test_registry_hides_incomplete_profiles_from_mobile_choices(tmp_path):
+    registry = DocumentProfileRegistry(
+        store=JsonStore(str(tmp_path)),
+        profiles=[
+            make_profile(),
+            DocumentProfile(
+                document_type="progress_note",
+                label="病程记录",
+                schema={"version": "progress_note.v1", "document_type": "progress_note", "field_groups": []},
+                prompt_version="progress_note.prompt.v1",
+                field_port=None,
+            ),
+        ],
+        default_document_type="copd_admission_record",
+    )
+
+    assert registry.get_available_document_types() == [
+        {
+            "document_type": "copd_admission_record",
+            "label": "入院记录",
+            "schema_version": "copd_admission_record.v1",
+        }
+    ]

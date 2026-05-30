@@ -368,15 +368,28 @@ class TaskService:
                 "图像处理模块未配置",
                 stage="image_processing",
                 details={"stage": "image_processing", "reason": "module_not_configured"},
-            )
+        )
 
         schema_for_run = schema
-        if schema_for_run is None and self._schema_provider is not None:
+        if self._document_profiles is not None:
+            try:
+                profile = self._document_profiles.get_profile(task.get("document_type"))
+            except AppError as exc:
+                return self.mark_failed(
+                    task["task_id"],
+                    ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                    "文书模板未注册或未完成接入",
+                    stage="field_extraction",
+                    details={
+                        "stage": "field_extraction",
+                        "reason": "document_type_not_registered",
+                        "document_type": task.get("document_type"),
+                        "error_code": exc.code,
+                    },
+                )
+            schema_for_run = profile.schema
+        elif schema_for_run is None and self._schema_provider is not None:
             schema_for_run = self._schema_provider()
-        if isinstance(schema_for_run, dict):
-            task["schema_version"] = schema_for_run.get("version")
-            task["document_type"] = schema_for_run.get("document_type")
-            self._write_task(task)
 
         return self._orchestrator.run(task, self, schema=schema_for_run)
 

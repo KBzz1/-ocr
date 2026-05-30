@@ -295,3 +295,71 @@ def test_batch_zip_reports_all_non_exportable_tasks_without_writing_new_zip(tmp_
     ]
     assert "batch_zip" not in task_service.get_task("task_001")["export_summary"]["formats"]
     assert not (tmp_path / "exports" / "batch" / "batch-review-export.zip").exists()
+
+
+def test_export_uses_task_document_profile_schema_when_available(tmp_path):
+    class Profile:
+        def __init__(self):
+            self.schema = {
+                "version": "progress_note.v1",
+                "document_type": "progress_note",
+                "field_groups": [
+                    {
+                        "group_key": "progress",
+                        "group_label": "病程记录",
+                        "fields": [{"field_key": "patient_name", "label": "病程姓名"}],
+                    }
+                ],
+            }
+
+    class FakeDocumentProfiles:
+        def get_profile(self, document_type):
+            assert document_type == "progress_note"
+            return Profile()
+
+    store = JsonStore(str(tmp_path / "data"))
+    task_service = TaskService(store=store)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "1.0.0",
+            "document_type": "general_medical_record",
+            "field_groups": [
+                {"group_key": "basic", "group_label": "基本信息", "fields": [{"field_key": "patient_name", "label": "姓名"}]}
+            ],
+        },
+        document_profiles=FakeDocumentProfiles(),
+    )
+    write_task(store, status="done")
+    task = store.read("tasks/task_001.json")
+    task["document_type"] = "progress_note"
+    store.write("tasks/task_001.json", task)
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "progress_note.v1",
+            "document_type": "progress_note",
+            "fields": [
+                {
+                    "field_key": "patient_name",
+                    "field_name": "姓名",
+                    "final_value": "张三",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "第1页",
+                    "page_no": 1,
+                    "reviewed_at": "2026-05-19T10:10:00+00:00",
+                }
+            ],
+        },
+    )
+
+    info = export_service.export_json("task_001")
+
+    with open(info["path"], encoding="utf-8") as f:
+        content = json.load(f)
+
+    assert content["fields"][0]["field_name"] == "病程姓名"
+    assert content["schema_version"] == "progress_note.v1"

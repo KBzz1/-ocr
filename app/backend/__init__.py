@@ -276,6 +276,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         export_dir=config["export_dir"],
         task_service=app.config["TASK_SERVICE"],
         schema_provider=schema_service.get_current,
+        document_profiles=document_profile_registry,
     )
 
     from .routes.export import export_bp

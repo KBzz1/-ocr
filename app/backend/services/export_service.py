@@ -17,11 +17,13 @@ class ExportService:
         export_dir: str,
         task_service,
         schema_provider: Callable[[], dict] | None = None,
+        document_profiles=None,
     ):
         self._store = store
         self._export_dir = export_dir
         self._task_service = task_service
         self._schema_provider = schema_provider
+        self._document_profiles = document_profiles
 
     def check(self, task_id: str) -> dict:
         task = self._task_service.get_task(task_id)
@@ -50,7 +52,7 @@ class ExportService:
         fields = self._get_review_fields_for_export(task_id, task["status"], review)
         self._ensure_no_blocking_fields(fields)
 
-        schema = self._schema_provider() if self._schema_provider else {}
+        schema = self._schema_for_task(task)
         schema_lookup: dict[str, dict[str, str]] = {}
         for group in schema.get("field_groups", []):
             for field in group.get("fields", []):
@@ -86,6 +88,23 @@ class ExportService:
             "fields": model_fields,
             "summary": self._compute_summary(model_fields),
         }
+
+    def _schema_for_task(self, task: dict) -> dict:
+        if self._document_profiles is not None:
+            try:
+                profile = self._document_profiles.get_profile(task.get("document_type"))
+            except AppError as exc:
+                raise AppError(
+                    ErrorCode.EXPORT_VALIDATION_FAILED,
+                    message="文书模板未注册或未完成接入，无法导出",
+                    details={
+                        "reason": "document_type_not_registered",
+                        "document_type": task.get("document_type"),
+                        "error_code": exc.code,
+                    },
+                )
+            return profile.schema
+        return self._schema_provider() if self._schema_provider else {}
 
     def export_json(self, task_id: str) -> dict:
         return self._do_export(task_id, "json", "json", self._write_json_file)

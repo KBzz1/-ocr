@@ -40,7 +40,18 @@ class ReextractionService:
 
         profile = None
         if self._document_profiles is not None:
-            profile = self._document_profiles.get_profile(task.get("document_type") or "copd_admission_record")
+            try:
+                profile = self._document_profiles.get_profile(task.get("document_type") or "copd_admission_record")
+            except AppError as exc:
+                raise AppError(
+                    ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                    message="文书模板未注册或未完成接入，无法重新抽取",
+                    details={
+                        "reason": "document_type_not_registered",
+                        "document_type": task.get("document_type"),
+                        "error_code": exc.code,
+                    },
+                )
             schema = profile.schema
             field_port = profile.field_port
             prompt_version = profile.prompt_version

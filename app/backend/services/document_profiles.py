@@ -18,6 +18,10 @@ class DocumentProfile:
     def schema_version(self) -> str:
         return str(self.schema.get("version") or "")
 
+    @property
+    def is_available(self) -> bool:
+        return bool(self.document_type and self.label and self.schema_version and self.prompt_version and self.field_port is not None)
+
 
 class DocumentProfileRegistry:
     def __init__(self, store: JsonStore, profiles: list[DocumentProfile], default_document_type: str):
@@ -47,6 +51,7 @@ class DocumentProfileRegistry:
                 "schema_version": profile.schema_version,
             }
             for profile in self._profiles.values()
+            if profile.is_available
         ]
 
     def get_default_document_type(self) -> str:

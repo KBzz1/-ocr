@@ -29,8 +29,10 @@ class ProcessingOrchestrator:
         self._field_port_registry = field_port_registry or {}
 
     def _resolve_field_port(self, document_type):
-        if document_type and document_type in self._field_port_registry:
-            return self._field_port_registry[document_type]
+        if self._field_port_registry:
+            if document_type and document_type in self._field_port_registry:
+                return self._field_port_registry[document_type]
+            return None
         return self._field_port
 
     def run(self, task: dict, task_service, schema: dict | None = None) -> dict:

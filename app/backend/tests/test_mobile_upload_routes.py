@@ -27,6 +27,9 @@ sessions:
 upload:
   max_file_size_mb: 10
   min_quad_area_ratio: 0.01
+algorithms:
+  enable_copd_extractor: true
+  llm_model_path: "{tmp_path}/fake-model.gguf"
 """,
         encoding="utf-8",
     )
