@@ -236,6 +236,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
         schema_validator=schema_service.build_validator(),
         prompt_version_provider=lambda: COPD_EXTRACTION_PROMPT_VERSION,
+        document_profiles=document_profile_registry,
     )
 
     if image_port is None or doc_port is None or field_port is None:

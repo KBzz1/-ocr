@@ -122,7 +122,14 @@ def test_reextract_uses_saved_document_text_and_records_versions(tmp_path):
     assert wrapper["candidates"][0]["original_value"] == "张三"
     review = store.read("results/task_001/review_result.json")
     assert review["fields"][0]["final_value"] == "人工改过"
-    assert store.read(f"results/task_001/reextract_runs/{result['run_id']}.json")["candidate_count"] == 1
+    run = store.read(f"results/task_001/reextract_runs/{result['run_id']}.json")
+    assert run["task_id"] == "task_001"
+    assert run["run_id"] == result["run_id"]
+    assert run["source"] == "ocr_text_only"
+    assert run["schema_version"] == "copd.v1"
+    assert run["prompt_version"] == "copd.prompt.v1"
+    assert run["candidate_count"] == 1
+    assert run["created_at"]
 
 
 def test_reextract_done_task_reopens_review(tmp_path):
@@ -169,3 +176,35 @@ def test_reextract_maps_invalid_candidate_contract_to_reextract_error(tmp_path):
 
     assert exc.value.code == ErrorCode.REEXTRACTION_VALIDATION_FAILED.code
     assert exc.value.details["reason"] == "invalid_candidate_contract"
+
+
+def test_reextract_uses_task_document_type_profile(tmp_path):
+    class ProfileFieldPort(FakeFieldPort):
+        pass
+
+    class FakeProfiles:
+        def __init__(self, field_port):
+            self.field_port = field_port
+
+        def get_profile(self, document_type):
+            assert document_type == "copd_admission_record"
+            return type("Profile", (), {
+                "document_type": "copd_admission_record",
+                "schema": schema(),
+                "prompt_version": "copd.prompt.v2",
+                "field_port": self.field_port,
+            })()
+
+    field_port = ProfileFieldPort()
+    service, store, _task_service, _port = make_service(tmp_path, field_port=None)
+    service._document_profiles = FakeProfiles(field_port)
+    write_task(store, status="review")
+    task = store.read("tasks/task_001.json")
+    task["document_type"] = "copd_admission_record"
+    store.write("tasks/task_001.json", task)
+    write_document_result(store)
+
+    result = service.reextract("task_001")
+
+    assert field_port.inputs[0]["document_type"] == "copd_admission_record"
+    assert result["prompt_version"] == "copd.prompt.v2"

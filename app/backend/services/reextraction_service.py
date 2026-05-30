@@ -17,6 +17,7 @@ class ReextractionService:
         schema_provider,
         schema_validator=None,
         prompt_version_provider=None,
+        document_profiles=None,
     ):
         self._store = store
         self._task_service = task_service
@@ -24,6 +25,7 @@ class ReextractionService:
         self._schema_provider = schema_provider
         self._schema_validator = schema_validator
         self._prompt_version_provider = prompt_version_provider or (lambda: "")
+        self._document_profiles = document_profiles
 
     def reextract(self, task_id: str) -> dict:
         task = self._task_service.get_task(task_id)
@@ -33,15 +35,26 @@ class ReextractionService:
                 message="只有待审核或已完成任务可以基于 OCR 文本重新抽取",
                 details={"current": task["status"]},
             )
-        if self._field_port is None:
+
+        document_result = self._load_ocr_document_result(task_id)
+
+        profile = None
+        if self._document_profiles is not None:
+            profile = self._document_profiles.get_profile(task.get("document_type") or "copd_admission_record")
+            schema = profile.schema
+            field_port = profile.field_port
+            prompt_version = profile.prompt_version
+        else:
+            schema = self._schema_provider() if self._schema_provider else {}
+            field_port = self._field_port
+            prompt_version = self._prompt_version_provider()
+
+        if field_port is None:
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
                 message="字段抽取模块未配置，无法重新抽取",
                 details={"reason": "field_port_not_configured"},
             )
-
-        document_result = self._load_ocr_document_result(task_id)
-        schema = self._schema_provider() if self._schema_provider else {}
         if not isinstance(schema, dict):
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
@@ -49,12 +62,13 @@ class ReextractionService:
                 details={"reason": "schema_missing_or_invalid"},
             )
 
-        candidates = self._field_port.extract(
+        candidates = field_port.extract(
             {
                 "task_id": task_id,
                 "document_result": document_result,
                 "schema": schema,
                 "source": "ocr_text_only",
+                "document_type": task.get("document_type") or "copd_admission_record",
             }
         )
         if not isinstance(candidates, list) or not candidates or all_fields_empty(candidates):
@@ -90,7 +104,7 @@ class ReextractionService:
             "run_id": run_id,
             "source": "ocr_text_only",
             "schema_version": schema.get("version"),
-            "prompt_version": self._prompt_version_provider(),
+            "prompt_version": prompt_version,
             "created_at": now,
         }
         self._store.write(
