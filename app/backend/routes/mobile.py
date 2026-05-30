@@ -25,12 +25,18 @@ def get_task_upload_status(task_id: str):
     task_service = _get_task_service()
     task = task_service.get_task(task_id)
     task_service.assert_upload_token(task, request.args.get("token"))
+    registry = current_app.config.get("DOCUMENT_PROFILE_REGISTRY")
+    available_document_types = registry.get_available_document_types() if registry else []
     return success(
         data={
             "task_id": task["task_id"],
             "status": task["status"],
             "page_count": task["page_count"],
             "images": task["images"],
+            "document_type": task.get("document_type"),
+            "document_type_label": task.get("document_type_label"),
+            "schema_version": task.get("schema_version"),
+            "available_document_types": available_document_types,
         }
     )
 
@@ -61,3 +67,24 @@ def finish_task_upload(task_id: str):
     task = task_service.get_task(task_id)
     task_service.assert_upload_token(task, request.args.get("token"))
     return success(data=task_service.finish_upload(task_id))
+
+
+@mobile_bp.route("/api/mobile-upload/<task_id>/document-type", methods=["PATCH"])
+def change_task_document_type(task_id: str):
+    task_service = _get_task_service()
+    task = task_service.get_task(task_id)
+    task_service.assert_upload_token(task, request.args.get("token"))
+    payload = request.get_json(silent=True) or {}
+    document_type = payload.get("document_type")
+    if not isinstance(document_type, str) or not document_type:
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="document_type 必须是非空字符串")
+    updated = task_service.change_document_type(task_id, document_type)
+    return success(
+        data={
+            "task_id": updated["task_id"],
+            "document_type": updated["document_type"],
+            "document_type_label": updated.get("document_type_label"),
+            "schema_version": updated.get("schema_version"),
+            "prompt_version": updated.get("prompt_version"),
+        }
+    )

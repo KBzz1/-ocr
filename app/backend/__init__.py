@@ -169,6 +169,25 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         from .services.copd_extraction.port import build_default_copd_field_port
         field_port = build_default_copd_field_port(config, schema_service.get_field_order)
 
+    from .services.copd_extraction.prompts import COPD_EXTRACTION_PROMPT_VERSION
+    from .services.document_profiles import DocumentProfile, DocumentProfileRegistry
+
+    document_profile_registry = DocumentProfileRegistry(
+        store=store,
+        profiles=[
+            DocumentProfile(
+                document_type="copd_admission_record",
+                label="入院记录",
+                schema=schema_service.get_current(),
+                prompt_version=COPD_EXTRACTION_PROMPT_VERSION,
+                field_port=field_port,
+                quality_rule_profile="copd_admission_record",
+            )
+        ],
+        default_document_type="copd_admission_record",
+    )
+    app.config["DOCUMENT_PROFILE_REGISTRY"] = document_profile_registry
+
     orchestrator = ProcessingOrchestrator(
         store=store,
         image_port=image_port,
@@ -195,6 +214,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         orchestrator=orchestrator,
         schema_provider=schema_service.get_current,
         background_runner=run_processing_background,
+        document_profiles=document_profile_registry,
     )
 
     from .services.review_service import ReviewService

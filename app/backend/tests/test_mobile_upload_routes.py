@@ -131,3 +131,35 @@ def test_upload_rejects_closed_task(client):
 
     assert response.status_code == 409
     assert response.get_json()["error"]["code"] == "TASK_UPLOAD_CLOSED"
+
+
+def test_mobile_upload_status_returns_document_type_options(client):
+    task = client.post("/api/tasks").get_json()["data"]
+
+    response = client.get(f"/api/mobile-upload/{task['task_id']}?token={task['upload_token']}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["document_type"] == "copd_admission_record"
+    assert data["document_type_label"] == "入院记录"
+    assert data["available_document_types"] == [
+        {
+            "document_type": "copd_admission_record",
+            "label": "入院记录",
+            "schema_version": data["schema_version"],
+        }
+    ]
+
+
+def test_mobile_upload_can_change_document_type_while_uploading(client):
+    task = client.post("/api/tasks").get_json()["data"]
+
+    response = client.patch(
+        f"/api/mobile-upload/{task['task_id']}/document-type?token={task['upload_token']}",
+        json={"document_type": "copd_admission_record"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["document_type"] == "copd_admission_record"
+    assert data["document_type_label"] == "入院记录"
