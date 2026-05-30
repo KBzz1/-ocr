@@ -193,6 +193,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         image_port=image_port,
         doc_port=doc_port,
         field_port=field_port,
+        field_port_registry={"copd_admission_record": field_port},
         schema_validator=schema_service.build_validator(),
     )
     from threading import Lock

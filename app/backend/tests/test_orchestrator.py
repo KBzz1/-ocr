@@ -157,6 +157,69 @@ def test_orchestrator_reuses_successful_document_result_on_retry(tmp_path):
     assert field_port.seen_text == "主诉：咳嗽"
 
 
+def test_orchestrator_uses_document_type_specific_field_port(tmp_path):
+    class PassingImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class PassingDocPort:
+        def parse(self, input):
+            return {"pages": [{"page_id": "p1", "page_no": 1, "status": "success"}], "merged_text": "姓名：张三"}
+
+    class CapturingFieldPort:
+        def __init__(self):
+            self.inputs = []
+
+        def extract(self, input):
+            self.inputs.append(input)
+            return [{
+                "field_key": "patient_name",
+                "original_value": "张三",
+                "extraction_status": "extracted",
+                "verification_status": "not_checked",
+                "quality_flags": [],
+                "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+            }]
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    field_port = CapturingFieldPort()
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
+    orchestrator = ProcessingOrchestrator(
+        store=JsonStore(str(tmp_path)),
+        image_port=PassingImagePort(),
+        doc_port=PassingDocPort(),
+        field_port_registry={"copd_admission_record": field_port},
+    )
+
+    orchestrator.run(
+        {
+            "task_id": "task_001",
+            "document_type": "copd_admission_record",
+            "images": [{"page_id": "p1", "page_no": 1, "original_image_path": str(source)}],
+        },
+        TaskService(),
+        schema={"version": "copd.v1", "document_type": "copd_admission_record"},
+    )
+
+    assert field_port.inputs[0]["document_type"] == "copd_admission_record"
+
+
 def _valid_candidate():
     return {
         "field_key": "chief_complaint",

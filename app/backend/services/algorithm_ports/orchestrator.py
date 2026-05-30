@@ -18,6 +18,7 @@ class ProcessingOrchestrator:
         doc_port=None,
         field_port=None,
         schema_validator=None,
+        field_port_registry=None,
     ):
         self._store = store
         self._result_store = result_store or AlgorithmResultStore(store)
@@ -25,6 +26,12 @@ class ProcessingOrchestrator:
         self._doc_port = doc_port
         self._field_port = field_port
         self._schema_validator = schema_validator
+        self._field_port_registry = field_port_registry or {}
+
+    def _resolve_field_port(self, document_type):
+        if document_type and document_type in self._field_port_registry:
+            return self._field_port_registry[document_type]
+        return self._field_port
 
     def run(self, task: dict, task_service, schema: dict | None = None) -> dict:
         task_id = task["task_id"]
@@ -155,7 +162,8 @@ class ProcessingOrchestrator:
         # -- field extraction --
         if self._is_cancelled(task_service, task_id):
             return task_service.get_task(task_id)
-        if self._field_port is None:
+        field_port = self._resolve_field_port(task.get("document_type"))
+        if field_port is None:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
                 "字段抽取模块未配置",
@@ -171,10 +179,16 @@ class ProcessingOrchestrator:
                 details={"stage": "field_extraction", "reason": "schema_missing_or_invalid"},
             )
 
-        field_input = {"task_id": task_id, "document_result": doc_result, "schema": schema}
+        field_input = {
+            "task_id": task_id,
+            "document_type": task.get("document_type"),
+            "document_result": doc_result,
+            "schema": schema,
+            "prompt_version": task.get("prompt_version"),
+        }
         try:
             self._stage_started(task_service, task_id, "field_extraction", len(pages))
-            candidates = self._field_port.extract(field_input)
+            candidates = field_port.extract(field_input)
         except Exception as exc:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
