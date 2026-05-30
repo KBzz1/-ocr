@@ -36,9 +36,10 @@ def build_section_group_extraction_prompt(group_name: str, text: str, field_keys
 只从提供的 OCR 原文中抽取字段，不得推断、补全或改写原文未写的信息。
 字段 key 只允许使用：{json.dumps(field_keys, ensure_ascii=False)}
 
-OCR 风险提示：1/I/l、0/O/o、BHI/BMI、血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、药名近形/同音/缺字错读、单位断裂、项目和值跨行、小数点和逗号异常。
+OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、药名和医学词近形/同音/缺字错读（例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）、单位断裂、单位符号错读（例如 +10^9/L 可能是 ×10^9/L）、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。
 硬约束：不得静默修正 OCR；不得改写数值；不得医学换算；不得把"无、否认、未见、可能、考虑、建议复查"等表达改成确定阳性。
 如果按上下文理解了 OCR 疑似错误，必须输出 ocr_correction.applied=true、raw、normalized、reason；没有纠偏时 applied=false。
+如果同一字段在证据中出现前后矛盾数值，例如脉搏：9次/分但后文心率99次/分，属于前后矛盾数值，不得静默选值，应降低 confidence 并保留原始 evidence_phrase。
 
 输出必须是 JSON 对象，顶层键为 `fields`，`fields` 是数组。
 每个字段输出：field_key, original_value, source_hint, evidence_phrase, confidence, ocr_correction。

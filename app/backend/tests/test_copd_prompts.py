@@ -83,3 +83,24 @@ def test_source_hint_regeneration_prompt_is_explicit_not_history_based():
     assert "显式传入" in prompt
     assert "不依赖对话历史" in prompt
     assert "history_profile" in prompt
+
+
+def test_section_group_prompt_contains_full_ocr_risk_warnings():
+    from app.backend.services.copd_extraction.prompts import build_section_group_extraction_prompt
+
+    prompt = build_section_group_extraction_prompt("auxiliary_exam", "血气：P02 80mmHg。", ["pao2"])
+
+    assert "1/I/l" in prompt
+    assert "0/O/o" in prompt
+    assert "BHI/BMI" in prompt
+    assert "cT/CT/Ct" in prompt
+    assert "P62/P02/PC02/PCO2/PO2/PaO2/PaCO2" in prompt
+    assert "噻托溴铵" in prompt
+    assert "二羟丙茶碱" in prompt
+    assert "+10^9/L" in prompt
+    assert "×10^9/L" in prompt
+    assert "表格错位" in prompt
+    assert "冒号和空格丢失" in prompt
+    assert "常见错别字" in prompt
+    assert "前后矛盾数值" in prompt
+    assert "不得静默选值" in prompt
