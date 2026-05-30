@@ -11,11 +11,29 @@ export interface UploadedImage {
   uploaded_at: string;
 }
 
+export interface DocumentTypeOption {
+  document_type: string;
+  label: string;
+  schema_version: string;
+}
+
+export interface TaskDocumentTypeUpdate {
+  task_id: string;
+  document_type: string;
+  document_type_label?: string;
+  schema_version?: string;
+  prompt_version?: string;
+}
+
 export interface TaskUploadStatus {
   task_id: string;
   status: TaskSummary['status'];
   page_count: number;
   images: UploadedImage[];
+  document_type?: string;
+  document_type_label?: string;
+  schema_version?: string;
+  available_document_types?: DocumentTypeOption[];
 }
 
 export function buildTaskImageFormData(
@@ -56,6 +74,17 @@ export function finishTaskUpload(taskId: string, token: string) {
     `/api/mobile-upload/${encodeURIComponent(taskId)}/finish?token=${encodeURIComponent(token)}`,
     {
       method: 'POST'
+    }
+  );
+}
+
+export function updateTaskDocumentType(taskId: string, token: string, documentType: string) {
+  return apiRequest<TaskDocumentTypeUpdate>(
+    `/api/mobile-upload/${encodeURIComponent(taskId)}/document-type?token=${encodeURIComponent(token)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_type: documentType })
     }
   );
 }

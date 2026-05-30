@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../../api/client';
-import { finishTaskUpload, getTaskUploadStatus, uploadTaskImage, type UploadedImage } from '../../api/mobileUpload';
+import { finishTaskUpload, getTaskUploadStatus, updateTaskDocumentType, uploadTaskImage, type DocumentTypeOption, type UploadedImage } from '../../api/mobileUpload';
 import { CapturePhotoButton } from './CapturePhotoButton';
 import { CapturePageList } from './CapturePageList';
 import { CaptureFooter } from './CaptureFooter';
@@ -70,6 +70,10 @@ export function MobileCapturePage({
   const [isUploading, setIsUploading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [documentType, setDocumentType] = useState('');
+  const [documentTypeLabel, setDocumentTypeLabel] = useState('');
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]);
+  const [isChangingDocumentType, setIsChangingDocumentType] = useState(false);
 
   useEffect(() => {
     if (!taskId || !token || initialImages.length > 0) return;
@@ -80,6 +84,9 @@ export function MobileCapturePage({
         if (!isMounted) return;
         setPages(status.images.map(toPageItem));
         setIsFinished(status.status !== 'uploading');
+        setDocumentType(status.document_type ?? '');
+        setDocumentTypeLabel(status.document_type_label ?? '');
+        setDocumentTypes(status.available_document_types ?? []);
       })
       .catch((statusError) => {
         if (!isMounted) return;
@@ -157,6 +164,21 @@ export function MobileCapturePage({
     }
   }
 
+  async function handleDocumentTypeChange(nextDocumentType: string) {
+    if (!taskId || !token || !nextDocumentType || isFinished) return;
+    setIsChangingDocumentType(true);
+    setError(null);
+    try {
+      const updated = await updateTaskDocumentType(taskId, token, nextDocumentType);
+      setDocumentType(updated.document_type);
+      setDocumentTypeLabel(updated.document_type_label ?? '');
+    } catch (documentTypeError) {
+      setError(getErrorMessage(documentTypeError, '文书模板切换失败'));
+    } finally {
+      setIsChangingDocumentType(false);
+    }
+  }
+
   const uploadedCount = pages.filter((page) => page.status === 'uploaded').length;
   const canUpload = Boolean(taskId && token && !isFinished && !isUploading);
 
@@ -188,6 +210,27 @@ export function MobileCapturePage({
           <div className="mobile-capture__error">无效的上传链接，请重新扫描二维码</div>
         ) : null}
         {error ? <div className="mobile-capture__error">{error}</div> : null}
+
+        {documentTypes.length > 0 ? (
+          <section className="capture-card capture-card--template">
+            <label className="mobile-capture__template-select">
+              <span>文书模板</span>
+              <select
+                aria-label="文书模板"
+                value={documentType}
+                disabled={isFinished || isChangingDocumentType}
+                onChange={(event) => void handleDocumentTypeChange(event.currentTarget.value)}
+              >
+                {documentTypes.map((item) => (
+                  <option key={item.document_type} value={item.document_type}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>当前模板：{documentTypeLabel || documentType}</p>
+          </section>
+        ) : null}
 
         <section className="capture-card" aria-label="上传入口">
           <h2>请上传病历文书图片</h2>

@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { exportTaskExcel, exportTaskJson, exportTasksBatchZip } from './export';
 import { normalizeApiError } from './errors';
 import { getReviewResult, saveReviewField } from './review';
-import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
+import { buildTaskImageFormData, finishTaskUpload, updateTaskDocumentType, uploadTaskImage } from './mobileUpload';
 import { cancelTaskProcessing, createTask, getTaskDetail, getTasks, processTask, reextractTaskFromOcr, type TaskStatus } from './tasks';
 import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../styles/status';
 import { server } from '../../tests/setupTests';
@@ -261,6 +261,29 @@ describe('shared frontend contracts', () => {
     );
 
     await expect(exportTasksBatchZip(['task_001', 'task_002'])).resolves.toBeInstanceOf(Blob);
+  });
+
+  it('updates mobile task document type', async () => {
+    server.use(
+      http.patch('*/api/mobile-upload/task_001/document-type', async ({ request }) => {
+        const body = await request.json() as { document_type: string };
+        expect(body.document_type).toBe('copd_admission_record');
+        return HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            schema_version: 'copd.v1'
+          }
+        });
+      })
+    );
+
+    await expect(updateTaskDocumentType('task_001', 'token_001', 'copd_admission_record')).resolves.toMatchObject({
+      document_type: 'copd_admission_record',
+      document_type_label: '入院记录'
+    });
   });
 
   it('requests OCR-only reextraction and receives version metadata', async () => {
