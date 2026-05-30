@@ -94,10 +94,13 @@ class ExportService:
         return self._do_export(task_id, "excel", "xlsx", self._write_xlsx)
 
     def export_batch_zip(self, task_ids: list[str]) -> dict:
-        models = []
-        for task_id in task_ids:
-            task = self._task_service.get_task(task_id)
-            models.append((task_id, self._build_export_model(task_id, task=task)))
+        models, failed_tasks = self._build_batch_export_models(task_ids)
+        if failed_tasks:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="批量导出存在不可导出任务",
+                details={"format": "batch_zip", "task_count": len(task_ids), "failed_tasks": failed_tasks},
+            )
 
         filename = "batch-review-export.zip"
         relative_path = f"batch/{filename}"
@@ -107,10 +110,14 @@ class ExportService:
         try:
             os.makedirs(batch_dir, exist_ok=True)
             with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as archive:
-                for task_id, model in models:
+                archive.writestr(
+                    "manifest.json",
+                    json.dumps(self._build_batch_manifest(models), ensure_ascii=False, indent=2),
+                )
+                for item in models:
                     archive.writestr(
-                        f"{task_id}/{task_id}.review.json",
-                        json.dumps(model, ensure_ascii=False, indent=2),
+                        item["json_path"],
+                        json.dumps(item["model"], ensure_ascii=False, indent=2),
                     )
         except OSError as e:
             raise AppError(
@@ -119,14 +126,65 @@ class ExportService:
                 details={"format": "batch_zip", "reason": str(e)},
             )
 
-        for task_id, _model in models:
-            self._task_service.record_export(task_id, format="batch_zip", relative_path=relative_path)
+        for item in models:
+            self._task_service.record_export(item["task_id"], format="batch_zip", relative_path=relative_path)
 
         return {
             "format": "batch_zip",
             "path": filepath,
             "relative_path": relative_path,
             "filename": filename,
+        }
+
+    def _build_batch_export_models(self, task_ids: list[str]) -> tuple[list[dict], list[dict]]:
+        models = []
+        failed_tasks = []
+        for task_id in task_ids:
+            try:
+                task = self._task_service.get_task(task_id)
+                model = self._build_export_model(task_id, task=task)
+            except AppError as exc:
+                failed_tasks.append({
+                    "task_id": task_id,
+                    "error_code": exc.code,
+                    "reason": exc.message,
+                    "status": self._get_task_status_for_error(task_id),
+                })
+                continue
+            models.append({
+                "task_id": task_id,
+                "status": task["status"],
+                "json_path": f"{task_id}/{task_id}.review.json",
+                "model": model,
+            })
+        return models, failed_tasks
+
+    def _get_task_status_for_error(self, task_id: str) -> str | None:
+        try:
+            return self._task_service.get_task(task_id).get("status")
+        except AppError:
+            return None
+
+    def _build_batch_manifest(self, models: list[dict]) -> dict:
+        success_tasks = [
+            {
+                "task_id": item["task_id"],
+                "status": item["status"],
+                "json_path": item["json_path"],
+                "field_count": len(item["model"].get("fields", [])),
+                "schema_version": item["model"].get("schema_version", ""),
+                "document_type": item["model"].get("document_type", ""),
+            }
+            for item in models
+        ]
+        return {
+            "format": "batch_zip",
+            "generated_at": self._now(),
+            "task_count": len(models),
+            "success_count": len(success_tasks),
+            "failed_count": 0,
+            "success_tasks": success_tasks,
+            "failed_tasks": [],
         }
 
     def _do_export(self, task_id: str, format: str, ext: str, writer: Callable) -> dict:
@@ -235,7 +293,10 @@ class ExportService:
                 groups[gk] = {"group_label": f["group_label"], "fields": []}
             groups[gk]["fields"].append(f)
 
-        sheet_names = self._build_sheet_names(groups)
+        worksheets = [{"name": "全部字段", "fields": model["fields"]}]
+        for group in groups.values():
+            worksheets.append({"name": group["group_label"], "fields": group["fields"]})
+        sheet_names = self._build_sheet_names([worksheet["name"] for worksheet in worksheets])
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("[Content_Types].xml", self._content_types_xml(len(sheet_names)))
@@ -243,22 +304,22 @@ class ExportService:
             z.writestr("xl/workbook.xml", self._workbook_xml(sheet_names))
             z.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels_xml(sheet_names))
 
-            for idx, group_key in enumerate(groups, start=1):
-                sheet_xml = self._sheet_xml(groups[group_key]["fields"])
+            for idx, worksheet in enumerate(worksheets, start=1):
+                sheet_xml = self._sheet_xml(worksheet["fields"])
                 z.writestr(f"xl/worksheets/sheet{idx}.xml", sheet_xml)
 
-    def _build_sheet_names(self, groups: dict) -> list[str]:
+    def _build_sheet_names(self, raw_names: list[str]) -> list[str]:
         names = []
         seen = {}
-        for g in groups.values():
-            label = g["group_label"]
-            sanitized = self._sanitize_sheet_name(label)
-            if sanitized in seen:
-                seen[sanitized] += 1
-                names.append(f"{sanitized}{seen[sanitized]}")
+        for raw_name in raw_names:
+            sanitized = self._sanitize_sheet_name(raw_name)
+            count = seen.get(sanitized, 0)
+            if count:
+                suffix = str(count + 1)
+                names.append(f"{sanitized[:31 - len(suffix)]}{suffix}")
             else:
-                seen[sanitized] = 0
                 names.append(sanitized)
+            seen[sanitized] = count + 1
         return names
 
     @staticmethod

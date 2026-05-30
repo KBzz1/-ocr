@@ -148,7 +148,12 @@ def test_batch_zip_route_returns_zip_download(client, app):
     assert "batch-review-export.zip" in response.headers.get("Content-Disposition", "")
 
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert "manifest.json" in archive.namelist()
         assert "task_001/task_001.review.json" in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+
+    assert manifest["format"] == "batch_zip"
+    assert manifest["task_count"] == 2
 
 
 def test_batch_zip_route_rejects_empty_task_ids(client):
