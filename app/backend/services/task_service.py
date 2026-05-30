@@ -16,17 +16,33 @@ class TaskService:
         orchestrator=None,
         schema_provider: Callable[[], dict] | None = None,
         background_runner: Callable[[Callable[[], None]], None] | None = None,
+        document_profiles=None,
     ):
         self._store = store
         self._orchestrator = orchestrator
         self._schema_provider = schema_provider
         self._background_runner = background_runner or self._run_in_thread
+        self._document_profiles = document_profiles
+
+    def _document_summary_for(self, document_type: str | None = None) -> dict:
+        if self._document_profiles is None:
+            schema = self._schema_provider() if self._schema_provider else {}
+            return {
+                "document_type": document_type or schema.get("document_type") or "copd_admission_record",
+                "document_type_label": "入院记录",
+                "schema_version": schema.get("version"),
+                "prompt_version": None,
+                "extraction_profile": document_type or schema.get("document_type") or "copd_admission_record",
+            }
+        resolved_type = document_type or self._document_profiles.get_default_document_type()
+        return self._document_profiles.to_task_document_summary(resolved_type)
 
     def create_uploading_task(self, base_url: str) -> dict:
         existing_count = len(self._store.list_json("tasks"))
         task_id = str(existing_count + 1)
         now = self._now()
         upload_token = token_urlsafe(24)
+        document_summary = self._document_summary_for()
         task = {
             "task_id": task_id,
             "display_name": task_id,
@@ -40,6 +56,11 @@ class TaskService:
             "failed_at": None,
             "review_summary": None,
             "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "document_type": document_summary["document_type"],
+            "document_type_label": document_summary["document_type_label"],
+            "schema_version": document_summary["schema_version"],
+            "prompt_version": document_summary["prompt_version"],
+            "extraction_profile": document_summary["extraction_profile"],
             "status_history": [
                 {
                     "from_status": None,
@@ -89,6 +110,21 @@ class TaskService:
         self._write_task(task)
         return self._normalize_task(task)
 
+    def change_document_type(self, task_id: str, document_type: str) -> dict:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.UPLOADING.value:
+            raise AppError(
+                ErrorCode.INVALID_TASK_TRANSITION,
+                details={"current": task["status"], "target": "document_type_change"},
+            )
+        document_summary = self._document_summary_for(document_type)
+        task.update(document_summary)
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        if self._document_profiles is not None:
+            self._document_profiles.remember_last_document_type(document_summary["document_type"])
+        return self._normalize_task(task)
+
     def _to_task_summary(self, task: dict, base_url: str | None = None) -> dict:
         summary = {
             "task_id": task["task_id"],
@@ -102,6 +138,10 @@ class TaskService:
             "processing_summary": task.get("processing_summary"),
             "error_code": task["error_code"],
             "error_message": task["error_message"],
+            "document_type": task.get("document_type"),
+            "document_type_label": task.get("document_type_label"),
+            "schema_version": task.get("schema_version"),
+            "prompt_version": task.get("prompt_version"),
         }
         upload_token = task.get("upload_token")
         if task["status"] == TaskStatus.UPLOADING.value and upload_token and base_url:
@@ -380,6 +420,11 @@ class TaskService:
         normalized.setdefault("review_summary", None)
         normalized.setdefault("export_summary", {"last_exported_at": None, "formats": [], "files": []})
         normalized.setdefault("processing_summary", None)
+        normalized.setdefault("document_type", "copd_admission_record")
+        normalized.setdefault("document_type_label", "入院记录")
+        normalized.setdefault("schema_version", None)
+        normalized.setdefault("prompt_version", None)
+        normalized.setdefault("extraction_profile", normalized.get("document_type"))
         return normalized
 
     def _transition(self, task: dict, target: str, reason: str) -> dict:

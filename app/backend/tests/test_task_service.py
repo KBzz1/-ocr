@@ -385,3 +385,62 @@ def test_delete_task_works_for_non_processing_statuses(tmp_path, status):
 
     assert result["task_id"] == "1"
     assert service.list_tasks() == []
+
+
+class FakeDocumentProfiles:
+    def __init__(self):
+        self.remembered = []
+        self.default_document_type = "copd_admission_record"
+
+    def get_default_document_type(self):
+        return self.default_document_type
+
+    def to_task_document_summary(self, document_type):
+        return {
+            "document_type": document_type,
+            "document_type_label": "入院记录" if document_type == "copd_admission_record" else "病程记录",
+            "schema_version": f"{document_type}.v1",
+            "prompt_version": f"{document_type}.prompt.v1",
+            "extraction_profile": document_type,
+        }
+
+    def remember_last_document_type(self, document_type):
+        self.remembered.append(document_type)
+
+
+def test_create_task_uses_last_document_type_default(tmp_path):
+    profiles = FakeDocumentProfiles()
+    profiles.default_document_type = "progress_note"
+    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
+
+    task = service.create_uploading_task("http://127.0.0.1:8081")
+
+    assert task["document_type"] == "progress_note"
+    assert task["schema_version"] == "progress_note.v1"
+    assert task["prompt_version"] == "progress_note.prompt.v1"
+
+
+def test_change_document_type_updates_uploading_task_and_default(tmp_path):
+    profiles = FakeDocumentProfiles()
+    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
+    task = service.create_uploading_task("http://127.0.0.1:8081")
+
+    updated = service.change_document_type(task["task_id"], "progress_note")
+
+    assert updated["document_type"] == "progress_note"
+    assert updated["schema_version"] == "progress_note.v1"
+    assert profiles.remembered == ["progress_note"]
+
+
+def test_change_document_type_rejects_non_uploading_task(tmp_path):
+    profiles = FakeDocumentProfiles()
+    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
+    task = service.create_uploading_task("http://127.0.0.1:8081")
+    persisted = service.get_task(task["task_id"])
+    persisted["status"] = "processing"
+    JsonStore(str(tmp_path)).write(f"tasks/{task['task_id']}.json", persisted)
+
+    with pytest.raises(AppError) as exc:
+        service.change_document_type(task["task_id"], "progress_note")
+
+    assert exc.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
