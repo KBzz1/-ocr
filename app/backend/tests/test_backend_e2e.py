@@ -116,6 +116,52 @@ algorithms:
     assert orchestrator._doc_port._cache_dir == f"{tmp_path}/models/ppstructure/paddlex_cache"
 
 
+def test_backend_configures_vlm_server_ocr_port(tmp_path, monkeypatch):
+    from app.backend import create_backend_app
+    from app.backend.services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  model_dir: "{tmp_path}/models"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+algorithms:
+  enable_local_ocr: true
+  local_ocr_mode: vlm_server
+  local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
+  gpu_stage_queue_enabled: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
+
+    app = create_backend_app(str(config_dir))
+    orchestrator = app.config["TASK_SERVICE"]._orchestrator
+
+    assert orchestrator._image_port is not None
+    assert isinstance(orchestrator._doc_port, PaddleOCRVLMServerDocumentPort)
+    assert orchestrator._gpu_stage_queue is not None
+
+
 def test_backend_configures_local_ocr_port(tmp_path, monkeypatch):
     from app.backend import create_backend_app
     from app.backend.services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort

@@ -144,25 +144,43 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
+    gpu_stage_queue = None
+    if config.get("gpu_stage_queue_enabled"):
+        from .services.gpu_stage_queue import GpuStageQueue
+        gpu_stage_queue = GpuStageQueue(event_logger=event_log.safe_write)
+
     image_port = None
     doc_port = None
     if config.get("enable_local_ocr"):
         from .services.algorithm_ports.image_processing import OriginalImagePassthroughPort
-        from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
 
         image_port = OriginalImagePassthroughPort()
-        ocr_work_root = config.get("local_ocr_work_root") or os.path.join(config["storage_dir"], "ocr_runs")
-        doc_port = LocalPaddleOCRDocumentPort(
-            python_executable=config["local_ocr_python_executable"],
-            script_path=config["local_ocr_script_path"],
-            work_root=ocr_work_root,
-            cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
-            device=config.get("local_ocr_device"),
-            max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
-            max_pixels=config.get("local_ocr_max_pixels"),
-            timeout_seconds=config["local_ocr_timeout_seconds"],
-            event_logger=event_log.safe_write,
-        )
+        local_ocr_mode = config.get("local_ocr_mode", "runner")
+        if local_ocr_mode == "vlm_server":
+            from .services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
+
+            doc_port = PaddleOCRVLMServerDocumentPort(
+                server_url=config["local_ocr_vlm_server_url"],
+                max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
+                max_pixels=config.get("local_ocr_max_pixels"),
+                timeout_seconds=config["local_ocr_vlm_timeout_seconds"],
+                event_logger=event_log.safe_write,
+            )
+        else:
+            from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
+
+            ocr_work_root = config.get("local_ocr_work_root") or os.path.join(config["storage_dir"], "ocr_runs")
+            doc_port = LocalPaddleOCRDocumentPort(
+                python_executable=config["local_ocr_python_executable"],
+                script_path=config["local_ocr_script_path"],
+                work_root=ocr_work_root,
+                cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
+                device=config.get("local_ocr_device"),
+                max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
+                max_pixels=config.get("local_ocr_max_pixels"),
+                timeout_seconds=config["local_ocr_timeout_seconds"],
+                event_logger=event_log.safe_write,
+            )
 
     field_port = None
     if config.get("enable_copd_extractor"):
@@ -195,6 +213,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         field_port=field_port,
         field_port_registry={"copd_admission_record": field_port},
         schema_validator=schema_service.build_validator(),
+        gpu_stage_queue=gpu_stage_queue,
     )
     from threading import Lock
 
