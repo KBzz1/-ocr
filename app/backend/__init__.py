@@ -215,17 +215,37 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_validator=schema_service.build_validator(),
         gpu_stage_queue=gpu_stage_queue,
     )
-    from threading import Lock
+    from collections import defaultdict
+    from threading import Lock, Thread
 
-    processing_lock = Lock()
+    _per_task_lock = Lock()
+    _per_task_locks: dict[str, Lock] = defaultdict(Lock)
 
-    def run_processing_background(run):
-        from threading import Thread
+    def _take_task_lock(task_id: str) -> Lock:
+        """取得 task_id 维度的细粒度锁。
 
+        不同 task_id 的 run 可以并发进入 orchestrator；GPU 阶段（document_parsing /
+        field_extraction）由 gpu_stage_queue 负责跨任务串行化。同一 task_id 的重复触发
+        仍需串行，避免两路 run 同时改写同一个 task 的 results / state。
+        """
+        with _per_task_lock:
+            return _per_task_locks[task_id]
+
+    def _release_task_lock(task_id: str, lock: Lock) -> None:
+        with _per_task_lock:
+            current = _per_task_locks.get(task_id)
+            if current is lock:
+                del _per_task_locks[task_id]
+
+    def run_processing_background(task_id, run):
         def target():
-            with app.app_context():
-                with processing_lock:
-                    run()
+            lock = _take_task_lock(task_id)
+            with lock:
+                try:
+                    with app.app_context():
+                        run()
+                finally:
+                    _release_task_lock(task_id, lock)
 
         Thread(target=target, daemon=True).start()
 
