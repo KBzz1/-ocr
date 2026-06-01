@@ -25,6 +25,19 @@ class FakePipeline:
         return [FakeResult(self.outputs.pop(0))]
 
 
+class SaveMarkdownOnlyResult:
+    def __init__(self, markdown):
+        self._markdown = markdown
+
+    def save_to_markdown(self, save_path):
+        Path(save_path, "result.md").write_text(self._markdown, encoding="utf-8")
+
+
+class SaveMarkdownOnlyPipeline:
+    def predict(self, input, **kwargs):
+        return [SaveMarkdownOnlyResult("通过 save_to_markdown 生成的正文")]
+
+
 def test_vlm_server_port_parses_pages_in_order(tmp_path):
     image1 = tmp_path / "page1.jpg"
     image2 = tmp_path / "page2.jpg"
@@ -58,6 +71,23 @@ def test_vlm_server_port_parses_pages_in_order(tmp_path):
         {"input": str(image1), "max_new_tokens": 1024, "max_pixels": 501760},
         {"input": str(image2), "max_new_tokens": 1024, "max_pixels": 501760},
     ]
+
+
+def test_vlm_server_port_reads_markdown_saved_by_paddleocr_result(tmp_path):
+    """temp/paddlepaddle 的正式调用路径通过 save_to_markdown 取 OCR 结果。"""
+    image = tmp_path / "page.jpg"
+    image.write_bytes(b"1")
+    port = PaddleOCRVLMServerDocumentPort(
+        server_url="http://paddleocr-vlm-server:8080/v1",
+        pipeline_factory=lambda server_url: SaveMarkdownOnlyPipeline(),
+    )
+
+    result = port.parse(
+        {"task_id": "task-001", "pages": [{"page_id": "p1", "page_no": 1, "processed_path": str(image)}]}
+    )
+
+    assert result["merged_text"] == "通过 save_to_markdown 生成的正文"
+    assert result["pages"][0]["status"] == "success"
 
 
 def test_vlm_server_port_marks_missing_page_output_failed(tmp_path):

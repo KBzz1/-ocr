@@ -249,13 +249,21 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
         Thread(target=target, daemon=True).start()
 
-    app.config["TASK_SERVICE"] = TaskService(
+    task_service = TaskService(
         store=store,
         orchestrator=orchestrator,
         schema_provider=schema_service.get_current,
         background_runner=run_processing_background,
         document_profiles=document_profile_registry,
     )
+    recovered_processing_tasks = task_service.fail_interrupted_processing_tasks()
+    if recovered_processing_tasks:
+        event_log.safe_write(
+            "processing_tasks_recovered_after_restart",
+            task_ids=recovered_processing_tasks,
+            count=len(recovered_processing_tasks),
+        )
+    app.config["TASK_SERVICE"] = task_service
 
     from .services.review_service import ReviewService
 

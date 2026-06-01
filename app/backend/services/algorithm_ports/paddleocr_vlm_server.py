@@ -1,4 +1,5 @@
 import concurrent.futures
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -127,9 +128,9 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
 
         markdown_pages = []
         for item in output:
-            markdown = getattr(item, "markdown", "")
-            if isinstance(markdown, str) and markdown.strip():
-                markdown_pages.append(markdown.strip())
+            markdown = _extract_markdown(item)
+            if markdown:
+                markdown_pages.append(markdown)
         return "\n\n".join(markdown_pages).strip()
 
     def _emit_event(self, event: str, **payload) -> None:
@@ -155,3 +156,22 @@ def _input_file_diagnostic(page: dict) -> dict:
         "bytes": path.stat().st_size if path.exists() else None,
         "exists": path.exists(),
     }
+
+
+def _extract_markdown(result_item) -> str:
+    markdown = getattr(result_item, "markdown", "")
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown.strip()
+
+    save_to_markdown = getattr(result_item, "save_to_markdown", None)
+    if not callable(save_to_markdown):
+        return ""
+
+    with tempfile.TemporaryDirectory(prefix="manzufei_ocr_vlm_md_") as temp_dir:
+        save_to_markdown(save_path=temp_dir)
+        md_parts = []
+        for md_file in sorted(Path(temp_dir).glob("*.md")):
+            content = md_file.read_text(encoding="utf-8").strip()
+            if content:
+                md_parts.append(content)
+        return "\n\n".join(md_parts).strip()

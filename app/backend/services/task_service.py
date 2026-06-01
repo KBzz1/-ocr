@@ -222,6 +222,24 @@ class TaskService:
         _safe_event("task_processing_cancelled", task_id=task_id)
         return self._normalize_task(task)
 
+    def fail_interrupted_processing_tasks(self) -> list[str]:
+        recovered = []
+        for task in self._store.list_json("tasks"):
+            task = self._normalize_task(task)
+            if task["status"] != TaskStatus.PROCESSING.value:
+                continue
+            summary = task.get("processing_summary")
+            stage = summary.get("stage", "processing") if isinstance(summary, dict) else "processing"
+            self.mark_failed(
+                task["task_id"],
+                ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "服务重启后处理任务已中断，请重新处理",
+                stage=stage,
+                details={"reason": "interrupted_by_service_restart"},
+            )
+            recovered.append(task["task_id"])
+        return recovered
+
     def mark_ready(self, task_id: str) -> dict:
         task = self._read_task(task_id)
         if task["status"] != TaskStatus.PROCESSING.value and task.get("error_code") == ErrorCode.TASK_PROCESSING_CANCELLED.code:

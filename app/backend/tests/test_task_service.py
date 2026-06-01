@@ -262,6 +262,34 @@ def test_cancel_processing_rejects_non_processing_task(tmp_path):
     assert exc_info.value.details == {"current": "review", "target": "failed"}
 
 
+def test_fail_interrupted_processing_tasks_marks_only_running_tasks_failed(tmp_path):
+    write_task(
+        tmp_path,
+        task_id="1",
+        status="processing",
+        images=[{"page_id": "page_001"}],
+        processing_at="2026-05-19T10:00:00+00:00",
+        processing_summary={"stage": "document_parsing", "status": "running"},
+    )
+    write_task(tmp_path, task_id="2", status="uploading")
+    write_task(tmp_path, task_id="3", status="failed", error_code="ALGORITHM_MODULE_FAILED")
+    service = make_service(tmp_path)
+
+    recovered = service.fail_interrupted_processing_tasks()
+
+    task1 = service.get_task("1")
+    task2 = service.get_task("2")
+    task3 = service.get_task("3")
+    assert recovered == ["1"]
+    assert task1["status"] == "failed"
+    assert task1["error_code"] == ErrorCode.ALGORITHM_MODULE_FAILED.code
+    assert task1["error_message"] == "服务重启后处理任务已中断，请重新处理"
+    assert task1["details"] == {"stage": "document_parsing", "reason": "interrupted_by_service_restart"}
+    assert task1["processing_summary"]["status"] == "failed"
+    assert task2["status"] == "uploading"
+    assert task3["status"] == "failed"
+
+
 def test_background_runner_can_serialize_processing_callbacks(tmp_path):
     pending = []
 
