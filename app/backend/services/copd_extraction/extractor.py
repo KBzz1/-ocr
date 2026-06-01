@@ -263,38 +263,7 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
         source_hint = item.get("source_hint") or item.get("source_section")
         if not source_hint:
             continue
-        source_text = sections.get(source_hint)
-        if source_text:
-            item["source_hint"] = source_hint
-            item["source_section"] = source_hint
-            item["source_text"] = source_text
-            item["source_group_id"] = _source_group_id(source_hint)
-            if not item.get("evidence"):
-                item["evidence"] = source_text
-                _append_quality_flag(
-                    item,
-                    EVIDENCE_MISSING_FALLBACK,
-                    {"comment": "缺少短 evidence，已回退章节原文"},
-                )
-                item["verification_status"] = "suspicious"
-            else:
-                _validate_evidence_against_source_text(item, source_text)
-            continue
-        if source_hint == FULL_TEXT_KEY and sections.get(FULL_TEXT_KEY):
-            item["source_text"] = sections[FULL_TEXT_KEY]
-            item["source_group_id"] = _source_group_id(source_hint)
-            if not item.get("evidence"):
-                item["evidence"] = sections[FULL_TEXT_KEY]
-                _append_quality_flag(
-                    item,
-                    EVIDENCE_MISSING_FALLBACK,
-                    {"comment": "缺少短 evidence，已回退全文"},
-                )
-                item["verification_status"] = "suspicious"
-            else:
-                _validate_evidence_against_source_text(item, sections[FULL_TEXT_KEY])
-            continue
-        if source_hint == SOURCE_HINT_NOT_FOUND:
+        if source_hint == SOURCE_HINT_NOT_FOUND or source_hint == FULL_TEXT_KEY:
             item["source_section"] = None
             item["evidence"] = None
             item["source_text"] = None
@@ -303,19 +272,73 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
             _append_quality_flag(
                 item,
                 SOURCE_SECTION_NOT_FOUND,
-                {"comment": "模型明确返回未找到证据"},
+                {"comment": f"source_hint={source_hint} 不作为章节定位依据"},
             )
             continue
-        item["evidence"] = None
-        item["source_text"] = None
-        item["source_group_id"] = None
-        item["verification_status"] = "suspicious"
+        source_text = sections.get(source_hint)
+        if not source_text:
+            item["evidence"] = None
+            item["source_text"] = None
+            item["source_group_id"] = None
+            item["verification_status"] = "suspicious"
+            _append_quality_flag(
+                item,
+                SOURCE_SECTION_NOT_FOUND,
+                {"comment": f"source_hint={source_hint} 未在 OCR 章节中定位"},
+            )
+            continue
+        item["source_hint"] = source_hint
+        item["source_section"] = source_hint
+        item["source_text"] = source_text
+        item["source_group_id"] = _source_group_id(source_hint)
+        _resolve_field_evidence(item, source_text)
+    return results
+
+
+def _resolve_field_evidence(item: dict, source_text: str) -> None:
+    raw_evidence = item.get("evidence")
+    has_raw_evidence = isinstance(raw_evidence, str) and raw_evidence.strip()
+    raw_evidence_too_long = has_raw_evidence and len(raw_evidence) > MAX_EVIDENCE_PHRASE_CHARS
+    raw_evidence_not_in_source = has_raw_evidence and raw_evidence not in source_text
+
+    if has_raw_evidence and not raw_evidence_too_long and not raw_evidence_not_in_source:
+        item["evidence"] = raw_evidence
+        return
+
+    if raw_evidence_too_long:
+        _append_quality_flag(item, EVIDENCE_TOO_LONG, {"comment": "evidence 超过50字，已丢弃"})
+    elif raw_evidence_not_in_source:
         _append_quality_flag(
             item,
-            SOURCE_SECTION_NOT_FOUND,
-            {"comment": f"source_hint={source_hint} 未在 OCR 章节中定位"},
+            EVIDENCE_NOT_IN_SOURCE_TEXT,
+            {"comment": "evidence 未在来源章节中定位，已丢弃"},
         )
-    return results
+
+    recovered = _recover_evidence_from_value(
+        item.get("original_value", ""),
+        source_text,
+        max_chars=MAX_EVIDENCE_PHRASE_CHARS,
+    )
+    if recovered is not None:
+        item["evidence"] = recovered
+        _append_quality_flag(
+            item,
+            EVIDENCE_RECOVERED_FROM_VALUE,
+            {"comment": "evidence 缺失或非法，已用 original_value 在章节中定位恢复"},
+        )
+        if item.get("verification_status") != "failed":
+            item["verification_status"] = "suspicious"
+        return
+
+    item["evidence"] = None
+    if not raw_evidence_too_long and not raw_evidence_not_in_source:
+        _append_quality_flag(
+            item,
+            EVIDENCE_MISSING_FALLBACK,
+            {"comment": "缺少短 evidence 且无法用 original_value 恢复"},
+        )
+    if item.get("verification_status") != "failed":
+        item["verification_status"] = "suspicious"
 
 
 def build_source_groups(results: list[dict]) -> list[dict]:

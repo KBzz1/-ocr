@@ -303,7 +303,11 @@ def test_copd_extractor_prefers_section_group_evidence_phrase_over_section_text(
     assert result["confidence"] == 0
 
 
-def test_copd_extractor_flags_missing_evidence_phrase_fallback():
+def _flag_names(item: dict) -> set[str]:
+    return {flag["flag"] for flag in item.get("quality_flags", [])}
+
+
+def test_copd_extractor_recovers_evidence_from_value_when_phrase_missing():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     class LlmClient:
@@ -317,28 +321,22 @@ def test_copd_extractor_flags_missing_evidence_phrase_fallback():
         enable_verification=False,
     )
 
-    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分，呼吸20次/分。")[0]
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分，呼吸20次/分，血压128/76mmHg，神志清楚，精神可，营养中等。")[0]
 
-    assert result["evidence"] == "体温36.7℃，脉搏78次/分，呼吸20次/分。"
+    assert result["evidence"] != result["source_text"]
+    assert "78次/分" in result["evidence"]
+    assert len(result["evidence"]) <= 50
+    assert result["evidence"] in result["source_text"]
     assert result["verification_status"] == "suspicious"
-    assert any(flag["flag"] == "evidence_missing_fallback" for flag in result["quality_flags"])
+    assert "evidence_recovered_from_value" in _flag_names(result)
 
 
-def test_copd_extractor_flags_evidence_phrase_not_in_source_text():
+def test_copd_extractor_returns_none_evidence_when_value_not_locatable():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     class LlmClient:
         def complete_json(self, prompt: str):
-            return {
-                "fields": [
-                    {
-                        "field_key": "pulse",
-                        "original_value": "78次/分",
-                        "evidence_phrase": "脉搏88次/分",
-                        "source_hint": "体格检查",
-                    }
-                ]
-            }
+            return {"fields": [{"field_key": "pulse", "original_value": "88次/分", "source_hint": "体格检查"}]}
 
     extractor = COPDFieldExtractor(
         llm_client=LlmClient(),
@@ -347,13 +345,14 @@ def test_copd_extractor_flags_evidence_phrase_not_in_source_text():
         enable_verification=False,
     )
 
-    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分。")[0]
+    result = extractor.extract("体格检查：体温36.7℃，呼吸20次/分。")[0]
 
+    assert result["evidence"] is None
     assert result["verification_status"] == "suspicious"
-    assert any(flag["flag"] == "evidence_not_in_source_text" for flag in result["quality_flags"])
+    assert "evidence_missing_fallback" in _flag_names(result)
 
 
-def test_copd_extractor_flags_evidence_phrase_too_long():
+def test_copd_extractor_discards_evidence_phrase_longer_than_50_chars_and_keeps_warning_flag():
     from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
 
     long_evidence = "体温36.7℃，脉搏78次/分，呼吸20次/分，血压128/76mmHg，神志清楚，双肺呼吸音粗，双下肢无水肿。"
@@ -380,9 +379,71 @@ def test_copd_extractor_flags_evidence_phrase_too_long():
 
     result = extractor.extract(f"体格检查：{long_evidence}")[0]
 
-    assert len(result["evidence"]) > 50
+    assert len(result["evidence"]) <= 50
+    assert result["evidence"] != long_evidence
+    assert "78次/分" in result["evidence"]
+    assert result["evidence"] in result["source_text"]
     assert result["verification_status"] == "suspicious"
-    assert any(flag["flag"] == "evidence_too_long" for flag in result["quality_flags"])
+    flags = _flag_names(result)
+    assert "evidence_too_long" in flags
+    assert "evidence_recovered_from_value" in flags
+
+
+def test_copd_extractor_discards_evidence_phrase_not_in_source_text_and_keeps_warning_flag():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "78次/分",
+                        "evidence_phrase": "脉搏88次/分",
+                        "source_hint": "体格检查",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分。")[0]
+
+    assert len(result["evidence"]) <= 50
+    assert "78次/分" in result["evidence"]
+    assert result["evidence"] in result["source_text"]
+    assert result["verification_status"] == "suspicious"
+    flags = _flag_names(result)
+    assert "evidence_not_in_source_text" in flags
+    assert "evidence_recovered_from_value" in flags
+
+
+def test_copd_extractor_does_not_use_full_text_key_for_recovery():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {"fields": [{"field_key": "pulse", "original_value": "78次/分", "source_hint": "全文"}]}
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("主诉：咳嗽。\n体格检查：脉搏78次/分。")[0]
+
+    assert result["evidence"] is None
+    assert result["source_section"] is None
+    assert result["source_text"] is None
+    assert result["verification_status"] == "suspicious"
+    assert "source_section_not_found" in _flag_names(result)
 
 
 def test_copd_extractor_degrades_failed_section_group_to_suspicious_not_found():
@@ -708,12 +769,13 @@ def test_copd_extractor_treats_llm_unknown_placeholder_as_not_found():
 def test_recover_evidence_from_value_locates_and_creates_window():
     from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
 
-    source_text = "体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg"
+    # source_text is intentionally longer than max_chars=50 to exercise windowing
+    source_text = "前导" * 20 + "体温：36.7℃ 脉搏：99次/分" + "后缀" * 20
     result = _recover_evidence_from_value("36.7℃", source_text, max_chars=50)
 
     assert result is not None
     assert "36.7℃" in result
-    assert len(result) <= 50
+    assert len(result) == 50
     assert result in source_text
 
 
