@@ -787,4 +787,54 @@ describe('ReviewPage', () => {
     expect(document.querySelector('mark')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
+
+  it('does not surface evidence_recovered_from_value audit flag as an evidence risk indicator', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '体温：36.7℃ 脉搏：99次/分',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '体温：36.7℃ 脉搏：99次/分',
+                },
+              ],
+              fields: [
+                {
+                  field_key: 'temperature',
+                  label: '体温',
+                  value: '36.7℃',
+                  status: 'unreviewed',
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '36.7℃' }],
+                  quality_flags: [
+                    {
+                      flag: 'evidence_recovered_from_value',
+                      severity: 'warning',
+                      message: '已用 original_value 恢复',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByLabelText('temperature')).toBeTruthy();
+    expect(screen.getByText('36.7℃', { selector: 'mark' })).toBeTruthy();
+    expect(screen.queryByText(/证据风险|来源风险/)).toBeNull();
+    expect(screen.queryByText(/evidence_recovered_from_value/)).toBeNull();
+    expect(screen.queryByLabelText(/已用 original_value 恢复/)).toBeNull();
+    expect(screen.queryByLabelText(/重点核验.*evidence_recovered_from_value/)).toBeNull();
+  });
 });
