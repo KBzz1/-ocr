@@ -227,6 +227,7 @@ SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
 EVIDENCE_MISSING_FALLBACK = "evidence_missing_fallback"
 EVIDENCE_NOT_IN_SOURCE_TEXT = "evidence_not_in_source_text"
 EVIDENCE_TOO_LONG = "evidence_too_long"
+EVIDENCE_RECOVERED_FROM_VALUE = "evidence_recovered_from_value"
 MAX_EVIDENCE_PHRASE_CHARS = 50
 
 
@@ -355,6 +356,28 @@ def _validate_evidence_against_source_text(item: dict, source_text: str) -> None
         )
     if item.get("quality_flags") and item.get("verification_status") != "failed":
         item["verification_status"] = "suspicious"
+
+
+def _recover_evidence_from_value(
+    original_value: str,
+    source_text: str,
+    max_chars: int = MAX_EVIDENCE_PHRASE_CHARS,
+) -> str | None:
+    if not isinstance(original_value, str) or not original_value.strip():
+        return None
+    if not isinstance(source_text, str):
+        return None
+    value = original_value.strip()
+    if len(value) > max_chars:
+        return None
+    index = source_text.find(value)
+    if index < 0:
+        return None
+    window_radius = max(0, (max_chars - len(value)) // 2)
+    start = max(0, index - window_radius)
+    end = min(len(source_text), start + max_chars)
+    start = max(0, end - max_chars)
+    return source_text[start:end]
 
 
 def _source_group_id(source_hint: str) -> str:

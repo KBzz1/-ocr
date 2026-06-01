@@ -703,3 +703,35 @@ def test_copd_extractor_treats_llm_unknown_placeholder_as_not_found():
 
     assert result[0]["field_key"] == "occupation"
     assert result[0]["extraction_status"] == "not_found"
+
+
+def test_recover_evidence_from_value_locates_and_creates_window():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    source_text = "体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg"
+    result = _recover_evidence_from_value("36.7℃", source_text, max_chars=50)
+
+    assert result is not None
+    assert "36.7℃" in result
+    assert len(result) <= 50
+    assert result in source_text
+
+
+def test_recover_evidence_from_value_returns_none_when_value_not_in_source():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    assert _recover_evidence_from_value("40℃", "体温：36.7℃", max_chars=50) is None
+
+
+def test_recover_evidence_from_value_returns_none_for_empty_value():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    assert _recover_evidence_from_value("", "anything", max_chars=50) is None
+    assert _recover_evidence_from_value("   ", "anything", max_chars=50) is None
+
+
+def test_recover_evidence_from_value_returns_none_when_value_exceeds_max_chars():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    long_value = "x" * 60
+    assert _recover_evidence_from_value(long_value, long_value + " tail", max_chars=50) is None
