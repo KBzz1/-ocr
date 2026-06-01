@@ -7,6 +7,7 @@ import os
 import time
 import pytest
 from flask import Flask
+from pathlib import Path
 
 from app.backend.routes.system import system_bp
 from app.backend.errors import register_error_handlers
@@ -554,3 +555,56 @@ def test_docker_requirements_match_vlm_server_client_combo():
     assert "paddlex[ocr]==3.5.2" in lines
     # 不应在 docker 镜像里编译 llama-cpp-python（C++ 编译属于本机 LLM 路径）
     assert "llama-cpp-python" not in content
+
+
+def test_docker_compose_pins_paddleocr_vlm_server_away_from_latest():
+    content = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    digest = "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
+    local_tag = "paddleocr-vlm-server:verified-digest-1cee5e7e"
+
+    # compose 不能继续使用 latest 浮动 tag
+    assert "latest-nvidia-gpu" not in content
+    # 完整 digest 必须出现
+    assert digest in content
+    # 本地固定 tag 必须出现
+    assert local_tag in content
+
+
+def test_offline_bundle_script_defines_vlm_server_image_and_tag():
+    content = Path("scripts/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
+
+    digest = "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
+    local_tag = "paddleocr-vlm-server:verified-digest-1cee5e7e"
+
+    # 必须显式声明两个变量
+    assert "OCR_VLM_SERVER_IMAGE=" in content
+    assert "OCR_VLM_SERVER_LOCAL_TAG=" in content
+    # 完整 digest 必须出现在 OCR_VLM_SERVER_IMAGE 默认值中
+    assert digest in content
+    # 本地 tag 字符串必须出现
+    assert local_tag in content
+    # 必须按 pull → tag → save 三步走
+    assert "docker pull" in content
+    assert "docker tag" in content
+    assert "docker save" in content
+
+
+def test_offline_bundle_script_saves_vlm_server_tar():
+    content = Path("scripts/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
+
+    # tar 路径必须出现且基于 LOCAL_TAG
+    assert "paddleocr-vlm-server.tar" in content
+    # 必须使用 LOCAL_TAG 变量进行 save（不允许硬编码 digest 或远程镜像名）
+    assert "${OCR_VLM_SERVER_LOCAL_TAG" in content or "$OCR_VLM_SERVER_LOCAL_TAG" in content
+
+
+def test_windows_import_script_loads_vlm_server_tar():
+    content = Path("deploy/windows/00_import_image.bat").read_text(encoding="utf-8")
+
+    # 必须加载 vlm-server tar
+    assert "paddleocr-vlm-server.tar" in content
+    # 必须包含两次 docker load 调用（一次后端、一次 vlm-server）
+    assert content.count("docker load -i") >= 2
+    # 加载后必须验证本地 image 出现
+    assert "docker images paddleocr-vlm-server" in content

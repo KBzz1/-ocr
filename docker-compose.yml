@@ -20,9 +20,11 @@ services:
     gpus: all
 
   paddleocr-vlm-server:
-    image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server:latest-nvidia-gpu
+    image: paddleocr-vlm-server:verified-digest-1cee5e7e
     container_name: paddleocr-vlm-server
     restart: unless-stopped
+    labels:
+      x-verified-source-image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621
     command: >
       paddleocr genai_server
       --model_name PaddleOCR-VL-1.6-0.9B
