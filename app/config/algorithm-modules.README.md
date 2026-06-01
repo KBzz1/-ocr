@@ -26,7 +26,7 @@ conda run -n manzufei_ocr python -m pip install paddlepaddle-gpu==3.2.1 -i https
 conda run -n manzufei_ocr python -m pip install "paddleocr[doc-parser]==3.5.0" "paddlex[serving]==3.5.0"
 ```
 
-Docker 离线部署镜像必须和该组合保持一致：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`。不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
+Docker 离线部署镜像需要区分模式：服务化 OCR（`local_ocr_mode: vlm_server`）使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.2`（后端容器内的客户端栈）；runner fallback（`local_ocr_mode: runner`）则使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`（旧栈锁定值）。两种模式不可混用；不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
 
 Python runner 配置：
 
