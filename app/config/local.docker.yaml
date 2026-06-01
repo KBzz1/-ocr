@@ -7,6 +7,10 @@ algorithms:
   local_ocr_timeout_seconds: 180
   local_ocr_device: "gpu:0"
   local_ocr_max_pixels: 501760
+  local_ocr_mode: "vlm_server"
+  local_ocr_vlm_server_url: "http://paddleocr-vlm-server:8080/v1"
+  local_ocr_vlm_timeout_seconds: 240
+  gpu_stage_queue_enabled: true
   enable_copd_extractor: true
   llm_model_path: "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"
   llm_context_tokens: 8192

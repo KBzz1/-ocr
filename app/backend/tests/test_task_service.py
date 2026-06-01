@@ -30,7 +30,7 @@ def make_service(tmp_path, orchestrator=None, schema_provider=None):
         JsonStore(str(tmp_path)),
         orchestrator=orchestrator,
         schema_provider=schema_provider,
-        background_runner=lambda run: run(),
+        background_runner=lambda task_id, run: run(),
     )
 
 
@@ -218,8 +218,8 @@ def test_field_extraction_stage_label_describes_llm_structuring(tmp_path):
 def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
     pending = []
 
-    def queue_runner(run):
-        pending.append(run)
+    def queue_runner(task_id, run):
+        pending.append((task_id, run))
 
     write_task(
         tmp_path,
@@ -235,7 +235,7 @@ def test_cancel_processing_marks_failed_and_releases_queued_run(tmp_path):
 
     started = service.finish_upload("1")
     cancelled = service.cancel_processing("1")
-    pending[0]()
+    pending[0][1]()
     persisted = service.get_task("1")
 
     assert started["status"] == "processing"
@@ -265,8 +265,8 @@ def test_cancel_processing_rejects_non_processing_task(tmp_path):
 def test_background_runner_can_serialize_processing_callbacks(tmp_path):
     pending = []
 
-    def queue_runner(run):
-        pending.append(run)
+    def queue_runner(task_id, run):
+        pending.append((task_id, run))
 
     write_task(
         tmp_path,
@@ -291,9 +291,9 @@ def test_background_runner_can_serialize_processing_callbacks(tmp_path):
 
     assert len(pending) == 2
     assert orchestrator.calls == []
-    pending[0]()
+    pending[0][1]()
     assert orchestrator.calls == [("1", {"version": "1.0.0"})]
-    pending[1]()
+    pending[1][1]()
     assert orchestrator.calls == [
         ("1", {"version": "1.0.0"}),
         ("2", {"version": "1.0.0"}),
@@ -474,7 +474,7 @@ def test_processing_uses_task_document_profile_without_overwriting_document_type
         JsonStore(str(tmp_path)),
         orchestrator=orchestrator,
         document_profiles=profiles,
-        background_runner=lambda run: run(),
+        background_runner=lambda task_id, run: run(),
     )
     task = service.create_uploading_task("http://127.0.0.1:8081")
     persisted = service.get_task(task["task_id"])

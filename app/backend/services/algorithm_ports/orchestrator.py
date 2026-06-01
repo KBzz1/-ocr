@@ -19,6 +19,7 @@ class ProcessingOrchestrator:
         field_port=None,
         schema_validator=None,
         field_port_registry=None,
+        gpu_stage_queue=None,
     ):
         self._store = store
         self._result_store = result_store or AlgorithmResultStore(store)
@@ -27,6 +28,7 @@ class ProcessingOrchestrator:
         self._field_port = field_port
         self._schema_validator = schema_validator
         self._field_port_registry = field_port_registry or {}
+        self._gpu_stage_queue = gpu_stage_queue
 
     def _resolve_field_port(self, document_type):
         if self._field_port_registry:
@@ -118,7 +120,8 @@ class ProcessingOrchestrator:
             }
             try:
                 self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
-                doc_result = self._doc_port.parse(doc_input)
+                with self._gpu_stage(task_id, "document_parsing"):
+                    doc_result = self._doc_port.parse(doc_input)
             except Exception as exc:
                 return task_service.mark_failed(
                     task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
@@ -190,7 +193,8 @@ class ProcessingOrchestrator:
         }
         try:
             self._stage_started(task_service, task_id, "field_extraction", len(pages))
-            candidates = field_port.extract(field_input)
+            with self._gpu_stage(task_id, "field_extraction"):
+                candidates = field_port.extract(field_input)
         except Exception as exc:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
@@ -250,6 +254,11 @@ class ProcessingOrchestrator:
             return False
         return task_service.is_processing_cancelled(task_id)
 
+    def _gpu_stage(self, task_id: str, stage: str):
+        if self._gpu_stage_queue is None:
+            return _NoopContext()
+        return self._gpu_stage_queue.stage(task_id=task_id, stage=stage)
+
     def _build_image_inputs(self, task: dict) -> list | None:
         images = task.get("images") or []
         if not images:
@@ -302,3 +311,11 @@ def _log_candidates_summary(task_id: str, candidates: list) -> None:
             logger.error("task=%s field=%s %s", task_id, fk, " | ".join(issues))
     except Exception:
         logger.exception("task=%s failed to log candidates summary", task_id)
+
+
+class _NoopContext:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        return False

@@ -235,3 +235,91 @@ def _valid_candidate():
         "source_group_id": "主诉",
         "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
     }
+
+
+class RecordingGpuQueue:
+    def __init__(self):
+        self.stages = []
+
+    def stage(self, task_id, stage):
+        self.stages.append((task_id, stage))
+        class _Context:
+            def __enter__(_self):
+                return None
+            def __exit__(_self, exc_type, exc, tb):
+                return False
+        return _Context()
+
+
+def test_orchestrator_wraps_document_and_field_gpu_stages(tmp_path):
+    from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
+    from app.backend.storage.json_store import JsonStore
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        def parse(self, input):
+            return {
+                "pages": [{"page_id": "p1", "page_no": 1, "status": "success", "text": "正文"}],
+                "merged_text": "正文",
+            }
+
+    class FieldPort:
+        def extract(self, input):
+            return [{
+                "field_key": "chief_complaint",
+                "original_value": "咳嗽",
+                "evidence": "主诉：咳嗽",
+                "confidence": 0.8,
+                "extraction_status": "extracted",
+                "verification_status": "not_checked",
+                "quality_flags": [],
+                "source_section": "主诉",
+                "source_hint": "主诉",
+                "source_text": "主诉：咳嗽",
+                "source_group_id": "主诉",
+                "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+            }]
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    store = JsonStore(str(tmp_path / "data"))
+    queue = RecordingGpuQueue()
+    (tmp_path / "p1.jpg").write_bytes(b"img")
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=DocPort(),
+        field_port=FieldPort(),
+        gpu_stage_queue=queue,
+    )
+
+    orchestrator.run(
+        {
+            "task_id": "task_001",
+            "images": [{"page_id": "p1", "page_no": 1, "original_image_path": str(tmp_path / "p1.jpg")}],
+        },
+        TaskService(),
+        schema={"fields": [{"field_key": "chief_complaint"}]},
+    )
+
+    assert queue.stages == [
+        ("task_001", "document_parsing"),
+        ("task_001", "field_extraction"),
+    ]

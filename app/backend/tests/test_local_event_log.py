@@ -170,3 +170,16 @@ class TestLocalEventLog:
 
         backups = [name for name in os.listdir(tmp_path) if re.match(r"backend-events\.jsonl\.\d+", name)]
         assert backups
+
+    def test_allows_gpu_stage_events(self, tmp_path):
+        from app.backend.services.local_event_log import LocalEventLog
+
+        log = LocalEventLog(str(tmp_path))
+        log.write("gpu_stage_waiting", task_id="task-001", stage="document_parsing")
+        log.write("gpu_stage_started", task_id="task-001", stage="document_parsing", wait_ms=3)
+        log.write("gpu_stage_finished", task_id="task-001", stage="document_parsing", elapsed_ms=5, status="success")
+
+        content = (tmp_path / "backend-events.jsonl").read_text(encoding="utf-8")
+        assert "gpu_stage_waiting" in content
+        assert "gpu_stage_started" in content
+        assert "gpu_stage_finished" in content

@@ -13,6 +13,12 @@
 
 ## 本地 OCR 接入
 
+### 服务化 OCR（正式部署主路径）
+
+正式 Docker 部署优先使用 `local_ocr_mode: vlm_server`。旧 `runner` 模式保留为 fallback，不再作为性能优化主路径。服务化模式复用 `temp/paddlepaddle` 的常驻 vLLM server 运行栈，但不复用其 `manage.bat`、`input/output/processed` 归档流程；任务生命周期仍由后端管理。
+
+服务化 OCR 当前验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 `paddleocr-genai-vllm-server` vLLM 镜像。服务常驻显存后，多个任务可并发提交多页图片，模型加载只发生一次；OCR 阶段和 LLM 字段抽取阶段在 8GB 显存下由 GPU 阶段队列串行执行，避免互相抢占导致 OOM。
+
 `manzufei_ocr` conda 环境需要安装 PaddleOCR-VL 依赖。当前验证过的组合：
 
 ```bash
@@ -20,7 +26,7 @@ conda run -n manzufei_ocr python -m pip install paddlepaddle-gpu==3.2.1 -i https
 conda run -n manzufei_ocr python -m pip install "paddleocr[doc-parser]==3.5.0" "paddlex[serving]==3.5.0"
 ```
 
-Docker 离线部署镜像必须和该组合保持一致：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`。不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
+Docker 离线部署镜像需要区分模式：服务化 OCR（`local_ocr_mode: vlm_server`）使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.2`（后端容器内的客户端栈）；runner fallback（`local_ocr_mode: runner`）则使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`（旧栈锁定值）。两种模式不可混用；不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
 
 Python runner 配置：
 

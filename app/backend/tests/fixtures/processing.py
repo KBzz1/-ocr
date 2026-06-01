@@ -102,7 +102,7 @@ def install_simulated_processing(app, mode: SimulatedMode = "success") -> TaskSe
         store=store,
         orchestrator=SimulatedProcessing(store, mode=mode),
         schema_provider=app.config["SCHEMA_SERVICE"].get_current,
-        background_runner=lambda run: run(),
+        background_runner=lambda task_id, run: run(),
     )
     app.config["TASK_SERVICE"] = task_service
     app.config["REVIEW_SERVICE"] = ReviewService(

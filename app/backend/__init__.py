@@ -144,25 +144,43 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     from .services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from .services.task_service import TaskService
 
+    gpu_stage_queue = None
+    if config.get("gpu_stage_queue_enabled"):
+        from .services.gpu_stage_queue import GpuStageQueue
+        gpu_stage_queue = GpuStageQueue(event_logger=event_log.safe_write)
+
     image_port = None
     doc_port = None
     if config.get("enable_local_ocr"):
         from .services.algorithm_ports.image_processing import OriginalImagePassthroughPort
-        from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
 
         image_port = OriginalImagePassthroughPort()
-        ocr_work_root = config.get("local_ocr_work_root") or os.path.join(config["storage_dir"], "ocr_runs")
-        doc_port = LocalPaddleOCRDocumentPort(
-            python_executable=config["local_ocr_python_executable"],
-            script_path=config["local_ocr_script_path"],
-            work_root=ocr_work_root,
-            cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
-            device=config.get("local_ocr_device"),
-            max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
-            max_pixels=config.get("local_ocr_max_pixels"),
-            timeout_seconds=config["local_ocr_timeout_seconds"],
-            event_logger=event_log.safe_write,
-        )
+        local_ocr_mode = config.get("local_ocr_mode", "runner")
+        if local_ocr_mode == "vlm_server":
+            from .services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
+
+            doc_port = PaddleOCRVLMServerDocumentPort(
+                server_url=config["local_ocr_vlm_server_url"],
+                max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
+                max_pixels=config.get("local_ocr_max_pixels"),
+                timeout_seconds=config["local_ocr_vlm_timeout_seconds"],
+                event_logger=event_log.safe_write,
+            )
+        else:
+            from .services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
+
+            ocr_work_root = config.get("local_ocr_work_root") or os.path.join(config["storage_dir"], "ocr_runs")
+            doc_port = LocalPaddleOCRDocumentPort(
+                python_executable=config["local_ocr_python_executable"],
+                script_path=config["local_ocr_script_path"],
+                work_root=ocr_work_root,
+                cache_dir=os.path.join(config["model_dir"], "ppstructure", "paddlex_cache"),
+                device=config.get("local_ocr_device"),
+                max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
+                max_pixels=config.get("local_ocr_max_pixels"),
+                timeout_seconds=config["local_ocr_timeout_seconds"],
+                event_logger=event_log.safe_write,
+            )
 
     field_port = None
     if config.get("enable_copd_extractor"):
@@ -195,18 +213,39 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         field_port=field_port,
         field_port_registry={"copd_admission_record": field_port},
         schema_validator=schema_service.build_validator(),
+        gpu_stage_queue=gpu_stage_queue,
     )
-    from threading import Lock
+    from collections import defaultdict
+    from threading import Lock, Thread
 
-    processing_lock = Lock()
+    _per_task_lock = Lock()
+    _per_task_locks: dict[str, Lock] = defaultdict(Lock)
 
-    def run_processing_background(run):
-        from threading import Thread
+    def _take_task_lock(task_id: str) -> Lock:
+        """取得 task_id 维度的细粒度锁。
 
+        不同 task_id 的 run 可以并发进入 orchestrator；GPU 阶段（document_parsing /
+        field_extraction）由 gpu_stage_queue 负责跨任务串行化。同一 task_id 的重复触发
+        仍需串行，避免两路 run 同时改写同一个 task 的 results / state。
+        """
+        with _per_task_lock:
+            return _per_task_locks[task_id]
+
+    def _release_task_lock(task_id: str, lock: Lock) -> None:
+        with _per_task_lock:
+            current = _per_task_locks.get(task_id)
+            if current is lock:
+                del _per_task_locks[task_id]
+
+    def run_processing_background(task_id, run):
         def target():
-            with app.app_context():
-                with processing_lock:
-                    run()
+            lock = _take_task_lock(task_id)
+            with lock:
+                try:
+                    with app.app_context():
+                        run()
+                finally:
+                    _release_task_lock(task_id, lock)
 
         Thread(target=target, daemon=True).start()
 

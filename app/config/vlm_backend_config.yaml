@@ -1,0 +1,5 @@
+max_model_len: 4096
+gpu_memory_utilization: 0.75
+tensor_parallel_size: 1
+max_num_seqs: 1
+dtype: bfloat16

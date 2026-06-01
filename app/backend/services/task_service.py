@@ -341,7 +341,10 @@ class TaskService:
 
     def _dispatch_orchestrator(self, task: dict, schema: dict | None = None) -> dict:
         dispatched_task = dict(task)
-        self._background_runner(lambda: self._run_orchestrator(dispatched_task, schema=schema))
+        self._background_runner(
+            dispatched_task["task_id"],
+            lambda: self._run_orchestrator(dispatched_task, schema=schema),
+        )
         return task
 
     def mark_processing_stage(self, task_id: str, stage: str, status: str, page_count: int | None = None) -> dict:

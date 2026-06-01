@@ -14,4 +14,32 @@ services:
     environment:
       MANZUFEI_BACKEND_DEBUG: "0"
       MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"
+    depends_on:
+      paddleocr-vlm-server:
+        condition: service_healthy
     gpus: all
+
+  paddleocr-vlm-server:
+    image: paddleocr-vlm-server:verified-digest-1cee5e7e
+    container_name: paddleocr-vlm-server
+    restart: unless-stopped
+    labels:
+      x-verified-source-image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621
+    command: >
+      paddleocr genai_server
+      --model_name PaddleOCR-VL-1.6-0.9B
+      --model_dir /workspace/model/PaddleOCR-VL-1.6
+      --host 0.0.0.0
+      --port 8080
+      --backend vllm
+      --backend_config /workspace/vlm_backend_config.yaml
+    volumes:
+      - ./models/ppstructure:/workspace/model
+      - ./app/config/vlm_backend_config.yaml:/workspace/vlm_backend_config.yaml:ro
+    gpus: all
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/models || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s

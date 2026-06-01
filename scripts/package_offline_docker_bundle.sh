@@ -28,6 +28,13 @@ echo "Building frontend dist..."
 echo "Building Docker image: $IMAGE_NAME"
 docker build -t "$IMAGE_NAME" "$ROOT_DIR"
 
+OCR_VLM_SERVER_IMAGE="${OCR_VLM_SERVER_IMAGE:-ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621}"
+OCR_VLM_SERVER_LOCAL_TAG="${OCR_VLM_SERVER_LOCAL_TAG:-paddleocr-vlm-server:verified-digest-1cee5e7e}"
+
+echo "Pulling vlm-server source image: $OCR_VLM_SERVER_IMAGE"
+docker pull "$OCR_VLM_SERVER_IMAGE"
+docker tag "$OCR_VLM_SERVER_IMAGE" "$OCR_VLM_SERVER_LOCAL_TAG"
+
 echo "Creating offline bundle: $BUNDLE_DIR"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/images" \
@@ -37,6 +44,8 @@ mkdir -p "$BUNDLE_DIR/images" \
   "$BUNDLE_DIR/logs"
 
 docker save "$IMAGE_NAME" -o "$BUNDLE_DIR/images/manzufei-ocr.tar"
+echo "Saving paddleocr-vlm-server tar..."
+docker save "$OCR_VLM_SERVER_LOCAL_TAG" -o "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
 cp "$ROOT_DIR/docker-compose.yml" "$BUNDLE_DIR/docker-compose.yml"
 cp "$ROOT_DIR/app/config/local.docker.yaml" "$BUNDLE_DIR/app/config/local.yaml"
 cp "$ROOT_DIR/deploy/windows/00_import_image.bat" "$BUNDLE_DIR/00_import_image.bat"
