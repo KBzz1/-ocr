@@ -468,7 +468,7 @@ def test_docker_requirements_include_paddlex_ocr_extra_for_paddleocr_vl():
     """PaddleOCR-VL pipeline requires the paddlex[ocr] extra, not only ocr-core."""
     content = open("requirements.docker.txt", encoding="utf-8").read()
 
-    assert "paddlex[ocr]==3.5.0" in content
+    assert "paddlex[ocr]==3.5.2" in content
 
 
 def test_docker_build_compiles_llama_cpp_with_cuda():
@@ -524,3 +524,33 @@ def test_wsl_stop_script_stops_backend_and_frontend_pids():
     assert 'FRONTEND_PID_FILE="$LOG_DIR/frontend.pid"' in content
     assert "kill" in content
     assert "cmd.exe" not in content
+
+
+def test_docker_compose_defines_paddleocr_vlm_server():
+    """docker-compose 必须定义 PaddleOCR-VL 常驻 genai_server，端口 8080，挂载本地模型目录。"""
+    compose_content = open("docker-compose.yml", encoding="utf-8").read()
+
+    assert "paddleocr-vlm-server:" in compose_content
+    assert "paddleocr-genai-vllm-server" in compose_content
+    assert "paddleocr genai_server" in compose_content
+    assert "--model_name PaddleOCR-VL-1.6-0.9B" in compose_content
+    assert "--port 8080" in compose_content
+    assert "--backend vllm" in compose_content
+    assert "vlm_backend_config.yaml" in compose_content
+    assert "gpus: all" in compose_content
+    assert "models/ppstructure:/workspace/model" in compose_content
+    assert "curl -sf http://localhost:8080/v1/models" in compose_content
+    # 主后端必须等 vlm-server 健康后再启动
+    assert "condition: service_healthy" in compose_content
+    assert "depends_on:" in compose_content
+
+
+def test_docker_requirements_match_vlm_server_client_combo():
+    """requirements.docker.txt 锁定 paddleocr 3.5.0 + paddlex[ocr] 3.5.2，匹配 vllm-server 客户端契约。"""
+    content = open("requirements.docker.txt", encoding="utf-8").read()
+
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    assert "paddleocr==3.5.0" in lines
+    assert "paddlex[ocr]==3.5.2" in lines
+    # 不应在 docker 镜像里编译 llama-cpp-python（C++ 编译属于本机 LLM 路径）
+    assert "llama-cpp-python" not in content
