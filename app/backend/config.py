@@ -43,6 +43,10 @@ DEFAULT_CONFIG = {
     "local_ocr_timeout_seconds": 180,
     "local_ocr_device": None,
     "local_ocr_max_pixels": 501760,
+    "local_ocr_mode": "runner",
+    "local_ocr_vlm_server_url": "http://paddleocr-vlm-server:8080/v1",
+    "local_ocr_vlm_timeout_seconds": 240,
+    "gpu_stage_queue_enabled": True,
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -126,6 +130,14 @@ def _flatten_config(raw: dict) -> dict:
         flattened["local_ocr_device"] = algorithms_config["local_ocr_device"]
     if "local_ocr_max_pixels" in algorithms_config:
         flattened["local_ocr_max_pixels"] = algorithms_config["local_ocr_max_pixels"]
+    if "local_ocr_mode" in algorithms_config:
+        flattened["local_ocr_mode"] = algorithms_config["local_ocr_mode"]
+    if "local_ocr_vlm_server_url" in algorithms_config:
+        flattened["local_ocr_vlm_server_url"] = algorithms_config["local_ocr_vlm_server_url"]
+    if "local_ocr_vlm_timeout_seconds" in algorithms_config:
+        flattened["local_ocr_vlm_timeout_seconds"] = algorithms_config["local_ocr_vlm_timeout_seconds"]
+    if "gpu_stage_queue_enabled" in algorithms_config:
+        flattened["gpu_stage_queue_enabled"] = algorithms_config["gpu_stage_queue_enabled"]
 
     return flattened
 
@@ -197,6 +209,28 @@ def _validate_config(config: dict):
     ocr_timeout = config.get("local_ocr_timeout_seconds")
     if not isinstance(ocr_timeout, int) or ocr_timeout <= 0:
         raise ValueError(f"local_ocr_timeout_seconds 必须为正整数，当前值: {ocr_timeout}")
+
+    local_ocr_mode = config.get("local_ocr_mode")
+    if local_ocr_mode not in {"runner", "vlm_server"}:
+        raise ValueError(f"local_ocr_mode 必须是 runner 或 vlm_server，当前值: {local_ocr_mode}")
+
+    vlm_server_url = config.get("local_ocr_vlm_server_url")
+    parsed_vlm_server_url = urlparse(vlm_server_url) if isinstance(vlm_server_url, str) else None
+    if (
+        not isinstance(vlm_server_url, str)
+        or parsed_vlm_server_url is None
+        or parsed_vlm_server_url.scheme not in {"http", "https"}
+        or not parsed_vlm_server_url.hostname
+        or any(char.isspace() for char in vlm_server_url)
+    ):
+        raise ValueError(f"local_ocr_vlm_server_url 必须是 http(s) URL，当前值: {vlm_server_url}")
+
+    vlm_timeout = config.get("local_ocr_vlm_timeout_seconds")
+    if not isinstance(vlm_timeout, int) or vlm_timeout <= 0:
+        raise ValueError(f"local_ocr_vlm_timeout_seconds 必须为正整数，当前值: {vlm_timeout}")
+
+    if not isinstance(config.get("gpu_stage_queue_enabled"), bool):
+        raise ValueError(f"gpu_stage_queue_enabled 必须为布尔值，当前值: {config.get('gpu_stage_queue_enabled')}")
 
     for key in ("local_ocr_max_new_tokens", "local_ocr_max_pixels"):
         value = config.get(key)
