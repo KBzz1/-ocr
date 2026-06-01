@@ -79,6 +79,7 @@ EVENT_FIELDS = {
         "output_bytes",
         "stdout_tail",
         "stderr_tail",
+        "reason",
     },
     "ocr_runner_failed": {
         "task_id",
