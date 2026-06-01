@@ -39,6 +39,9 @@ ALLOWED_EVENTS = {
     "review_completed",
     "export_succeeded",
     "export_failed",
+    "gpu_stage_waiting",
+    "gpu_stage_started",
+    "gpu_stage_finished",
 }
 
 EVENT_FIELDS = {
@@ -52,6 +55,7 @@ EVENT_FIELDS = {
     "ocr_runner_started": {
         "task_id",
         "backend",
+        "server_url",
         "page_count",
         "timeout_seconds",
         "work_dir",
@@ -102,6 +106,9 @@ EVENT_FIELDS = {
     "review_completed": {"task_id", "field_count"},
     "export_succeeded": {"task_id", "format", "relative_path"},
     "export_failed": {"task_id", "format", "error_code"},
+    "gpu_stage_waiting": {"task_id", "stage"},
+    "gpu_stage_started": {"task_id", "stage", "wait_ms"},
+    "gpu_stage_finished": {"task_id", "stage", "elapsed_ms", "status"},
 }
 
 
