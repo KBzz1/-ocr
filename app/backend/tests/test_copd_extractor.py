@@ -265,10 +265,13 @@ def test_copd_extractor_uses_source_hint_to_attach_section_text():
 
     by_key = {item["field_key"]: item for item in results}
     assert by_key["copd_history_years"]["source_hint"] == "主诉"
-    assert by_key["copd_history_years"]["evidence"] == "反复咳嗽、咳痰15年，喘累6年，加重1月。"
+    # Spec invariant: evidence must not equal source_text; for short sections, recovery returns the value itself
+    assert by_key["copd_history_years"]["evidence"] == "15年"
+    assert by_key["copd_history_years"]["evidence"] != by_key["copd_history_years"]["source_text"]
     assert by_key["copd_history_years"]["source_text"] == "反复咳嗽、咳痰15年，喘累6年，加重1月。"
     assert by_key["baseline_lung_function"]["source_hint"] == "现病史"
-    assert by_key["baseline_lung_function"]["evidence"] == "肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
+    assert by_key["baseline_lung_function"]["evidence"] == "中度阻塞性通气功能障碍"
+    assert by_key["baseline_lung_function"]["evidence"] != by_key["baseline_lung_function"]["source_text"]
     assert by_key["baseline_lung_function"]["source_text"] == "肺功能提示中度阻塞性通气功能障碍，具体未见报告。"
 
 
@@ -587,7 +590,9 @@ def test_copd_extractor_regenerates_invalid_source_hint_with_same_loaded_client(
     assert result["source_hint"] == "主诉"
     assert result["source_group_id"] == "source_group_主诉"
     assert result["source_text"] == "反复咳嗽、咳痰15年。"
-    assert result["evidence"] == "反复咳嗽、咳痰15年。"
+    # Spec invariant: evidence must not equal source_text; short-section recovery returns the value
+    assert result["evidence"] == "15年"
+    assert result["evidence"] != result["source_text"]
 
 
 def test_copd_extractor_treats_no_evidence_as_not_found_in_section_groups():
@@ -797,3 +802,85 @@ def test_recover_evidence_from_value_returns_none_when_value_exceeds_max_chars()
 
     long_value = "x" * 60
     assert _recover_evidence_from_value(long_value, long_value + " tail", max_chars=50) is None
+
+
+def test_recover_evidence_from_value_returns_value_not_whole_section_when_section_is_short():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    # Section shorter than max_chars=50; without the fix, this would return the whole section
+    source_text = "脉搏78次/分。"
+    result = _recover_evidence_from_value("78次/分", source_text, max_chars=50)
+
+    assert result is not None
+    assert result != source_text
+    assert result == "78次/分"
+
+
+def test_recover_evidence_from_value_returns_none_when_value_equals_whole_section():
+    from app.backend.services.copd_extraction.extractor import _recover_evidence_from_value
+
+    # Pathological: original_value is the entire section
+    source_text = "78次/分"
+    result = _recover_evidence_from_value("78次/分", source_text, max_chars=50)
+
+    assert result is None
+
+
+def test_copd_extractor_evidence_never_equals_source_text_for_short_sections():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {"fields": [{"field_key": "pulse", "original_value": "78次/分", "source_hint": "体格检查"}]}
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    # Use a short section (shorter than max_chars=50)
+    result = extractor.extract("体格检查：脉搏78次/分。")[0]
+
+    assert result["evidence"] is not None
+    assert result["evidence"] != result["source_text"]
+    assert "78次/分" in result["evidence"]
+    assert len(result["evidence"]) <= 50
+
+
+def test_copd_extractor_appends_both_too_long_and_not_in_source_flags():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    # Long evidence that is also not in the source section
+    long_unrelated_evidence = "这段证据完全不在体格检查章节内" * 4  # 60 chars
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "78次/分",
+                        "evidence_phrase": long_unrelated_evidence,
+                        "source_hint": "体格检查",
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("体格检查：体温36.7℃，脉搏78次/分。")[0]
+
+    flags = _flag_names(result)
+    assert "evidence_too_long" in flags
+    assert "evidence_not_in_source_text" in flags
+    # Recovery should still succeed since the value "78次/分" is in the section
+    assert "evidence_recovered_from_value" in flags
+    assert "78次/分" in result["evidence"]
+    assert result["evidence"] in result["source_text"]

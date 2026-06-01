@@ -307,7 +307,7 @@ def _resolve_field_evidence(item: dict, source_text: str) -> None:
 
     if raw_evidence_too_long:
         _append_quality_flag(item, EVIDENCE_TOO_LONG, {"comment": "evidence 超过50字，已丢弃"})
-    elif raw_evidence_not_in_source:
+    if raw_evidence_not_in_source:
         _append_quality_flag(
             item,
             EVIDENCE_NOT_IN_SOURCE_TEXT,
@@ -396,6 +396,13 @@ def _recover_evidence_from_value(
     index = source_text.find(value)
     if index < 0:
         return None
+    if value == source_text:
+        # Pathological: value is the entire section, no useful sub-window
+        return None
+    if len(source_text) <= max_chars:
+        # Section is short enough that any window covers the whole section;
+        # return the value itself to keep evidence != source_text.
+        return value
     window_radius = max(0, (max_chars - len(value)) // 2)
     start = max(0, index - window_radius)
     end = min(len(source_text), start + max_chars)
