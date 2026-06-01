@@ -64,7 +64,7 @@ def test_section_group_prompt_asks_for_short_evidence_and_ocr_audit():
 
     assert "source_hint" in prompt
     assert "evidence_phrase" in prompt
-    assert "不超过50字" in prompt
+    assert "≤50" in prompt or "不超过50字" in prompt
     assert "ocr_correction" in prompt
     assert "不得静默修正 OCR" in prompt
 
@@ -104,3 +104,16 @@ def test_section_group_prompt_contains_full_ocr_risk_warnings():
     assert "常见错别字" in prompt
     assert "前后矛盾数值" in prompt
     assert "不得静默选值" in prompt
+
+
+def test_section_group_prompt_contains_short_evidence_json_example():
+    from app.backend.services.copd_extraction.prompts import build_section_group_extraction_prompt
+
+    prompt = build_section_group_extraction_prompt("physical_exam", "体格检查：体温36.7℃。", ["temperature"])
+
+    assert "evidence_phrase" in prompt
+    assert '"field_key": "temperature"' in prompt
+    assert "体温：36.7℃" in prompt
+    assert "≤50" in prompt or "不超过50字" in prompt
+    assert "严禁整段章节" in prompt or "不要输出整段章节" in prompt
+    assert "示例输出" in prompt

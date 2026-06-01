@@ -49,9 +49,14 @@ OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、血气项目名 P62/P02/
 - original_value 必须简短，只保留字段值本身。
 - source_hint 必须是字段值所在的 OCR 章节标题，例如 主诉、现病史、既往史、体格检查、辅助检查；不能输出 history_profile、physical_exam、auxiliary_exam 这类内部分组名。
 - 如果字段值看似可抽取但无法确定 OCR 原文来源，source_hint 输出 "未找到证据"，不要编造章节。
-- evidence_phrase 必须是支撑字段值的 OCR 原文短片段，不超过50字；必须保留原文写法，不要输出整段章节。
+- evidence_phrase 必填、≤50 字、必须是 OCR 原文短片段、严禁整段章节或省略该字段。
 - 药物、合并症、体征等多项内容用顿号或分号压缩，不要输出长段原文。
 - 不要输出 source_section、quality_flags 等其他元数据。
+
+示例输出（每个字段都必须包含 evidence_phrase）：
+{{"fields": [{{"field_key": "temperature", "original_value": "36.7℃", "source_hint": "体格检查", "evidence_phrase": "体温：36.7℃", "confidence": 0.9, "ocr_correction": {{"applied": false, "raw": "", "normalized": "", "reason": ""}}}}]}}
+
+硬约束：evidence_phrase 必填、≤50 字、必须是 OCR 原文短片段、严禁整段章节。
 
 OCR 原文：
 {text}
