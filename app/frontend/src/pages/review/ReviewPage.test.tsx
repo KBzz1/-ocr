@@ -749,4 +749,42 @@ describe('ReviewPage', () => {
     expect(screen.queryByLabelText('结构化字段')).toBeNull();
     expect(screen.queryByRole('button', { name: '一键审核' })).toBeNull();
   });
+
+  it('does not highlight evidenceText when it exceeds the short-snippet threshold', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const longEvidence = '体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg 身高：175cm 体重：74kg BMI：24.2kg/m² 及多句冗长描述。既往史：患者自诉心前区隐痛10+年，一直未予以重视；高血压5+年，最高血压160/92mmHg。';
+
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: `${longEvidence} 后续文本`,
+              pages: [],
+              fields: [
+                {
+                  field_key: 'temperature',
+                  label: '体温',
+                  value: '36.7℃',
+                  status: 'unreviewed',
+                  evidence: [{ text: longEvidence }],
+                },
+              ],
+            },
+          },
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('来源片段过长（>100 字），不进行高亮，请人工核验')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });
