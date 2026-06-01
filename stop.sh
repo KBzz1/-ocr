@@ -49,3 +49,11 @@ stop_pid_file() {
 
 stop_pid_file "$FRONTEND_PID_FILE" "Frontend"
 stop_pid_file "$BACKEND_PID_FILE" "Backend"
+
+echo "Stopping OCR VLM server..."
+(
+  cd "$ROOT_DIR"
+  docker compose stop paddleocr-vlm-server >/dev/null 2>&1 || true
+)
+
+pkill -f "paddleocr_vl_batch_runner.py" >/dev/null 2>&1 || true

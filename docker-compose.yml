@@ -20,6 +20,9 @@ services:
     gpus: all
 
   paddleocr-vlm-server:
+    # 默认 --model_name 走 PaddleOCR-VL-1.5-0.9B：verified 镜像里的 paddlex 3.5.0 尚未注册 1.6。
+    # 1.5 与 1.6 共享 PaddleOCRVLForConditionalGeneration 架构，1.5 的配置能加载 1.6 权重。
+    # --model_dir 始终指向 1.6 模型目录，确保实际跑的是 1.6 权重。
     image: paddleocr-vlm-server:verified-digest-1cee5e7e
     container_name: paddleocr-vlm-server
     restart: unless-stopped
@@ -27,8 +30,8 @@ services:
       x-verified-source-image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621
     command: >
       paddleocr genai_server
-      --model_name PaddleOCR-VL-1.6-0.9B
-      --model_dir /workspace/model/PaddleOCR-VL-1.6
+      --model_name ${OCR_VLM_MODEL_NAME:-PaddleOCR-VL-1.5-0.9B}
+      --model_dir ${OCR_VLM_MODEL_DIR:-/workspace/model/PaddleOCR-VL-1.6}
       --host 0.0.0.0
       --port 8080
       --backend vllm
@@ -36,6 +39,8 @@ services:
     volumes:
       - ./models/ppstructure:/workspace/model
       - ./app/config/vlm_backend_config.yaml:/workspace/vlm_backend_config.yaml:ro
+    ports:
+      - "127.0.0.1:8082:8080"
     gpus: all
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/models || exit 1"]
