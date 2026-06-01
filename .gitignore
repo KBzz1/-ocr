@@ -20,6 +20,9 @@ app/frontend/dist/
 *.log
 *.pid
 
+# PaddlePaddle / PaddleOCR 临时缓存
+temp/
+
 # 本地配置
 .env
 *.local
