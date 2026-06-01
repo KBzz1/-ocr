@@ -264,8 +264,6 @@ def test_batch_zip_writes_manifest_with_export_summary(tmp_path):
     assert manifest["format"] == "batch_zip"
     assert manifest["task_count"] == 2
     assert manifest["success_count"] == 2
-    assert manifest["failed_count"] == 0
-    assert manifest["failed_tasks"] == []
     assert manifest["success_tasks"][0]["json_path"] == "task_001/task_001.review.json"
     assert manifest["success_tasks"][0]["field_count"] == 1
     assert manifest["success_tasks"][0]["schema_version"] == "1.0.0"

@@ -4,6 +4,7 @@ from ..enums import TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
 from .algorithm_ports.field_extraction import all_fields_empty, validate_field_candidates
+from .algorithm_ports.results import AlgorithmResultStore
 
 
 class ReextractionService:
@@ -148,12 +149,10 @@ class ReextractionService:
         }
 
     def _load_ocr_document_result(self, task_id: str) -> dict:
-        doc = self._store.read(f"results/{task_id}/document_result.json")
-        if isinstance(doc, dict):
-            merged_text = doc.get("merged_text")
-            pages = doc.get("pages")
-            if isinstance(merged_text, str) and merged_text.strip() and isinstance(pages, list) and pages:
-                return {"merged_text": merged_text, "pages": pages}
+        result_store = AlgorithmResultStore(self._store)
+        doc = result_store.read_success_document_result(task_id)
+        if doc is not None:
+            return doc
 
         review = self._store.read(f"results/{task_id}/review_result.json")
         if isinstance(review, dict):

@@ -44,6 +44,8 @@ Docker 化时必须把该兼容性处理固化到镜像构建步骤中，不能�
 
 离线包由 `scripts/package_offline_docker_bundle.sh` 生成，包含 Docker 镜像 tar、`docker-compose.yml`、Windows 启停脚本、配置占位和模型目录。目标 Windows 电脑上先运行 `00_import_image.bat` 导入镜像，再运行 `01_start.bat` 启动工作站。
 
+正式现场验收使用 `docs/部署/离线验收记录.md`，记录目标 Windows 电脑环境、镜像导入、启动、GPU/OCR/LLM 依赖核验、业务闭环和日志留存。验收过程使用脱敏测试图片，不默认收集病历原图、完整 OCR 原文或模型完整输出。
+
 打包脚本会重新构建前端和 Docker 镜像，并将 `app/config/local.docker.yaml` 复制为部署包内的 `app/config/local.yaml`。如果 OCR/GPU 行为和 WSL 开发环境不一致，优先比较 `backend-events.jsonl` 中的 runner 参数、容器内 Python 包版本、镜像创建时间和实际挂载的 Windows 部署目录，避免直接假设是参数问题。
 
 不压缩 zip 的现场同步流程可直接覆盖部署目录中的 `images/manzufei-ocr.tar`、`docker-compose.yml`、`app/config/local.yaml` 和 Windows 启停脚本。同步后必须运行 `02_stop.bat`、`00_import_image.bat`、`01_start.bat`，确保 Docker Desktop 加载的是最新镜像而不是旧容器。

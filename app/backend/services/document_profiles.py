@@ -28,6 +28,7 @@ class DocumentProfileRegistry:
         self._store = store
         self._profiles = {profile.document_type: profile for profile in profiles}
         self._default_document_type = default_document_type
+        self._cached_default: str | None = None
 
     def get_profile(self, document_type: str | None) -> DocumentProfile:
         resolved = document_type or self.get_default_document_type()
@@ -55,15 +56,20 @@ class DocumentProfileRegistry:
         ]
 
     def get_default_document_type(self) -> str:
+        if self._cached_default is not None:
+            return self._cached_default
         settings = self._store.read("settings/document_type.json") or {}
         candidate = settings.get("last_document_type")
         if candidate in self._profiles:
+            self._cached_default = candidate
             return candidate
+        self._cached_default = self._default_document_type
         return self._default_document_type
 
     def remember_last_document_type(self, document_type: str) -> None:
         self.get_profile(document_type)
         self._store.write("settings/document_type.json", {"last_document_type": document_type})
+        self._cached_default = document_type
 
     def to_task_document_summary(self, document_type: str | None) -> dict:
         profile = self.get_profile(document_type)

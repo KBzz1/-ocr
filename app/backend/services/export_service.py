@@ -201,9 +201,7 @@ class ExportService:
             "generated_at": self._now(),
             "task_count": len(models),
             "success_count": len(success_tasks),
-            "failed_count": 0,
             "success_tasks": success_tasks,
-            "failed_tasks": [],
         }
 
     def _do_export(self, task_id: str, format: str, ext: str, writer: Callable) -> dict:

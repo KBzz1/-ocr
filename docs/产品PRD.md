@@ -24,6 +24,8 @@ MVP 保留：
 - 本地 OCR/文档解析和慢阻肺专病字段抽取。
 - 电脑端审核结构化字段。
 - JSON/Excel 导出。
+- 批量 JSON zip 导出后端框架。
+- 基于已保存 OCR 文本重新触发慢阻肺字段抽取的后端框架。
 - 三个电脑端页面：工作台总览、任务管理、审核界面。
 
 MVP 不做：
@@ -253,6 +255,7 @@ MVP 字段状态：
 
 - 支持 JSON 导出。
 - 支持 Excel 导出。
+- 支持多个 `review` / `done` 任务批量导出 JSON zip；批量 Excel 后置，避免放大单任务 Excel 字段完整性问题。
 - 导出内容使用人工审核后的最终字段值。
 
 错误提示：
@@ -392,7 +395,19 @@ OCR 和结构化抽取能力由本地算法模块提供。后端负责传入任�
 - `review` 和 `done` 任务可导出。
 - 导出内容来自人工最终值。
 - 导出文件保存到本地 `exports/`。
+- 批量导出只纳入 `review` 和 `done` 任务，当前先输出 JSON zip。
 - 导出失败返回 `EXPORT_FAILED`，不破坏审核数据。
+
+### PR-BE-008A：基于 OCR 文本重新抽取
+
+对已经完成 OCR 的任务，后端可复用已保存的 OCR 文本重新触发慢阻肺字段抽取。该能力用于 prompt/schema 调整或字段抽取失败后的快速重试，不重新跑 OCR，不重新处理图片。
+
+验收标准：
+
+- 只读取已保存的 `document_result.json` 或审核结果中的 OCR 文本。
+- 记录 `schema_version`、`prompt_version`、`source=ocr_text_only`、`run_id` 和候选数量。
+- 不静默覆盖人工已保存的最终值；结果回到审核流程由人工确认。
+- 缺少 OCR 文本或候选契约非法时返回重抽取校验错误。
 
 ### PR-BE-009：本地日志与错误追踪
 
@@ -428,6 +443,7 @@ OCR 和结构化抽取能力由本地算法模块提供。后端负责传入任�
 | **处理结果** | 获取页面图像、OCR 文本、结构化字段 |
 | **人工审核** | 获取审核结果、保存字段、确认字段、标记任务完成 |
 | **导出** | 导出 JSON、导出 Excel |
+| **增强处理** | 基于已保存 OCR 文本重新抽取字段 |
 
 建议 API：
 
@@ -443,6 +459,8 @@ PUT  /api/tasks/{task_id}/review
 POST /api/tasks/{task_id}/complete
 GET  /api/tasks/{task_id}/export/json
 GET  /api/tasks/{task_id}/export/excel
+POST /api/tasks/export/batch-zip
+POST /api/tasks/{task_id}/reextract
 ```
 
 ---
