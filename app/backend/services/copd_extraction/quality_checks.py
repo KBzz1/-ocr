@@ -160,19 +160,17 @@ def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str
     if field_key not in {"blood_gas_pao2", "blood_gas_paco2"}:
         return False
 
-    for number in _numbers(value):
-        for match in re.finditer(rf"(?<!\d){re.escape(number)}(?!\d)", evidence):
-            prefix = evidence[max(0, match.start() - 16):match.start()]
-            if field_key == "blood_gas_pao2":
-                if re.search(r"(?i)\bpa?o2\s*$", prefix):
-                    continue
-                if re.search(r"(?i)\bP[0-9O]{2}\s*$", prefix):
-                    return True
-            if field_key == "blood_gas_paco2":
-                if re.search(r"(?i)\bpa?co2\s*$", prefix):
-                    continue
-                if re.search(r"(?i)\bpa?c[0O]2\s*$", prefix):
-                    return True
+    for _number, prefix in _extract_value_prefixes(value, evidence):
+        if field_key == "blood_gas_pao2":
+            if re.search(r"(?i)\bpa?o2\s*$", prefix):
+                continue
+            if re.search(r"(?i)\bP[0-9O]{2}\s*$", prefix):
+                return True
+        if field_key == "blood_gas_paco2":
+            if re.search(r"(?i)\bpa?co2\s*$", prefix):
+                continue
+            if re.search(r"(?i)\bpa?c[0O]2\s*$", prefix):
+                return True
     return False
 
 
@@ -190,13 +188,16 @@ def _has_blood_gas_label_not_whitelisted(field_key: str, value: str, evidence: s
     return normalized not in whitelists[field_key]
 
 
+def _extract_value_prefixes(value: str, evidence: str):
+    """Yield (number, prefix) tuples for each number in value found in evidence."""
+    for number in _numbers(value):
+        escaped = re.escape(number)
+        for match in re.finditer(rf"(?<!\d){escaped}(?!\d)", evidence):
+            yield number, evidence[max(0, match.start() - 16):match.start()]
+
+
 def _blood_gas_label_before_value(value: str, evidence: str) -> str:
-    numbers = _numbers(value)
-    if not numbers or not evidence:
-        return ""
-    number = numbers[0]
-    for match in re.finditer(rf"(?<!\d){re.escape(number)}(?!\d)", evidence):
-        prefix = evidence[max(0, match.start() - 16):match.start()]
+    for _number, prefix in _extract_value_prefixes(value, evidence):
         label_match = re.search(r"([A-Za-z0-9]{1,6})\s*$", prefix)
         if label_match:
             return label_match.group(1)

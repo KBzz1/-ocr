@@ -32,6 +32,7 @@ data/sessions/*
 data/pages/*
 data/tasks/*
 exports/*
+output/*
 logs/*
 !data/uploads/README.md
 !data/results/README.md

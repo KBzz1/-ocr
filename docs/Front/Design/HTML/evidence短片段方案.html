@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evidence 短片段方案</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d8dee8;
+      --good: #0f766e;
+      --warn: #b45309;
+      --bad: #b42318;
+      --blue: #1d4ed8;
+      --mark: #fff2a8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: end;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid #99f6e4;
+      background: #ccfbf1;
+      color: #134e4a;
+      font-weight: 700;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 22px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .problem {
+      border-left: 5px solid var(--bad);
+    }
+
+    .decision {
+      border-left: 5px solid var(--good);
+    }
+
+    .defer {
+      border-left: 5px solid var(--warn);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 44px 1fr 44px 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .step {
+      min-height: 132px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 14px;
+    }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: var(--blue);
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .status {
+      display: inline-block;
+      margin-bottom: 8px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #e0ecff;
+      color: #1e3a8a;
+    }
+
+    .status.good {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status.warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .rule-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .rule-list li {
+      margin: 7px 0;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .example {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+
+    .example.bad {
+      border-color: #fecaca;
+      background: #fff7f7;
+    }
+
+    .example.good {
+      border-color: #99f6e4;
+      background: #f0fdfa;
+    }
+
+    .ocr {
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #f3f4f6;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      font-size: 14px;
+      color: #263241;
+    }
+
+    mark {
+      background: var(--mark);
+      padding: 1px 2px;
+      border-radius: 3px;
+    }
+
+    .code {
+      display: inline-block;
+      padding: 2px 5px;
+      border: 1px solid #d7dce5;
+      border-radius: 4px;
+      background: #f8fafc;
+      font-family: Consolas, Menlo, monospace;
+      font-size: 13px;
+      color: #1f2937;
+    }
+
+    .priority {
+      display: grid;
+      grid-template-columns: 88px 1fr 120px;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .priority:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .pill {
+      justify-self: start;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .pill.must {
+      border-color: #99f6e4;
+      background: #ccfbf1;
+      color: #134e4a;
+    }
+
+    .pill.light {
+      border-color: #bfdbfe;
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .pill.defer {
+      border-color: #fde68a;
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .risk {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 920px) {
+      main {
+        padding: 18px;
+      }
+
+      header,
+      .grid.two,
+      .grid.three,
+      .compare,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        transform: rotate(90deg);
+        min-height: 26px;
+      }
+
+      .priority {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Evidence 短片段修复方案</h1>
+        <p class="subtitle">目标不是增加医学抽取规则，而是收紧“高亮证据”的数据契约：字段值照旧由 LLM 抽取，后端只保证 evidence 不再污染成整段章节。</p>
+      </div>
+      <div class="badge">推荐：低规则、强约束</div>
+    </header>
+
+    <section class="grid two">
+      <div class="panel problem">
+        <h2>当前问题</h2>
+        <p>LLM 漏掉 <span class="code">evidence_phrase</span> 时，后端把整段 <span class="code">source_text</span> 塞进 <span class="code">evidence</span>，前端命中后就把整段 OCR 标黄。</p>
+        <div class="ocr">体格检查：<mark>体温36.7℃，脉搏78次/分，呼吸20次/分，血压142/87mmHg，神志清楚，双肺呼吸音粗，双下肢无水肿……</mark></div>
+      </div>
+      <div class="panel decision">
+        <h2>修复原则</h2>
+        <p>只处理 evidence 的展示安全，不改变字段值抽取逻辑，不做医学推断，不扩展规则引擎。</p>
+        <ul class="rule-list">
+          <li><span class="code">evidence</span> 要么为空，要么是 50 字以内短片段。</li>
+          <li><span class="code">evidence</span> 必须能在 <span class="code">source_text</span> 中定位。</li>
+          <li>整段章节只保留在 <span class="code">source_text</span>，用于审核阅读。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px;">
+      <h2>最小数据流</h2>
+      <div class="flow">
+        <div class="step">
+          <span class="status">1. LLM 输出</span>
+          <h3>字段值仍由模型抽取</h3>
+          <p class="risk">例如 original_value=142/87mmHg，source_hint=体格检查。这里不新增医学规则。</p>
+        </div>
+        <div class="arrow">›</div>
+        <div class="step">
+          <span class="status good">2. 后端收口</span>
+          <h3>只校验 evidence 契约</h3>
+          <p class="risk">短、可定位则保留；缺失时仅用 original_value 做一次简单定位。</p>
+        </div>
+        <div class="arrow">›</div>
+        <div class="step">
+          <span class="status warn">3. 前端保险</span>
+          <h3>异常长片段不高亮</h3>
+          <p class="risk">前端不补造字段，不推断证据，只避免坏数据造成整段标黄。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>推荐实现范围</h2>
+        <div class="priority">
+          <span class="pill must">必须做</span>
+          <div>禁止整段 fallback：缺 evidence 时不再把 source_text 写入 evidence。</div>
+          <div class="risk">风险低</div>
+        </div>
+        <div class="priority">
+          <span class="pill light">轻量做</span>
+          <div>用 original_value 在 source_text 中定位，找到后截取附近短片段。</div>
+          <div class="risk">不推断</div>
+        </div>
+        <div class="priority">
+          <span class="pill light">小幅做</span>
+          <div>Prompt 增加短 JSON 示例，强调 evidence_phrase 不可省略。</div>
+          <div class="risk">低成本</div>
+        </div>
+        <div class="priority">
+          <span class="pill light">保险做</span>
+          <div>前端 evidenceText 超过阈值时不执行 mark 高亮。</div>
+          <div class="risk">只影响展示</div>
+        </div>
+      </div>
+
+      <div class="panel defer">
+        <h2>暂不建议做</h2>
+        <div class="priority">
+          <span class="pill defer">先不做</span>
+          <div>LLM 定向重试。</div>
+          <div class="risk">慢且不稳</div>
+        </div>
+        <div class="priority">
+          <span class="pill defer">不调整</span>
+          <div>不降全局 llm_max_tokens，避免复核 JSON 截断回归。</div>
+          <div class="risk">保留 4096</div>
+        </div>
+        <div class="priority">
+          <span class="pill defer">不引入</span>
+          <div>不加 LangChain，不增加离线 Windows 依赖面。</div>
+          <div class="risk">收益低</div>
+        </div>
+        <div class="priority">
+          <span class="pill defer">不扩展</span>
+          <div>不做字段词典、医学规则、复杂正则群。</div>
+          <div class="risk">防过拟合</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px;">
+      <h2>展示效果对比</h2>
+      <div class="compare">
+        <div class="example bad">
+          <h3>修复前：整段高亮</h3>
+          <p class="risk">字段 blood_pressure 的 evidence 被回填为整段体格检查。</p>
+          <div class="ocr">体格检查：<mark>体温36.7℃，脉搏78次/分，呼吸20次/分，血压142/87mmHg，神志清楚，双肺呼吸音粗，双下肢无水肿。</mark></div>
+        </div>
+        <div class="example good">
+          <h3>修复后：短片段或不高亮</h3>
+          <p class="risk">能定位 original_value 时，只高亮字段值附近片段；找不到则提示未返回来源文本。</p>
+          <div class="ocr">体格检查：体温36.7℃，脉搏78次/分，呼吸20次/分，<mark>血压142/87mmHg</mark>，神志清楚，双肺呼吸音粗，双下肢无水肿。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid three">
+      <div class="panel">
+        <h2>质量影响</h2>
+        <p class="risk">字段值抽取不变，只限制 evidence 字段。整体抽取质量不会因为新规则被“改写”，只是坏 evidence 会被置空或截短。</p>
+      </div>
+      <div class="panel">
+        <h2>失败表现</h2>
+        <p class="risk">找不到短证据时，字段保留 suspicious 和 warning，审核页显示来源章节但不高亮，医生仍可人工核验。</p>
+      </div>
+      <div class="panel">
+        <h2>验收标准</h2>
+        <p class="risk">任何已抽取字段不得出现 evidence 等于整段 source_text；前端不会再出现整段 OCR 被 mark 包裹。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
