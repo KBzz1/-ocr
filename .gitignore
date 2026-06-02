@@ -19,6 +19,7 @@ app/frontend/dist/
 # 运行时
 *.log
 *.pid
+.local/
 .superpowers/
 
 # PaddlePaddle / PaddleOCR 临时缓存
