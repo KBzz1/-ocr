@@ -518,11 +518,15 @@ def test_wsl_run_script_restarts_existing_backend_before_starting_backend():
     assert "Backend is already running" not in content
 
 
-def test_wsl_run_script_uses_vlm_server_instead_of_runner():
-    """run.sh 本地启动必须走 OCR 常驻服务，不能默认落回旧 runner。"""
+def test_wsl_run_script_uses_vlm_server():
+    """run.sh 本地启动必须走 OCR 常驻服务。"""
     content = open("run.sh").read()
 
     assert "paddleocr-vlm-server" in content
+    assert "$ROOT_DIR/deploy/offline-images" in content
+    assert "paddleocr-vlm-server.tar" in content
+    legacy_temp_dir = "temp/" + "paddlepaddle"
+    assert legacy_temp_dir not in content
     assert "OCR_VLM_SERVER_SOURCE_IMAGE" in content
     assert "OCR_VLM_SERVER_LOCAL_TAG" in content
     assert "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621" in content
@@ -535,22 +539,20 @@ def test_wsl_run_script_uses_vlm_server_instead_of_runner():
     assert "OCR_VLM_MODEL_NAME" in content
     assert "docker compose up -d paddleocr-vlm-server" in content
     assert "http://127.0.0.1:8082/v1" in content
-    assert "local_ocr_mode" in content
     assert "vlm_server" in content
 
 
-def test_wsl_run_script_does_not_silently_fall_back_to_runner_or_v1_5():
-    """run.sh 不得再启动旧 OCR runner 子进程，也不得落回 PaddleOCR-VL-1.5 模型目录。"""
+def test_wsl_run_script_uses_only_vlm_server_and_v1_6_model_dir():
+    """run.sh 只允许启动 OCR 常驻服务并指向 PaddleOCR-VL-1.6 模型目录。"""
     content = open("run.sh").read()
 
-    assert "paddleocr_vl_batch_runner.py" not in content, (
-        "run.sh 不应再启动旧 OCR runner 子进程；当前唯一 OCR 入口是 vlm_server 常驻服务"
-    )
+    legacy_script = "paddleocr_vl_" + "batch_runner.py"
+    assert legacy_script not in content
     # 唯一应该出现的 PaddleOCR-VL-1.6 模型目录是 models/ppstructure/PaddleOCR-VL-1.6
     # 1.5 名字仅作为 verified 镜像里 paddlex 3.5.0 已注册 registry 名字使用（架构兼容 1.6）
     assert "OCR_VLM_MODEL_DIR=" in content
     assert "OCR_VLM_MODEL_DIR=\"$ROOT_DIR/models/ppstructure/PaddleOCR-VL-1.6\"" in content, (
-        "run.sh 的 OCR_VLM_MODEL_DIR 必须只指向 1.6 目录；1.5 不能再作为 fallback 模型目录"
+        "run.sh 的 OCR_VLM_MODEL_DIR 必须只指向 1.6 目录"
     )
 
 
@@ -569,10 +571,9 @@ def test_wsl_stop_script_stops_vlm_server_to_release_gpu_memory():
 
     assert "paddleocr-vlm-server" in content
     assert "docker compose stop paddleocr-vlm-server" in content
-    # 必须清理可能残留的旧 runner 子进程（PaddleOCR-VL batch runner 在 GPU 显存里加载模型）
-    assert "paddleocr_vl_batch_runner.py" in content, (
-        "stop.sh 应 pkill 残留的旧 OCR runner 子进程，避免显存无法释放"
-    )
+    legacy_script = "paddleocr_vl_" + "batch_runner.py"
+    assert legacy_script not in content
+    assert "pkill" not in content
 
 
 def test_docker_compose_defines_paddleocr_vlm_server():
@@ -634,7 +635,10 @@ def test_offline_bundle_script_defines_vlm_server_image_and_tag():
     assert digest in content
     # 本地 tag 字符串必须出现
     assert local_tag in content
-    # 必须按 pull → tag → save 三步走
+    assert "$ROOT_DIR/deploy/offline-images" in content
+    assert "paddleocr-vlm-server.tar" in content
+    assert "OFFLINE_IMAGE_DIR" in content
+    # 无本地正式 tar 时才按 pull → tag → save 三步走
     assert "docker pull" in content
     assert "docker tag" in content
     assert "docker save" in content

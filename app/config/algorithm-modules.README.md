@@ -13,9 +13,9 @@
 
 ## 本地 OCR 接入
 
-### 服务化 OCR（正式部署主路径）
+### 服务化 OCR
 
-正式 Docker 部署优先使用 `local_ocr_mode: vlm_server`。旧 `runner` 模式保留为 fallback，不再作为性能优化主路径。服务化模式复用 `temp/paddlepaddle` 的常驻 vLLM server 运行栈，但不复用其 `manage.bat`、`input/output/processed` 归档流程；任务生命周期仍由后端管理。
+正式部署和本地启动均使用 `paddleocr-vlm-server` 常驻服务。离线镜像 tar 放在 `deploy/offline-images/paddleocr-vlm-server.tar`，任务生命周期仍由后端管理。
 
 服务化 OCR 当前验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 `paddleocr-genai-vllm-server` vLLM 镜像。服务常驻显存后，多个任务可并发提交多页图片，模型加载只发生一次；OCR 阶段和 LLM 字段抽取阶段在 8GB 显存下由 GPU 阶段队列串行执行，避免互相抢占导致 OOM。
 
@@ -26,19 +26,16 @@ conda run -n manzufei_ocr python -m pip install paddlepaddle-gpu==3.2.1 -i https
 conda run -n manzufei_ocr python -m pip install "paddleocr[doc-parser]==3.5.0" "paddlex[serving]==3.5.0"
 ```
 
-Docker 离线部署镜像需要区分模式：服务化 OCR（`local_ocr_mode: vlm_server`）使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.2`（后端容器内的客户端栈）；runner fallback（`local_ocr_mode: runner`）则使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`（旧栈锁定值）。两种模式不可混用；不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
+Docker 离线部署镜像使用 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.2`（后端容器内的客户端栈）。不要只锁定 `paddleocr` 而放宽 `paddlex`，PaddleOCR-VL 的实际 pipeline 逻辑依赖 PaddleX。
 
-Python runner 配置：
+OCR 服务配置：
 
 ```yaml
 algorithms:
   enable_local_ocr: true
-  local_ocr_python_executable: "/home/kbzz1/miniconda3/envs/manzufei_ocr/bin/python"
-  local_ocr_script_path: "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py"
-  local_ocr_work_root: "/tmp/manzufei_ocr_ocr_runs"
+  local_ocr_vlm_server_url: "http://paddleocr-vlm-server:8080/v1"
+  local_ocr_vlm_timeout_seconds: 240
   local_ocr_max_new_tokens: 1024
-  local_ocr_timeout_seconds: 180
-  local_ocr_device:
   local_ocr_max_pixels: 501760
 ```
 
@@ -50,15 +47,9 @@ algorithms:
 
 2026-05-25 复发根因定位：手机上传原图 1800x4000，比此前验证样本 1919x1080 大很多。即使限制了 `max_new_tokens`，视觉输入过大仍会让显存接近满载并长时间低利用率。`local_ocr_max_pixels=1003520` 仍存在长尾卡死，当前默认传入 `local_ocr_max_pixels=501760`（28*28*640）作为 8GB 显卡保守上限。
 
-2026-05-28 Windows Docker 部署根因定位：同一参数在 WSL conda 环境正常，但 Windows Docker 离线包中 OCR 子进程在加载 PaddleOCR-VL 权重后长时间低 GPU 利用率并最终 540 秒超时。日志确认 runner 参数为 `--device gpu:0 --max-new-tokens 1024 --max-pixels 501760`，镜像和代码已同步；差异为 Docker 镜像安装了 `paddlex==3.5.2`，而已验证 WSL 环境为 `paddlex==3.5.0`。将 Docker 依赖回退并锁定到 `paddlex[ocr]==3.5.0` 后，Windows OCR 验证通过。
+`local_ocr_vlm_timeout_seconds` 默认 240，表示单页 OCR 服务调用超时预算。单页 OCR 超过该预算视为外部模块异常并进入失败，避免界面长期停在“处理中”。
 
-2026-05-29 Windows Docker 复发根因定位：显存已被 PaddleOCR-VL 加载满，但 GPU 利用率低且事件流停在 `ocr_runner_started`。复现发现 OCR 子进程 stdout/stderr 使用 `PIPE`，父进程在子进程退出前不读取；PaddleOCR/PaddleX 日志写满管道后会阻塞推理进程。后端改为将 runner stdout/stderr 写入工作目录日志文件，并只把尾部摘要写入事件日志，避免日志管道反压导致假性 GPU 卡死。
-
-`local_ocr_timeout_seconds` 默认 180，表示单页 OCR 超时预算；多页任务的 runner 超时按页数线性放大。单页 OCR 超过 180 秒视为外部模块异常并进入失败，避免界面长期停在“处理中”。
-
-同一图片放在 `/tmp` 工作目录下可正常返回，而放在 `data/ocr_runs` 下出现过 120 秒超时；当前配置将 `local_ocr_work_root` 指向 `/tmp/manzufei_ocr_ocr_runs`。
-
-OCR runner 执行超时或异常时，事件日志记录 `ocr_runner_started`、`ocr_runner_finished`、`ocr_runner_timeout`，包含退出码和 stdout/stderr 尾部。整体 Docker 部署中，OCR runner 作为后端进程内的子进程调用，不再单独起 OCR 容器。
+OCR 服务调用开始和结束时，事件日志记录 `ocr_vlm_started`、`ocr_vlm_finished`，包含服务 URL、页数、推理参数、耗时、输出大小和失败原因。
 
 ## 本地 LLM 字段抽取
 

@@ -38,7 +38,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
 
         started = time.monotonic()
         self._emit_event(
-            "ocr_runner_started",
+            "ocr_vlm_started",
             task_id=task_id,
             backend="vlm_server",
             page_count=len(pages),
@@ -84,7 +84,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
         except RuntimeError as exc:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             self._emit_event(
-                "ocr_runner_finished",
+                "ocr_vlm_finished",
                 task_id=task_id,
                 backend="vlm_server",
                 elapsed_ms=elapsed_ms,
@@ -97,7 +97,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
 
         merged_text = "\n\n".join(merged_parts)
         self._emit_event(
-            "ocr_runner_finished",
+            "ocr_vlm_finished",
             task_id=task_id,
             backend="vlm_server",
             elapsed_ms=int((time.monotonic() - started) * 1000),

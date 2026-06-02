@@ -23,6 +23,7 @@
 ## 目录职责
 
 - `run.bat`、`stop.bat`：Windows 离线运行入口。
+- `deploy/offline-images/`：正式离线 Docker 镜像 tar 缓存，用于本地启动和离线打包。
 - `app/backend/`：本地后端服务，负责本地 API、状态、持久化、导出、外部 OCR/文档解析端口编排，以及慢阻肺专病字段抽取。
 - `app/frontend/`：电脑端工作台与手机端采集页。
 - `app/config/`：应用配置命名空间，不提交真实部署参数。

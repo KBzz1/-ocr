@@ -33,21 +33,17 @@ type FieldExtractionPort = {
 
 ## 本地 OCR 适配器
 
-真实 OCR 接入使用本地 Python runner 适配 `DocumentParsingPort`：
+真实 OCR 接入使用 `paddleocr-vlm-server` 常驻服务适配 `DocumentParsingPort`：
 
-- 配置项：`algorithms.enable_local_ocr`、`local_ocr_python_executable`、`local_ocr_script_path`、`local_ocr_work_root`、`local_ocr_max_new_tokens`、`local_ocr_timeout_seconds`、`local_ocr_device`、`local_ocr_max_pixels`。
-- 后端只负责复制任务图片到 runner 输入目录、执行 runner、读取 `all_results.md` 并转换为 `DocumentResult`。
-- runner 调用外部 `paddleocr.PaddleOCRVL`；本仓库不实现 OCR 模型、图像预处理、裁剪或透视矫正。
-- PaddleOCR-VL 运行栈需锁定已验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.0`。Docker 离线镜像使用 `paddlex[ocr]==3.5.0`，WSL conda 开发环境使用 `paddlex[serving]==3.5.0`。不得让 Docker 依赖漂移到未验证的 PaddleX 小版本。
-- 输出 Markdown 中缺失某页结果时，该页标记 `failed`，整体任务按文档解析部分失败进入 `failed`。
-- `local_ocr_max_new_tokens` 默认 1024。PaddleX VLM 推理默认 `max_new_tokens=8192`，在 8GB 显存 GPU 上 KV cache 超出显存容量导致极慢甚至卡死；1024 对单页病历足够完整。2026-05-23 验证：RTX 4060 上约 46 秒完成。
-- `local_ocr_max_pixels` 默认 501760（28*28*640），限制 PaddleOCR-VL 视觉输入尺寸。2026-05-25 复发根因：手机上传原图 1800x4000，显著大于此前 1919x1080 验证样本；1003520 仍可能触发 PaddleOCR-VL 显存接近满载且长时间低利用率，501760 作为 8GB 显卡保守默认值。
-- 2026-05-28 Windows Docker 复发根因：镜像中 `paddlex==3.5.2` 与 WSL 已验证的 `paddlex==3.5.0` 不一致，导致同一 runner 参数在 Windows Docker 下加载权重后长时间低 GPU 利用率并超时。日志排除旧镜像、旧代码和 CPU-only 配置后，将 Docker 依赖锁回 `paddlex[ocr]==3.5.0`，Windows OCR 验证通过。
-- 2026-05-29 Windows Docker 复发根因：OCR runner stdout/stderr 由父进程用 `PIPE` 接收但运行期间不读取；PaddleOCR/PaddleX 输出较多时管道缓冲区写满，子进程会在已加载模型和占满显存后阻塞，表现为显存满、GPU 利用率低且无 `ocr_runner_finished`。后端必须把 runner stdout/stderr 写入工作目录日志文件，只在事件中记录尾部摘要，避免管道阻塞。
-- `local_ocr_timeout_seconds` 默认 180，表示单页 OCR 超时预算；多页任务 runner 超时按页数线性放大。OCR 单页超过 180 秒视为外部模块异常并进入 `failed`，避免前端长期停留在“处理中”。
-- `local_ocr_work_root` 指向 `/tmp/manzufei_ocr_ocr_runs`，避免 `data/ocr_runs` 下出现过 120 秒超时。
-- OCR runner 执行超时或异常时，事件日志记录 `ocr_runner_started`、`ocr_runner_finished`、`ocr_runner_timeout`，包含退出码和 stdout/stderr 尾部。
-- 整体 Docker 部署中，OCR runner 作为后端进程内的子进程调用，不再单独起 OCR 容器。
+- 配置项：`algorithms.enable_local_ocr`、`local_ocr_vlm_server_url`、`local_ocr_vlm_timeout_seconds`、`local_ocr_max_new_tokens`、`local_ocr_max_pixels`。
+- 后端只负责按页提交任务图片到本地 OCR 服务、读取 PaddleOCR-VL Markdown 输出并转换为 `DocumentResult`。
+- OCR 服务调用外部 `paddleocr.PaddleOCRVL(vl_rec_backend="vllm-server")`；本仓库不实现 OCR 模型、图像预处理、裁剪或透视矫正。
+- 服务化 OCR 运行栈锁定已验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 vLLM server 镜像 digest `sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621`。
+- 任一页面缺失输出时，该页标记 `failed`，整体任务按文档解析部分失败进入 `failed`。
+- `local_ocr_max_new_tokens` 默认 1024，`local_ocr_max_pixels` 默认 501760（28*28*640），作为 8GB 显存保守默认值。
+- `local_ocr_vlm_timeout_seconds` 默认 240，单页 OCR 超过该预算视为外部模块异常并进入 `failed`，避免前端长期停留在“处理中”。
+- OCR 服务调用开始和结束时，事件日志记录 `ocr_vlm_started`、`ocr_vlm_finished`，包含服务 URL、页数、推理参数、耗时、输出大小和失败原因。
+- 整体 Docker 部署中，OCR 只通过常驻 `paddleocr-vlm-server` 容器提供。
 
 ## 本地 LLM 抽取适配器
 

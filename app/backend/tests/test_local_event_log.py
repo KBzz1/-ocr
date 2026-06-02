@@ -80,58 +80,49 @@ class TestLocalEventLog:
         record = read_jsonl(log.current_path)[0]
         assert record["public_base_url"] == "http://172.20.10.5:8081"
 
-    def test_writes_ocr_runner_diagnostic_events_without_ocr_text(self, tmp_path):
+    def test_writes_ocr_vlm_diagnostic_events_without_ocr_text(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
 
         log.write(
-            "ocr_runner_started",
+            "ocr_vlm_started",
             task_id="task-001",
-            backend="python",
+            backend="vlm_server",
             page_count=2,
             timeout_seconds=30,
-            work_dir="/tmp/ocr-runs/task-001",
-            run_log_path="/tmp/ocr-runs/task-001/runner-progress.jsonl",
-            command="python paddleocr_vl_batch_runner.py",
+            server_url="http://paddleocr-vlm-server:8080/v1",
             merged_text="完整 OCR 文本不应进入日志",
         )
         log.write(
-            "ocr_runner_finished",
+            "ocr_vlm_finished",
             task_id="task-001",
-            backend="python",
+            backend="vlm_server",
             elapsed_ms=1200,
             exit_code=0,
             output_exists=True,
             output_bytes=128,
-            stdout_tail="done",
-            stderr_tail="",
         )
 
         records = read_jsonl(log.current_path)
-        assert [record["event"] for record in records] == ["ocr_runner_started", "ocr_runner_finished"]
+        assert [record["event"] for record in records] == ["ocr_vlm_started", "ocr_vlm_finished"]
         assert records[0]["page_count"] == 2
         assert "merged_text" not in records[0]
 
-    def test_preserves_ocr_runner_error_tail_for_diagnostics(self, tmp_path):
+    def test_preserves_ocr_vlm_error_reason_for_diagnostics(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
-        stderr_tail = (
-            "Traceback...\n"
-            "paddlex.utils.deps.DependencyError: `PaddleOCR-VL-1.5` requires additional dependencies. "
-            "To install them, run `pip install \"paddlex[ocr]==<PADDLEX_VERSION>\"`."
-        )
+        reason = "OCR 服务超时（> 240 秒）"
 
         log.write(
-            "ocr_runner_failed",
+            "ocr_vlm_finished",
             task_id="task-001",
+            backend="vlm_server",
             exit_code=1,
             output_exists=False,
             output_bytes=0,
-            stderr_tail=stderr_tail,
+            reason=reason,
         )
 
         record = read_jsonl(log.current_path)[0]
-        assert "PaddleOCR-VL-1.5" in record["stderr_tail"]
-        assert "paddlex[ocr]" in record["stderr_tail"]
-        assert not record["stderr_tail"].endswith("...[truncated]")
+        assert record["reason"] == reason
 
     def test_rejects_unknown_event_name(self, tmp_path):
         log = LocalEventLog(str(tmp_path))

@@ -154,7 +154,7 @@ class COPDFieldExtractor:
             regenerated = payload.get("fields") if isinstance(payload, dict) else None
             if not isinstance(regenerated, list):
                 raise ValueError(f"LLM {strategy.name} response must contain fields list")
-            fields = regenerated
+            fields = _merge_regenerated_fields(fields, regenerated)
         return fields
 
     def _normalize_section_group_fields(self, fields: list[dict], group_name: str) -> list[dict]:
@@ -434,6 +434,27 @@ def _has_invalid_source_hint(fields: list[dict], allowed_source_hints: set[str])
         if source_hint not in allowed_source_hints and source_hint != SOURCE_HINT_NOT_FOUND:
             return True
     return False
+
+
+def _merge_regenerated_fields(previous: list[dict], regenerated: list[dict]) -> list[dict]:
+    previous_by_key = {
+        item.get("field_key"): item
+        for item in previous
+        if isinstance(item, dict) and isinstance(item.get("field_key"), str)
+    }
+    merged = []
+    for item in regenerated:
+        if not isinstance(item, dict):
+            continue
+        field_key = item.get("field_key")
+        base = previous_by_key.get(field_key)
+        if isinstance(base, dict):
+            combined = dict(base)
+            combined.update(item)
+            merged.append(combined)
+        else:
+            merged.append(item)
+    return merged
 
 
 def _append_quality_flag(item: dict, flag: str, verdict: dict) -> None:

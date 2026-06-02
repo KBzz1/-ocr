@@ -19,6 +19,7 @@ app/frontend/dist/
 # 运行时
 *.log
 *.pid
+.superpowers/
 
 # PaddlePaddle / PaddleOCR 临时缓存
 temp/
@@ -37,6 +38,7 @@ data/tasks/*
 exports/*
 output/*
 logs/*
+deploy/offline-images/*.tar
 !data/uploads/README.md
 !data/results/README.md
 !data/temp/README.md

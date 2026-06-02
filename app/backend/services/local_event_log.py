@@ -13,7 +13,6 @@ SENSITIVE_KEYS = {
     "base64",
     "image_base64",
 }
-LONG_DIAGNOSTIC_KEYS = {"stdout_tail", "stderr_tail", "command"}
 ID_CARD_RE = re.compile(r"(?<!\d)\d{6}\d{8}\d{3}[\dXx](?!\d)")
 PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 BASE64_RE = re.compile(
@@ -29,10 +28,8 @@ ALLOWED_EVENTS = {
     "task_processing_started",
     "processing_stage_started",
     "processing_stage_finished",
-    "ocr_runner_started",
-    "ocr_runner_finished",
-    "ocr_runner_failed",
-    "ocr_runner_timeout",
+    "ocr_vlm_started",
+    "ocr_vlm_finished",
     "task_processing_failed",
     "task_review_ready",
     "review_field_saved",
@@ -53,54 +50,24 @@ EVENT_FIELDS = {
     "task_processing_started": {"task_id"},
     "processing_stage_started": {"task_id", "stage", "page_count"},
     "processing_stage_finished": {"task_id", "stage", "page_count", "elapsed_ms", "status"},
-    "ocr_runner_started": {
+    "ocr_vlm_started": {
         "task_id",
         "backend",
         "server_url",
         "page_count",
         "timeout_seconds",
-        "work_dir",
-        "run_log_path",
-        "container_name",
-        "command",
-        "python_executable",
-        "script_path",
-        "cache_dir",
-        "device",
         "max_new_tokens",
         "max_pixels",
         "input_files",
     },
-    "ocr_runner_finished": {
+    "ocr_vlm_finished": {
         "task_id",
         "backend",
         "elapsed_ms",
         "exit_code",
         "output_exists",
         "output_bytes",
-        "stdout_tail",
-        "stderr_tail",
         "reason",
-    },
-    "ocr_runner_failed": {
-        "task_id",
-        "backend",
-        "elapsed_ms",
-        "exit_code",
-        "output_exists",
-        "output_bytes",
-        "stdout_tail",
-        "stderr_tail",
-    },
-    "ocr_runner_timeout": {
-        "task_id",
-        "backend",
-        "timeout_seconds",
-        "work_dir",
-        "run_log_path",
-        "container_name",
-        "stdout_tail",
-        "stderr_tail",
     },
     "task_processing_failed": {"task_id", "error_code", "stage", "reason"},
     "task_review_ready": {"task_id", "schema_version"},
@@ -128,7 +95,7 @@ def _sanitize_value(key: str, value):
         text = ID_CARD_RE.sub("[id_card]", text)
         text = PHONE_RE.sub("[phone]", text)
         text = BASE64_RE.sub("[base64]", text)
-        limit = 2000 if lowered in LONG_DIAGNOSTIC_KEYS else 120
+        limit = 120
         if len(text) > limit:
             text = text[:limit] + "...[truncated]"
         return text

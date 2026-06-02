@@ -2,7 +2,7 @@
 
 ## 当前策略
 
-OCR/文档解析和后端服务统一打包为 Docker 镜像交付。开发阶段使用本地 conda 环境的 Python runner；医院现场部署不依赖开发机 conda 环境，统一走 Docker 容器。
+OCR/文档解析和后端服务统一打包为 Docker 镜像交付。开发和医院现场均通过本地 `paddleocr-vlm-server` 常驻服务调用 OCR；医院现场部署不依赖开发机 conda 环境，统一走 Docker 容器。
 
 ## 医院现场目标
 
@@ -20,23 +20,11 @@ OCR/文档解析和后端服务统一打包为 Docker 镜像交付。开发阶�
 
 ## OCR 接入
 
-后端默认通过 `paddleocr-vlm-server` 常驻服务调用 PaddleOCR-VL。该服务使用官方 `paddleocr-genai-vllm-server` 镜像、vLLM backend 和挂载的 `models/ppstructure/PaddleOCR-VL-1.6/` 模型目录。后端不再为每个任务重复启动 OCR runner 和加载模型；任务只通过 `DocumentParsingPort` 提交多页图片并保存 `document_result.json`。
+后端默认通过 `paddleocr-vlm-server` 常驻服务调用 PaddleOCR-VL。该服务使用官方 `paddleocr-genai-vllm-server` 镜像、vLLM backend 和挂载的 `models/ppstructure/PaddleOCR-VL-1.6/` 模型目录。任务只通过 `DocumentParsingPort` 提交多页图片并保存 `document_result.json`。
 
 5060 8GB 显存下启用 GPU 阶段队列：OCR 阶段和 LLM 字段抽取阶段串行执行，不允许同时抢占显存。OCR 成功而 LLM 失败时，重试复用已保存的 `document_result.json`，只重跑字段抽取。
 
-服务化 OCR 当前验证组合来自 `temp/paddlepaddle`：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 vLLM server 镜像离线 tar digest `sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621`。该组合已在 RTX 4070 Laptop 8GB 上流畅运行，目标 RTX 5060 8GB 按同显存级别保守参数部署。
-
-## OCR runner 模式（fallback）
-
-旧 `runner` 模式保留为 fallback，不再作为正式部署的性能优化主路径。后端通过子进程调用 `paddleocr_vl_batch_runner.py`，传入 `--max-new-tokens 1024` 限制 VLM 生成长度，并传入 `--max-pixels 501760` 控制视觉输入尺寸。PaddleX 默认 `max_new_tokens=8192`，在 8GB 显存 GPU 上会超出 KV cache 容量导致极慢。
-
-2026-05-23 验证：RTX 4060 上 `max_new_tokens=1024`，单页病历约 46 秒完成，输出完整。
-
-2026-05-28 Windows Docker 验证：同一参数在 WSL conda 环境正常，Windows Docker 离线包中若 `paddlex` 漂移到 `3.5.2`，会出现加载 PaddleOCR-VL 权重后长时间低 GPU 利用率并最终超时。runner 模式部署镜像必须锁定 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`，并在打包后用 `docker run --rm manzufei-ocr:0.1.0 python -m pip show paddlepaddle-gpu paddleocr paddlex` 核对版本。注意：runner 模式的 `paddlex[ocr]==3.5.0` 是旧栈锁定值，与上面服务化 OCR `paddlex==3.5.2` 不同，二者不可混用。
-
-2026-05-29 Windows Docker 复发定位：如果事件流停在 `ocr_runner_started`，显存已满但 GPU 利用率长期很低，需同时排查 runner 日志管道阻塞。后端不得用未读取的 `PIPE` 承接 PaddleOCR/PaddleX stdout/stderr；runner 输出应落到工作目录日志文件，事件日志只记录尾部摘要，避免日志写满管道后阻塞已经加载模型的 OCR 子进程。
-
-runner 模式作为后端进程内的子进程调用，不需要单独起 OCR 容器；与 vlm_server 模式共用同一组 GPU，必须由 GPU 阶段队列避免并发抢占。
+服务化 OCR 当前验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 vLLM server 镜像离线 tar digest `sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621`。离线镜像 tar 固定放在 `deploy/offline-images/paddleocr-vlm-server.tar`。该组合已在 RTX 4070 Laptop 8GB 上流畅运行，目标 RTX 5060 8GB 按同显存级别保守参数部署。
 
 ## 当前已验证的问题
 
@@ -54,6 +42,6 @@ Docker 化时必须把该兼容性处理固化到镜像构建步骤中，不能�
 
 正式现场验收使用 `docs/部署/离线验收记录.md`，记录目标 Windows 电脑环境、镜像导入、启动、GPU/OCR/LLM 依赖核验、业务闭环和日志留存。验收过程使用脱敏测试图片，不默认收集病历原图、完整 OCR 原文或模型完整输出。
 
-打包脚本会重新构建前端和 Docker 镜像，并将 `app/config/local.docker.yaml` 复制为部署包内的 `app/config/local.yaml`。如果 OCR/GPU 行为和 WSL 开发环境不一致，优先比较 `backend-events.jsonl` 中的 runner 参数、容器内 Python 包版本、镜像创建时间和实际挂载的 Windows 部署目录，避免直接假设是参数问题。
+打包脚本会重新构建前端和 Docker 镜像，并将 `app/config/local.docker.yaml` 复制为部署包内的 `app/config/local.yaml`。如果 OCR/GPU 行为和 WSL 开发环境不一致，优先比较 `backend-events.jsonl` 中的服务 URL、推理参数、容器内 Python 包版本、镜像创建时间和实际挂载的 Windows 部署目录，避免直接假设是参数问题。
 
 不压缩 zip 的现场同步流程可直接覆盖部署目录中的 `images/manzufei-ocr.tar`、`docker-compose.yml`、`app/config/local.yaml` 和 Windows 启停脚本。同步后必须运行 `02_stop.bat`、`00_import_image.bat`、`01_start.bat`，确保 Docker Desktop 加载的是最新镜像而不是旧容器。

@@ -74,7 +74,7 @@ def test_vlm_server_port_parses_pages_in_order(tmp_path):
 
 
 def test_vlm_server_port_reads_markdown_saved_by_paddleocr_result(tmp_path):
-    """temp/paddlepaddle 的正式调用路径通过 save_to_markdown 取 OCR 结果。"""
+    """PaddleOCR 结果对象可通过 save_to_markdown 提供 OCR Markdown。"""
     image = tmp_path / "page.jpg"
     image.write_bytes(b"1")
     port = PaddleOCRVLMServerDocumentPort(
@@ -138,7 +138,7 @@ def test_vlm_server_port_emits_diagnostic_events(tmp_path):
         {"task_id": "task-001", "pages": [{"page_id": "p1", "page_no": 1, "processed_path": str(image)}]}
     )
 
-    assert [event[0] for event in events] == ["ocr_runner_started", "ocr_runner_finished"]
+    assert [event[0] for event in events] == ["ocr_vlm_started", "ocr_vlm_finished"]
     assert events[0][1]["backend"] == "vlm_server"
     assert events[0][1]["server_url"] == "http://paddleocr-vlm-server:8080/v1"
     assert events[1][1]["output_bytes"] > 0
@@ -197,8 +197,8 @@ def test_vlm_server_port_timeout_event_logged_with_terminated_status(tmp_path):
             }
         )
 
-    finished_events = [payload for event, payload in events if event == "ocr_runner_finished"]
-    assert finished_events, "应当发出 ocr_runner_finished 事件（含失败原因）"
+    finished_events = [payload for event, payload in events if event == "ocr_vlm_finished"]
+    assert finished_events, "应当发出 ocr_vlm_finished 事件（含失败原因）"
     assert finished_events[0]["exit_code"] != 0
     assert "timeout" in finished_events[0].get("reason", "").lower() or "超时" in finished_events[0].get("reason", "")
 

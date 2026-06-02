@@ -55,5 +55,3 @@ echo "Stopping OCR VLM server..."
   cd "$ROOT_DIR"
   docker compose stop paddleocr-vlm-server >/dev/null 2>&1 || true
 )
-
-pkill -f "paddleocr_vl_batch_runner.py" >/dev/null 2>&1 || true

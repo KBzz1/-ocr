@@ -254,7 +254,7 @@ algorithms:
     assert config["llm_enable_verification"] is False
 
 
-def test_load_config_supports_local_ocr_settings(tmp_path):
+def test_load_config_supports_vlm_server_ocr_settings(tmp_path):
     from app.backend.config import load_config
 
     config_dir = tmp_path / "config"
@@ -263,12 +263,9 @@ def test_load_config_supports_local_ocr_settings(tmp_path):
         """
 algorithms:
   enable_local_ocr: true
-  local_ocr_python_executable: /opt/conda/envs/manzufei_ocr/bin/python
-  local_ocr_script_path: ./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py
-  local_ocr_work_root: /tmp/manzufei_ocr_ocr_runs
+  local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
+  local_ocr_vlm_timeout_seconds: 240
   local_ocr_max_new_tokens: 1024
-  local_ocr_timeout_seconds: 1200
-  local_ocr_device: gpu:0
   local_ocr_max_pixels: 200000
 """,
         encoding="utf-8",
@@ -277,12 +274,8 @@ algorithms:
     config = load_config(str(config_dir))
 
     assert config["enable_local_ocr"] is True
-    assert config["local_ocr_python_executable"] == "/opt/conda/envs/manzufei_ocr/bin/python"
-    assert config["local_ocr_script_path"].endswith("paddleocr_vl_batch_runner.py")
-    assert config["local_ocr_work_root"] == "/tmp/manzufei_ocr_ocr_runs"
-    assert config["local_ocr_max_new_tokens"] == 1024
-    assert config["local_ocr_timeout_seconds"] == 1200
-    assert config["local_ocr_device"] == "gpu:0"
+    assert config["local_ocr_vlm_server_url"] == "http://paddleocr-vlm-server:8080/v1"
+    assert config["local_ocr_vlm_timeout_seconds"] == 240
     assert config["local_ocr_max_new_tokens"] == 1024
     assert config["local_ocr_max_pixels"] == 200000
 
@@ -309,23 +302,6 @@ def test_public_base_url_rejects_blank_host_from_environment(tmp_path, monkeypat
     monkeypatch.setenv("MANZUFEI_PUBLIC_BASE_URL", "http:// :8081")
 
     with pytest.raises(ValueError, match="public_base_url"):
-        load_config(str(config_dir))
-
-
-def test_local_ocr_timeout_must_be_positive(tmp_path):
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  local_ocr_timeout_seconds: 0
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="local_ocr_timeout_seconds"):
         load_config(str(config_dir))
 
 
@@ -381,54 +357,6 @@ def test_static_dir_overridable_via_local_yaml(tmp_path):
 
     assert os.path.isabs(config["static_dir"])
     assert config["static_dir"].endswith("custom_dist")
-
-
-def test_load_config_supports_vlm_server_ocr_settings(tmp_path):
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  enable_local_ocr: true
-  local_ocr_mode: vlm_server
-  local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
-  local_ocr_vlm_timeout_seconds: 240
-  local_ocr_max_new_tokens: 1024
-  local_ocr_max_pixels: 501760
-  gpu_stage_queue_enabled: true
-""",
-        encoding="utf-8",
-    )
-
-    config = load_config(str(config_dir))
-
-    assert config["enable_local_ocr"] is True
-    assert config["local_ocr_mode"] == "vlm_server"
-    assert config["local_ocr_vlm_server_url"] == "http://paddleocr-vlm-server:8080/v1"
-    assert config["local_ocr_vlm_timeout_seconds"] == 240
-    assert config["local_ocr_max_new_tokens"] == 1024
-    assert config["local_ocr_max_pixels"] == 501760
-    assert config["gpu_stage_queue_enabled"] is True
-
-
-def test_local_ocr_mode_must_be_supported(tmp_path):
-    import pytest
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  local_ocr_mode: direct_socket
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="local_ocr_mode"):
-        load_config(str(config_dir))
 
 
 def test_local_ocr_vlm_timeout_must_be_positive(tmp_path):

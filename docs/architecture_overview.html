@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>慢阻肺病历 OCR 工作站 · 架构全景图</title>
+<style>
+  :root {
+    --bg-0: #0b1020;
+    --bg-1: #0f1830;
+    --bg-2: #131e3d;
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --text: #e6edf6;
+    --text-dim: #9fb0c8;
+    --text-muted: #6c7d99;
+    --brand: #7aa2ff;
+    --brand-2: #5ee0d0;
+    --pink: #ff6aa9;
+    --amber: #ffb86b;
+    --green: #6be59b;
+    --red: #ff7a7a;
+    --violet: #b285ff;
+    --code-bg: #0a1226;
+    --shadow: 0 12px 40px rgba(8, 12, 30, 0.45);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(122,162,255,0.18), transparent 60%),
+      radial-gradient(900px 500px at 90% 0%, rgba(94,224,208,0.15), transparent 60%),
+      radial-gradient(700px 600px at 50% 100%, rgba(178,133,255,0.10), transparent 60%),
+      linear-gradient(180deg, var(--bg-0), var(--bg-1) 60%, #0a1124);
+    color: var(--text);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  /* —— 顶部导航 —— */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(14px);
+    background: rgba(11,16,32,0.7);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1200px; margin: 0 auto; padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px; font-weight: 700;
+  }
+  .brand .logo {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: conic-gradient(from 210deg, #7aa2ff, #5ee0d0, #b285ff, #7aa2ff);
+    display: grid; place-items: center; color: #0b1020;
+    box-shadow: 0 6px 20px rgba(122,162,255,0.35);
+    font-size: 18px;
+  }
+  .brand .title { font-size: 16px; letter-spacing: 0.4px; }
+  .brand .subtitle { color: var(--text-dim); font-weight: 400; font-size: 12px; }
+  .nav-links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav-links a {
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    border: 1px solid transparent;
+    transition: all .2s ease;
+  }
+  .nav-links a:hover {
+    color: var(--text);
+    background: rgba(255,255,255,0.04);
+    border-color: var(--line);
+  }
+
+  /* —— Hero —— */
+  .hero {
+    max-width: 1200px; margin: 0 auto; padding: 90px 28px 60px;
+    text-align: center;
+  }
+  .hero .eyebrow {
+    display: inline-block;
+    color: var(--brand-2);
+    border: 1px solid rgba(94,224,208,0.35);
+    background: rgba(94,224,208,0.08);
+    padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; letter-spacing: 1.5px;
+  }
+  .hero h1 {
+    font-size: 44px; margin: 18px auto 14px; line-height: 1.2;
+    background: linear-gradient(135deg, #fff, #b9c8ff 40%, #5ee0d0 80%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    max-width: 900px;
+  }
+  .hero p {
+    color: var(--text-dim); max-width: 760px; margin: 0 auto;
+    font-size: 16px;
+  }
+  .pill-row {
+    margin-top: 28px;
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  }
+  .pill {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--line);
+    padding: 7px 13px; border-radius: 999px;
+    font-size: 12.5px; color: var(--text-dim);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--brand);
+  }
+  .pill.green::before { background: var(--green); }
+  .pill.amber::before { background: var(--amber); }
+  .pill.violet::before { background: var(--violet); }
+  .pill.pink::before { background: var(--pink); }
+
+  /* —— Flow diagram —— */
+  .flow {
+    max-width: 1200px; margin: 36px auto 80px; padding: 0 28px;
+  }
+  .flow-card {
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+    border-radius: 18px;
+    padding: 28px 24px;
+    box-shadow: var(--shadow);
+  }
+  .flow-title {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+    font-size: 15px; color: var(--text-dim);
+  }
+  .flow-title::before {
+    content: ""; width: 18px; height: 2px; background: linear-gradient(90deg, var(--brand), transparent);
+  }
+  .flow-row {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: center;
+  }
+  .flow-node {
+    background: rgba(122,162,255,0.10);
+    border: 1px solid rgba(122,162,255,0.30);
+    border-radius: 12px;
+    padding: 12px 10px; text-align: center;
+    font-size: 13px;
+  }
+  .flow-node .icon { font-size: 22px; display: block; margin-bottom: 4px; }
+  .flow-node .label { color: var(--text); font-weight: 600; font-size: 13px; }
+  .flow-node .desc { color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+  .flow-arrow { text-align: center; color: var(--brand); font-size: 22px; }
+  .flow-node.mobile  { background: rgba(255,106,169,0.10); border-color: rgba(255,106,169,0.30); }
+  .flow-node.ocr     { background: rgba(255,184,107,0.10); border-color: rgba(255,184,107,0.30); }
+  .flow-node.llm     { background: rgba(178,133,255,0.10); border-color: rgba(178,133,255,0.30); }
+  .flow-node.review  { background: rgba(94,224,208,0.10); border-color: rgba(94,224,208,0.30); }
+  .flow-node.export  { background: rgba(107,229,155,0.10); border-color: rgba(107,229,155,0.30); }
+
+  /* —— Section common —— */
+  section.module {
+    max-width: 1200px; margin: 0 auto; padding: 60px 28px;
+    scroll-margin-top: 88px;
+  }
+  .module-header {
+    display: flex; align-items: flex-end; gap: 16px; margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .module-num {
+    font-size: 64px; line-height: 1; font-weight: 800;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    letter-spacing: -2px;
+  }
+  .module-info h2 {
+    margin: 0 0 4px 0; font-size: 30px;
+  }
+  .module-info p {
+    margin: 0; color: var(--text-dim);
+  }
+  .module-emoji {
+    font-size: 40px; margin-left: auto;
+    filter: drop-shadow(0 8px 20px rgba(122,162,255,0.35));
+  }
+
+  .grid { display: grid; gap: 18px; }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 960px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .flow-row { grid-template-columns: 1fr; }
+    .flow-arrow { transform: rotate(90deg); }
+    .hero h1 { font-size: 32px; }
+    .module-num { font-size: 48px; }
+  }
+
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 22px;
+    transition: all .25s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+    background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  }
+  .card h3 {
+    margin: 0 0 10px; font-size: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h3 .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--brand);
+    box-shadow: 0 0 0 3px rgba(122,162,255,0.18);
+  }
+  .card h3.green .dot { background: var(--green); box-shadow: 0 0 0 3px rgba(107,229,155,0.18); }
+  .card h3.amber .dot { background: var(--amber); box-shadow: 0 0 0 3px rgba(255,184,107,0.18); }
+  .card h3.violet .dot { background: var(--violet); box-shadow: 0 0 0 3px rgba(178,133,255,0.18); }
+  .card h3.pink .dot { background: var(--pink); box-shadow: 0 0 0 3px rgba(255,106,169,0.18); }
+  .card h3.cyan .dot { background: var(--brand-2); box-shadow: 0 0 0 3px rgba(94,224,208,0.18); }
+  .card h3.red .dot { background: var(--red); box-shadow: 0 0 0 3px rgba(255,122,122,0.18); }
+  .card p, .card li { color: var(--text-dim); font-size: 14px; }
+  .card ul { padding-left: 18px; margin: 8px 0; }
+  .card ul li { margin: 4px 0; }
+  .tag {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11.5px; margin: 2px 4px 2px 0;
+    background: rgba(122,162,255,0.12); color: #c6d3ff;
+    border: 1px solid rgba(122,162,255,0.25);
+  }
+  .tag.green  { background: rgba(107,229,155,0.10); color: #b6f0cd; border-color: rgba(107,229,155,0.25); }
+  .tag.amber  { background: rgba(255,184,107,0.10); color: #ffd9a9; border-color: rgba(255,184,107,0.25); }
+  .tag.violet { background: rgba(178,133,255,0.10); color: #ddccff; border-color: rgba(178,133,255,0.25); }
+  .tag.pink   { background: rgba(255,106,169,0.10); color: #ffc1da; border-color: rgba(255,106,169,0.25); }
+  .tag.cyan   { background: rgba(94,224,208,0.10); color: #b1f3ea; border-color: rgba(94,224,208,0.25); }
+  .tag.red    { background: rgba(255,122,122,0.10); color: #ffc1c1; border-color: rgba(255,122,122,0.25); }
+
+  /* —— Code blocks —— */
+  pre.code {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.65;
+    color: #cfe0ff;
+    margin: 8px 0 0;
+  }
+  pre.code .kw { color: #b285ff; }
+  pre.code .fn { color: #5ee0d0; }
+  pre.code .str { color: #ffd9a9; }
+  pre.code .num { color: #ff9fb5; }
+  pre.code .com { color: #6c7d99; font-style: italic; }
+  pre.code .var { color: #7aa2ff; }
+
+  /* —— Pipeline visualizer for LLM —— */
+  .pipeline {
+    display: grid; grid-template-columns: repeat(5, 1fr) ;
+    gap: 8px; margin-top: 16px;
+  }
+  @media (max-width: 880px) { .pipeline { grid-template-columns: 1fr; } }
+  .pipeline .stage {
+    background: linear-gradient(180deg, rgba(178,133,255,0.10), rgba(178,133,255,0.02));
+    border: 1px solid rgba(178,133,255,0.25);
+    border-radius: 14px;
+    padding: 14px;
+    position: relative;
+  }
+  .pipeline .stage .num {
+    position: absolute; top: -10px; left: 14px;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--violet); color: white; font-size: 12px; font-weight: 700;
+  }
+  .pipeline .stage h4 { margin: 4px 0 6px; font-size: 14px; }
+  .pipeline .stage p  { margin: 0; color: var(--text-dim); font-size: 12.5px; }
+
+  /* —— LLM panels (extractor / reviewer) —— */
+  .llm-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 960px) { .llm-panels { grid-template-columns: 1fr; } }
+  .llm-panel {
+    background: linear-gradient(180deg, rgba(178,133,255,0.08), rgba(255,255,255,0.01));
+    border: 1px solid rgba(178,133,255,0.25);
+    border-radius: 18px; padding: 22px;
+  }
+  .llm-panel.reviewer {
+    background: linear-gradient(180deg, rgba(94,224,208,0.08), rgba(255,255,255,0.01));
+    border-color: rgba(94,224,208,0.25);
+  }
+  .llm-panel h3 { margin-top: 0; font-size: 18px; }
+  .llm-panel .role-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: rgba(178,133,255,0.2); display: grid; place-items: center;
+    font-size: 22px; margin-bottom: 12px;
+  }
+  .llm-panel.reviewer .role-icon { background: rgba(94,224,208,0.2); }
+
+  /* —— Status flow —— */
+  .status-flow {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 14px;
+  }
+  .status-chip {
+    padding: 6px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+    border: 1px solid var(--line-strong);
+  }
+  .status-chip.up    { color: #cdd9ff; background: rgba(122,162,255,0.15); }
+  .status-chip.proc  { color: #ffd9a9; background: rgba(255,184,107,0.15); }
+  .status-chip.rev   { color: #b1f3ea; background: rgba(94,224,208,0.15); }
+  .status-chip.done  { color: #b6f0cd; background: rgba(107,229,155,0.15); }
+  .status-chip.fail  { color: #ffc1c1; background: rgba(255,122,122,0.15); }
+  .status-arrow { color: var(--text-muted); }
+
+  /* —— Highlight demo —— */
+  .highlight-demo {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 12px;
+    font-family: "JetBrains Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 2.0;
+    color: #cfe0ff;
+  }
+  mark.hl {
+    background: linear-gradient(transparent 55%, rgba(94,224,208,0.6) 55%);
+    color: #fff;
+    padding: 0 2px; border-radius: 4px;
+  }
+
+  /* —— Field row demo —— */
+  .field-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 110px 110px;
+    gap: 10px; align-items: center;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+  .field-row .name { color: var(--text); font-weight: 600; }
+  .field-row .value { color: var(--text-dim); }
+  .field-row .conf { color: var(--brand-2); font-family: monospace; }
+  .field-row .badge {
+    text-align: center; padding: 4px 8px; border-radius: 8px;
+    font-size: 12px; font-weight: 700;
+  }
+  .badge.pass    { background: rgba(107,229,155,0.15); color: #b6f0cd; }
+  .badge.susp    { background: rgba(255,184,107,0.15); color: #ffd9a9; }
+  .badge.fail    { background: rgba(255,122,122,0.15); color: #ffc1c1; }
+  .badge.uncheck { background: rgba(108,125,153,0.20); color: #c9d3e3; }
+
+  /* —— Architecture diagram —— */
+  .arch {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1fr;
+    gap: 14px;
+    margin-top: 18px;
+  }
+  @media (max-width: 1000px) { .arch { grid-template-columns: 1fr; } }
+  .arch-col {
+    background: rgba(255,255,255,0.025);
+    border: 1px dashed var(--line-strong);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .arch-col h4 {
+    margin: 4px 0 12px;
+    font-size: 13px;
+    color: var(--brand-2);
+    text-transform: uppercase; letter-spacing: 1.5px;
+  }
+  .arch-block {
+    background: rgba(122,162,255,0.08);
+    border: 1px solid rgba(122,162,255,0.22);
+    border-radius: 10px; padding: 8px 12px;
+    font-size: 12.5px; margin-bottom: 8px;
+  }
+  .arch-block strong { color: var(--text); }
+  .arch-block.gpu { background: rgba(255,184,107,0.08); border-color: rgba(255,184,107,0.22); }
+  .arch-block.llm { background: rgba(178,133,255,0.08); border-color: rgba(178,133,255,0.22); }
+  .arch-block.ext { background: rgba(94,224,208,0.08); border-color: rgba(94,224,208,0.22); }
+
+  /* —— Boundary —— */
+  .boundary {
+    background: linear-gradient(135deg, rgba(255,122,122,0.07), rgba(255,184,107,0.04));
+    border: 1px solid rgba(255,122,122,0.25);
+    border-radius: 14px;
+    padding: 18px 22px;
+    margin-top: 28px;
+  }
+  .boundary h4 { margin-top: 0; color: #ffc1c1; }
+  .boundary ul { padding-left: 20px; color: var(--text-dim); margin: 0; }
+  .boundary li { margin: 4px 0; font-size: 13.5px; }
+
+  /* —— Footer —— */
+  footer {
+    max-width: 1200px; margin: 40px auto 60px; padding: 0 28px;
+    color: var(--text-muted); font-size: 13px; text-align: center;
+  }
+  footer .stack {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px;
+  }
+
+  /* —— Anchored heading subtitle —— */
+  .subhead {
+    margin-top: 28px;
+    display: flex; align-items: center; gap: 12px;
+    color: var(--brand-2);
+    font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+  }
+  .subhead::before {
+    content: ""; width: 24px; height: 1px; background: var(--brand-2);
+  }
+
+  /* Animated glow */
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(122,162,255,0.0); }
+    50% { box-shadow: 0 0 0 6px rgba(122,162,255,0.10); }
+  }
+  .pulse { animation: pulseGlow 2.6s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="brand">
+      <div class="logo">🩺</div>
+      <div>
+        <div class="title">慢阻肺病历 OCR 工作站</div>
+        <div class="subtitle">院内离线 · 拍照采集 · 结构化抽取 · 人工核验</div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="#overview">总览</a>
+      <a href="#frontend">① 前端</a>
+      <a href="#backend">② 后端</a>
+      <a href="#ocr">③ OCR</a>
+      <a href="#llm">④ LLM 抽取与审核</a>
+      <a href="#features">⑤ 业务功能</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<section class="hero" id="overview">
+  <span class="eyebrow">OFFLINE · LAN-ONLY · ON-DEVICE LLM</span>
+  <h1>把"逐字录入"变成"拍照上传 + 电脑端核对"</h1>
+  <p>
+    一个完全离线运行在医生本地 Windows 电脑上的病历 OCR 结构化工具。
+    手机扫码拍照 → 本地 PaddleOCR-VLM 解析 → 本地 LLM 抽取 + 审核 →
+    电脑端人工核验 → JSON / Excel 导出。整个链路不依赖云、HIS、CDN，全部在局域网内完成。
+  </p>
+  <div class="pill-row">
+    <span class="pill">React 18 + TypeScript + Vite</span>
+    <span class="pill green">Flask + Python 3 + JsonStore</span>
+    <span class="pill amber">PaddleOCR-VL (vLLM Server)</span>
+    <span class="pill violet">Qwen2.5-7B (llama.cpp / GGUF)</span>
+    <span class="pill pink">qrcode + 手机端采集</span>
+    <span class="pill">GPU Stage Queue</span>
+  </div>
+</section>
+
+<!-- ============ FLOW ============ -->
+<div class="flow">
+  <div class="flow-card">
+    <div class="flow-title">数据主流程 · 从镜头到 Excel</div>
+    <div class="flow-row">
+      <div class="flow-node mobile">
+        <span class="icon">📱</span>
+        <div class="label">手机扫码</div>
+        <div class="desc">拍照 / 多图上传</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node ocr">
+        <span class="icon">🔍</span>
+        <div class="label">PaddleOCR-VL</div>
+        <div class="desc">vLLM 常驻服务</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node llm">
+        <span class="icon">🧠</span>
+        <div class="label">LLM 抽取</div>
+        <div class="desc">分段 + 字段批次</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node review">
+        <span class="icon">✅</span>
+        <div class="label">审核 LLM</div>
+        <div class="desc">verdict 三档</div>
+      </div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="flow-row">
+      <div class="flow-node">
+        <span class="icon">🧑‍⚕️</span>
+        <div class="label">人工核验</div>
+        <div class="desc">原文高亮 + 字段编辑</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node export">
+        <span class="icon">📤</span>
+        <div class="label">导出</div>
+        <div class="desc">JSON / Excel</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node export">
+        <span class="icon">🗃️</span>
+        <div class="label">本地持久化</div>
+        <div class="desc">data / exports / logs</div>
+      </div>
+      <div class="flow-arrow">↺</div>
+      <div class="flow-node llm">
+        <span class="icon">♻️</span>
+        <div class="label">可重抽取</div>
+        <div class="desc">基于已存 OCR 文本</div>
+      </div>
+    </div>
+
+    <div class="status-flow">
+      <strong style="color:var(--text-dim);font-size:13px;margin-right:6px;">任务状态机：</strong>
+      <span class="status-chip up">uploading</span>
+      <span class="status-arrow">→</span>
+      <span class="status-chip proc">processing</span>
+      <span class="status-arrow">→</span>
+      <span class="status-chip rev">review</span>
+      <span class="status-arrow">→</span>
+      <span class="status-chip done">done</span>
+      <span class="status-arrow">|</span>
+      <span class="status-chip fail">failed</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1. FRONTEND ============ -->
+<section class="module" id="frontend">
+  <div class="module-header">
+    <div class="module-num">01</div>
+    <div class="module-info">
+      <h2>前端 · 工作台 & 手机采集页</h2>
+      <p>React 18 + TypeScript + Vite 单页应用，电脑端工作台 + 手机端采集 共用同一份 build，由后端 Flask 负责 SPA fallback 路由。</p>
+    </div>
+    <div class="module-emoji">🖥️</div>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3><span class="dot"></span>技术栈</h3>
+      <p>
+        <span class="tag">React 18.2</span>
+        <span class="tag">TypeScript 5.8</span>
+        <span class="tag">Vite 6</span>
+        <span class="tag green">Vitest</span>
+        <span class="tag green">Playwright</span>
+        <span class="tag pink">MSW</span>
+        <span class="tag amber">qrcode</span>
+      </p>
+      <ul>
+        <li>不引入额外 UI 框架，全部用原生 React + CSS 模块。</li>
+        <li>Vite 单 build → 后端 <code>static_dir</code> 直接发布。</li>
+        <li>测试三层：组件单测、契约测试、Playwright E2E。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>目录结构</h3>
+<pre class="code"><span class="com">src/</span>
+├── <span class="var">api/</span>          <span class="com"># client / errors / tasks / review ...</span>
+├── <span class="var">app/</span>          <span class="com"># 路由表 routes.ts</span>
+├── <span class="var">components/</span>   <span class="com"># workstation / tasks / review / export</span>
+├── <span class="var">hooks/</span>        <span class="com"># useSilentPolling</span>
+├── <span class="var">pages/</span>        <span class="com"># 工作台/任务/审核/手机/导出</span>
+├── <span class="var">state/</span>        <span class="com"># workstationStore.ts</span>
+└── <span class="var">styles/</span>       <span class="com"># status.ts 等</span></pre>
+    </div>
+
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>五个核心页面</h3>
+      <ul>
+        <li><strong>工作台总览</strong>：Hero + 二维码弹窗 + 最近任务 + 统计。</li>
+        <li><strong>任务管理</strong>：列表、筛选、重命名、重抽取。</li>
+        <li><strong>审核页</strong>：原图 / OCR 文本 / 字段三栏布局。</li>
+        <li><strong>手机采集页</strong>：拍照、多图、按上传顺序排序。</li>
+        <li><strong>导出页</strong>：单任务导出 + 批量 zip 导出。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="subhead">前端架构特征</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>静默轮询 useSilentPolling</h3>
+      <p>避免 polling 抖动造成的 UI 闪烁，所有列表/状态查询都通过该 hook 拉取，并自动在错误时退避。</p>
+<pre class="code"><span class="kw">useEffect</span>(() =&gt; {
+  <span class="kw">const</span> id = setInterval(async () =&gt; {
+    <span class="kw">const</span> tasks = <span class="kw">await</span> <span class="fn">getTasks</span>();
+    <span class="fn">setTasks</span>(tasks);   <span class="com">// 不显示 loading</span>
+  }, <span class="num">3000</span>);
+  <span class="kw">return</span> () =&gt; clearInterval(id);
+}, []);</pre>
+    </div>
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>SPA 路由 + 工作台 Shell</h3>
+      <p>由 <code>WorkstationLayout</code> 提供统一壳层，路由通过 <code>window.location.pathname</code> 解析；后端 Flask 用 <code>before_request</code> 把所有非 <code>/api/</code> 请求 fallback 到 <code>index.html</code>，所以前端可以零配置部署。</p>
+<pre class="code"><span class="com"># app/backend/__init__.py</span>
+<span class="kw">if</span> request.path.startswith(<span class="str">"/api/"</span>): <span class="kw">return None</span>
+<span class="kw">return</span> <span class="fn">_send_spa_index</span>(index_path)</pre>
+    </div>
+  </div>
+
+  <div class="subhead">核心组件一览</div>
+  <div class="grid grid-4" style="margin-top:14px;">
+    <div class="card"><h3 class="pink"><span class="dot"></span>WorkstationHero</h3><p>新建任务入口 + 系统状态。</p></div>
+    <div class="card"><h3 class="pink"><span class="dot"></span>CaptureQrDialog</h3><p>展示二维码、任务编号、已上传张数。</p></div>
+    <div class="card"><h3 class="cyan"><span class="dot"></span>FieldList</h3><p>字段列表 + 状态徽章 + 编辑。</p></div>
+    <div class="card"><h3 class="cyan"><span class="dot"></span>ReviewSourcePanel</h3><p>OCR 原文 + 证据高亮 + 自动滚动。</p></div>
+    <div class="card"><h3 class="amber"><span class="dot"></span>TaskList / TaskOverview</h3><p>任务卡片 + 状态颜色映射。</p></div>
+    <div class="card"><h3 class="amber"><span class="dot"></span>ExportPanel</h3><p>下载 JSON / Excel / 批量 zip。</p></div>
+    <div class="card"><h3 class="violet"><span class="dot"></span>SystemReminders</h3><p>OCR / LLM 离线检查结果横幅。</p></div>
+    <div class="card"><h3 class="violet"><span class="dot"></span>RecentTasks</h3><p>最近任务列表 + 状态徽标。</p></div>
+  </div>
+</section>
+
+<!-- ============ 2. BACKEND ============ -->
+<section class="module" id="backend">
+  <div class="module-header">
+    <div class="module-num">02</div>
+    <div class="module-info">
+      <h2>后端 · Flask + 端口编排</h2>
+      <p>整个系统的"大脑"：路由分发、状态机、JSON 持久化、文件存储、外部算法端口编排，以及慢阻肺专病字段抽取。</p>
+    </div>
+    <div class="module-emoji">⚙️</div>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3><span class="dot"></span>技术栈</h3>
+      <p>
+        <span class="tag">Python 3</span>
+        <span class="tag green">Flask</span>
+        <span class="tag">嵌入式 Python (runtime/python/)</span>
+        <span class="tag amber">JsonStore（文件 JSON 存储）</span>
+        <span class="tag pink">pytest</span>
+        <span class="tag violet">llama-cpp-python</span>
+      </p>
+      <ul>
+        <li>无 RDBMS：状态/结果 全部以 JSON 文件落盘到 <code>data/</code>。</li>
+        <li>双日志：<strong>热日志</strong> backend.log + <strong>冷日志</strong> debug.log/access.log/boot.log。</li>
+        <li>PID 文件 + SIGTERM/SIGINT 优雅退出。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>路由分层 (Blueprints)</h3>
+      <ul>
+        <li><code>/api/system</code> &mdash; 健康检查、LAN 地址、离线检查。</li>
+        <li><code>/api/tasks</code> &mdash; 创建、列表、详情、重命名、重试、完成。</li>
+        <li><code>/api/mobile</code> &mdash; 手机端图片上传。</li>
+        <li><code>/api/review</code> &mdash; 字段读取、保存、reopen。</li>
+        <li><code>/api/export</code> &mdash; 单任务 / 批量 zip。</li>
+        <li><code>/api/schema</code> &mdash; 文书模板、字段清单。</li>
+        <li><code>/api/maintenance</code> &mdash; 清理临时任务、重抽取。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>服务层 services/</h3>
+      <ul>
+        <li><strong>task_service</strong> · 状态机 & 锁。</li>
+        <li><strong>page_service</strong> · 上传图片与页序。</li>
+        <li><strong>review_service</strong> · 审核字段读写。</li>
+        <li><strong>schema_service / validator</strong> · 字段契约。</li>
+        <li><strong>export_service</strong> · JSON / Excel 渲染。</li>
+        <li><strong>reextraction_service</strong> · 基于已存 OCR 重抽取。</li>
+        <li><strong>cleanup_service</strong> · 启动遗留任务清理。</li>
+        <li><strong>document_profiles</strong> · 文书模板注册。</li>
+        <li><strong>gpu_stage_queue</strong> · GPU 阶段串行化。</li>
+        <li><strong>local_event_log</strong> · 滚动事件日志。</li>
+        <li><strong>offline_check_service</strong> · 模型 / 依赖巡检。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="subhead">分层架构</div>
+  <div class="arch">
+    <div class="arch-col">
+      <h4>路由层 routes/</h4>
+      <div class="arch-block"><strong>task.py</strong> · 任务 CRUD、retry、complete</div>
+      <div class="arch-block"><strong>mobile.py</strong> · 手机上传</div>
+      <div class="arch-block"><strong>review.py</strong> · 审核读写、reopen</div>
+      <div class="arch-block"><strong>export.py</strong> · 导出与下载</div>
+      <div class="arch-block"><strong>system.py / maintenance.py</strong> · 巡检、清理、重抽取</div>
+    </div>
+    <div class="arch-col">
+      <h4>服务层 services/</h4>
+      <div class="arch-block"><strong>task_service</strong> · 全局状态机</div>
+      <div class="arch-block"><strong>review_service</strong> · 审核字段读写</div>
+      <div class="arch-block gpu"><strong>gpu_stage_queue</strong> · 串行化 GPU 阶段</div>
+      <div class="arch-block ext"><strong>document_profiles</strong> · 文书模板</div>
+      <div class="arch-block"><strong>local_event_log</strong> · 热/冷分离日志</div>
+    </div>
+    <div class="arch-col">
+      <h4>端口与外部模块</h4>
+      <div class="arch-block ext"><strong>image_processing</strong> · OriginalImagePassthrough</div>
+      <div class="arch-block ext"><strong>document_parsing</strong> · PaddleOCR-VLM Server</div>
+      <div class="arch-block llm"><strong>field_extraction</strong> · COPD Field Port</div>
+      <div class="arch-block"><strong>schema_validator</strong> · 契约校验</div>
+      <div class="arch-block"><strong>orchestrator</strong> · 三段式编排</div>
+    </div>
+  </div>
+
+  <div class="subhead">编排核心：ProcessingOrchestrator</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>三段式管道</h3>
+      <p>顺序执行 <strong>图像处理 → 文档解析 → 字段抽取</strong>，任一阶段端口未配置或契约非法都会让任务进入 <span class="status-chip fail">failed</span>。</p>
+      <ul>
+        <li>每个阶段都会调用 <code>_is_cancelled</code> 检查用户是否取消。</li>
+        <li>阶段进入 <code>gpu_stage_queue</code>，保证 GPU 同一时刻只跑一段。</li>
+        <li>失败时记录 <code>error_code</code> + <code>stage</code> + <code>reason</code>。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>错误码 & 边界</h3>
+      <ul>
+        <li><code>ALGORITHM_MODULE_NOT_CONFIGURED</code> &mdash; 端口未注入。</li>
+        <li><code>ALGORITHM_MODULE_FAILED</code> &mdash; 外部模块异常。</li>
+        <li><code>ALGORITHM_CONTRACT_INVALID</code> &mdash; 返回结构非法。</li>
+        <li><code>REVIEW_VALIDATION_FAILED</code> &mdash; 字段候选缺失。</li>
+        <li>所有错误码统一在 <code>docs/Shared/error-codes.md</code> 维护。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="boundary">
+    <h4>🚫 后端边界（hard rule）</h4>
+    <ul>
+      <li>不接入医院 HIS/EMR，不写回病历系统，不生成诊断结论或医学建议。</li>
+      <li>不依赖云 API、CDN、遥测；不进行运行时联网下载模型。</li>
+      <li>不在本仓库实现 OCR、图像处理、裁剪、透视矫正——这些由外部本地算法模块提供。</li>
+      <li>本仓库只编排"慢阻肺/呼吸系统入院记录"的字段抽取，不扩展为通用医学规则引擎。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 3. OCR ============ -->
+<section class="module" id="ocr">
+  <div class="module-header">
+    <div class="module-num">03</div>
+    <div class="module-info">
+      <h2>OCR 识别 · PaddleOCR-VL on vLLM Server</h2>
+      <p>采用<strong> Vision-Language </strong>多模态模型 PaddleOCR-VL，常驻为 vLLM HTTP 服务，从而避免每次冷启动加载模型带来的几十秒延迟。</p>
+    </div>
+    <div class="module-emoji">🔍</div>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>架构形态</h3>
+      <ul>
+        <li><strong>常驻 vLLM Server</strong> 监听 <code>:8080/v1</code>。</li>
+        <li>主进程通过 <code>PaddleOCRVL(vl_rec_backend="vllm-server", vl_rec_server_url=...)</code> 远程调用。</li>
+        <li>每张图调用 <code>pipeline.predict(input=path, max_new_tokens=1024, max_pixels=501760)</code>。</li>
+        <li>超时由 <code>ThreadPoolExecutor + future.result(timeout=240s)</code> 强制守护。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>输入 / 输出契约</h3>
+      <p>输入：</p>
+<pre class="code">{
+  <span class="str">"task_id"</span>: <span class="str">"t_2026..."</span>,
+  <span class="str">"pages"</span>: [
+    {<span class="str">"page_id"</span>:..., <span class="str">"page_no"</span>:<span class="num">1</span>,
+     <span class="str">"processed_path"</span>:<span class="str">"./data/.../p1.jpg"</span>}
+  ]
+}</pre>
+      <p style="margin-top:8px;">输出（关键字段）：</p>
+<pre class="code">{
+  <span class="str">"pages"</span>: [{<span class="str">"page_id"</span>, <span class="str">"text"</span>, <span class="str">"status"</span>}],
+  <span class="str">"merged_text"</span>: <span class="str">"主诉：...\n现病史：..."</span>
+}</pre>
+    </div>
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>GPU 调度策略</h3>
+      <ul>
+        <li>OCR 与 LLM 共用一张卡，由 <strong>GpuStageQueue</strong> 串行化两个阶段。</li>
+        <li>避免 OCR vLLM Worker 与 llama-cpp GPU layer 同时申请显存。</li>
+        <li>事件日志记录 <code>ocr_vlm_started</code> / <code>ocr_vlm_finished</code> + 耗时 + 字节数。</li>
+        <li>vLLM Server 失败时主进程不退出，任务标记为 failed 由人工重试。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="subhead">流式输出处理</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>结果解码</h3>
+      <p>PaddleOCR-VL 直接输出 <strong>Markdown</strong>，主进程优先读 <code>result.markdown</code>；若为空则调用 <code>save_to_markdown(temp_dir)</code> 落盘临时文件再读回，最后按页拼接成 merged_text。</p>
+<pre class="code"><span class="kw">def</span> <span class="fn">_extract_markdown</span>(result_item):
+    md = <span class="fn">getattr</span>(result_item, <span class="str">"markdown"</span>, <span class="str">""</span>)
+    <span class="kw">if</span> md.strip(): <span class="kw">return</span> md.strip()
+    <span class="com"># Fallback：临时目录读 .md 文件</span>
+    <span class="kw">with</span> <span class="fn">TemporaryDirectory</span>() <span class="kw">as</span> d:
+        result_item.<span class="fn">save_to_markdown</span>(save_path=d)
+        ...</pre>
+    </div>
+    <div class="card">
+      <h3 class="pink"><span class="dot"></span>失败语义</h3>
+      <ul>
+        <li>输入图片缺失 → <code>RuntimeError("OCR 输入图片不存在")</code>。</li>
+        <li>单页 markdown 为空 → 该页 <code>status="failed"</code>，<code>error_message</code> 显式写入。</li>
+        <li>任一页失败 → <code>has_failure=True</code>，整任务进入 <span class="status-chip fail">failed</span>。</li>
+        <li>超时 → <code>concurrent.futures.TimeoutError</code> 包装为 <code>RuntimeError</code>，事件日志写 exit_code=-1。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. LLM ============ -->
+<section class="module" id="llm">
+  <div class="module-header">
+    <div class="module-num">04</div>
+    <div class="module-info">
+      <h2>LLM 结构化抽取 · 双 LLM 流水线</h2>
+      <p>同一个 Qwen2.5-7B 本地模型，承担<strong>两种截然不同的人格</strong>：先做"抽取者"，再做"审核者"。这是项目最有意思的一段。</p>
+    </div>
+    <div class="module-emoji">🧠</div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <h3 class="violet"><span class="dot"></span>共享基座：LlamaCppClient</h3>
+    <p>抽取 LLM 与审核 LLM 都通过同一个 <code>LlamaCppClient</code> 调用 <code>llama-cpp-python</code> 本地推理，参数：</p>
+    <p>
+      <span class="tag violet">model: qwen2.5-7b-instruct-q4_k_m (GGUF)</span>
+      <span class="tag">n_ctx: 8192</span>
+      <span class="tag">n_gpu_layers: -1（全 offload）</span>
+      <span class="tag amber">temperature: 0.0</span>
+      <span class="tag green">response_format: json_object</span>
+    </p>
+    <ul>
+      <li><strong>JSON-only 输出</strong>：模型直接走 JSON mode；返回还做了一次防御性 <code>_extract_first_json_object</code>，能从 <code>```json ... ```</code> 围栏、尾部多余逗号等容错恢复。</li>
+      <li><strong>截断检测</strong>：<code>finish_reason == "length"</code> 立即抛 <code>ValueError</code>，防止半截 JSON 被静默吃掉。</li>
+      <li><strong>显存释放</strong>：每个 LLM 任务跑完调用 <code>close()</code> + <code>gc.collect()</code>，配合 GpuStageQueue 让 OCR / LLM 可以交替使用同一张卡。</li>
+    </ul>
+  </div>
+
+  <div class="pipeline">
+    <div class="stage"><span class="num">1</span><h4>section_splitter</h4><p>用正则切出 8 个标准章节，含别名映射（"查体"→"体格检查"）。</p></div>
+    <div class="stage"><span class="num">2</span><h4>抽取 LLM</h4><p>按章节分组发 prompt，强约束 evidence_phrase ≤50 字。</p></div>
+    <div class="stage"><span class="num">3</span><h4>attach_source_text</h4><p>把 source_hint 反查回章节原文，丢弃越界 evidence。</p></div>
+    <div class="stage"><span class="num">4</span><h4>quality_checks</h4><p>本地薄规则：数值不在 evidence、生理范围、零体重下降…</p></div>
+    <div class="stage"><span class="num">5</span><h4>审核 LLM</h4><p>逐字段判 pass / suspicious / fail，附 reason_code。</p></div>
+  </div>
+
+  <!-- 4.1 抽取 LLM -->
+  <div class="subhead">4.1 抽取 LLM · Extractor 人格</div>
+  <div class="llm-panels" style="margin-top:14px;">
+    <div class="llm-panel">
+      <div class="role-icon">🤖</div>
+      <h3>抽取 LLM</h3>
+      <p style="color:var(--text-dim);">"你是慢阻肺/呼吸系统入院记录结构化抽取引擎。<strong>只从 OCR 原文中抽取字段，不得推断原文未写的信息。</strong>"</p>
+
+      <div style="margin-top:14px;font-size:13.5px;">
+        <strong>两种抽取策略</strong>（通过 <code>extraction_strategy</code> 切换）：
+        <ul style="color:var(--text-dim);">
+          <li><strong>field_batches</strong>（默认 batch=25）：把所有字段按批次塞给 LLM，每批输出一个 JSON。</li>
+          <li><strong>section_groups</strong>（推荐）：先把 OCR 按 8 个章节切片，再把字段按"病史档案 / 体格检查 / 辅助检查"三组合并发送，<strong>显著减少 prompt 长度和幻觉</strong>。</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>SECTION_GROUPS 分组：</strong>
+        <p>
+          <span class="tag violet">history_profile</span>
+          <span class="tag amber">physical_exam</span>
+          <span class="tag green">auxiliary_exam</span>
+        </p>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>OCR 风险提示（写进 system prompt）：</strong>
+<pre class="code"><span class="com"># 字形混淆</span>
+1/I/l, 0/O/o, BHI/BMI, cT/CT/Ct
+<span class="com"># 血气项目名错读</span>
+P62/P02/PC02 → PO2/PaO2/PCO2/PaCO2
+<span class="com"># 药名近形/同音</span>
+嗜托溴铵 → 噻托溴铵
+二程丙苯碱 → 二羟丙茶碱
+<span class="com"># 单位/符号</span>
++10^9/L 可能是 ×10^9/L</pre>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>硬约束（写进 prompt）：</strong>
+        <ul style="color:var(--text-dim);">
+          <li>不得静默修正 OCR — 必须输出 <code>ocr_correction.applied / raw / normalized / reason</code>。</li>
+          <li>不得改写数值；不得医学换算。</li>
+          <li>不得把"无、否认、未见、可能、考虑、建议复查"改成确定阳性。</li>
+          <li><code>evidence_phrase</code> ≤ 50 字 且必须是 OCR 原文片段。</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>输出契约：</strong>
+<pre class="code">{
+  <span class="str">"fields"</span>: [{
+    <span class="str">"field_key"</span>: <span class="str">"temperature"</span>,
+    <span class="str">"original_value"</span>: <span class="str">"36.7℃"</span>,
+    <span class="str">"source_hint"</span>: <span class="str">"体格检查"</span>,
+    <span class="str">"evidence_phrase"</span>: <span class="str">"体温：36.7℃"</span>,
+    <span class="str">"confidence"</span>: <span class="num">0.9</span>,
+    <span class="str">"ocr_correction"</span>: {
+      <span class="str">"applied"</span>: <span class="kw">false</span>,
+      <span class="str">"raw"</span>: <span class="str">""</span>,
+      <span class="str">"normalized"</span>: <span class="str">""</span>,
+      <span class="str">"reason"</span>: <span class="str">""</span>
+    }
+  }]
+}</pre>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>"source_hint 重生成"二次纠偏：</strong>
+        <p>如果 LLM 把 <code>source_hint</code> 输出成了内部分组名（history_profile）或编造章节，后端会自动发起 <code>SourceHintRegenerationStrategy</code>，让 LLM 仅在合法章节白名单中重选。</p>
+      </div>
+    </div>
+
+    <!-- 4.2 审核 LLM -->
+    <div class="llm-panel reviewer">
+      <div class="role-icon">🛡️</div>
+      <h3>4.2 审核 LLM · Verifier 人格</h3>
+      <p style="color:var(--text-dim);">"你是字段级复核器。<strong>只能根据 OCR 事实判断，不得使用医学常识补全</strong>，不得修改字段值，不得把否定或不确定表述改成确定阳性。"</p>
+
+      <div style="margin-top:14px;">
+        <strong>输入：source_groups（按章节聚合的字段集合）</strong>
+        <p style="color:var(--text-dim);">同章节字段一起发给审核 LLM，让它看到完整上下文（章节原文 + 文档背景），而不是单字段孤立判断。</p>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>必填 checks 五件套：</strong>
+        <p>
+          <span class="tag cyan">source_text_supported</span>
+          <span class="tag cyan">ocr_correction_reasonable</span>
+          <span class="tag cyan">numeric_value_preserved</span>
+          <span class="tag cyan">negation_preserved</span>
+          <span class="tag cyan">section_assignment_reasonable</span>
+        </p>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>verdict 三档：</strong>
+        <p>
+          <span class="badge pass">pass</span> &middot; 完全可信
+          &nbsp;<span class="badge susp">suspicious</span> &middot; 需人工核验
+          &nbsp;<span class="badge fail">fail</span> &middot; 明显有错
+        </p>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>reason_code 枚举：</strong>
+<pre class="code">original_text_ambiguous   <span class="com"># 原文歧义</span>
+low_ocr_quality            <span class="com"># OCR 错读</span>
+extraction_error           <span class="com"># 抽取错误</span>
+unreliable_result          <span class="com"># 结果不可信</span>
+source_section_not_found   <span class="com"># 来源章节不存在</span>
+none                       <span class="com"># 通过</span></pre>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>典型审核规则（写进 prompt）：</strong>
+        <ul style="color:var(--text-dim);">
+          <li>血气项目名出现 P62/P02/PC02 但被归入 PO2/PaCO2，缺少 <code>ocr_correction</code> 即 suspicious + reason_code=low_ocr_quality。</li>
+          <li>同段出现"脉搏：9 次/分"和"心率 99 次/分"→ <strong>禁止静默选值</strong> → suspicious。</li>
+          <li>"体重减轻 0g/0kg" → 明显矛盾 → suspicious，提示人工核对。</li>
+          <li>verdict=fail 时回写 <code>quality_flags = ["llm_review_failed"]</code>。</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:14px;">
+        <strong>合并阶段：_merge_verdicts</strong>
+<pre class="code"><span class="kw">if</span> verdict == <span class="str">"pass"</span> <span class="kw">and not</span> item[<span class="str">"quality_flags"</span>]:
+    item[<span class="str">"verification_status"</span>] = <span class="str">"passed"</span>
+<span class="kw">elif</span> verdict == <span class="str">"fail"</span>:
+    item[<span class="str">"verification_status"</span>] = <span class="str">"failed"</span>
+    _append_flag(<span class="str">"llm_review_failed"</span>, ...)
+<span class="kw">elif</span> verdict == <span class="str">"suspicious"</span>:
+    item[<span class="str">"verification_status"</span>] = <span class="str">"suspicious"</span>
+    _append_flag(<span class="str">"llm_review_suspicious"</span>, ...)</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4.3 quality checks 中间层 -->
+  <div class="subhead">4.3 抽取 LLM ↔ 审核 LLM 之间的"薄规则"层</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>quality_checks · 不替代 LLM、不修字段</h3>
+      <p>纯本地 Python 规则，只输出 <code>quality_flags</code> 警告，不会让任务失败、也不会改字段值。它是一道"廉价的低成本预筛"，常常能在 LLM 之前就提前标红。</p>
+      <ul>
+        <li><span class="tag amber">value_not_in_evidence</span> 数值在 value 但不在 evidence。</li>
+        <li><span class="tag amber">suspicious_date</span> 出现未来年份。</li>
+        <li><span class="tag amber">negation_or_uncertainty_risk</span> evidence 含"无/否认/未见/可能"。</li>
+        <li><span class="tag amber">possible_duplicate_or_stitching</span> 全文高相似句重复。</li>
+        <li><span class="tag amber">ocr_label_ambiguity</span> 血气标签疑似错读。</li>
+        <li><span class="tag amber">unit_symbol_ambiguity</span> +10^9/L vs ×10^9/L。</li>
+        <li><span class="tag amber">ocr_numeric_conflict</span> 脉搏:9 vs 心率99 矛盾。</li>
+        <li><span class="tag amber">counterintuitive_zero_weight_loss</span> 体重下降 0kg。</li>
+        <li><span class="tag amber">physiologic_range_risk</span> 体温 &lt;32 或 &gt;43、脉搏 &lt;20 或 &gt;240、pH &lt;6.9 或 &gt;7.8。</li>
+        <li><span class="tag amber">blood_gas_label_not_whitelisted</span> 血气标签不在白名单。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>evidence 智能恢复</h3>
+      <p>当 LLM 给出的 evidence 超过 50 字 / 不在 source_text 中 / 完全缺失时，后端不会扔掉字段，而是用 <code>_recover_evidence_from_value</code> 在章节文本中查找 <code>original_value</code> 周围 ±N 字的最小窗口作为 evidence，并把字段标记为 <span class="badge susp">suspicious</span>，最终把决定权交给人工审核。</p>
+<pre class="code"><span class="kw">if</span> raw_evidence_too_long:
+    _flag(<span class="str">"evidence_too_long"</span>)
+<span class="kw">if</span> raw_evidence_not_in_source:
+    _flag(<span class="str">"evidence_not_in_source_text"</span>)
+
+recovered = <span class="fn">_recover_evidence_from_value</span>(
+    item.original_value, source_text, max_chars=<span class="num">50</span>)
+<span class="kw">if</span> recovered:
+    item[<span class="str">"evidence"</span>] = recovered
+    item[<span class="str">"verification_status"</span>] = <span class="str">"suspicious"</span></pre>
+    </div>
+  </div>
+
+  <div class="subhead">4.4 处理后字段最终长什么样</div>
+  <div class="card" style="margin-top:14px;">
+    <h3 class="violet"><span class="dot"></span>三个示例字段（审核页直接渲染这些数据）</h3>
+    <div class="field-row">
+      <div class="name">temperature 体温</div>
+      <div class="value">36.7℃ &middot; <span style="color:var(--text-muted);">"体温：36.7℃"</span></div>
+      <div class="conf">conf 0.90</div>
+      <div class="badge pass">pass</div>
+    </div>
+    <div class="field-row">
+      <div class="name">blood_gas_pao2</div>
+      <div class="value">62 mmHg &middot; <span style="color:var(--text-muted);">原文 "P02 62" 已纠偏为 PaO2</span></div>
+      <div class="conf">conf 0.62</div>
+      <div class="badge susp">suspicious</div>
+    </div>
+    <div class="field-row">
+      <div class="name">weight_loss 体重下降</div>
+      <div class="value">0 kg &middot; <span style="color:var(--text-muted);">counterintuitive_zero_weight_loss</span></div>
+      <div class="conf">conf 0.40</div>
+      <div class="badge fail">fail</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. FEATURES ============ -->
+<section class="module" id="features">
+  <div class="module-header">
+    <div class="module-num">05</div>
+    <div class="module-info">
+      <h2>业务功能 · 让医生真的愿意用</h2>
+      <p>架构再漂亮，如果医生用着费劲也没意义。第 5 部分讲那些"产品感"很强的小功能。</p>
+    </div>
+    <div class="module-emoji">✨</div>
+  </div>
+
+  <!-- 5.1 高亮 -->
+  <div class="subhead">5.1 证据高亮 · 一键定位 OCR 原文</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>实现路径</h3>
+      <p>审核页右侧选中字段 → 取该字段的 <code>evidence</code> → 在合并后的 OCR 文本里 <code>indexOf</code> 命中位置 → 用 <code>&lt;mark&gt;</code> 包裹 → <code>scrollIntoView({ block:'center' })</code> 自动滚动到中心。</p>
+      <ul>
+        <li><strong>≤100 字才高亮</strong>：超过则提示"片段过长，不进行高亮，请人工核验"。</li>
+        <li>支持 <code>stripOcrMarkup</code> 去除 OCR 自带的 HTML/&amp;nbsp;。</li>
+        <li>精确匹配失败 → 按行 / 标点 / 引号拆分候选，挑最早出现且最长者。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="pink"><span class="dot"></span>视觉演示</h3>
+      <div class="highlight-demo">
+        主诉：反复咳嗽、咳痰 8 年，加重伴喘息 3 天。<br />
+        体格检查：<mark class="hl">体温：36.7℃</mark>，脉搏 88 次/分，呼吸 22 次/分。<br />
+        辅助检查：动脉血气：pH 7.36，PaO2 62 mmHg，PaCO2 48 mmHg。<br />
+        诊断：慢性阻塞性肺疾病急性加重期。
+      </div>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:6px;">↑ 选中 <code>temperature</code> 字段时，高亮自动落在体温片段上。</p>
+    </div>
+  </div>
+
+  <!-- 5.2 审核 -->
+  <div class="subhead">5.2 审核功能 · 字段级状态机</div>
+  <div class="grid grid-3" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>字段状态</h3>
+      <p>每个字段独立的小状态机：</p>
+      <p>
+        <span class="badge uncheck">unreviewed</span>
+        <span class="badge pass">confirmed</span>
+        <span class="badge susp">modified</span>
+      </p>
+      <ul>
+        <li><strong>auto_value</strong> 是 LLM 抽取的初值，永远保留。</li>
+        <li><strong>final_value</strong> 是人工最终落定值。</li>
+        <li>修改一次写一条 <code>history</code>，可回溯。</li>
+        <li><code>empty_accepted</code> 允许医生显式确认"字段确实空"。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>批量信号汇总</h3>
+      <p>审核页顶部 review summary：</p>
+      <ul>
+        <li>total_count / confirmed_count。</li>
+        <li>verification_status 分布：passed / suspicious / failed。</li>
+        <li>quality_flags 计数（薄规则告警数）。</li>
+        <li>所有字段 confirmed 之后才能 <code>complete</code> → done。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>重新打开 reopen</h3>
+      <p>任务已 done 但医生发现问题：</p>
+      <ul>
+        <li>调用 <code>POST /api/review/{id}/reopen</code>。</li>
+        <li>状态从 <span class="status-chip done">done</span> 回退到 <span class="status-chip rev">review</span>。</li>
+        <li>历史 history 与 auto_value 不变。</li>
+        <li>导出文件不会被删除，只是不再代表最新版本。</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 5.3 文书模板 -->
+  <div class="subhead">5.3 文书模板 · DocumentProfile 体系</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>什么是 DocumentProfile</h3>
+      <p>本仓库当前只服务一种文书 —— <strong>COPD 入院记录</strong>。但代码已经把"文书模板"做成了一等公民：</p>
+<pre class="code">DocumentProfile(
+  document_type=<span class="str">"copd_admission_record"</span>,
+  label=<span class="str">"入院记录"</span>,
+  schema=schema_service.<span class="fn">get_current</span>(),
+  prompt_version=<span class="str">"copd_extraction_prompt.v1"</span>,
+  field_port=copd_field_port,
+  quality_rule_profile=<span class="str">"copd_admission_record"</span>)</pre>
+      <p style="margin-top:8px;">未来新增文书（如出院小结、手术记录），只需要注册一个新的 Profile，<strong>不需要改 Orchestrator、不需要改前端</strong>。</p>
+    </div>
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>Schema 驱动一切</h3>
+      <ul>
+        <li><code>app/config/schemas/copd_admission_record.v1.yaml</code> 是字段契约的源头。</li>
+        <li>字段分组、字段顺序、标签、字段类型全部从 schema 读取。</li>
+        <li>前端 <code>FieldList</code> 直接按 <code>field_groups</code> 渲染分组。</li>
+        <li>SchemaValidator 在抽取阶段尾巴对 <code>final_value</code> 强制类型校验。</li>
+        <li><strong>schema_version</strong> 写进 review_result、export，保证未来升版可识别。</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 5.4 重抽取 / 导出 / 离线 -->
+  <div class="subhead">5.4 其它产品级小心思</div>
+  <div class="grid grid-3" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="green"><span class="dot"></span>重抽取（基于已存 OCR）</h3>
+      <p>OCR 阶段非常贵（vLLM Server），所以 <code>ReextractionService</code> 只重跑 <strong>字段抽取</strong>，跳过图像处理 + 文档解析，直接读 <code>document_result.json</code> 重新喂给 LLM。改 prompt、调参后秒级反馈。</p>
+    </div>
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>批量导出 · JSON / Excel / Zip</h3>
+      <p>支持单任务导出 JSON 或 Excel；批量场景生成 zip：包含所有任务的 JSON + 一个汇总 Excel。每次导出会在 <code>exports/</code> 产生稳定文件名，便于追踪。</p>
+    </div>
+    <div class="card">
+      <h3 class="violet"><span class="dot"></span>离线巡检 OfflineCheckService</h3>
+      <p>启动时检查：模型文件是否存在、vLLM Server 是否可联、磁盘空间、Schema 是否可解析。前端在工作台顶部展示一条 <strong>"系统提醒"</strong> 横幅，把问题暴露给医生。</p>
+    </div>
+    <div class="card">
+      <h3 class="pink"><span class="dot"></span>手机扫码 · 同局域网</h3>
+      <p><code>_get_lan_addresses</code> 通过 UDP connect 嗅探出站 IP（不发包、不依赖 DNS），生成多个候选地址 → 二维码 → 手机扫码进入采集页。"手机连不上？"弹窗给出诊断提示。</p>
+    </div>
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>GPU 阶段队列</h3>
+      <p>用一个全局 <code>GpuStageQueue</code> 让 <code>document_parsing</code> 与 <code>field_extraction</code> 不会同时抢卡。同时事件日志会记录每段的开始/结束时间，方便事后排查显存抖动。</p>
+    </div>
+    <div class="card">
+      <h3 class="red"><span class="dot"></span>启动遗留任务清理</h3>
+      <p><code>CleanupService</code> 在后端启动时扫描所有 <code>processing</code> 任务（说明上次进程被强杀），按业务约定标记为 <span class="status-chip fail">failed</span>，避免任务"永远卡在处理中"。</p>
+    </div>
+  </div>
+
+  <!-- 5.5 日志 -->
+  <div class="subhead">5.5 可观测性 · 双日志体系</div>
+  <div class="grid grid-2" style="margin-top:14px;">
+    <div class="card">
+      <h3 class="cyan"><span class="dot"></span>LocalEventLog · 热日志</h3>
+      <p>滚动 JSONL 格式，记录所有业务事件：<code>task_created</code> / <code>ocr_vlm_started</code> / <code>extraction_finished</code> / <code>system_started</code> / <code>review_saved</code>……每条带 level、timestamp、payload，便于回放问题。</p>
+    </div>
+    <div class="card">
+      <h3 class="amber"><span class="dot"></span>boot.log / debug.log / access.log · 冷日志</h3>
+      <p>主进程 stdout/stderr 全部重定向到 <code>boot.log</code>，避免污染热日志；Werkzeug access log 落到 <code>access.log</code>；调试细节落到 <code>debug.log</code>。三份冷日志按大小滚动，最多保留 N 份，<strong>不上传任何远端</strong>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="stack">
+    <span class="pill">React 18</span>
+    <span class="pill green">Flask</span>
+    <span class="pill amber">PaddleOCR-VL</span>
+    <span class="pill violet">Qwen2.5-7B GGUF</span>
+    <span class="pill pink">llama-cpp-python</span>
+    <span class="pill">Vite</span>
+    <span class="pill green">pytest + vitest + playwright</span>
+  </div>
+  <div>院内离线 · 局域网 · 不依赖云 · 不写回 HIS · 全链路本地化</div>
+  <div style="margin-top:8px;color:var(--text-muted);">
+    架构讲解页 · 自动生成于本仓库代码，源码以 <code>/home/kbzz1/manzufei_ocr</code> 为准
+  </div>
+</footer>
+
+<script>
+  // 简单的导航高亮
+  const sections = ['frontend','backend','ocr','llm','features'];
+  const links = document.querySelectorAll('.nav-links a');
+  function onScroll() {
+    const y = window.scrollY + 120;
+    let current = '';
+    sections.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetTop <= y) current = id;
+    });
+    links.forEach(a => {
+      const href = a.getAttribute('href');
+      if (href === '#' + current) a.style.color = 'var(--text)';
+      else a.style.color = '';
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+
+</body>
+</html>

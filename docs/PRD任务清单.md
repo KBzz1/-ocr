@@ -31,7 +31,7 @@
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
 | FE-MVP-04 审核界面 | 已完成 | `app/frontend/src/pages/review/` | 原图、OCR 文本、结构化字段编辑、保存、完成、导出 |
 | FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
-| REL-MVP-01 本地运行包 | 已完成 | `scripts/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过容器内子进程调用 PaddleOCR-VL |
+| REL-MVP-01 本地运行包 | 已完成 | `scripts/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 
 ## 后端任务
 
@@ -94,8 +94,8 @@
 ### BE-MVP-04 OCR、文档解析和慢阻肺专病抽取
 
 - [x] **BE-MVP-04-01 本地 OCR/文档解析端口**
-  - 范围：定义并接入本机 Python OCR runner，输出转换为文档解析结果。
-  - 边界：本仓库不实现 OCR、图像预处理、裁剪或透视矫正；Docker 镜像暂作为后续部署方式。
+  - 范围：定义并接入本机 `paddleocr-vlm-server` 常驻服务，输出转换为文档解析结果。
+  - 边界：本仓库不实现 OCR、图像预处理、裁剪或透视矫正。
 
 - [x] **BE-MVP-04-02 输入改为任务图片列表**
   - 范围：输入使用上传顺序的原图列表。
@@ -285,11 +285,11 @@
 - [x] **REL-MVP-01 Windows 本地运行包**
   - 状态：已形成 Windows 离线 Docker 包。
   - 范围：后端、前端、配置、模型挂载目录、运行数据目录、Docker 镜像、Windows 导入/启动/停止/日志脚本整合。
-  - 边界：不在运行时联网下载模型或依赖；OCR runner 在后端容器内作为子进程调用，不单独起 OCR 容器；真实运行数据仍只落在 `data/`、`exports/`、`logs/`。
-  - 经验：2026-05-28 Windows OCR 验证发现 Docker 依赖版本漂移会导致同一参数在 Windows Docker 下超时，部署镜像需锁定 `paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.0`。
+  - 边界：不在运行时联网下载模型或依赖；OCR 通过常驻 `paddleocr-vlm-server` 容器调用；真实运行数据仍只落在 `data/`、`exports/`、`logs/`。
+  - 经验：服务化 OCR 镜像和客户端栈需锁定已验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex[ocr]==3.5.2`、PaddleOCR-VL 1.6 模型目录和固定 digest 的 vLLM server 镜像。
   - 经验：2026-05-29 Windows LLM 验证发现默认 `llama-cpp-python` wheel 可能是 CPU-only，字段抽取阶段显存为空且 CPU 占用高；部署镜像需在 CUDA devel 镜像内以 `GGML_CUDA=on` 源码编译 `llama-cpp-python==0.3.22`，并用 `gpus: all` 运行。
-  - 经验：2026-05-29 完整流程验证通过；字段复核 JSON 需使用 `llm_max_tokens=4096` 并限制短 comment，失败重试需复用已成功 OCR 的 `document_result.json`，避免字段抽取失败后重复触发 OCR 长尾。
-  - 优化方向：OCR 优化方向收敛为 PaddleOCR-VL vLLM server 常驻服务 + 8GB GPU 阶段队列；旧 runner 保留为 fallback。
+  - 经验：完整流程验证通过；字段复核 JSON 需使用 `llm_max_tokens=4096` 并限制短 comment，失败重试需复用已成功 OCR 的 `document_result.json`，避免字段抽取失败后重复触发 OCR。
+  - 运行形态：PaddleOCR-VL vLLM server 常驻服务 + 8GB GPU 阶段队列。
 
 - [ ] **REL-MVP-02 离线验收**
   - 状态：Windows 桌面离线部署包已跑通完整流程，待整理为正式验收记录。

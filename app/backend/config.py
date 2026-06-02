@@ -7,7 +7,6 @@ is backend code that loads, flattens, validates, and normalizes those settings.
 import os
 import yaml
 import logging
-import sys
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -36,14 +35,8 @@ DEFAULT_CONFIG = {
     "llm_extraction_batch_size": 25,
     "llm_enable_verification": True,
     "enable_local_ocr": False,
-    "local_ocr_python_executable": sys.executable,
-    "local_ocr_script_path": "./app/backend/services/algorithm_ports/paddleocr_vl_batch_runner.py",
-    "local_ocr_work_root": None,
     "local_ocr_max_new_tokens": 1024,
-    "local_ocr_timeout_seconds": 180,
-    "local_ocr_device": None,
     "local_ocr_max_pixels": 501760,
-    "local_ocr_mode": "runner",
     "local_ocr_vlm_server_url": "http://paddleocr-vlm-server:8080/v1",
     "local_ocr_vlm_timeout_seconds": 240,
     "gpu_stage_queue_enabled": True,
@@ -116,22 +109,10 @@ def _flatten_config(raw: dict) -> dict:
         flattened["llm_enable_verification"] = algorithms_config["llm_enable_verification"]
     if "enable_local_ocr" in algorithms_config:
         flattened["enable_local_ocr"] = algorithms_config["enable_local_ocr"]
-    if "local_ocr_python_executable" in algorithms_config:
-        flattened["local_ocr_python_executable"] = algorithms_config["local_ocr_python_executable"]
-    if "local_ocr_script_path" in algorithms_config:
-        flattened["local_ocr_script_path"] = algorithms_config["local_ocr_script_path"]
-    if "local_ocr_work_root" in algorithms_config:
-        flattened["local_ocr_work_root"] = algorithms_config["local_ocr_work_root"]
     if "local_ocr_max_new_tokens" in algorithms_config:
         flattened["local_ocr_max_new_tokens"] = algorithms_config["local_ocr_max_new_tokens"]
-    if "local_ocr_timeout_seconds" in algorithms_config:
-        flattened["local_ocr_timeout_seconds"] = algorithms_config["local_ocr_timeout_seconds"]
-    if "local_ocr_device" in algorithms_config:
-        flattened["local_ocr_device"] = algorithms_config["local_ocr_device"]
     if "local_ocr_max_pixels" in algorithms_config:
         flattened["local_ocr_max_pixels"] = algorithms_config["local_ocr_max_pixels"]
-    if "local_ocr_mode" in algorithms_config:
-        flattened["local_ocr_mode"] = algorithms_config["local_ocr_mode"]
     if "local_ocr_vlm_server_url" in algorithms_config:
         flattened["local_ocr_vlm_server_url"] = algorithms_config["local_ocr_vlm_server_url"]
     if "local_ocr_vlm_timeout_seconds" in algorithms_config:
@@ -152,8 +133,6 @@ def _normalize_paths(config: dict) -> dict:
         "export_dir",
         "static_dir",
         "llm_model_path",
-        "local_ocr_script_path",
-        "local_ocr_work_root",
     ):
         path = config.get(key)
         if path and not os.path.isabs(path):
@@ -205,14 +184,6 @@ def _validate_config(config: dict):
     log_backup_count = config.get("log_backup_count")
     if not isinstance(log_backup_count, int) or log_backup_count < 0:
         raise ValueError(f"log_backup_count 必须为非负整数，当前值: {log_backup_count}")
-
-    ocr_timeout = config.get("local_ocr_timeout_seconds")
-    if not isinstance(ocr_timeout, int) or ocr_timeout <= 0:
-        raise ValueError(f"local_ocr_timeout_seconds 必须为正整数，当前值: {ocr_timeout}")
-
-    local_ocr_mode = config.get("local_ocr_mode")
-    if local_ocr_mode not in {"runner", "vlm_server"}:
-        raise ValueError(f"local_ocr_mode 必须是 runner 或 vlm_server，当前值: {local_ocr_mode}")
 
     vlm_server_url = config.get("local_ocr_vlm_server_url")
     parsed_vlm_server_url = urlparse(vlm_server_url) if isinstance(vlm_server_url, str) else None

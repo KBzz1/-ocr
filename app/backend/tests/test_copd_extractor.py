@@ -306,6 +306,51 @@ def test_copd_extractor_prefers_section_group_evidence_phrase_over_section_text(
     assert result["confidence"] == 0
 
 
+def test_copd_extractor_extracts_physical_exam_fields_from_chati_alias():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def __init__(self):
+            self.prompts = []
+
+        def complete_json(self, prompt: str):
+            self.prompts.append(prompt)
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "99次/分",
+                        "evidence_phrase": "脉搏99次/分",
+                        "source_hint": "体格检查",
+                        "confidence": 0.8,
+                        "ocr_correction": {
+                            "applied": False,
+                            "raw": "",
+                            "normalized": "",
+                            "reason": "",
+                        },
+                    }
+                ]
+            }
+
+    client = LlmClient()
+    extractor = COPDFieldExtractor(
+        llm_client=client,
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("主诉：咳嗽15年。查体：体温36.7℃，脉搏99次/分。")[0]
+
+    assert len(client.prompts) == 1
+    assert "【体格检查】" in client.prompts[0]
+    assert result["extraction_status"] == "extracted"
+    assert result["source_hint"] == "体格检查"
+    assert result["source_text"] == "体温36.7℃，脉搏99次/分。"
+    assert result["evidence"] == "脉搏99次/分"
+
+
 def _flag_names(item: dict) -> set[str]:
     return {flag["flag"] for flag in item.get("quality_flags", [])}
 
@@ -593,6 +638,53 @@ def test_copd_extractor_regenerates_invalid_source_hint_with_same_loaded_client(
     # Spec invariant: evidence must not equal source_text; short-section recovery returns the value
     assert result["evidence"] == "15年"
     assert result["evidence"] != result["source_text"]
+
+
+def test_copd_extractor_preserves_short_evidence_phrase_after_source_hint_regeneration():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "重新生成字段来源指向" in prompt:
+                return {
+                    "fields": [
+                        {
+                            "field_key": "copd_history_years",
+                            "original_value": "15年",
+                            "source_hint": "主诉",
+                        }
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "copd_history_years",
+                        "original_value": "15年",
+                        "source_hint": "history_profile",
+                        "evidence_phrase": "咳嗽、咳痰15年",
+                        "confidence": 0.82,
+                        "ocr_correction": {
+                            "applied": False,
+                            "raw": "",
+                            "normalized": "",
+                            "reason": "",
+                        },
+                    }
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["copd_history_years"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    result = extractor.extract("主诉：反复咳嗽、咳痰15年。")[0]
+
+    assert result["source_hint"] == "主诉"
+    assert result["evidence"] == "咳嗽、咳痰15年"
+    assert result["confidence"] == 0.82
 
 
 def test_copd_extractor_treats_no_evidence_as_not_found_in_section_groups():

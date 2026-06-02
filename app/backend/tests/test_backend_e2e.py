@@ -2,7 +2,6 @@
 import inspect
 import json
 import os
-import sys
 import threading
 import time
 
@@ -69,55 +68,6 @@ algorithms:
     assert orchestrator._field_port is not None
 
 
-def test_backend_configures_local_ocr_ports(tmp_path, monkeypatch):
-    from app.backend import create_backend_app
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    export_dir = tmp_path / "exports"
-    export_dir.mkdir()
-    static_dir = tmp_path / "dist"
-    static_dir.mkdir()
-    runner = tmp_path / "ocr_runner.py"
-    runner.write_text("print('fake')\n", encoding="utf-8")
-    (config_dir / "default.yaml").write_text(
-        f"""
-app:
-  version: "test"
-server:
-  bind_host: "127.0.0.1"
-  port: 8081
-paths:
-  data_dir: "{data_dir}"
-  log_dir: "{log_dir}"
-  model_dir: "{tmp_path}/models"
-  export_dir: "{export_dir}"
-  static_dir: "{static_dir}"
-  storage_dir: "{data_dir}"
-algorithms:
-  enable_local_ocr: true
-  local_ocr_python_executable: "{sys.executable}"
-  local_ocr_script_path: "{runner}"
-""",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "app.backend._get_lan_addresses",
-        lambda port: ["192.168.1.5:8081"],
-    )
-
-    app = create_backend_app(str(config_dir))
-    orchestrator = app.config["TASK_SERVICE"]._orchestrator
-
-    assert orchestrator._image_port is not None
-    assert orchestrator._doc_port is not None
-    assert orchestrator._doc_port._cache_dir == f"{tmp_path}/models/ppstructure/paddlex_cache"
-
-
 def test_backend_configures_vlm_server_ocr_port(tmp_path, monkeypatch):
     from app.backend import create_backend_app
     from app.backend.services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
@@ -148,7 +98,6 @@ paths:
   storage_dir: "{data_dir}"
 algorithms:
   enable_local_ocr: true
-  local_ocr_mode: vlm_server
   local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
   gpu_stage_queue_enabled: true
 """,
@@ -194,7 +143,6 @@ paths:
   storage_dir: "{data_dir}"
 algorithms:
   enable_local_ocr: true
-  local_ocr_mode: runner
   gpu_stage_queue_enabled: true
 """,
         encoding="utf-8",
@@ -245,7 +193,6 @@ paths:
   storage_dir: "{data_dir}"
 algorithms:
   enable_local_ocr: true
-  local_ocr_mode: runner
   gpu_stage_queue_enabled: true
 """,
         encoding="utf-8",
@@ -446,156 +393,6 @@ algorithms:
                 continue
             overlap = ei < xj - OVERLAP_TOLERANCE and ej < xi - OVERLAP_TOLERANCE
             assert not overlap, f"GPU 阶段重叠: {ti}/{si}[{ei:.4f},{xi:.4f}] 与 {tj}/{sj}[{ej:.4f},{xj:.4f}]"
-
-
-def test_backend_configures_local_ocr_port(tmp_path, monkeypatch):
-    from app.backend import create_backend_app
-    from app.backend.services.algorithm_ports.local_paddleocr import LocalPaddleOCRDocumentPort
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    export_dir = tmp_path / "exports"
-    export_dir.mkdir()
-    static_dir = tmp_path / "dist"
-    static_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        f"""
-app:
-  version: "test"
-server:
-  bind_host: "127.0.0.1"
-  port: 8081
-paths:
-  data_dir: "{data_dir}"
-  log_dir: "{log_dir}"
-  model_dir: "{tmp_path}/models"
-  export_dir: "{export_dir}"
-  static_dir: "{static_dir}"
-  storage_dir: "{data_dir}"
-algorithms:
-  enable_local_ocr: true
-""",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "app.backend._get_lan_addresses",
-        lambda port: ["192.168.1.5:8081"],
-    )
-
-    app = create_backend_app(str(config_dir))
-    orchestrator = app.config["TASK_SERVICE"]._orchestrator
-
-    assert isinstance(orchestrator._doc_port, LocalPaddleOCRDocumentPort)
-
-
-def test_local_ocr_runner_flow_create_upload_process_review(tmp_path, monkeypatch):
-    from app.backend import create_backend_app
-
-    class FieldPortFromOcrText:
-        def extract(self, input: dict) -> list[dict]:
-            text = input["document_result"]["merged_text"]
-            return [
-                {
-                    "field_key": "cough_sputum_change",
-                    "original_value": "咳嗽咳痰3天",
-                    "evidence": text,
-                    "confidence": 0.9,
-                    "extraction_status": "extracted",
-                    "verification_status": "passed",
-                    "quality_flags": [],
-                    "source_section": "主诉",
-                    "ocr_correction": {
-                        "applied": False,
-                        "raw": "",
-                        "normalized": "",
-                        "reason": "",
-                    },
-                }
-            ]
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    export_dir = tmp_path / "exports"
-    export_dir.mkdir()
-    static_dir = tmp_path / "dist"
-    static_dir.mkdir()
-    runner = tmp_path / "ocr_runner.py"
-    runner.write_text(
-        """
-import argparse
-from pathlib import Path
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--input-dir")
-parser.add_argument("--output-file")
-parser.add_argument("--max-new-tokens")
-parser.add_argument("--max-pixels")
-args = parser.parse_args()
-
-images = sorted(Path(args.input_dir).iterdir())
-output = Path(args.output_file)
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text("\\n\\n---\\n\\n".join(
-    f"# {image.name}\\n\\n主诉：咳嗽咳痰3天" for image in images
-), encoding="utf-8")
-""",
-        encoding="utf-8",
-    )
-    (config_dir / "default.yaml").write_text(
-        f"""
-app:
-  version: "test"
-server:
-  bind_host: "127.0.0.1"
-  port: 8081
-paths:
-  data_dir: "{data_dir}"
-  log_dir: "{log_dir}"
-  model_dir: "{tmp_path}/models"
-  export_dir: "{export_dir}"
-  static_dir: "{static_dir}"
-  storage_dir: "{data_dir}"
-algorithms:
-  enable_local_ocr: true
-  local_ocr_python_executable: "{sys.executable}"
-  local_ocr_script_path: "{runner}"
-  enable_copd_extractor: true
-""",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "app.backend._get_lan_addresses",
-        lambda port: ["192.168.1.5:8081"],
-    )
-    monkeypatch.setattr(
-        "app.backend.services.copd_extraction.port.build_default_copd_field_port",
-        lambda config, field_keys_provider: FieldPortFromOcrText(),
-    )
-
-    app = create_backend_app(str(config_dir))
-    app.config["TESTING"] = True
-    client = app.test_client()
-
-    created = setup_task_with_images(client)
-    finished = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
-
-    assert finished.status_code == 200
-    assert finished.get_json()["data"]["status"] == "processing"
-    assert wait_for_task_status(client, created["task_id"], "review")["status"] == "review"
-    review = client.get(f"/api/tasks/{created['task_id']}/review")
-    assert review.status_code == 200
-    data = review.get_json()["data"]
-    fields = {field["field_key"]: field for field in data["review_result"]["fields"]}
-    assert fields["cough_sputum_change"]["auto_value"] == "咳嗽咳痰3天"
-    assert fields["cough_sputum_change"]["evidence"] == "主诉：咳嗽咳痰3天"
 
 
 def test_fixture_client_starts_with_system_status(tmp_path, monkeypatch):

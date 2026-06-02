@@ -2,9 +2,9 @@
 
 ## 背景
 
-当前后端通过 `paddleocr_vl_batch_runner.py` 子进程调用 `PaddleOCRVL`，每个任务都会启动 Python runner、初始化 PaddleOCR pipeline，并在进程内加载模型。这个模式已经通过 `max_new_tokens=1024`、`max_pixels=501760`、依赖版本锁定和日志管道修复解决了多次卡死问题，但仍存在明显冷启动成本。
+当前系统已收敛为通过 `paddleocr-vlm-server` 常驻服务调用 `PaddleOCRVL`，避免每个任务重复初始化 PaddleOCR pipeline 和加载模型。
 
-`temp/paddlepaddle` 验证目录展示了更快的运行形态：PaddleOCR-VL 通过 vLLM server 常驻 GPU 显存，OCR 客户端只负责提交图片、保存结果和合并 Markdown。提速来源主要是避免重复加载模型和重复初始化 CUDA/vLLM 上下文，不是更换 OCR 模型或改写图像内容。
+PaddleOCR-VL 通过 vLLM server 常驻 GPU 显存，OCR 客户端只负责提交图片、保存结果和合并 Markdown。提速来源主要是避免重复加载模型和重复初始化 CUDA/vLLM 上下文，不是更换 OCR 模型或改写图像内容。
 
 目标是在不降低识别准确率的前提下，把该运行形态整理进正式系统，并适配 RTX 5060 8GB 显存。临时方案已在 RTX 4070 Laptop 8GB 上流畅运行；目标 PC 的 RTX 5060 8GB 算力预计足够承接，但显存容量仍是主要约束，因此正式方案继续按 8GB 显存做保守参数和 GPU 阶段排队。
 
@@ -22,7 +22,7 @@
 - 不实现 OCR 算法、图像增强、裁剪或透视矫正。
 - 不让前端从 OCR 文本、schema 或页面内容推断结构化字段。
 - 不为 8GB GPU 做多患者并发推理。
-- 不把 `temp/paddlepaddle` 目录、镜像 tar 包或临时模型文件直接纳入正式代码。
+- 不把临时验证脚本、样本图片、OCR 输出或重复模型纳入正式代码。
 - 不在本次改造中更换慢阻肺字段抽取 schema 或字段语义。
 
 ## 推荐架构
@@ -48,7 +48,7 @@ paddleocr-vlm-server
 - 合并所有成功页文本为 `merged_text`。
 - 如果任一页面缺失输出、OCR 服务不可达、返回结构非法或全部文本为空，按文档解析失败处理。
 
-现有 `LocalPaddleOCRDocumentPort` 先保留为 fallback。服务化 OCR 稳定后，再单独清理旧 runner、旧配置和过期文档。
+服务化 OCR 是唯一正式 OCR 入口。
 
 ## GPU 阶段队列
 
@@ -101,7 +101,7 @@ ocr_request:
 
 ## 临时方案验证组合
 
-新服务化方案优先参考 `temp/paddlepaddle` 中已经跑通的组合，而不是直接套用旧子进程 runner 的依赖结论：
+服务化方案使用已经跑通的组合：
 
 - VLM 服务镜像：`ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server:latest-nvidia-gpu`，当前离线 tar 的 OCI digest 为 `sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621`。
 - OCR 客户端镜像：`paddleocr-client:latest`。
@@ -109,31 +109,15 @@ ocr_request:
 - 模型目录：`model/PaddleOCR-VL-1.6`，`inference.yml` 中模型名为 `PaddleOCR-VL-1.6-0.9B`。
 - 当前 compose 命令中存在 `--model_name PaddleOCR-VL-1.5-0.9B` 与 1.6 模型目录混用，正式方案必须统一为验证通过的 1.6 命名和目录。
 
-旧 runner 在 Windows Docker 中曾因 `paddlex==3.5.2` 超时而锁回 `paddlex[ocr]==3.5.0`；该结论适用于“后端子进程内直接加载 PaddleOCRVL”的旧路径。新路径把 VLM 推理移到官方 vLLM server，已经在 4070 Laptop 8GB 上验证可流畅运行，因此正式实现应单独记录并锁定新服务化组合。为避免 `latest` 漂移，离线包应优先固定镜像 digest 或保存经过验证的 tar 包。
+服务化路径把 VLM 推理移到官方 vLLM server，已经在 4070 Laptop 8GB 上验证可流畅运行，因此正式实现单独记录并锁定服务化组合。为避免 `latest` 漂移，离线包应固定镜像 digest 或保存经过验证的 tar 包。
 
-## 从 temp 半搬迁
+## 正式资源布局
 
-`temp/paddlepaddle` 可以作为新方案的实现基线，但不能原样整目录搬进正式系统。正式改造采用“复用核心运行栈，重写业务接入层”的半搬迁策略。
+- `deploy/offline-images/paddleocr-vlm-server.tar`：固定 digest 的 OCR VLM server 镜像 tar，供本地启动和离线打包复用。
+- `models/ppstructure/PaddleOCR-VL-1.6/`：正式 OCR 模型目录。
+- `app/backend/services/algorithm_ports/paddleocr_vlm_server.py`：后端 `DocumentParsingPort` 适配器，接收任务页列表，调用常驻 OCR 服务，生成现有 `DocumentResult`，再进入后续 LLM 字段抽取。
 
-可以直接复用或等价迁移：
-
-- `vlm-server` 官方镜像和已验证离线 tar。
-- `PaddleOCR-VL-1.6` 模型目录。
-- `vlm_backend_config.yaml` 的 vLLM 参数基线。
-- `Dockerfile.ocr-client` 中已验证的 Python 运行栈和依赖组合。
-- `process.py` 中 `PaddleOCRVL(vl_rec_backend="vllm-server", vl_rec_server_url=...)` 的调用方式。
-- `process_single_file()` 中逐页 `pipeline.predict()`、保存 markdown/json 的核心逻辑思路。
-
-不能原样搬迁：
-
-- `manage.bat`。它处理完成后会 `docker compose down`，会破坏 PaddleOCR-VL 常驻显存的提速前提。
-- `input/`、`output/` 和 `input/processed/` 目录生命周期。正式系统已经有任务、页面、结果存储和隐私边界，OCR 不应另建一套上传归档流程。
-- `archive_processed`。正式任务页不能被 OCR 客户端移动位置，页面文件生命周期由后端任务服务管理。
-- 独立 `ocr-client` 批处理容器作为业务入口。正式系统的任务状态、错误码、重试和事件日志必须仍由后端掌控。
-- `latest-nvidia-gpu` 裸 tag。正式离线包必须固定验证过的 digest 或保存验证 tar，避免镜像漂移。
-- 1.5/1.6 模型名混用。正式配置必须统一。
-
-正式实现应把临时脚本提炼为后端 `DocumentParsingPort` 适配器：后端接收任务页列表，调用常驻 OCR 服务，生成现有 `DocumentResult`，再进入后续 LLM 字段抽取。这样可以复用已验证的速度优势，同时不把临时批处理脚本的文件搬运、归档和容器关闭逻辑带入业务主流程。
+正式系统不保留独立 OCR 批处理容器、临时输入输出目录、归档脚本或重复模型副本。
 
 ## 准确率边界
 
@@ -154,8 +138,8 @@ ocr_request:
 因此正式实现必须：
 
 - 统一模型名称和模型目录。
-- 锁定服务化 OCR 的已验证组合：官方 vLLM server 镜像 digest、`PaddleOCR-VL-1.6-0.9B` 模型目录、`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`。如果后续改回旧 runner fallback，旧 runner 仍按其文档锁定 `paddlex[ocr]==3.5.0`。
-- 用同一组脱敏多页病历样本对比旧 runner 与新 server 输出，记录每页耗时、总耗时、输出字节数、缺页、明显截断和关键字段证据覆盖情况。
+- 锁定服务化 OCR 的已验证组合：官方 vLLM server 镜像 digest、`PaddleOCR-VL-1.6-0.9B` 模型目录、`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`。
+- 用同一组脱敏多页病历样本记录每页耗时、总耗时、输出字节数、缺页、明显截断和关键字段证据覆盖情况。
 - 默认不以性能参数换准确率；任何降低 `max_pixels` 或 `max_new_tokens` 的调整都必须有样本验证记录。
 
 ## 任务状态与失败处理
@@ -180,7 +164,7 @@ ocr_request:
 
 清理策略分阶段执行：
 
-1. 第一阶段保留旧 runner fallback，不删除旧配置。
+1. 第一阶段已完成：服务化 OCR 接入并收敛配置。
 2. 第二阶段新服务完成 Windows Docker 离线验证后，删除未使用的临时 OCR 客户端脚本、旧模型副本和 tar 包。
 3. 第三阶段同步更新 `docs/部署/GPU-Docker部署.md`、`app/config/algorithm-modules.README.md` 和离线验收记录。
 
@@ -197,7 +181,7 @@ ocr_request:
 
 集成测试：
 
-- 后端配置 `enable_local_ocr` 或新增 `local_ocr_mode: vlm_server` 后使用服务化端口。
+- 后端配置 `enable_local_ocr` 后使用服务化端口。
 - 多页上传任务完整跑通到审核页。
 - 并发两个任务时，第二个任务等待 GPU 队列，不并发进入 OCR/LLM。
 
@@ -205,5 +189,5 @@ ocr_request:
 
 - 5060 8GB Windows Docker 下 `nvidia-smi` 可见 OCR server 常驻显存。
 - 第一单包含模型加载时间；后续单不重复冷启动。
-- 同一组脱敏样本对比旧 runner 和新 server：输出无缺页、无明显截断，关键字段证据仍能被 LLM 抽取。
+- 同一组脱敏样本输出无缺页、无明显截断，关键字段证据仍能被 LLM 抽取。
 - 记录首单耗时、热启动后耗时、OCR 阶段耗时、LLM 阶段耗时和失败重试耗时。

@@ -16,7 +16,7 @@ BACKEND_HEALTH_URL="http://127.0.0.1:8081/api/system/status"
 WORKSTATION_URL="http://127.0.0.1:8081/"
 OCR_VLM_HEALTH_URL="http://127.0.0.1:8082/v1/models"
 OCR_VLM_MODEL_DIR="$ROOT_DIR/models/ppstructure/PaddleOCR-VL-1.6"
-OCR_VLM_SERVER_TAR="$ROOT_DIR/temp/paddlepaddle/vlm-server.tar"
+OCR_VLM_SERVER_TAR="$ROOT_DIR/deploy/offline-images/paddleocr-vlm-server.tar"
 OCR_VLM_SERVER_SOURCE_IMAGE="ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
 OCR_VLM_SERVER_LOCAL_TAG="paddleocr-vlm-server:verified-digest-1cee5e7e"
 CONDA_PYTHON="/home/kbzz1/miniconda3/envs/manzufei_ocr/bin/python"
@@ -47,7 +47,6 @@ ensure_local_config() {
   cat >"$LOCAL_CONFIG" <<EOF
 algorithms:
   enable_local_ocr: true
-  local_ocr_mode: "vlm_server"
   local_ocr_vlm_server_url: "http://127.0.0.1:8082/v1"
   local_ocr_vlm_timeout_seconds: 240
   local_ocr_max_new_tokens: 1024

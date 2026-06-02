@@ -6,6 +6,7 @@ IMAGE_NAME="${IMAGE_NAME:-manzufei-ocr:0.1.0}"
 BUNDLE_NAME="${BUNDLE_NAME:-manzufei_ocr_offline_bundle}"
 BUNDLE_DIR="${BUNDLE_DIR:-$ROOT_DIR/output/$BUNDLE_NAME}"
 ARCHIVE_PATH="${ARCHIVE_PATH:-$ROOT_DIR/output/$BUNDLE_NAME.zip}"
+OFFLINE_IMAGE_DIR="${OFFLINE_IMAGE_DIR:-$ROOT_DIR/deploy/offline-images}"
 
 cd "$ROOT_DIR"
 
@@ -30,10 +31,15 @@ docker build -t "$IMAGE_NAME" "$ROOT_DIR"
 
 OCR_VLM_SERVER_IMAGE="${OCR_VLM_SERVER_IMAGE:-ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621}"
 OCR_VLM_SERVER_LOCAL_TAG="${OCR_VLM_SERVER_LOCAL_TAG:-paddleocr-vlm-server:verified-digest-1cee5e7e}"
+OCR_VLM_SERVER_TAR="${OCR_VLM_SERVER_TAR:-$OFFLINE_IMAGE_DIR/paddleocr-vlm-server.tar}"
 
-echo "Pulling vlm-server source image: $OCR_VLM_SERVER_IMAGE"
-docker pull "$OCR_VLM_SERVER_IMAGE"
-docker tag "$OCR_VLM_SERVER_IMAGE" "$OCR_VLM_SERVER_LOCAL_TAG"
+if [ -f "$OCR_VLM_SERVER_TAR" ]; then
+  echo "Using offline OCR VLM server image tar: $OCR_VLM_SERVER_TAR"
+else
+  echo "Pulling vlm-server source image: $OCR_VLM_SERVER_IMAGE"
+  docker pull "$OCR_VLM_SERVER_IMAGE"
+  docker tag "$OCR_VLM_SERVER_IMAGE" "$OCR_VLM_SERVER_LOCAL_TAG"
+fi
 
 echo "Creating offline bundle: $BUNDLE_DIR"
 rm -rf "$BUNDLE_DIR"
@@ -45,7 +51,11 @@ mkdir -p "$BUNDLE_DIR/images" \
 
 docker save "$IMAGE_NAME" -o "$BUNDLE_DIR/images/manzufei-ocr.tar"
 echo "Saving paddleocr-vlm-server tar..."
-docker save "$OCR_VLM_SERVER_LOCAL_TAG" -o "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
+if [ -f "$OCR_VLM_SERVER_TAR" ]; then
+  cp "$OCR_VLM_SERVER_TAR" "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
+else
+  docker save "$OCR_VLM_SERVER_LOCAL_TAG" -o "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
+fi
 cp "$ROOT_DIR/docker-compose.yml" "$BUNDLE_DIR/docker-compose.yml"
 cp "$ROOT_DIR/app/config/local.docker.yaml" "$BUNDLE_DIR/app/config/local.yaml"
 cp "$ROOT_DIR/deploy/windows/00_import_image.bat" "$BUNDLE_DIR/00_import_image.bat"
