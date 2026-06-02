@@ -8,7 +8,7 @@
 | `sample_page_2.png` | 多页上传 | 不用于 OCR 正确性断言 |
 | `sample_large.jpg` | 文件大小校验 | 可用生成文件替代真实大图 |
 | `sample_not_image.pdf` | 非图片拒绝 | 验证文件类型 |
-| `sample_poly_invalid.json` | 非法四边形 | 验证坐标校验 |
+| `sample_upload_status.json` | 手机上传状态 | 验证任务图片列表和上传计数 |
 
 ## 算法未配置错误 fixture
 
@@ -57,12 +57,12 @@
 
 说明：字段值只代表外部模块返回，不代表本项目抽取能力。
 
-## 通用 schema fixture
+## 慢阻肺 schema fixture
 
 ```json
 {
   "version": "1.0.0",
-  "document_type": "general_medical_record",
+  "document_type": "copd_admission_record",
   "groups": [
     {
       "group_key": "basic_info",
@@ -74,7 +74,7 @@
     },
     {
       "group_key": "admission_course",
-      "group_name": "入院/病程信息",
+      "group_name": "慢阻肺入院记录",
       "fields": [
         { "field_key": "chief_complaint", "field_name": "主诉", "value_type": "long_text" }
       ]

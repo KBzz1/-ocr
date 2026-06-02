@@ -7,7 +7,7 @@
 ## 文档索引
 
 - `00-boundaries-and-principles.md`、`01-test-environment.md`、`02-quality-gates.md`：边界、测试环境、质量门禁。
-- `03-workstation.md`、`04-mobile-capture.md`、`05-page-management.md`、`06-quad-interaction.md`：工作台、手机采集、页序、四边形交互。
+- `03-workstation.md`、`04-mobile-capture.md`、`05-page-management.md`、`06-quad-interaction.md`：工作台、手机任务上传、页序展示、旧框选能力收敛说明。
 - `07-task-list.md`、`08-manual-review.md`、`09-field-evidence.md`、`10-field-status-confirmation.md`：任务列表、人工审核、字段来源、字段状态。
 - `11-export.md`、`12-error-recovery.md`、`13-offline-security-privacy.md`：导出、错误恢复、离线隐私。
 - `14-e2e-paths.md`、`15-fixtures.md`、`16-implementation-order.md`：E2E、fixtures、实施顺序。

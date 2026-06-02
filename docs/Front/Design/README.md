@@ -14,7 +14,7 @@
 
 ## 使用边界
 
-- 本目录素材是视觉参考，不替代 `docs/产品PRD.md`、`docs/Front/Front_BDD/`、`docs/Front/Front_TDD/` 或后端 API 契约。
+- 本目录素材是视觉参考，不替代 `docs/PRD文档/产品PRD.md`、`docs/Front/Front_BDD/`、`docs/Front/Front_TDD/` 或后端 API 契约。
 - 若视觉稿与 PRD、BDD、TDD 或后端可执行契约冲突，先以契约为准，并在实现前说明差异。
 - 不从图片或 HTML 草稿推断结构化字段、OCR 文本、模型输出或医学结论。
 - 未经明确要求，不删除、压缩、改名或覆盖原始素材。

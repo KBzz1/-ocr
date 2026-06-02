@@ -10,13 +10,13 @@
 - 合并顺序和验收门。
 - 防止不同执行者互相覆盖、越界实现或提前写不该写的业务。
 
-本 spec 覆盖 `docs/PRD任务清单.md` 中 FE-02、FE-03、FE-04、FE-05、FE-06 的执行组织，并承接 FE-01 当前状态。是否派发子 agent 由任务独立性决定；共享契约、路由骨架、集成收口和提交前审核默认串行执行。
+本 spec 覆盖 `docs/PRD文档/PRD任务清单.md` 中 FE-02、FE-03、FE-04、FE-05、FE-06 的执行组织，并承接 FE-01 当前状态。是否派发子 agent 由任务独立性决定；共享契约、路由骨架、集成收口和提交前审核默认串行执行。
 
 ## 权威依据
 
 - `AGENTS.md`：离线运行、无 CDN、无云 API、无遥测、前端不得推断结构化字段。
-- `docs/产品PRD.md`：前端 PRD。
-- `docs/PRD任务清单.md`：FE-01 到 FE-06。
+- `docs/PRD文档/产品PRD.md`：前端 PRD。
+- `docs/PRD文档/PRD任务清单.md`：FE-01 到 FE-06。
 - `docs/Shared/state-enums.md`：任务状态、会话状态、字段状态。
 - `docs/Shared/error-codes.md`：错误码和用户可理解错误。
 - `docs/superpowers/specs/2026-05-13-frontend-workstation-design.md`：FE-01 工作台设计。

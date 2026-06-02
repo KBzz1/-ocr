@@ -13,8 +13,8 @@
 ## Reference Context
 
 - Spec: `docs/superpowers/specs/2026-05-20-mvp-e2e-acceptance-design.md`
-- PRD index: `docs/PRD任务清单.md`
-- Product PRD: `docs/产品PRD.md`
+- PRD index: `docs/PRD文档/PRD任务清单.md`
+- Product PRD: `docs/PRD文档/产品PRD.md`
 - State contract: `docs/Shared/state-enums.md`
 - Error contract: `docs/Shared/error-codes.md`
 - Backend boundaries: `app/backend/README.md`
@@ -47,7 +47,7 @@
 
 ### Docs
 
-- Modify after all verification passes: `docs/PRD任务清单.md`
+- Modify after all verification passes: `docs/PRD文档/PRD任务清单.md`
   - Mark `E2E-MVP-01` and `E2E-MVP-02` as done only if backend tests, frontend tests, and frontend E2E pass.
   - Keep `REL-MVP-01/02` delayed.
 
@@ -673,7 +673,7 @@ git commit -m "补齐MVP前端失败流程E2E"
 ## Task 6: Final Verification And PRD Status
 
 **Files:**
-- Modify: `docs/PRD任务清单.md`
+- Modify: `docs/PRD文档/PRD任务清单.md`
 
 - [ ] **Step 1: Run backend full tests**
 
@@ -707,7 +707,7 @@ Expected: PASS.
 
 - [ ] **Step 4: Update PRD task status only after all tests pass**
 
-In `docs/PRD任务清单.md`, change:
+In `docs/PRD文档/PRD任务清单.md`, change:
 
 ```markdown
 - [~] **E2E-MVP-01 成功主流程**
@@ -746,7 +746,7 @@ Expected: no output and exit code 0.
 - [ ] **Step 6: Commit PRD status update**
 
 ```bash
-git add docs/PRD任务清单.md
+git add docs/PRD文档/PRD任务清单.md
 git commit -m "标记MVP端到端验收完成"
 ```
 

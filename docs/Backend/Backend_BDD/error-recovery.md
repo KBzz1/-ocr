@@ -19,10 +19,10 @@ Feature: 错误处理与可恢复性
         }
       }
 
-  Scenario: 不存在的资源返回 404
-    Given 系统中不存在 session_id 为 "NONEXISTENT" 的会话
-    When 我请求 GET /api/capture-sessions/NONEXISTENT
-    Then 应返回 404 和错误码 SESSION_NOT_FOUND
+  Scenario: 不存在的任务返回 404
+    Given 系统中不存在 task_id 为 "NONEXISTENT" 的任务
+    When 我请求 GET /api/tasks/NONEXISTENT
+    Then 应返回 404 和错误码 TASK_NOT_FOUND
     And 不应返回调用堆栈
 
   Scenario: 上传失败的页面可重试

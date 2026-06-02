@@ -13,7 +13,7 @@
 ## Reference Context
 
 - Spec: `docs/superpowers/specs/2026-05-20-review-efficiency-design.md`
-- PRD: `docs/产品PRD.md` 中 `PR-FE-004：审核界面`
+- PRD: `docs/PRD文档/产品PRD.md` 中 `PR-FE-004：审核界面`
 - State contract: `docs/Shared/state-enums.md`
 - Frontend boundary: `app/frontend/README.md`
 - Current implementation:

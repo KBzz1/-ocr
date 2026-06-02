@@ -15,7 +15,7 @@
 ## File Structure
 
 - Modify `AGENTS.md` and `CLAUDE.md`: update repository boundary to allow in-repo COPD-specialty rule extraction while keeping OCR/image processing out of scope.
-- Modify `docs/产品PRD.md`, `docs/PRD任务清单.md`, `docs/Backend/Backend_BDD/algorithm-integration.md`, `docs/Backend/Backend_TDD/02-algorithm-ports.md`, `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`, `docs/Backend/Backend_TDD/08-schema-management.md`, `docs/Shared/state-enums.md`: align docs with full field results, field-level risk flags, and in-repo COPD extraction.
+- Modify `docs/PRD文档/产品PRD.md`, `docs/PRD文档/PRD任务清单.md`, `docs/Backend/Backend_BDD/algorithm-integration.md`, `docs/Backend/Backend_TDD/02-algorithm-ports.md`, `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`, `docs/Backend/Backend_TDD/08-schema-management.md`, `docs/Shared/state-enums.md`: align docs with full field results, field-level risk flags, and in-repo COPD extraction.
 - Create `app/config/schemas/copd_admission_record.v1.yaml`: authoritative COPD schema.
 - Modify `app/backend/__init__.py`: load COPD schema and wire COPD field extraction port.
 - Modify `app/backend/services/review_service.py`: preserve extraction metadata, verification status, quality flags, and OCR correction audit data.

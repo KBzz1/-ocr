@@ -22,7 +22,7 @@
 
 ## 权威输入
 
-- PRD 字段组以 `docs/产品PRD.md` 的 `PR-BE-007` 为准。
+- PRD 字段组以 `docs/PRD文档/产品PRD.md` 的 `PR-BE-007` 为准。
 - 字段状态以 `docs/Shared/state-enums.md` 为准，BE-06 不新增字段状态。
 - 错误响应结构以 `docs/Shared/error-codes.md` 为准。
 - 当前 API 路径以后端 BDD/TDD 中的 `GET /api/schema/current` 为准。

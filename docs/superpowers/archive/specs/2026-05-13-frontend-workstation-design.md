@@ -2,7 +2,7 @@
 
 ## 范围
 
-对应 `docs/PRD任务清单.md` 中：
+对应 `docs/PRD文档/PRD任务清单.md` 中：
 
 - FE-01-01 前端地基和离线资源
 - FE-01-02 工作台启动态
@@ -32,8 +32,8 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：PR-FE-001。
-- `docs/PRD任务清单.md`：FE-01 ~ FE-06。
+- `docs/PRD文档/产品PRD.md`：PR-FE-001。
+- `docs/PRD文档/PRD任务清单.md`：FE-01 ~ FE-06。
 - `docs/Shared/state-enums.md`：任务状态、采集会话状态、字段状态。
 - `docs/Shared/error-codes.md`：统一错误响应和用户可理解错误。
 - `docs/Front/AGENTS.md`：设计稿只作视觉参考，不覆盖 PRD/BDD/TDD。

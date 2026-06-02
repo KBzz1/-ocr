@@ -17,7 +17,7 @@
 
 ## 阅读顺序
 
-- 改前端行为前，先读 `docs/产品PRD.md` 对应 PR-FE 条目，再读相关 `Front_BDD/` 场景。
+- 改前端行为前，先读 `docs/PRD文档/产品PRD.md` 对应 PR-FE 条目，再读相关 `Front_BDD/` 场景。
 - 改状态、错误提示或 API 断言前，先读 `docs/Shared/state-enums.md` 和 `docs/Shared/error-codes.md`。
 - 接入后端 API 前，先读 `app/backend/tests/test_api_contracts.py` 和 `app/backend/tests/test_backend_e2e.py`，以现有可执行契约为准。
 - 做前端视觉实现前，可参考 `docs/Front/Design/` 的草稿和素材；若草稿与 PRD/BDD/TDD 冲突，先说明冲突，不直接以草稿覆盖产品契约。
@@ -25,7 +25,7 @@
 
 ## 工作规则
 
-- 前端文档只覆盖采集交互、页面展示、字段编辑、确认操作、导出触发和错误展示。
+- 前端文档只覆盖任务入口、手机多图上传、页面展示、字段编辑、确认操作、导出触发和错误展示。
 - BDD 保持业务语言，不写组件、hook、mock 服务等实现细节。
 - TDD 记录可执行测试设计，不要求真实 OCR、LLM、图像处理或外部网络。
 - `Design/` 下素材视为输入资料，未经明确要求不要删除、压缩、改名或覆盖原文件。

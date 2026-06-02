@@ -16,8 +16,8 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：当前 MVP 产品目标。
-- `docs/PRD任务清单.md`：MVP 任务索引和后置能力。
+- `docs/PRD文档/产品PRD.md`：当前 MVP 产品目标。
+- `docs/PRD文档/PRD任务清单.md`：MVP 任务索引和后置能力。
 - `docs/Shared/state-enums.md`：MVP 任务状态和字段状态。
 - `docs/Shared/error-codes.md`：MVP 错误码。
 - `docs/Shared/terminology.md`：MVP 术语。

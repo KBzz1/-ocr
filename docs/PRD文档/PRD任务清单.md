@@ -125,8 +125,8 @@
 - [x] **BE-COPD-01-01 慢阻肺专病 schema**
   - 范围：定义慢阻肺/呼吸系统入院记录结构化字段，含字段 key、中文名、字段组和类型。
   - 边界：为 MVP 字段来源，后续可扩展其他病种 schema。
-  - 设计：`docs/superpowers/specs/2026-05-17-copd-extraction-design.md`。
-  - 计划：`docs/superpowers/plans/2026-05-17-copd-extraction-plan.md`。
+  - 设计：`docs/superpowers/specs/2026-05-21-copd-field-extraction-design.md`。
+  - 计划：`docs/superpowers/plans/2026-05-21-copd-field-extraction-implementation.md`。
 
 - [x] **BE-COPD-01-02 字段结果契约**
   - 范围：定义结构化字段抽取结果契约，含 `extraction_status`、`verification_status`、`quality_flags`、`ocr_correction` 元数据。

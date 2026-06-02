@@ -16,23 +16,15 @@ Feature: OCR/文档解析与慢阻肺字段抽取
     And error_message 应包含 "算法模块未配置"
     And 任务不应进入 review 或任何可审核状态
 
-  Scenario: 图像处理模块返回处理后图像路径
-    Given 外部图像处理模块已正确配置
-    When 系统调用图像处理模块传入原图和框选坐标
-    Then 模块返回的 processed 图像路径应被持久化
-    And 该路径应传递给后续的文档解析模块
-
-  Scenario: 图像处理模块异常时任务失败
-    Given 外部图像处理模块可被调用但抛出异常
+  Scenario: 处理流程使用任务原图列表作为算法输入
+    Given 任务 T001 已上传 3 张原图
     When 系统触发任务处理
-    Then 任务状态应变为 failed
-    And error_code 应为 ALGORITHM_MODULE_FAILED
-    And 原始图像和 quad_points 应被保留用于排查
-    And 系统不应崩溃或返回 500
+    Then 系统应按上传成功顺序把原图路径传给 OCR/文档解析端口
+    And 不应依赖采集会话、quad_points、裁剪图或透视矫正结果
 
   Scenario: 文档解析成功并原样保存结果
     Given 外部文档解析模块已正确配置
-    When 系统调用文档解析模块传入处理后图像列表
+    When 系统调用文档解析模块传入任务原图列表
     Then 模块返回的 pages、blocks、tables、merged_text 应被原样持久化
     And 系统不应修改或改写模块返回的任何字段值
 

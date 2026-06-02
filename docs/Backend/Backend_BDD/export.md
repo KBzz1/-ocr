@@ -8,23 +8,15 @@ Feature: 导出服务
   我想要 将审核后的结构化结果导出为 Excel 或 JSON
   以便 用于人工流转或后续系统集成
 
-  Scenario: 导出前完整性检查
+  Scenario: 导出 JSON 文件
     Given 任务 T001 处于 review 或 done 状态
-    When 我请求 GET /api/tasks/T001/export/check
-    Then 应返回未审核字段、可疑字段、空值字段和无来源字段统计
-    And 如存在风险字段，应返回 warning 标记但不阻断导出
-
-  Scenario: 用户确认风险后导出 JSON 文件
-    Given 任务 T001 处于 review 或 done 状态
-    And 前端已展示完整性检查预警并由用户确认继续
     When 我请求 GET /api/tasks/T001/export/json
     Then 应返回 JSON 下载响应和正确的文件名
     And 字段值应来自人工审核的 final_value
     And 字段顺序应与 schema 定义一致
 
-  Scenario: 用户确认风险后导出 Excel 文件
+  Scenario: 导出 Excel 文件
     Given 任务 T001 处于 review 或 done 状态
-    And 前端已展示完整性检查预警并由用户确认继续
     When 我请求 GET /api/tasks/T001/export/excel
     Then 应返回 Excel 下载响应和正确的文件名
     And 字段值应来自人工审核结果而非自动抽取值
@@ -46,4 +38,11 @@ Feature: 导出服务
     When 导出失败
     Then 系统应返回错误码 EXPORT_FAILED
     And 任务审核结果和任务状态不应被修改
+
+  Scenario: 批量导出 JSON zip
+    Given 任务 T001 和 T002 均处于 review 或 done 状态
+    When 我请求 POST /api/tasks/export/batch-zip
+    Then 应返回 zip 下载响应
+    And zip 内应包含每个任务的 JSON 导出结果和批量导出摘要
+    And 不应生成批量 Excel
 ```

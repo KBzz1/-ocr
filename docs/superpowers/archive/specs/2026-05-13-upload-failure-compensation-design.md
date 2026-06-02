@@ -2,7 +2,7 @@
 
 ## 范围
 
-对应 `docs/PRD任务清单.md` 中 BE-03-08：
+对应 `docs/PRD文档/PRD任务清单.md` 中 BE-03-08：
 
 - 文件或元数据保存失败时清理已创建的空页面项和临时文件。
 - 不得留下 finish 可固化的空上传页。
@@ -27,8 +27,8 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：PR-BE-003、PR-BE-011、上传失败可恢复性。
-- `docs/PRD任务清单.md`：BE-03-08。
+- `docs/PRD文档/产品PRD.md`：PR-BE-003、PR-BE-011、上传失败可恢复性。
+- `docs/PRD文档/PRD任务清单.md`：BE-03-08。
 - `docs/Shared/error-codes.md`：`INVALID_REQUEST_PARAMS`、`UNSUPPORTED_FILE_TYPE`、`FILE_TOO_LARGE`、`INVALID_QUAD_POINTS`。
 - `docs/Backend/Backend_BDD/file-upload.md`。
 - `docs/Backend/Backend_TDD/05-file-upload.md`。

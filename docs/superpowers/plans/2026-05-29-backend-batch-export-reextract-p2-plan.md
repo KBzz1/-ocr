@@ -57,7 +57,7 @@
   - `app/frontend/src/pages/mobile-capture/MobileCapturePage.test.tsx`
   - `app/frontend/src/api/shared-contracts.test.ts`
 - Docs after implementation:
-  - `docs/PRD任务清单.md`
+  - `docs/PRD文档/PRD任务清单.md`
 
 ---
 
@@ -1455,11 +1455,11 @@ Expected: commit succeeds.
 ### Task 9: PRD status and final verification
 
 **Files:**
-- Modify: `docs/PRD任务清单.md`
+- Modify: `docs/PRD文档/PRD任务清单.md`
 
 - [ ] **Step 1: Update PRD task list**
 
-In `docs/PRD任务清单.md`:
+In `docs/PRD文档/PRD任务清单.md`:
 
 - Mark `BE-MVP-05-07 批量导出清单与失败报告` as `[x]`.
 - Add a note under `BE-MVP-04-04 慢阻肺专病字段抽取`:
@@ -1511,7 +1511,7 @@ Expected: PASS. If blocked by environment-specific OCR/GPU assumptions, capture 
 Run:
 
 ```bash
-git add docs/PRD任务清单.md
+git add docs/PRD文档/PRD任务清单.md
 git commit -m "更新文书模板与批量导出进度"
 git status --short
 ```

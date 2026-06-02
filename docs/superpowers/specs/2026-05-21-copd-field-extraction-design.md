@@ -377,9 +377,9 @@ OCR 误差族群至少覆盖：
 
 需要同步更新：
 
-- `docs/产品PRD.md`：字段体系从通用病历改为慢阻肺/呼吸系统专病 MVP。
+- `docs/PRD文档/产品PRD.md`：字段体系从通用病历改为慢阻肺/呼吸系统专病 MVP。
 - 根级 `AGENTS.md` / `CLAUDE.md`：删除或修订“本仓库不得实现规则抽取”的旧边界，改为允许慢阻肺专病字段规则化抽取。
-- `docs/PRD任务清单.md`：新增专病字段抽取集成任务。
+- `docs/PRD文档/PRD任务清单.md`：新增专病字段抽取集成任务。
 - `docs/Backend/Backend_BDD/algorithm-integration.md`：更新字段抽取成功、空值展示、全空失败、证据失败场景。
 - `docs/Backend/Backend_TDD/02-algorithm-ports.md`：更新字段结果契约。
 - `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`：更新全空和 evidence 失败契约。

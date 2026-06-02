@@ -25,9 +25,9 @@
 
 ## 共享文档
 
-- `Shared/state-enums.md`：任务、采集会话、字段状态及合法转换。
+- `Shared/state-enums.md`：MVP 任务状态、字段状态、字段抽取元数据及合法转换。
 - `Shared/error-codes.md`：标准错误码、HTTP 状态码映射、统一错误响应结构。
-- `Shared/terminology.md`：工作站、采集会话、四边形框选、算法模块、Schema 等术语。
+- `Shared/terminology.md`：工作站、任务、手机上传入口、页面图像、算法模块、Schema 等术语。
 
 ## 工作规则
 
@@ -36,10 +36,9 @@
 - 修改错误码或错误响应：先读 `Shared/error-codes.md`，再读 `Backend/Backend_TDD/12-api-contracts.md` 和相关 BDD。
 - 修改算法集成边界：先读 `PRD文档/产品PRD.md`、`Backend/Backend_TDD/02-algorithm-ports.md` 和 `Backend/Backend_TDD/07-algorithm-failure-contracts.md`。
 - PRD 记录业务目标和验收标准；BDD 记录用户可观察行为；TDD 记录可执行测试设计、fixtures、失败条件和实施顺序。
-- superpowers 的 specs/plans 放在 `docs/superpowers/specs/` 和 `docs/superpowers/plans/`；合并实现后同步去掉过期 worktree 或“待接入”表述。
+- superpowers 的现行 specs/plans 放在 `docs/superpowers/specs/` 和 `docs/superpowers/plans/`；`docs/superpowers/archive/` 只作历史资料，不作为当前产品契约。
 - 共享契约变更必须同时扫描前端和后端引用，发现冲突先说明，不直接用局部文档覆盖全局契约。
 - 文档不得要求本仓库实现 OCR、图像预处理、裁剪或透视矫正。慢阻肺/呼吸系统入院记录的专病字段抽取、规则分段、薄规则质量核验和本地 LLM prompt harness 属于本仓库核心业务代码，文档可要求实现。
-- AGENTS.md 与 CLAUDE.md 成对维护；同目录内容保持一致，只替换标题行。
 - 不在 BDD/TDD 目录下继续新增 AGENTS.md / CLAUDE.md，除非该目录确有长期独有规则且不能由现有文件覆盖。
 
 ## 全局架构边界

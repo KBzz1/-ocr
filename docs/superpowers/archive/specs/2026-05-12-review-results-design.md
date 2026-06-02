@@ -2,7 +2,7 @@
 
 ## 范围
 
-对应 PRD `PR-BE-008`，覆盖 `docs/PRD任务清单.md` 中：
+对应 PRD `PR-BE-008`，覆盖 `docs/PRD文档/PRD任务清单.md` 中：
 
 - BE-07-01 审核结果读取
 - BE-07-02 字段编辑保存
@@ -30,7 +30,7 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：PR-BE-008、PR-FE-004、PR-FE-005、PR-FE-006。
+- `docs/PRD文档/产品PRD.md`：PR-BE-008、PR-FE-004、PR-FE-005、PR-FE-006。
 - `docs/Shared/state-enums.md`：任务状态和字段状态。
 - `docs/Shared/error-codes.md`：`REVIEW_VALIDATION_FAILED`、`TASK_NOT_FOUND`、`INVALID_TASK_TRANSITION`。
 - `docs/Backend/Backend_BDD/review-persistence.md`。

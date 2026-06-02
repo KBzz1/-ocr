@@ -30,7 +30,7 @@ This plan intentionally does not implement mobile capture UI, task list UI, revi
 - `app/frontend/src/api/shared-contracts.test.ts`: new API/status contract tests.
 - `app/frontend/src/app/routes.test.ts`: new route skeleton tests.
 - `app/frontend/README.md`: document route and contract layer status.
-- `docs/PRD任务清单.md`: update only if S1/S2 completes and validation passes.
+- `docs/PRD文档/PRD任务清单.md`: update only if S1/S2 completes and validation passes.
 
 ## Task 1: Add Shared Contract Tests
 

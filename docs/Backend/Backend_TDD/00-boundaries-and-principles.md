@@ -1,6 +1,6 @@
 # 后端 TDD — 测试总原则与边界
 
-> 基于 `docs/产品PRD.md` 和 `docs/Shared/` 共享契约编写。
+> 基于 `docs/PRD文档/产品PRD.md` 和 `docs/Shared/` 共享契约编写。
 
 ## 当前边界
 

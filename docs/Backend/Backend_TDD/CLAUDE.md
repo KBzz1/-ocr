@@ -8,7 +8,7 @@
 
 - `00-boundaries-and-principles.md`、`01-test-layers.md`：边界和测试层次。
 - `02-algorithm-ports.md`、`07-algorithm-failure-contracts.md`：算法端口和失败契约。
-- `03-system-startup.md`、`04-capture-sessions.md`、`05-file-upload.md`、`06-task-lifecycle.md`：启动、会话、上传、任务生命周期。
+- `03-system-startup.md`、`04-capture-sessions.md`、`05-file-upload.md`、`06-task-lifecycle.md`：启动、旧采集会话收敛、任务图片上传、任务生命周期。
 - `08-schema-management.md`、`09-review-results.md`、`10-export-service.md`、`11-logging-privacy.md`：Schema、审核、导出、日志隐私。
 - `12-api-contracts.md`、`13-deployment.md`、`14-fixtures.md`、`15-implementation-order.md`、`16-prohibited-items.md`：API、部署、fixtures、实施顺序、禁止项。
 

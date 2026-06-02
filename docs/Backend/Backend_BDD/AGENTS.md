@@ -6,7 +6,7 @@
 
 ## 文档索引
 
-- `system-startup.md`、`capture-session.md`、`file-upload.md`：启动、采集会话、图片上传。
+- `system-startup.md`、`capture-session.md`、`file-upload.md`：启动、旧采集会话收敛、任务图片上传。
 - `task-lifecycle.md`、`algorithm-integration.md`、`schema-management.md`：任务状态、算法集成、Schema。
 - `review-persistence.md`、`export.md`：审核结果持久化和导出。
 - `logging-privacy.md`、`error-recovery.md`：日志隐私和错误恢复。

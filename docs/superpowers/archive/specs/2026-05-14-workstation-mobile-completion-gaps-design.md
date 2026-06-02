@@ -43,7 +43,7 @@
 ## 权威依据
 
 - `AGENTS.md`：离线运行、无云 API、前端不得推断字段。
-- `docs/产品PRD.md`：PR-FE-001、PR-FE-002、PR-FE-009、PR-BE-002。
+- `docs/PRD文档/产品PRD.md`：PR-FE-001、PR-FE-002、PR-FE-009、PR-BE-002。
 - `docs/Front/Front_BDD/workstation.md`：系统无响应重试、手机无法连接帮助。
 - `docs/Front/Front_BDD/mobile-capture.md`：手机采集主流程、只读态、上传失败重试。
 - `docs/Front/Front_BDD/quad-selection.md`：四边形拖动、越界限制、自相交阻止上传、重新框选。

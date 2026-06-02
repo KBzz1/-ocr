@@ -5,10 +5,6 @@
 ## 端口定义
 
 ```ts
-type ImageProcessingPort = {
-  process(input: { original_path: string; quad_points?: QuadPoints | null }): Promise<ImageProcessingResult>;
-};
-
 type DocumentParsingPort = {
   parse(input: { image_paths: string[]; task_id: string }): Promise<DocumentResult>;
 };
@@ -18,11 +14,12 @@ type FieldExtractionPort = {
 };
 ```
 
+当前 MVP 的算法输入来自任务图片列表，按上传成功顺序排列。后端不向算法端口传入采集会话、`quad_points`、裁剪图或透视矫正结果。
+
 `FieldResult` 是按 schema 全量返回的字段结果。每个字段保留自动值、证据、抽取状态、字段级复核状态、质量风险标记和 OCR 纠偏审计信息；未抽到字段也应作为空值结果进入审核页。
 
 ## 失败契约
 
-- `ImageProcessingPort` 未配置或异常时，任务处理失败，错误码为 `ALGORITHM_MODULE_NOT_CONFIGURED` 或 `ALGORITHM_MODULE_FAILED`。
 - `DocumentParsingPort` 未配置、异常或返回空页结果时，任务处理失败。
 - 慢阻肺字段抽取未配置、异常、全字段为空、返回 schema 之外字段或返回契约非法字段时，任务处理失败。
 - 单字段 evidence 可疑、OCR 疑似错误或复核失败时，字段进入审核页提示人工核验，不直接让整个任务失败。

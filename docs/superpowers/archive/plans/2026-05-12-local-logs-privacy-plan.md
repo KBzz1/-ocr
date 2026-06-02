@@ -12,7 +12,7 @@
 
 ## Scope and Boundaries
 
-- 权威依据：`docs/产品PRD.md` PR-BE-010/PR-BE-001、`docs/Backend/Backend_TDD/11-logging-privacy.md`、`docs/Backend/Backend_TDD/13-deployment.md`、`docs/Backend/Backend_BDD/logging-privacy.md`、`app/backend/README.md`。
+- 权威依据：`docs/PRD文档/产品PRD.md` PR-BE-010/PR-BE-001、`docs/Backend/Backend_TDD/11-logging-privacy.md`、`docs/Backend/Backend_TDD/13-deployment.md`、`docs/Backend/Backend_BDD/logging-privacy.md`、`app/backend/README.md`。
 - 日志只写本地 `logs/` 或配置的 `log_dir`；不得上传、遥测或请求外部日志服务。
 - 日志字段采用白名单；不得记录完整病历原文、完整 OCR 文本、完整 LLM 输出、图片 base64、身份证号、手机号、Python 调用栈。
 - 离线检查只检查本地路径、schema 文件和模型目录占位；不得联网下载、探测公网、安装依赖或加载真实模型。

@@ -12,7 +12,7 @@
 
 ## Scope and Boundaries
 
-- 权威依据：`docs/产品PRD.md` PR-BE-008、`docs/Shared/state-enums.md`、`docs/Shared/error-codes.md`、`docs/Backend/Backend_TDD/09-review-results.md`、`docs/Backend/Backend_BDD/review-persistence.md`。
+- 权威依据：`docs/PRD文档/产品PRD.md` PR-BE-008、`docs/Shared/state-enums.md`、`docs/Shared/error-codes.md`、`docs/Backend/Backend_TDD/09-review-results.md`、`docs/Backend/Backend_BDD/review-persistence.md`。
 - 只读取 `results/{task_id}/field_candidates.json`，不得覆盖或重写自动候选文件。
 - 初始化时只复制外部候选字段；不得根据 schema、OCR 文本或页面内容补造缺失字段。
 - 只允许 `ready_for_review` 任务编辑和确认；`confirmed` 任务允许读取；`failed/uploaded/processing` 等状态必须返回 `INVALID_TASK_TRANSITION`。

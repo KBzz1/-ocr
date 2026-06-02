@@ -12,8 +12,8 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`: PR-BE-004、PR-BE-005、PR-BE-006、PR-BE-011；算法能力由外部本地模块提供，失败必须进入 `failed`。
-- `docs/PRD任务清单.md`: BE-05 外部算法端口；BE-06 schema 管理并行，BE-05 不实现 schema 白名单规则。
+- `docs/PRD文档/产品PRD.md`: PR-BE-004、PR-BE-005、PR-BE-006、PR-BE-011；算法能力由外部本地模块提供，失败必须进入 `failed`。
+- `docs/PRD文档/PRD任务清单.md`: BE-05 外部算法端口；BE-06 schema 管理并行，BE-05 不实现 schema 白名单规则。
 - `docs/Shared/state-enums.md`: `processing -> ready_for_review | failed`，`failed -> processing`。
 - `docs/Shared/error-codes.md`: `ALGORITHM_MODULE_NOT_CONFIGURED`、`ALGORITHM_MODULE_FAILED`、`ALGORITHM_CONTRACT_INVALID` 是任务失败错误码，不是常规 HTTP 错误响应码。
 - `docs/Shared/terminology.md`: 算法模块是外部交付的图像处理 + OCR + LLM 模块。

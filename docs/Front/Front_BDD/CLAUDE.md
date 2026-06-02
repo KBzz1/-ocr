@@ -7,7 +7,7 @@
 ## 文档索引
 
 - `workstation.md`：电脑端工作台。
-- `mobile-capture.md`、`page-management.md`、`quad-selection.md`：手机采集、页序管理、四边形框选。
+- `mobile-capture.md`、`page-management.md`、`quad-selection.md`：手机任务上传、按上传顺序形成页序、旧框选能力收敛说明。
 - `task-list.md`、`desktop-review.md`：任务列表和电脑端人工审核。
 - `field-evidence.md`、`field-status.md`：字段来源和字段状态。
 - `export.md`、`error-recovery.md`、`offline-security.md`、`e2e-workflows.md`：导出、错误恢复、离线隐私、端到端流程。

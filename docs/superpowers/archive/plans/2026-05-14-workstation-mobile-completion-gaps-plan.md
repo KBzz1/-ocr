@@ -927,7 +927,7 @@ git commit -m "增加当前采集会话结束占位"
 ### Task 7: Full Verification and Documentation Sync
 
 **Files:**
-- Modify if needed: `docs/PRD任务清单.md`
+- Modify if needed: `docs/PRD文档/PRD任务清单.md`
 - Modify if needed: `docs/superpowers/specs/2026-05-14-workstation-mobile-completion-gaps-design.md`
 
 - [ ] **Step 1: Run backend focused tests**
@@ -982,7 +982,7 @@ Expected: no output and exit code 0.
 
 - [ ] **Step 6: Update PRD checklist only if all checks pass**
 
-If all checks pass, update `docs/PRD任务清单.md` notes for `FE-01` and `FE-02` to mention:
+If all checks pass, update `docs/PRD文档/PRD任务清单.md` notes for `FE-01` and `FE-02` to mention:
 
 - real quad drag is implemented,
 - saved quad replay is implemented,
@@ -994,7 +994,7 @@ If all checks pass, update `docs/PRD任务清单.md` notes for `FE-01` and `FE-0
 If Step 6 changed docs:
 
 ```bash
-git add docs/PRD任务清单.md docs/superpowers/specs/2026-05-14-workstation-mobile-completion-gaps-design.md
+git add docs/PRD文档/PRD任务清单.md docs/superpowers/specs/2026-05-14-workstation-mobile-completion-gaps-design.md
 git commit -m "同步首页和手机采集页缺口验收状态"
 ```
 

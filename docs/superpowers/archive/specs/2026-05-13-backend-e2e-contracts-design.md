@@ -2,7 +2,7 @@
 
 ## 范围
 
-对应 `docs/PRD任务清单.md` 中：
+对应 `docs/PRD文档/PRD任务清单.md` 中：
 
 - BE-10-01 API 全量契约测试
 - BE-10-02 成功 fixture 主流程
@@ -29,7 +29,7 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：业务主流程、后端 PRD。
+- `docs/PRD文档/产品PRD.md`：业务主流程、后端 PRD。
 - `docs/Shared/state-enums.md`。
 - `docs/Shared/error-codes.md`。
 - `docs/Backend/Backend_TDD/12-api-contracts.md`。

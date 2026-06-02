@@ -16,7 +16,7 @@
 
 ## 阅读顺序
 
-- 改后端行为前，先读 `docs/产品PRD.md` 对应 PR-BE 条目，再读相关 `Backend_BDD/` 场景。
+- 改后端行为前，先读 `docs/PRD文档/产品PRD.md` 对应 PR-BE 条目，再读相关 `Backend_BDD/` 场景。
 - 改状态机、错误码或响应结构前，先读 `docs/Shared/state-enums.md` 和 `docs/Shared/error-codes.md`。
 - 改算法边界前，先读 `Backend_TDD/02-algorithm-ports.md` 和 `Backend_TDD/07-algorithm-failure-contracts.md`。
 - 写或调整测试设计时，再读 `Backend_TDD/` 中对应编号文件。

@@ -4,7 +4,7 @@
 
 ## 范围
 
-对应 PRD `PR-BE-009`，覆盖 `docs/PRD任务清单.md` 中：
+对应 PRD `PR-BE-009`，覆盖 `docs/PRD文档/PRD任务清单.md` 中：
 
 - BE-08-01 导出前完整性检查
 - BE-08-02 JSON 导出
@@ -32,7 +32,7 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：PR-BE-009、PR-FE-007。
+- `docs/PRD文档/产品PRD.md`：PR-BE-009、PR-FE-007。
 - `docs/Shared/state-enums.md`：`confirmed`、`exported` 任务状态，字段状态。
 - `docs/Shared/error-codes.md`：`EXPORT_VALIDATION_FAILED`、`EXPORT_FAILED`、`TASK_NOT_FOUND`。
 - `docs/Backend/Backend_BDD/export.md`。

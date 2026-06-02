@@ -14,8 +14,8 @@
 
 - 全仓库规则：`AGENTS.md`
 - 文档规则：`docs/AGENTS.md`
-- 产品依据：`docs/产品PRD.md`
-- 任务索引：`docs/PRD任务清单.md`
+- 产品依据：`docs/PRD文档/产品PRD.md`
+- 任务索引：`docs/PRD文档/PRD任务清单.md`
 - 状态契约：`docs/Shared/state-enums.md`
 - 错误码契约：`docs/Shared/error-codes.md`
 - Spec：`docs/superpowers/specs/2026-05-19-mvp-simplification-design.md`
@@ -130,7 +130,7 @@
 
 ### Docs
 
-- Modify after implementation: `docs/PRD任务清单.md`
+- Modify after implementation: `docs/PRD文档/PRD任务清单.md`
   - 将完成的 `需收敛` 项更新为 `已完成`，保留未实施项真实状态。
   - 本计划本身不要求在执行期间提前修改清单。
 
@@ -2173,7 +2173,7 @@ git commit -m "收口前端 MVP 端到端流程"
 - Modify only if failures identify stale references:
   - `app/backend/**`
   - `app/frontend/**`
-  - `docs/PRD任务清单.md`
+  - `docs/PRD文档/PRD任务清单.md`
 
 - [ ] **Step 1: Run backend full suite**
 
@@ -2222,7 +2222,7 @@ Expected allowed matches:
 - Historical plans/specs that explicitly describe removed behavior.
 - This implementation plan.
 - `docs/superpowers/specs/2026-05-19-mvp-simplification-design.md` sections that say old behavior is removed.
-- `docs/PRD任务清单.md` post-MVP or `需收敛` notes until updated.
+- `docs/PRD文档/PRD任务清单.md` post-MVP or `需收敛` notes until updated.
 
 Expected disallowed matches:
 
@@ -2231,11 +2231,11 @@ Expected disallowed matches:
 - Current MVP backend/frontend tests.
 - `docs/Shared/state-enums.md`.
 - `docs/Shared/error-codes.md`.
-- Positive PRD text in `docs/产品PRD.md`.
+- Positive PRD text in `docs/PRD文档/产品PRD.md`.
 
 - [ ] **Step 5: Update PRD task checklist after implementation**
 
-In `docs/PRD任务清单.md`, update only items proven by passing tests. Example updates after all phases pass:
+In `docs/PRD文档/PRD任务清单.md`, update only items proven by passing tests. Example updates after all phases pass:
 
 ```markdown
 | BE-MVP-01 任务创建和二维码上传入口 | 已完成 | `app/backend/routes/task.py`、`app/backend/routes/mobile.py` | 创建 `uploading` 任务并生成手机上传 URL；不再创建采集会话 |
@@ -2248,7 +2248,7 @@ Do not mark frontend pages complete until their Vitest and E2E coverage is green
 - [ ] **Step 6: Commit acceptance cleanup**
 
 ```bash
-git add docs/PRD任务清单.md app/backend app/frontend
+git add docs/PRD文档/PRD任务清单.md app/backend app/frontend
 git commit -m "完成 MVP 收敛验收清理"
 ```
 

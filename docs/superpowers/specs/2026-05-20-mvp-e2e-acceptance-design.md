@@ -2,7 +2,7 @@
 
 ## 范围
 
-本 spec 定义 `docs/PRD任务清单.md` 中 `E2E-MVP-01` 和 `E2E-MVP-02` 的正向实现设计。目标是把当前 MVP 主流程从“模块分别可用”推进到“可验收闭环”：
+本 spec 定义 `docs/PRD文档/PRD任务清单.md` 中 `E2E-MVP-01` 和 `E2E-MVP-02` 的正向实现设计。目标是把当前 MVP 主流程从“模块分别可用”推进到“可验收闭环”：
 
 ```text
 电脑端新建任务
@@ -26,8 +26,8 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：当前产品主流程和 MVP 边界。
-- `docs/PRD任务清单.md`：当前任务优先级，运行包已延后。
+- `docs/PRD文档/产品PRD.md`：当前产品主流程和 MVP 边界。
+- `docs/PRD文档/PRD任务清单.md`：当前任务优先级，运行包已延后。
 - `docs/Shared/state-enums.md`：任务状态和字段状态。
 - `docs/Shared/error-codes.md`：标准错误码。
 - `docs/Shared/terminology.md`：术语。
@@ -248,7 +248,7 @@ npm --prefix app/frontend run test:e2e
 4. 补齐前端成功主流程浏览器 E2E。
 5. 补齐前端失败主流程浏览器 E2E。
 6. 跑后端、前端单测和前端 E2E，修正暴露出的契约缺口。
-7. 更新 `docs/PRD任务清单.md` 中 `E2E-MVP-01/02` 状态；运行包任务保持延后，直到 Docker 或本地脚本方案明确。
+7. 更新 `docs/PRD文档/PRD任务清单.md` 中 `E2E-MVP-01/02` 状态；运行包任务保持延后，直到 Docker 或本地脚本方案明确。
 
 ## 验收标准
 

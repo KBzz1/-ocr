@@ -2,7 +2,7 @@
 
 ## 范围
 
-对应 PRD `PR-BE-010`、部分 `PR-BE-001` 和 `docs/PRD任务清单.md` 中：
+对应 PRD `PR-BE-010`、部分 `PR-BE-001` 和 `docs/PRD文档/PRD任务清单.md` 中：
 
 - BE-09-01 本地日志事件
 - BE-09-02 离线依赖和模型目录检查
@@ -29,7 +29,7 @@
 
 ## 权威依据
 
-- `docs/产品PRD.md`：PR-BE-001、PR-BE-010、隐私和部署边界。
+- `docs/PRD文档/产品PRD.md`：PR-BE-001、PR-BE-010、隐私和部署边界。
 - `docs/Backend/Backend_BDD/logging-privacy.md`。
 - `docs/Backend/Backend_TDD/11-logging-privacy.md`。
 - `docs/Backend/Backend_TDD/13-deployment.md`。

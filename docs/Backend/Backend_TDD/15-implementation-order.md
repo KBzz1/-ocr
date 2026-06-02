@@ -6,7 +6,7 @@
 2. 系统状态、离线启动、局域网地址选择。 (`03-system-startup.md`)
 3. 任务创建、手机上传入口和上传完成。 (`06-task-lifecycle.md`)
 4. 上传文件校验、任务目录、页面元数据。 (`05-file-upload.md`)
-5. 页面删除、排序、finish 幂等和页序固化。
+5. 完成上传幂等、页序固化和非 `uploading` 任务拒绝继续上传。
 6. OCR/文档解析端口失败契约和慢阻肺字段结果契约。 (`07-algorithm-failure-contracts.md`)
 7. 任务处理编排：整体失败进入 `failed`，成功或单字段可疑进入 `review`。 (`06-task-lifecycle.md`)
 8. schema 管理和字段结果契约校验。 (`08-schema-management.md`)
