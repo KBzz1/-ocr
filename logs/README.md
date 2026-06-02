@@ -1,6 +1,14 @@
 # logs
 
-日志目录。真实运行日志文件不提交；排查本机问题时按需查看热日志、冷日志和结构化事件。
+日志运行挂载点。真实运行日志文件不提交；排查本机问题时按需查看热日志、冷日志和结构化事件。
+
+一键归档当前日志：
+
+```bash
+./scripts/maintenance/archive_logs.sh
+```
+
+归档会移动到 `.local/archive/<timestamp>/logs/`，并保留本目录的 `README.md` 与 `.gitignore`。
 
 ## 日志结构
 

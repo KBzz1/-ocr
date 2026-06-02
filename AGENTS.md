@@ -11,8 +11,8 @@
 ## 权威入口
 
 - 文档规则：`docs/AGENTS.md` / `docs/CLAUDE.md`
-- 产品需求：`docs/产品PRD.md`
-- PRD 实现清单：`docs/PRD任务清单.md`
+- 产品需求：`docs/PRD文档/产品PRD.md`
+- PRD 实现清单：`docs/PRD文档/PRD任务清单.md`
 - 状态枚举：`docs/Shared/state-enums.md`
 - 错误码：`docs/Shared/error-codes.md`
 - 术语表：`docs/Shared/terminology.md`
@@ -22,12 +22,13 @@
 
 ## 目录职责
 
-- `run.bat`、`stop.bat`：Windows 离线运行入口。
+- `deploy/windows/`：Windows Docker 离线部署入口。
+- `run.sh`、`stop.sh`：WSL/本机开发薄入口，实际脚本在 `scripts/dev/`。
 - `deploy/offline-images/`：正式离线 Docker 镜像 tar 缓存，用于本地启动和离线打包。
 - `app/backend/`：本地后端服务，负责本地 API、状态、持久化、导出、外部 OCR/文档解析端口编排，以及慢阻肺专病字段抽取。
 - `app/frontend/`：电脑端工作台与手机端采集页。
 - `app/config/`：应用配置命名空间，不提交真实部署参数。
-- `runtime/python/`：嵌入式 Python 运行环境。
+- `scripts/`：开发启停、部署打包、离线检查和维护脚本，按 `dev/`、`deploy/`、`checks/`、`maintenance/` 分层。
 - `models/ppstructure/`：外部图像、OCR、文档解析模型。
 - `models/llm/`：本地 LLM 模型权重。
 - `data/`：上传文件、处理结果和临时文件。
@@ -53,9 +54,9 @@
 ## 工作方式
 
 - 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 README。
-- 修改行为、状态或错误码前，先检查 `docs/产品PRD.md`、`docs/Shared/` 和相关 TDD/BDD 文档，如果对应文档跟当前任务有冲突，请告知我。
+- 修改行为、状态或错误码前，先检查 `docs/PRD文档/产品PRD.md`、`docs/Shared/` 和相关 TDD/BDD 文档，如果对应文档跟当前任务有冲突，请告知我。
 - 新增实现时，测试设计和契约文档先于实现落地；OCR/图像处理只写端口契约和失败处理，慢阻肺专病字段抽取按对应 spec/plan 实现。
-- 当前 PRD 进度以 `docs/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。
+- 当前 PRD 进度以 `docs/PRD文档/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。
 - AGENTS.md 与 CLAUDE.md 成对维护：同目录内容保持一致，只替换标题行。
 - Git commit message 使用中文。
 - Python 测试和本地命令默认使用 conda 环境 `manzufei_ocr`，例如 `conda run -n manzufei_ocr python -m pytest app/backend/tests -q`。

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IMAGE_NAME="${IMAGE_NAME:-manzufei-ocr:0.1.0}"
 BUNDLE_NAME="${BUNDLE_NAME:-manzufei_ocr_offline_bundle}"
 BUNDLE_DIR="${BUNDLE_DIR:-$ROOT_DIR/output/$BUNDLE_NAME}"

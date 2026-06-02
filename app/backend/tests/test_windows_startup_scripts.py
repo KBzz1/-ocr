@@ -108,12 +108,12 @@ class TestPidFile:
 
 
 class TestStopBatch:
-    """stop.bat 精准停止行为验证。"""
+    """Windows Docker stop script 行为验证。"""
 
     def test_stop_uses_pid_file_not_port_indiscriminate(self):
-        stop_content = open("stop.bat").read()
+        stop_content = open("deploy/windows/02_stop.bat").read()
         assert "netstat" not in stop_content, (
-            "stop.bat 不应使用 netstat 批量查找端口进程，应改用 PID 文件精准停止"
+            "Docker stop script 不应使用 netstat 批量查找端口进程"
         )
 
     def test_stop_reads_logs_backend_pid(self, tmp_path):
@@ -140,10 +140,8 @@ class TestStopBatch:
         assert not os.path.exists(pid_file)
 
     def test_stop_verifies_command_line_before_kill(self):
-        stop_content = open("stop.bat").read()
-        assert "app.backend.main" in stop_content or "app.backend" in stop_content, (
-            "stop.bat 应校验进程命令行属于本项目（包含 app.backend.main）后才终止"
-        )
+        stop_content = open("deploy/windows/02_stop.bat").read()
+        assert "docker compose down" in stop_content
 
     def test_stop_pid_file_empty_graceful(self, tmp_path):
         pid_file = os.path.join(str(tmp_path), "backend.pid")
@@ -156,23 +154,21 @@ class TestStopBatch:
         assert not os.path.exists(pid_file)
 
     def test_stop_cleans_stale_pid_when_process_is_not_backend(self):
-        stop_content = open("stop.bat").read()
-        assert "not a manzufei_ocr backend process" in stop_content
-        assert 'del "%PID_FILE%"' in stop_content
+        stop_content = open("deploy/windows/02_stop.bat").read()
+        assert "docker compose down" in stop_content
         assert "exit /b 0" in stop_content
 
     def test_stop_uses_pushd_for_unc_project_paths(self):
-        stop_content = open("stop.bat").read()
-        assert 'pushd "%~dp0"' in stop_content
-        assert 'cd /d "%~dp0"' not in stop_content
+        stop_content = open("deploy/windows/02_stop.bat").read()
+        assert "cd /d" not in stop_content
 
     def test_stop_uses_ascii_output_to_avoid_cmd_codepage_mojibake(self):
-        stop_content = open("stop.bat", encoding="utf-8").read()
+        stop_content = open("deploy/windows/02_stop.bat", encoding="utf-8").read()
         assert stop_content.isascii()
 
 
 class TestDirectoryCreation:
-    """目录预创建逻辑验证 — run.bat 行为对应。"""
+    """目录预创建逻辑验证。"""
 
     def test_directories_auto_created_on_config_load(self, tmp_path):
         from app.backend.config import load_config
@@ -296,7 +292,7 @@ class TestOfflineVerification:
         assert data["data"]["status"] == "running"
 
     def test_offline_startup_check_only_uses_loopback_status(self):
-        content = open("scripts/offline_startup_check.py").read().lower()
+        content = open("scripts/checks/offline_startup_check.py").read().lower()
 
         assert "http://127.0.0.1:8081/api/system/status" in content
         assert "8.8.8.8" not in content
@@ -305,7 +301,7 @@ class TestOfflineVerification:
         assert "popen" not in content
 
     def test_offline_startup_check_reports_required_directories(self, tmp_path, monkeypatch):
-        import scripts.offline_startup_check as check
+        import scripts.checks.offline_startup_check as check
 
         monkeypatch.setattr(check, "PROJECT_ROOT", tmp_path)
         for name in ("data", "exports", "logs"):
@@ -379,55 +375,10 @@ class TestStartupShutdownIntegration:
         assert "10.0.0.5:8081" in data["data"]["lan_addresses"]
 
 
-def test_run_bat_opens_frontend_workstation_not_health_check():
-    """run.bat 打开后端托管的工作台入口，而不是健康检查 JSON 或 Vite。"""
-    content = open("run.bat").read()
-    assert "WORKSTATION_URL=http://127.0.0.1:8081/" in content
-    assert 'start "" "%WORKSTATION_URL%"' in content
-    assert "127.0.0.1:5173" not in content
-    assert 'start "" "http://127.0.0.1:8081/api/system/status"' not in content
-
-
-def test_run_bat_health_check_still_uses_status_endpoint():
-    """WIN-NW-002: run.bat 健康检查仍使用 /api/system/status"""
-    content = open("run.bat").read()
-    assert "http://127.0.0.1:8081/api/system/status" in content
-
-
-def test_run_bat_starts_backend_without_vite_dev_server():
-    """run.bat 不应启动 Vite dev server，手机扫码统一访问后端 8081。"""
-    content = open("run.bat").read()
-    assert "-m app.backend.main" in content
-    assert "npm run dev" not in content
-    assert "FRONTEND_HEALTH_URL" not in content
-    assert "WORKSTATION_URL=http://127.0.0.1:8081/" in content
-
-
-def test_run_bat_rebuilds_frontend_dist_before_backend_start():
-    """run.bat 每次启动前构建前端，避免后端托管旧扫码逻辑。"""
-    content = open("run.bat").read()
-    assert 'set "FRONTEND_DIST_INDEX=%FRONTEND_DIR%\\dist\\index.html"' in content
-    assert "npm run build" in content
-    assert "ensure_frontend_dist" in content
-    assert "if exist \"%FRONTEND_DIST_INDEX%\"" not in content
-
-
-def test_run_bat_restarts_existing_backend_before_starting_backend():
-    """run.bat 每次启动必须重启旧后端，避免前端新 bundle 调到旧 API 路由。"""
-    content = open("run.bat").read()
-    assert "Found existing PID file" in content
-    assert 'del "%PID_FILE%"' in content
-    assert "Stopping existing backend before restart" in content
-    assert "taskkill /PID" in content
-    assert "Backend port is already in use without a valid PID file" in content
-    assert "backend_ready_existing" not in content
-
-
-def test_run_bat_uses_pushd_for_unc_project_paths():
-    """run.bat 从 \\wsl.localhost 这类 UNC 路径启动时必须能进入仓库目录。"""
-    content = open("run.bat").read()
-    assert 'pushd "%~dp0"' in content
-    assert 'cd /d "%~dp0"' not in content
+def test_root_windows_batch_entries_removed_for_docker_only_architecture():
+    """根级 Windows 非 Docker 启停入口已废弃，避免误导现场部署。"""
+    assert not Path("run.bat").exists()
+    assert not Path("stop.bat").exists()
 
 
 def test_docker_start_sets_public_base_url_for_mobile_qr():
@@ -491,14 +442,16 @@ def test_docker_build_compiles_llama_cpp_with_cuda():
 
 
 def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():
-    """run.bat 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
-    content = open("run.bat", encoding="utf-8").read()
+    """Docker Windows start script 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
+    content = open("deploy/windows/01_start.bat", encoding="utf-8").read()
     assert content.isascii()
 
 
 def test_wsl_run_script_starts_backend_without_vite_dev_server():
     """run.sh 在 WSL 内只启动后端，不依赖 Vite dev server。"""
-    content = open("run.sh").read()
+    wrapper = open("run.sh").read()
+    content = open("scripts/dev/run.sh").read()
+    assert 'exec "$ROOT_DIR/scripts/dev/run.sh" "$@"' in wrapper
     assert "CONDA_PYTHON" in content
     assert "miniconda3/envs/manzufei_ocr/bin/python" in content
     assert "-m app.backend.main" in content
@@ -512,7 +465,7 @@ def test_wsl_run_script_starts_backend_without_vite_dev_server():
 
 def test_wsl_run_script_restarts_existing_backend_before_starting_backend():
     """run.sh 每次启动必须重启旧后端，避免源码更新后继续跑旧路由。"""
-    content = open("run.sh").read()
+    content = open("scripts/dev/run.sh").read()
     assert "Stopping existing backend before restart" in content
     assert "kill" in content
     assert "Backend is already running" not in content
@@ -520,7 +473,7 @@ def test_wsl_run_script_restarts_existing_backend_before_starting_backend():
 
 def test_wsl_run_script_uses_vlm_server():
     """run.sh 本地启动必须走 OCR 常驻服务。"""
-    content = open("run.sh").read()
+    content = open("scripts/dev/run.sh").read()
 
     assert "paddleocr-vlm-server" in content
     assert "$ROOT_DIR/deploy/offline-images" in content
@@ -544,7 +497,7 @@ def test_wsl_run_script_uses_vlm_server():
 
 def test_wsl_run_script_uses_only_vlm_server_and_v1_6_model_dir():
     """run.sh 只允许启动 OCR 常驻服务并指向 PaddleOCR-VL-1.6 模型目录。"""
-    content = open("run.sh").read()
+    content = open("scripts/dev/run.sh").read()
 
     legacy_script = "paddleocr_vl_" + "batch_runner.py"
     assert legacy_script not in content
@@ -558,7 +511,9 @@ def test_wsl_run_script_uses_only_vlm_server_and_v1_6_model_dir():
 
 def test_wsl_stop_script_stops_backend_and_frontend_pids():
     """stop.sh 读取 WSL PID 文件停止前后端。"""
-    content = open("stop.sh").read()
+    wrapper = open("stop.sh").read()
+    content = open("scripts/dev/stop.sh").read()
+    assert 'exec "$ROOT_DIR/scripts/dev/stop.sh" "$@"' in wrapper
     assert 'BACKEND_PID_FILE="$LOG_DIR/backend.pid"' in content
     assert 'FRONTEND_PID_FILE="$LOG_DIR/frontend.pid"' in content
     assert "kill" in content
@@ -567,7 +522,7 @@ def test_wsl_stop_script_stops_backend_and_frontend_pids():
 
 def test_wsl_stop_script_stops_vlm_server_to_release_gpu_memory():
     """stop.sh 必须停止本地 OCR 常驻服务，避免停止后显存仍被占满。"""
-    content = open("stop.sh").read()
+    content = open("scripts/dev/stop.sh").read()
 
     assert "paddleocr-vlm-server" in content
     assert "docker compose stop paddleocr-vlm-server" in content
@@ -623,7 +578,7 @@ def test_docker_compose_pins_paddleocr_vlm_server_away_from_latest():
 
 
 def test_offline_bundle_script_defines_vlm_server_image_and_tag():
-    content = Path("scripts/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
+    content = Path("scripts/deploy/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
 
     digest = "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
     local_tag = "paddleocr-vlm-server:verified-digest-1cee5e7e"
@@ -645,7 +600,9 @@ def test_offline_bundle_script_defines_vlm_server_image_and_tag():
 
 
 def test_offline_bundle_script_saves_vlm_server_tar():
-    content = Path("scripts/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
+    content = Path("scripts/deploy/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
+
+    assert 'dirname "${BASH_SOURCE[0]}")/../..' in content
 
     # tar 路径必须出现且基于 LOCAL_TAG
     assert "paddleocr-vlm-server.tar" in content
@@ -662,3 +619,17 @@ def test_windows_import_script_loads_vlm_server_tar():
     assert content.count("docker load -i") >= 2
     # 加载后必须验证本地 image 出现
     assert "docker images paddleocr-vlm-server" in content
+
+
+def test_runtime_directory_removed_from_docker_only_architecture():
+    assert not Path("runtime").exists()
+
+
+def test_archive_logs_script_moves_runtime_logs_to_local_archive():
+    content = Path("scripts/maintenance/archive_logs.sh").read_text(encoding="utf-8")
+
+    assert ".local/archive" in content
+    assert "logs" in content
+    assert "backend-events.jsonl" in content
+    assert "backend.pid" in content
+    assert "frontend.pid" in content

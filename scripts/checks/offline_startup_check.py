@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline startup acceptance check.
 
-Run after ``run.bat`` has started the backend. This script only calls the
+Run after the Docker workstation has started. This script only calls the
 loopback status endpoint and performs static scans for forbidden external
 download/CDN/API strings in startup files.
 """
@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATUS_URL = "http://127.0.0.1:8081/api/system/status"
 FORBIDDEN_TOKENS = (
     "https://",
@@ -24,8 +24,13 @@ FORBIDDEN_TOKENS = (
     "wget ",
 )
 SCAN_FILES = (
-    "run.bat",
-    "stop.bat",
+    "docker-compose.yml",
+    "deploy/windows/00_import_image.bat",
+    "deploy/windows/01_start.bat",
+    "deploy/windows/02_stop.bat",
+    "deploy/windows/03_logs.bat",
+    "scripts/dev/run.sh",
+    "scripts/dev/stop.sh",
     "app/backend/main.py",
     "app/backend/__init__.py",
     "app/backend/config.py",

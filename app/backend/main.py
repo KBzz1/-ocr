@@ -1,5 +1,5 @@
 # app/backend/main.py
-"""后端开发/调试启动入口。在生产部署中使用 run.bat。"""
+"""后端开发/调试启动入口。生产部署使用 Docker 与 deploy/windows 脚本。"""
 import atexit
 import logging
 import os

@@ -18,7 +18,6 @@ class OfflineCheckService:
             self._ensure_dir("exports_dir", self._config["export_dir"], critical=True),
             self._ensure_dir("logs_dir", self._config["log_dir"], critical=True),
             self._check_file("schema_file", schema_file, critical=True),
-            self._check_dir_exists("embedded_python", os.path.join(PROJECT_ROOT, "runtime", "python"), critical=False),
             self._check_dir_exists("ppstructure_models", os.path.join(model_dir, "ppstructure"), critical=False),
             self._check_dir_exists("llm_models", os.path.join(model_dir, "llm"), critical=False),
         ]

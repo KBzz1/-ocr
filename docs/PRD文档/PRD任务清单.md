@@ -1,6 +1,6 @@
 # MVP PRD 任务清单
 
-> 本清单跟踪 `docs/产品PRD.md` 的当前 MVP 设计。历史上已实现但不属于 MVP 的采集会话、四边形框选、会话过期、修订采集、拖拽排序等能力不再作为后续设计目标；代码可后续按新设计逐步收敛。
+> 本清单跟踪 `docs/PRD文档/产品PRD.md` 的当前 MVP 设计。历史上已实现但不属于 MVP 的采集会话、四边形框选、会话过期、修订采集、拖拽排序等能力不再作为后续设计目标；代码可后续按新设计逐步收敛。
 
 ## 状态说明
 
@@ -31,7 +31,7 @@
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
 | FE-MVP-04 审核界面 | 已完成 | `app/frontend/src/pages/review/` | 原图、OCR 文本、结构化字段编辑、保存、完成、导出 |
 | FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
-| REL-MVP-01 本地运行包 | 已完成 | `scripts/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
+| REL-MVP-01 本地运行包 | 已完成 | `scripts/deploy/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 
 ## 后端任务
 

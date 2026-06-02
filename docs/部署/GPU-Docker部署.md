@@ -38,7 +38,7 @@ Docker 化时必须把该兼容性处理固化到镜像构建步骤中，不能�
 
 ## 离线包
 
-离线包由 `scripts/package_offline_docker_bundle.sh` 生成，包含 Docker 镜像 tar、`docker-compose.yml`、Windows 启停脚本、配置占位和模型目录。目标 Windows 电脑上先运行 `00_import_image.bat` 导入镜像，再运行 `01_start.bat` 启动工作站。
+离线包由 `scripts/deploy/package_offline_docker_bundle.sh` 生成，包含 Docker 镜像 tar、`docker-compose.yml`、Windows 启停脚本、配置占位和模型目录。目标 Windows 电脑上先运行 `00_import_image.bat` 导入镜像，再运行 `01_start.bat` 启动工作站。
 
 正式现场验收使用 `docs/部署/离线验收记录.md`，记录目标 Windows 电脑环境、镜像导入、启动、GPU/OCR/LLM 依赖核验、业务闭环和日志留存。验收过程使用脱敏测试图片，不默认收集病历原图、完整 OCR 原文或模型完整输出。
 
