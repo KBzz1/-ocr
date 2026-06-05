@@ -120,8 +120,18 @@ def test_reextract_uses_saved_document_text_and_records_versions(tmp_path):
     assert wrapper["metadata"]["schema_version"] == "copd.v1"
     assert wrapper["metadata"]["prompt_version"] == "copd.prompt.v1"
     assert wrapper["candidates"][0]["original_value"] == "张三"
+    # 新契约:review_result.json 已被覆盖,final_value 来自新候选
     review = store.read("results/task_001/review_result.json")
-    assert review["fields"][0]["final_value"] == "人工改过"
+    field = next(f for f in review["fields"] if f["field_key"] == "patient_name")
+    assert field["final_value"] == "张三"
+    assert field["auto_value"] == "张三"
+    assert field["status"] == FieldStatus.UNREVIEWED.value
+    # history 末项是 reextract 记录
+    last_history = field["history"][-1]
+    assert last_history["action"] == "reextract"
+    assert last_history["from_value"] == "人工改过"
+    assert last_history["to_value"] == "张三"
+    assert last_history["run_id"] == result["run_id"]
     run = store.read(f"results/task_001/reextract_runs/{result['run_id']}.json")
     assert run["task_id"] == "task_001"
     assert run["run_id"] == result["run_id"]
@@ -133,6 +143,7 @@ def test_reextract_uses_saved_document_text_and_records_versions(tmp_path):
 
 
 def test_reextract_done_task_reopens_review(tmp_path):
+    """done 任务重抽取后,review 被覆盖,且 status 回退到 review。"""
     service, store, task_service, _port = make_service(tmp_path)
     write_task(store, status="done")
     write_document_result(store)
@@ -141,6 +152,108 @@ def test_reextract_done_task_reopens_review(tmp_path):
 
     assert result["status"] == "review"
     assert task_service.get_task("task_001")["status"] == "review"
+    # review_result.json 已被覆盖,字段状态为 unreviewed
+    review = store.read("results/task_001/review_result.json")
+    field = next(f for f in review["fields"] if f["field_key"] == "patient_name")
+    assert field["final_value"] == "张三"
+    assert field["status"] == FieldStatus.UNREVIEWED.value
+
+
+def test_reextract_keeps_field_candidates_and_run_artifacts(tmp_path):
+    """重抽取后 field_candidates.json 和 reextract_runs/{run_id}.json 内容不变,作为审计线索。"""
+    service, store, _task_service, _port = make_service(tmp_path)
+    write_task(store, status="review")
+    write_document_result(store)
+
+    result = service.reextract("task_001")
+
+    wrapper = store.read("results/task_001/field_candidates.json")
+    assert wrapper["candidates"][0]["original_value"] == "张三"
+    assert wrapper["metadata"]["run_id"] == result["run_id"]
+    run = store.read(f"results/task_001/reextract_runs/{result['run_id']}.json")
+    assert run["candidate_count"] == 1
+    assert run["task_id"] == "task_001"
+
+
+def test_reextract_hydrates_schema_fields_into_review(tmp_path):
+    """review 缺 schema 字段、候选补齐这些字段时,重抽取后 review 也补齐并采用新候选值。"""
+    service, store, _task_service, _port = make_service(tmp_path)
+    write_task(store, status="review")
+    write_document_result(store)
+    # review 完全没有 patient_name
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "old",
+            "fields": [
+                {
+                    "field_key": "occupation",
+                    "field_name": "职业",
+                    "auto_value": "退休",
+                    "final_value": "退休",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "extraction_status": "extracted",
+                    "verification_status": "not_checked",
+                    "quality_flags": [],
+                    "ocr_correction": None,
+                    "history": [],
+                }
+            ],
+        },
+    )
+
+    service.reextract("task_001")
+
+    review = store.read("results/task_001/review_result.json")
+    field_by_key = {f["field_key"]: f for f in review["fields"]}
+    # occupation 还在,值是候选的 original_value(因为候选里有 occupation 吗?不,候选只有 patient_name)
+    # 这里要注意:候选是 FakeFieldPort 返回的 patient_name
+    # occupation 不在新候选里,但 review 已有,应保留原 review 字段(不重置)
+    # 而 patient_name 是新候选,应被加入
+    assert "patient_name" in field_by_key
+    assert field_by_key["patient_name"]["final_value"] == "张三"
+    assert field_by_key["patient_name"]["status"] == FieldStatus.UNREVIEWED.value
+
+
+def test_reextract_discards_candidates_not_in_schema(tmp_path):
+    """新候选有 schema 不存在的 field_key 时,该候选被丢弃,不写入 review。"""
+
+    class MultiFieldPort:
+        def extract(self, input):
+            return [
+                {
+                    "field_key": "patient_name",
+                    "original_value": "张三",
+                    "evidence": "第1页",
+                    "confidence": 0.9,
+                    "extraction_status": "extracted",
+                    "verification_status": "not_checked",
+                    "quality_flags": [],
+                    "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                },
+                {
+                    "field_key": "unknown_field",
+                    "original_value": "应被丢弃",
+                    "evidence": "x",
+                    "confidence": 0.5,
+                    "extraction_status": "extracted",
+                    "verification_status": "not_checked",
+                    "quality_flags": [],
+                    "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                },
+            ]
+
+    service, store, _task_service, _port = make_service(tmp_path, field_port=MultiFieldPort())
+    write_task(store, status="review")
+    write_document_result(store)
+
+    service.reextract("task_001")
+
+    review = store.read("results/task_001/review_result.json")
+    field_keys = [f["field_key"] for f in review["fields"]]
+    assert "unknown_field" not in field_keys
+    assert "patient_name" in field_keys
 
 
 def test_reextract_requires_saved_ocr_text(tmp_path):

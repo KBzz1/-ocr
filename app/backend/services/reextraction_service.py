@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from ..enums import TaskStatus
+from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
 from .algorithm_ports.field_extraction import all_fields_empty, validate_field_candidates
@@ -141,6 +141,9 @@ class ReextractionService:
         if task["status"] == TaskStatus.DONE.value:
             task = self._task_service.reopen_review(task_id)
 
+        # BE-MVP-04-05 新契约:重抽取直接覆盖 review_result.json["fields"]
+        self._overwrite_review_with_candidates(task_id, candidates, schema, run_id, now)
+
         return {
             "task_id": task_id,
             "status": task["status"],
@@ -174,3 +177,126 @@ class ReextractionService:
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _overwrite_review_with_candidates(
+        self,
+        task_id: str,
+        candidates: list[dict],
+        schema: dict,
+        run_id: str,
+        now: str,
+    ) -> None:
+        """按 schema 顺序用新候选覆盖 review_result.json["fields"]。
+
+        规则:
+        - 对每个 schema 字段,在新候选中找到同 field_key 则覆盖 review 字段(final_value/auto_value/evidence/...
+          /状态重置为 unreviewed / history 追加 reextract 记录)。
+        - 找不到候选的 schema 字段:review 中已有则保留,review 中没有则插入空占位。
+        - 新候选中 schema 不存在的 field_key 丢弃,不写入 review。
+        - 字段按 schema 顺序重排。
+        - 写回 store。
+        """
+        existing_review = self._store.read(f"results/{task_id}/review_result.json")
+        existing_fields: dict[str, dict] = {}
+        task = self._task_service.get_task(task_id)
+        if isinstance(existing_review, dict):
+            for f in existing_review.get("fields") or []:
+                if isinstance(f, dict) and f.get("field_key"):
+                    existing_fields[f["field_key"]] = f
+        else:
+            existing_review = {
+                "task_id": task_id,
+                "schema_version": schema.get("version") or task.get("schema_version"),
+                "document_type": schema.get("document_type") or task.get("document_type"),
+            }
+
+        candidates_by_key = {c.get("field_key"): c for c in candidates if isinstance(c, dict) and c.get("field_key")}
+
+        new_fields: list[dict] = []
+        for group in schema.get("field_groups", []):
+            for schema_field in group.get("fields", []):
+                fk = schema_field.get("field_key")
+                if not fk:
+                    continue
+                schema_label = schema_field.get("label") or schema_field.get("field_name") or fk
+                candidate = candidates_by_key.get(fk)
+                if candidate is not None:
+                    # 覆盖:用候选填充
+                    old = existing_fields.get(fk, {})
+                    new_field = {
+                        "field_key": fk,
+                        "field_name": schema_label,
+                        "auto_value": candidate.get("original_value", ""),
+                        "final_value": candidate.get("original_value", ""),
+                        "evidence": candidate.get("evidence"),
+                        "page_no": candidate.get("page_no"),
+                        "confidence": candidate.get("confidence"),
+                        "source_hint": candidate.get("source_hint"),
+                        "source_text": candidate.get("source_text"),
+                        "source_group_id": candidate.get("source_group_id"),
+                        "source_section": candidate.get("source_section"),
+                        "extraction_status": candidate.get("extraction_status", "extracted"),
+                        "verification_status": candidate.get("verification_status", "not_checked"),
+                        "quality_flags": candidate.get("quality_flags", []),
+                        "ocr_correction": candidate.get("ocr_correction"),
+                        "status": FieldStatus.UNREVIEWED.value,
+                        "empty_accepted": False,
+                        "review_note": old.get("review_note"),
+                        "reviewed_at": None,
+                        "updated_at": now,
+                        "history": list(old.get("history") or []),
+                    }
+                    new_field["history"].append({
+                        "action": "reextract",
+                        "from_value": old.get("final_value"),
+                        "to_value": candidate.get("original_value", ""),
+                        "run_id": run_id,
+                        "changed_at": now,
+                    })
+                    new_fields.append(new_field)
+                elif fk in existing_fields:
+                    # 候选中无该 schema 字段,review 中已有,保留原值
+                    new_fields.append(existing_fields[fk])
+                else:
+                    # 候选中无,review 中也无,插入空占位
+                    new_fields.append({
+                        "field_key": fk,
+                        "field_name": schema_label,
+                        "auto_value": "",
+                        "final_value": "",
+                        "evidence": None,
+                        "page_no": None,
+                        "confidence": None,
+                        "source_hint": None,
+                        "source_text": None,
+                        "source_group_id": None,
+                        "source_section": None,
+                        "extraction_status": "not_found",
+                        "verification_status": "not_checked",
+                        "quality_flags": [],
+                        "ocr_correction": None,
+                        "status": FieldStatus.UNREVIEWED.value,
+                        "empty_accepted": False,
+                        "review_note": None,
+                        "reviewed_at": None,
+                        "updated_at": now,
+                        "history": [],
+                    })
+
+        existing_review["fields"] = new_fields
+        existing_review["updated_at"] = now
+        existing_review["summary"] = self._build_summary(new_fields)
+        self._store.write(f"results/{task_id}/review_result.json", existing_review)
+
+    @staticmethod
+    def _build_summary(fields: list[dict]) -> dict:
+        return {
+            "total_count": len(fields),
+            "unreviewed_count": sum(1 for f in fields if f.get("status") == FieldStatus.UNREVIEWED.value),
+            "confirmed_count": sum(1 for f in fields if f.get("status") == FieldStatus.CONFIRMED.value),
+            "modified_count": sum(1 for f in fields if f.get("status") == FieldStatus.MODIFIED.value),
+            "suspicious_count": sum(1 for f in fields if f.get("verification_status") == "suspicious"),
+            "failed_verification_count": sum(1 for f in fields if f.get("verification_status") == "failed"),
+            "not_found_count": sum(1 for f in fields if f.get("extraction_status") == "not_found"),
+            "missing_evidence_count": sum(1 for f in fields if not f.get("evidence")),
+        }
