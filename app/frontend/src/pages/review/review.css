@@ -410,6 +410,19 @@
   font-weight: 600;
 }
 
+.review-panel__heading-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.review-panel__count {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* ── Document viewer ── */
 .review-document-shell {
   display: grid;
@@ -1661,6 +1674,23 @@
   color: #94a3b8;
   border-color: #e2e8f0;
   cursor: not-allowed;
+}
+
+.review-reextract-cancel-button {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.review-reextract-cancel-button:hover {
+  background: #fee2e2;
+  color: #7f1d1d;
 }
 
 .review-reextract-banner {

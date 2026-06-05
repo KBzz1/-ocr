@@ -944,6 +944,43 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     await waitFor(() => screen.getByRole('button', { name: '重新抽取' }));
   });
 
+  it('cancel button aborts the in-flight reextract and shows a cancelled message', async () => {
+    const user = userEvent.setup();
+    let resolveReextract: () => void = () => {};
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        new Promise<Response>((resolve) => {
+          resolveReextract = () => resolve(
+            HttpResponse.json({
+              success: true,
+              data: {
+                task_id: 'task_001',
+                status: 'review',
+                run_id: 'reextract_will_be_cancelled',
+                source: 'ocr_text_only',
+                schema_version: 'copd.v1',
+                prompt_version: 'copd.prompt.v1',
+                candidate_count: 0
+              }
+            })
+          );
+        })
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    const reextractButton = await screen.findByRole('button', { name: '重新抽取' });
+    await user.click(reextractButton);
+    // 取消按钮只在 isReextracting 时出现
+    const cancelButton = await screen.findByRole('button', { name: '取消' });
+    await user.click(cancelButton);
+    // catch 路径展示"已取消重新抽取"而非"重新抽取失败"
+    expect(await screen.findByText('已取消重新抽取')).toBeTruthy();
+    // 按钮文字恢复 + 取消按钮消失
+    await waitFor(() => screen.getByRole('button', { name: '重新抽取' }));
+    expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
+  });
+
   it('shows run metadata banner after successful reextract and refreshes review data', async () => {
     const user = userEvent.setup();
     mockReviewRoutes();

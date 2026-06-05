@@ -124,6 +124,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const fieldsPanelRef = useRef<HTMLElement | null>(null);
   const [ocrPanelHeight, setOcrPanelHeight] = useState<number | null>(null);
   const [isReextracting, setIsReextracting] = useState(false);
+  const reextractControllerRef = useRef<AbortController | null>(null);
+  const reextractCancelledRef = useRef(false);
   const [reextractMeta, setReextractMeta] = useState<{
     run_id: string;
     schema_version?: string;
@@ -355,8 +357,22 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   async function handleReextract() {
     if (isReextracting || saveStatus === 'saving' || isCompleting) return;
     setIsReextracting(true);
+    reextractCancelledRef.current = false;
+    const controller = new AbortController();
+    reextractControllerRef.current = controller;
+    // 用本地 abort listener 桥接,确保取消事件能立即 reject 当前 reextract
+    // (生产环境 fetch 会随 signal 一起 abort;jsdom 因 AbortSignal 跨 realm 校验,
+    //  会从 fetchInit 剥离 signal,所以这里手动监听 controller.signal 作为兜底)
+    const abortPromise = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      });
+    });
     try {
-      const result = await reextractTaskFromOcr(taskId);
+      const result = await Promise.race([
+        reextractTaskFromOcr(taskId, { signal: controller.signal }),
+        abortPromise
+      ]);
       // 并发刷新审核数据
       const [nextReview, nextDetail] = await Promise.all([getReview(taskId), getTaskDetail(taskId)]);
       setReview(nextReview.review_result);
@@ -373,10 +389,21 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       });
       setMessage(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '重新抽取失败，请重试');
+      if (reextractCancelledRef.current) {
+        setMessage('已取消重新抽取');
+      } else {
+        setMessage(error instanceof Error ? error.message : '重新抽取失败，请重试');
+      }
     } finally {
+      reextractControllerRef.current = null;
       setIsReextracting(false);
     }
+  }
+
+  function handleCancelReextract() {
+    if (!isReextracting) return;
+    reextractCancelledRef.current = true;
+    reextractControllerRef.current?.abort();
   }
 
   function handleDismissReextractMeta() {
@@ -668,21 +695,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                     {isCompleting ? '确认中' : '一键审核'}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="review-reextract-button"
-                  onClick={() => void handleReextract()}
-                  disabled={isReextracting || saveStatus === 'saving' || isCompleting}
-                >
-                  {isReextracting ? (
-                    <>
-                      <span className="review-reextract-button__spinner" aria-hidden="true" />
-                      重新抽取中
-                    </>
-                  ) : (
-                    '重新抽取'
-                  )}
-                </button>
                 {effectiveStatus === 'done' ? (
                   <ExportPanel task={{ task_id: taskId, status: effectiveStatus, export_summary: detail?.export_summary }} />
                 ) : null}
@@ -746,7 +758,33 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
               <div>
                 <h2>字段校对</h2>
               </div>
-              <span>{fields.length} 个字段，{confirmedFieldCount} 个已确认</span>
+              <div className="review-panel__heading-right">
+                <span className="review-panel__count">{fields.length} 个字段，{confirmedFieldCount} 个已确认</span>
+                <button
+                  type="button"
+                  className="review-reextract-button"
+                  onClick={() => void handleReextract()}
+                  disabled={isReextracting || saveStatus === 'saving' || isCompleting}
+                >
+                  {isReextracting ? (
+                    <>
+                      <span className="review-reextract-button__spinner" aria-hidden="true" />
+                      重新抽取中
+                    </>
+                  ) : (
+                    '重新抽取'
+                  )}
+                </button>
+                {isReextracting ? (
+                  <button
+                    type="button"
+                    className="review-reextract-cancel-button"
+                    onClick={handleCancelReextract}
+                  >
+                    取消
+                  </button>
+                ) : null}
+              </div>
             </div>
             <FieldList
               fields={fields}

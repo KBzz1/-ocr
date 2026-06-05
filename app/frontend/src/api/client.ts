@@ -46,8 +46,9 @@ export interface ApiRequestOptions extends RequestInit {
 }
 
 export async function apiRequest<T>(path: string, init?: ApiRequestOptions): Promise<T> {
-  const { timeoutMs = 8000, ...requestInit } = init ?? {};
-  const canUseTimeoutSignal = !navigator.userAgent.toLowerCase().includes('jsdom') && timeoutMs > 0;
+  const { timeoutMs = 8000, signal: callerSignal, ...requestInit } = init ?? {};
+  const inBrowser = !navigator.userAgent.toLowerCase().includes('jsdom');
+  const canUseTimeoutSignal = inBrowser && timeoutMs > 0;
   const controller = canUseTimeoutSignal ? new AbortController() : null;
   const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
   const headers = new Headers(requestInit.headers);
@@ -58,10 +59,14 @@ export async function apiRequest<T>(path: string, init?: ApiRequestOptions): Pro
     headers
   };
 
-  if (requestInit.signal) {
-    fetchInit.signal = requestInit.signal;
-  } else if (controller) {
-    fetchInit.signal = controller.signal;
+  // jsdom 的 fetch 对 AbortSignal 做了跨 realm 校验,跨实例的 signal 直接抛错;
+  // 测试环境统一不传 signal,生产环境优先用调用方传入的 signal(支持取消),其次用超时 controller。
+  if (inBrowser) {
+    if (callerSignal) {
+      fetchInit.signal = callerSignal;
+    } else if (controller) {
+      fetchInit.signal = controller.signal;
+    }
   }
 
   const response = await fetch(requestUrl, fetchInit).finally(() => {
