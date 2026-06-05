@@ -909,13 +909,13 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     expect(reextractSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an in-progress banner while reextract is in flight', async () => {
+  it('shows in-progress spinner on the reextract button while request is in flight', async () => {
     const user = userEvent.setup();
-    let resolveReextract: (() => void) | null = null;
+    let resolveReextract: () => void = () => {};
     mockReviewRoutes();
     server.use(
       http.post('*/api/tasks/task_001/reextract', () =>
-        new Promise<HttpResponse>((resolve) => {
+        new Promise<Response>((resolve) => {
           resolveReextract = () => resolve(
             HttpResponse.json({
               success: true,
@@ -936,12 +936,12 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     render(<ReviewPage taskId="task_001" />);
     const button = await screen.findByRole('button', { name: '重新抽取' });
     await user.click(button);
-    // 点击瞬间:横幅立刻出现(不依赖 8s apiRequest 超时)
-    expect(await screen.findByText(/正在重新抽取/)).toBeTruthy();
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    // 让请求完成,横幅消失
-    resolveReextract?.();
-    await waitFor(() => expect(screen.queryByText(/正在重新抽取/)).toBeNull());
+    // 点击瞬间:按钮文字变"重新抽取中"且 disabled(不依赖 8s apiRequest 超时)
+    const inFlight = await screen.findByRole('button', { name: /重新抽取中/ });
+    expect((inFlight as HTMLButtonElement).disabled).toBe(true);
+    // 让请求完成,按钮文字恢复
+    resolveReextract();
+    await waitFor(() => screen.getByRole('button', { name: '重新抽取' }));
   });
 
   it('shows run metadata banner after successful reextract and refreshes review data', async () => {

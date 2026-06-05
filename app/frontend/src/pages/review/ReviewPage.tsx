@@ -674,7 +674,14 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                   onClick={() => void handleReextract()}
                   disabled={isReextracting || saveStatus === 'saving' || isCompleting}
                 >
-                  {isReextracting ? '重新抽取中' : '重新抽取'}
+                  {isReextracting ? (
+                    <>
+                      <span className="review-reextract-button__spinner" aria-hidden="true" />
+                      重新抽取中
+                    </>
+                  ) : (
+                    '重新抽取'
+                  )}
                 </button>
                 {effectiveStatus === 'done' ? (
                   <ExportPanel task={{ task_id: taskId, status: effectiveStatus, export_summary: detail?.export_summary }} />
@@ -682,15 +689,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
               </>
             ) : null}
           </div>
-
-          {isReextracting ? (
-            <div className="review-reextract-banner review-reextract-banner--in-progress" role="status" aria-live="polite">
-              <span className="review-reextract-banner__spinner" aria-hidden="true" />
-              <span>
-                正在重新抽取(本地 LLM 推理可能需要数十秒到数分钟),请勿关闭页面…
-              </span>
-            </div>
-          ) : null}
 
           {reextractMeta ? (
             <div className="review-reextract-banner" role="status">

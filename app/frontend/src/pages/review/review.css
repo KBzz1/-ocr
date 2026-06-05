@@ -1680,22 +1680,16 @@
   font-weight: 600;
 }
 
-.review-reextract-banner--in-progress {
-  background: #fef3c7;
-  border-color: #fde68a;
-  color: #92400e;
-  font-weight: 500;
-}
-
-.review-reextract-banner__spinner {
+.review-reextract-button__spinner {
   display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #fde68a;
-  border-top-color: #92400e;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
   border-radius: 50%;
   animation: review-reextract-spin 0.8s linear infinite;
-  flex-shrink: 0;
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 @keyframes review-reextract-spin {
