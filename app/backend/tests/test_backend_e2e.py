@@ -425,18 +425,19 @@ def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, mon
     review = client.get(f"/api/tasks/{created['task_id']}/review")
     assert review.status_code == 200
     fields = review.get_json()["data"]["review_result"]["fields"]
-    assert fields[0]["field_key"] == "chief_complaint"
-    assert fields[0]["auto_value"] == "模拟外部算法返回的主诉"
-    assert fields[0]["status"] == "unreviewed"
+    field_by_key = {f["field_key"]: f for f in fields}
+    assert field_by_key["occupation"]["auto_value"] == "模拟外部算法返回的职业"
+    assert field_by_key["occupation"]["status"] == "unreviewed"
 
     saved = client.put(
         f"/api/tasks/{created['task_id']}/review",
-        json={"fields": [{"field_key": "chief_complaint", "value": "人工审核后的主诉", "status": "modified"}]},
+        json={"fields": [{"field_key": "occupation", "value": "人工审核后的职业", "status": "modified"}]},
     )
     assert saved.status_code == 200
-    saved_field = saved.get_json()["data"]["review_result"]["fields"][0]
-    assert saved_field["auto_value"] == "模拟外部算法返回的主诉"
-    assert saved_field["final_value"] == "人工审核后的主诉"
+    saved_fields = saved.get_json()["data"]["review_result"]["fields"]
+    saved_field = next(f for f in saved_fields if f["field_key"] == "occupation")
+    assert saved_field["auto_value"] == "模拟外部算法返回的职业"
+    assert saved_field["final_value"] == "人工审核后的职业"
 
     completed = client.post(f"/api/tasks/{created['task_id']}/complete")
     assert completed.status_code == 200
@@ -444,7 +445,7 @@ def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, mon
 
     exported_json = client.get(f"/api/tasks/{created['task_id']}/export/json")
     assert exported_json.status_code == 200
-    assert "人工审核后的主诉" in exported_json.get_data(as_text=True)
+    assert "人工审核后的职业" in exported_json.get_data(as_text=True)
 
     exported_excel = client.get(f"/api/tasks/{created['task_id']}/export/excel")
     assert exported_excel.status_code == 200

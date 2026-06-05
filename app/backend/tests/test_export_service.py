@@ -295,6 +295,150 @@ def test_batch_zip_reports_all_non_exportable_tasks_without_writing_new_zip(tmp_
     assert not (tmp_path / "exports" / "batch" / "batch-review-export.zip").exists()
 
 
+def test_compute_blocking_fields_ignores_empty_final_value_placeholders():
+    """BE-MVP-05-06: 空 final_value 占位字段不阻断导出。"""
+    fields = [
+        {"field_key": "patient_name", "final_value": "张三", "status": "confirmed"},
+        {"field_key": "occupation", "final_value": "", "status": "unreviewed"},
+        {"field_key": "temperature", "final_value": "36.5", "status": "unreviewed"},
+    ]
+    blocking = ExportService._compute_blocking_fields(fields)
+    # occupation 是占位字段(空 final_value),不阻断;temperature 是真未审核,阻断
+    assert blocking == ["temperature"]
+
+
+def test_export_excel_includes_all_schema_fields_when_review_missing_some(tmp_path):
+    """BE-MVP-05-06: review 缺 schema 字段时,Excel 仍包含完整 schema 字段并按 schema 顺序排列。"""
+    store = JsonStore(str(tmp_path / "data"))
+    task_service = TaskService(store=store)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "field_groups": [
+                {
+                    "group_key": "profile",
+                    "group_label": "患者背景",
+                    "fields": [
+                        {"field_key": "occupation", "label": "职业"},
+                        {"field_key": "smoking_history_status", "label": "吸烟状态"},
+                    ],
+                },
+                {
+                    "group_key": "exam",
+                    "group_label": "体格检查",
+                    "fields": [
+                        {"field_key": "temperature", "label": "体温"},
+                        {"field_key": "pulse", "label": "脉搏"},
+                    ],
+                },
+            ],
+        },
+    )
+    write_task(store, status="done")
+    # review 只有 2 个字段,schema 实际有 4 个
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "fields": [
+                {
+                    "field_key": "occupation",
+                    "field_name": "职业",
+                    "final_value": "退休",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "退休",
+                    "page_no": 1,
+                },
+                {
+                    "field_key": "temperature",
+                    "field_name": "体温",
+                    "final_value": "36.5℃",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "T 36.5℃",
+                    "page_no": 2,
+                },
+            ],
+        },
+    )
+
+    info = export_service.export_excel("task_001")
+
+    with zipfile.ZipFile(info["path"]) as archive:
+        workbook_xml = archive.read("xl/workbook.xml").decode("utf-8")
+        sheet1_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+    # 全部 4 个字段都在 sheet1
+    for key in ("occupation", "smoking_history_status", "temperature", "pulse"):
+        assert key in sheet1_xml, f"sheet1 缺 {key}"
+    # 按 schema 顺序
+    assert sheet1_xml.index("occupation") < sheet1_xml.index("smoking_history_status")
+    assert sheet1_xml.index("temperature") < sheet1_xml.index("pulse")
+    assert sheet1_xml.index("smoking_history_status") < sheet1_xml.index("temperature")
+    # 分组 sheet 也存在
+    assert 'sheet name="患者背景"' in workbook_xml
+    assert 'sheet name="体格检查"' in workbook_xml
+
+
+def test_export_json_includes_all_schema_fields_when_review_missing_some(tmp_path):
+    """BE-MVP-05-06: JSON 导出 model 字段集合与 schema 一致。"""
+    store = JsonStore(str(tmp_path / "data"))
+    task_service = TaskService(store=store)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "field_groups": [
+                {
+                    "group_key": "exam",
+                    "group_label": "体格检查",
+                    "fields": [
+                        {"field_key": "temperature", "label": "体温"},
+                        {"field_key": "pulse", "label": "脉搏"},
+                    ],
+                },
+            ],
+        },
+    )
+    write_task(store, status="done")
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "fields": [
+                {
+                    "field_key": "temperature",
+                    "field_name": "体温",
+                    "final_value": "36.5℃",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "T 36.5℃",
+                    "page_no": 1,
+                },
+            ],
+        },
+    )
+
+    info = export_service.export_json("task_001")
+
+    with open(info["path"], encoding="utf-8") as f:
+        model = json.load(f)
+    keys = [f["field_key"] for f in model["fields"]]
+    assert keys == ["temperature", "pulse"]
+    pulse = next(f for f in model["fields"] if f["field_key"] == "pulse")
+    assert pulse["final_value"] == ""
+    assert pulse["status"] == "unreviewed"
+
+
 def test_export_uses_task_document_profile_schema_when_available(tmp_path):
     class Profile:
         def __init__(self):

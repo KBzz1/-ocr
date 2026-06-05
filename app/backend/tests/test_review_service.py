@@ -213,3 +213,74 @@ def test_confirm_review_marks_task_done(tmp_path):
     assert task["status"] == "done"
     assert task["done_at"]
     assert task_service.get_task("task_001")["review_summary"]["confirmed_count"] == 2
+
+
+def test_get_or_init_hydrates_missing_schema_fields(tmp_path):
+    """BE-MVP-05-06: review_result.json 缺 schema 字段时,get_or_init 补齐占位并写回。"""
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    # candidates 只有 patient_name,schema 多了 department
+    store.write(
+        "results/task_001/field_candidates.json",
+        {
+            "task_id": "task_001",
+            "stage": "field_extraction",
+            "status": "success",
+            "candidates": [
+                {"field_key": "patient_name", "original_value": "张三", "evidence": "第1页", "confidence": 0.9},
+            ],
+        },
+    )
+
+    review = review_service.get_or_init("task_001")
+    field_keys = [f["field_key"] for f in review["fields"]]
+
+    # schema 有 patient_name + department,两者都要在 review 里
+    assert field_keys == ["patient_name", "department"]
+    assert review["summary"]["total_count"] == 2
+    # department 是占位字段
+    department = find_field(review, "department")
+    assert department["final_value"] == ""
+    assert department["status"] == "unreviewed"
+    assert department["extraction_status"] == "not_found"
+    assert department["empty_accepted"] is False
+    assert department["reviewed_at"] is None
+    # 写回 store,后续 get_or_init 不会重复补齐
+    persisted = store.read("results/task_001/review_result.json")
+    assert {f["field_key"] for f in persisted["fields"]} == {"patient_name", "department"}
+
+
+def test_get_or_init_reorders_fields_to_schema_order(tmp_path):
+    """BE-MVP-05-06: review 已有字段按 schema 顺序重排,确保导出顺序与 schema 一致。"""
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    # review_result.json 已有 patient_name 和 department,但顺序与 schema 不同
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "medical_record.v1",
+            "document_type": "medical_record",
+            "initialized_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "fields": [
+                {"field_key": "department", "field_name": "科室", "auto_value": "骨科",
+                 "final_value": "骨科", "status": "unreviewed", "empty_accepted": False,
+                 "extraction_status": "extracted", "verification_status": "not_checked",
+                 "quality_flags": [], "ocr_correction": None, "history": []},
+                {"field_key": "patient_name", "field_name": "姓名", "auto_value": "张三",
+                 "final_value": "张三", "status": "unreviewed", "empty_accepted": False,
+                 "extraction_status": "extracted", "verification_status": "not_checked",
+                 "quality_flags": [], "ocr_correction": None, "history": []},
+            ],
+        },
+    )
+
+    review = review_service.get_or_init("task_001")
+    field_keys = [f["field_key"] for f in review["fields"]]
+
+    # schema 顺序是 patient_name → department
+    assert field_keys == ["patient_name", "department"]
+    # 值保留
+    assert find_field(review, "department")["final_value"] == "骨科"
+    assert find_field(review, "patient_name")["final_value"] == "张三"

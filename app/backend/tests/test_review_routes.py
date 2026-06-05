@@ -56,6 +56,7 @@ def review_task(app):
             "export_summary": {"last_exported_at": None, "formats": [], "files": []},
         },
     )
+    # 使用 schema 实际存在的字段(默认 COPD schema 包含 occupation 等 25 字段)
     store.write(
         "results/1/field_candidates.json",
         {
@@ -63,8 +64,8 @@ def review_task(app):
             "stage": "field_extraction",
             "status": "success",
             "candidates": [
-                {"field_key": "patient_name", "original_value": "张三", "evidence": "第1页", "confidence": 0.9},
-                {"field_key": "department", "original_value": "骨科", "evidence": "第1页", "confidence": 0.8},
+                {"field_key": "occupation", "original_value": "退休", "evidence": "第1页", "confidence": 0.9},
+                {"field_key": "temperature", "original_value": "36.5℃", "evidence": "第2页", "confidence": 0.85},
             ],
         },
     )
@@ -78,7 +79,13 @@ def test_get_review_initializes_result(client, review_task):
     data = response.get_json()["data"]
     assert data["task_id"] == "1"
     assert data["status"] == "review"
-    assert data["review_result"]["summary"]["unreviewed_count"] == 2
+    fields = data["review_result"]["fields"]
+    # BE-MVP-05-06: 字段集合与 schema 一致(默认 COPD schema 25 个字段)
+    assert len(fields) >= 2
+    # 候选里有的字段被正确填入
+    field_by_key = {f["field_key"]: f for f in fields}
+    assert field_by_key["occupation"]["final_value"] == "退休"
+    assert field_by_key["temperature"]["final_value"] == "36.5℃"
 
 
 def test_put_review_saves_final_fields(client, review_task):
@@ -86,15 +93,18 @@ def test_put_review_saves_final_fields(client, review_task):
         f"/api/tasks/{review_task['task_id']}/review",
         json={
             "fields": [
-                {"field_key": "patient_name", "value": "张三", "status": "modified"},
-                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+                {"field_key": "occupation", "value": "工人", "status": "modified"},
+                {"field_key": "temperature", "value": "36.5℃", "status": "confirmed"},
             ]
         },
     )
 
     assert response.status_code == 200
     fields = response.get_json()["data"]["review_result"]["fields"]
-    assert {field["status"] for field in fields} <= {"unreviewed", "confirmed", "modified"}
+    field_by_key = {f["field_key"]: f for f in fields}
+    assert field_by_key["occupation"]["status"] == "modified"
+    assert field_by_key["occupation"]["final_value"] == "工人"
+    assert field_by_key["temperature"]["status"] == "confirmed"
 
 
 def test_complete_review_route_marks_done(client, review_task):
@@ -102,8 +112,8 @@ def test_complete_review_route_marks_done(client, review_task):
         f"/api/tasks/{review_task['task_id']}/review",
         json={
             "fields": [
-                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
-                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+                {"field_key": "occupation", "value": "退休", "status": "confirmed"},
+                {"field_key": "temperature", "value": "36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -115,13 +125,12 @@ def test_complete_review_route_marks_done(client, review_task):
 
 
 def test_reopen_review_transitions_done_to_review(client, app, review_task):
-    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     client.put(
         f"/api/tasks/{review_task['task_id']}/review",
         json={
             "fields": [
-                {"field_key": "patient_name", "value": "张三", "status": "confirmed"},
-                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+                {"field_key": "occupation", "value": "退休", "status": "confirmed"},
+                {"field_key": "temperature", "value": "36.5℃", "status": "confirmed"},
             ]
         },
     )

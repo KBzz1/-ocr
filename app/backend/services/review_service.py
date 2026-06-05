@@ -18,6 +18,74 @@ class ReviewService:
         self._task_service = task_service
         self._schema_provider = schema_provider
 
+    @staticmethod
+    def _placeholder_field(schema_field: dict, group: dict) -> dict:
+        """根据 schema 字段生成占位字段(空 final_value + unreviewed)。
+
+        当 review_result.json 缺少 schema 中已声明的字段时,使用此占位补齐。
+        占位字段在导出时不阻断(由 ExportService 判定空 final_value 跳过阻断)。
+        """
+        field_key = schema_field["field_key"]
+        label = schema_field.get("label") or schema_field.get("field_name") or field_key
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "field_key": field_key,
+            "field_name": label,
+            "auto_value": "",
+            "final_value": "",
+            "evidence": None,
+            "page_no": None,
+            "confidence": None,
+            "source_hint": None,
+            "source_text": None,
+            "source_group_id": None,
+            "source_section": None,
+            "extraction_status": "not_found",
+            "verification_status": "not_checked",
+            "quality_flags": [],
+            "ocr_correction": None,
+            "status": FieldStatus.UNREVIEWED.value,
+            "empty_accepted": False,
+            "review_note": None,
+            "reviewed_at": None,
+            "updated_at": now,
+            "history": [],
+            "_group_key": group.get("group_key", "unknown"),
+            "_group_label": group.get("group_label", "unknown"),
+        }
+
+    def _hydrate_missing_fields(self, review: dict, schema: dict) -> dict:
+        """按 schema 顺序补齐 review 中缺失的字段,并对已存在字段按 schema 顺序重排。
+
+        返回写回 store 后的 review。若 schema 为空或非 dict,直接返回 review。
+        """
+        if not isinstance(schema, dict) or not schema.get("field_groups"):
+            return review
+
+        existing = {f["field_key"]: f for f in review.get("fields", []) if isinstance(f, dict) and f.get("field_key")}
+        new_fields: list[dict] = []
+        for group in schema.get("field_groups", []):
+            for schema_field in group.get("fields", []):
+                fk = schema_field.get("field_key")
+                if not fk:
+                    continue
+                field = existing.get(fk)
+                if field is None:
+                    field = self._placeholder_field(schema_field, group)
+                else:
+                    # 保留原 review 字段值,仅补上分组元数据(供 export 视图使用)
+                    field.setdefault("_group_key", group.get("group_key", "unknown"))
+                    field.setdefault("_group_label", group.get("group_label", "unknown"))
+                new_fields.append(field)
+        review["fields"] = new_fields
+        review["summary"] = self._build_summary(new_fields)
+        review["updated_at"] = datetime.now(timezone.utc).isoformat()
+        # 写回 store,后续 get_or_init 不再重复补齐
+        task_id = review.get("task_id")
+        if task_id:
+            self._store.write(f"results/{task_id}/review_result.json", review)
+        return review
+
     def _load_document_result(self, task_id: str) -> dict | None:
         wrapper = self._store.read(f"results/{task_id}/document_result.json")
         if not isinstance(wrapper, dict):
@@ -56,6 +124,9 @@ class ReviewService:
 
         existing = self._store.read(f"results/{task_id}/review_result.json")
         if existing is not None:
+            # BE-MVP-05-06: 按当前 schema 补齐缺失字段并重排
+            schema_for_hydrate = self._schema_provider() if self._schema_provider else {}
+            self._hydrate_missing_fields(existing, schema_for_hydrate)
             return self._enrich_with_schema(self._enrich_with_ocr(existing, task_id))
 
         wrapper = self._store.read(f"results/{task_id}/field_candidates.json")
@@ -77,6 +148,8 @@ class ReviewService:
             "summary": self._build_summary(fields),
         }
         self._store.write(f"results/{task_id}/review_result.json", review)
+        # BE-MVP-05-06: candidates 路径也要按 schema 补齐缺失字段并重排
+        self._hydrate_missing_fields(review, schema)
         return self._enrich_with_schema(self._enrich_with_ocr(review, task_id))
 
     def _build_fields(self, candidates: list[dict], schema: dict) -> list[dict]:
@@ -286,7 +359,14 @@ class ReviewService:
         review = self.get_or_init(task_id, task=task)
         summary = self._build_summary(review["fields"])
 
-        unreviewed = [f["field_key"] for f in review["fields"] if f["status"] == FieldStatus.UNREVIEWED.value]
+        # BE-MVP-05-06: 空 final_value 占位字段不算未确认,与导出阻断逻辑保持一致
+        unreviewed = [
+            f["field_key"]
+            for f in review["fields"]
+            if f["status"] == FieldStatus.UNREVIEWED.value
+            and isinstance(f.get("final_value"), str)
+            and f["final_value"].strip()
+        ]
         if not review["fields"] or unreviewed:
             raise AppError(
                 ErrorCode.REVIEW_VALIDATION_FAILED,

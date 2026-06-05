@@ -49,31 +49,24 @@ class ExportService:
         if task is None:
             task = self._task_service.get_task(task_id)
         review = self._store.read(f"results/{task_id}/review_result.json")
-        fields = self._get_review_fields_for_export(task_id, task["status"], review)
-        self._ensure_no_blocking_fields(fields)
+        self._get_review_fields_for_export(task_id, task["status"], review)
 
         schema = self._schema_for_task(task)
-        schema_lookup: dict[str, dict[str, str]] = {}
-        for group in schema.get("field_groups", []):
-            for field in group.get("fields", []):
-                fk = field["field_key"]
-                schema_lookup[fk] = {
-                    "group_key": group["group_key"],
-                    "group_label": group["group_label"],
-                    "field_name": field.get("label") or field.get("field_name") or fk,
-                }
+        # BE-MVP-05-06: 不直接遍历 review["fields"],先按当前 schema 生成 schema 字段视图
+        # 缺失字段用空占位补齐,顺序与 schema 一致
+        schema_view = self._build_schema_view(review or {}, schema)
+        self._ensure_no_blocking_fields(schema_view)
 
         model_fields = []
-        for f in fields:
+        for f in schema_view:
             fk = f["field_key"]
-            lookup = schema_lookup.get(fk, {})
             model_fields.append({
                 "field_key": fk,
-                "field_name": lookup.get("field_name") or f.get("field_name") or fk,
-                "group_key": lookup.get("group_key", "unknown"),
-                "group_label": lookup.get("group_label", "unknown"),
-                "final_value": f["final_value"],
-                "status": f["status"],
+                "field_name": f.get("field_name") or fk,
+                "group_key": f.get("group_key", "unknown"),
+                "group_label": f.get("group_label", "unknown"),
+                "final_value": f.get("final_value", ""),
+                "status": f.get("status", FieldStatus.UNREVIEWED.value),
                 "empty_accepted": f.get("empty_accepted", False),
                 "evidence": f.get("evidence"),
                 "page_no": f.get("page_no"),
@@ -83,11 +76,63 @@ class ExportService:
         return {
             "task_id": task_id,
             "exported_at": self._now(),
-            "schema_version": review.get("schema_version") or task.get("schema_version", ""),
-            "document_type": review.get("document_type") or task.get("document_type", ""),
+            "schema_version": (review or {}).get("schema_version") or task.get("schema_version", ""),
+            "document_type": (review or {}).get("document_type") or task.get("document_type", ""),
             "fields": model_fields,
             "summary": self._compute_summary(model_fields),
         }
+
+    @staticmethod
+    def _build_schema_view(review: dict, schema: dict) -> list[dict]:
+        """按 schema 顺序构造字段视图,review 中已有字段保留原值,缺失字段用空占位补齐。
+
+        schema.label 优先于 review.field_name(沿用原 _build_export_model 语义),确保导出字段名与 schema 同步。
+        与 ReviewService._placeholder_field 占位结构一致,确保导出模型不依赖 review 必须先被 get_or_init 补齐。
+        """
+        existing = {f["field_key"]: f for f in (review.get("fields") or []) if isinstance(f, dict) and f.get("field_key")}
+        view: list[dict] = []
+        for group in schema.get("field_groups", []):
+            group_key = group.get("group_key", "unknown")
+            group_label = group.get("group_label", "unknown")
+            for schema_field in group.get("fields", []):
+                fk = schema_field.get("field_key")
+                if not fk:
+                    continue
+                schema_label = schema_field.get("label") or schema_field.get("field_name") or fk
+                field = existing.get(fk)
+                if field is None:
+                    field = {
+                        "field_key": fk,
+                        "field_name": schema_label,
+                        "auto_value": "",
+                        "final_value": "",
+                        "evidence": None,
+                        "page_no": None,
+                        "confidence": None,
+                        "source_hint": None,
+                        "source_text": None,
+                        "source_group_id": None,
+                        "source_section": None,
+                        "extraction_status": "not_found",
+                        "verification_status": "not_checked",
+                        "quality_flags": [],
+                        "ocr_correction": None,
+                        "status": FieldStatus.UNREVIEWED.value,
+                        "empty_accepted": False,
+                        "review_note": None,
+                        "reviewed_at": None,
+                        "updated_at": None,
+                        "history": [],
+                    }
+                else:
+                    # schema.label 优先于 review.field_name
+                    field = {**field, "field_name": schema_label}
+                view.append({
+                    **field,
+                    "group_key": group_key,
+                    "group_label": group_label,
+                })
+        return view
 
     def _schema_for_task(self, task: dict) -> dict:
         if self._document_profiles is not None:
@@ -282,11 +327,15 @@ class ExportService:
 
     @staticmethod
     def _compute_blocking_fields(fields: list[dict]) -> list[str]:
+        """BE-MVP-05-06: 只有非空 final_value 且 status == unreviewed 才视为未确认,占位字段不阻断。"""
         unreviewed = []
         for f in fields:
-            status = f["status"]
-            if status == FieldStatus.UNREVIEWED.value:
-                unreviewed.append(f["field_key"])
+            if f.get("status") != FieldStatus.UNREVIEWED.value:
+                continue
+            final_value = f.get("final_value")
+            if not isinstance(final_value, str) or not final_value.strip():
+                continue
+            unreviewed.append(f["field_key"])
         return unreviewed
 
     # -- file writers --
