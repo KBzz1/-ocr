@@ -683,6 +683,15 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
             ) : null}
           </div>
 
+          {isReextracting ? (
+            <div className="review-reextract-banner review-reextract-banner--in-progress" role="status" aria-live="polite">
+              <span className="review-reextract-banner__spinner" aria-hidden="true" />
+              <span>
+                正在重新抽取(本地 LLM 推理可能需要数十秒到数分钟),请勿关闭页面…
+              </span>
+            </div>
+          ) : null}
+
           {reextractMeta ? (
             <div className="review-reextract-banner" role="status">
               <span>

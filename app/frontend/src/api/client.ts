@@ -40,25 +40,31 @@ export function parseErrorBody(body: unknown, status: number, fallbackMessage = 
   return new ApiError(fallbackMessage, fallbackCode, status);
 }
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const canUseTimeoutSignal = !navigator.userAgent.toLowerCase().includes('jsdom');
+export interface ApiRequestOptions extends RequestInit {
+  /** 请求超时(毫秒)。0 或负数表示不超时(长任务使用)。默认 8000。 */
+  timeoutMs?: number;
+}
+
+export async function apiRequest<T>(path: string, init?: ApiRequestOptions): Promise<T> {
+  const { timeoutMs = 8000, ...requestInit } = init ?? {};
+  const canUseTimeoutSignal = !navigator.userAgent.toLowerCase().includes('jsdom') && timeoutMs > 0;
   const controller = canUseTimeoutSignal ? new AbortController() : null;
-  const timeoutId = controller ? window.setTimeout(() => controller.abort(), 8000) : null;
-  const headers = new Headers(init?.headers);
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  const headers = new Headers(requestInit.headers);
   headers.set('Accept', 'application/json');
   const requestUrl = new URL(path, window.location.origin).toString();
-  const requestInit: RequestInit = {
-    ...init,
+  const fetchInit: RequestInit = {
+    ...requestInit,
     headers
   };
 
-  if (init?.signal) {
-    requestInit.signal = init.signal;
+  if (requestInit.signal) {
+    fetchInit.signal = requestInit.signal;
   } else if (controller) {
-    requestInit.signal = controller.signal;
+    fetchInit.signal = controller.signal;
   }
 
-  const response = await fetch(requestUrl, requestInit).finally(() => {
+  const response = await fetch(requestUrl, fetchInit).finally(() => {
     if (timeoutId) window.clearTimeout(timeoutId);
   });
 

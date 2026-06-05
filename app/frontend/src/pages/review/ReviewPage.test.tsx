@@ -909,6 +909,41 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     expect(reextractSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('shows an in-progress banner while reextract is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveReextract: (() => void) | null = null;
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        new Promise<HttpResponse>((resolve) => {
+          resolveReextract = () => resolve(
+            HttpResponse.json({
+              success: true,
+              data: {
+                task_id: 'task_001',
+                status: 'review',
+                run_id: 'reextract_pending_test',
+                source: 'ocr_text_only',
+                schema_version: 'copd.v1',
+                prompt_version: 'copd.prompt.v1',
+                candidate_count: 5
+              }
+            })
+          );
+        })
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    const button = await screen.findByRole('button', { name: '重新抽取' });
+    await user.click(button);
+    // 点击瞬间:横幅立刻出现(不依赖 8s apiRequest 超时)
+    expect(await screen.findByText(/正在重新抽取/)).toBeTruthy();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    // 让请求完成,横幅消失
+    resolveReextract?.();
+    await waitFor(() => expect(screen.queryByText(/正在重新抽取/)).toBeNull());
+  });
+
   it('shows run metadata banner after successful reextract and refreshes review data', async () => {
     const user = userEvent.setup();
     mockReviewRoutes();

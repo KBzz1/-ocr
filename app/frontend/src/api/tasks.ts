@@ -139,7 +139,9 @@ export function retryTaskProcessing(taskId: string) {
 
 export function reextractTaskFromOcr(taskId: string) {
   return apiRequest<TaskReextractResult>(`/api/tasks/${encodeURIComponent(taskId)}/reextract`, {
-    method: 'POST'
+    method: 'POST',
+    // 重抽取触发 LLM 推理,GPU 跑几十秒到数分钟,关闭 8s 默认超时
+    timeoutMs: 0
   });
 }
 
