@@ -1637,3 +1637,60 @@
     grid-column: auto;
   }
 }
+
+/* FE-MVP-04-05: 重新抽取按钮 + 运行元数据条 */
+.review-reextract-button {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.review-reextract-button:hover:not(:disabled) {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.review-reextract-button:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.review-reextract-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin: 8px 20px 0;
+}
+
+.review-reextract-banner b {
+  font-weight: 600;
+}
+
+.review-reextract-banner__close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.review-reextract-banner__close:hover {
+  color: #0f172a;
+}

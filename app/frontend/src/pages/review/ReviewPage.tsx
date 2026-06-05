@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
-import { completeTask, getTaskDetail, getTasks, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskReextractResult, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
 import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
@@ -123,6 +123,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const [renameDraft, setRenameDraft] = useState('');
   const fieldsPanelRef = useRef<HTMLElement | null>(null);
   const [ocrPanelHeight, setOcrPanelHeight] = useState<number | null>(null);
+  const [isReextracting, setIsReextracting] = useState(false);
+  const [reextractMeta, setReextractMeta] = useState<Omit<TaskReextractResult, 'task_id'> | null>(null);
+  const reextractingRef = useRef(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -343,6 +346,42 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     } finally {
       setIsRetrying(false);
     }
+  }
+
+  async function handleReextract() {
+    if (reextractingRef.current || isReextracting || saveStatus === 'saving' || isCompleting) return;
+    reextractingRef.current = true;
+    setIsReextracting(true);
+    try {
+      const result = await reextractTaskFromOcr(taskId);
+      // 并发刷新审核数据
+      const [nextReview, nextDetail] = await Promise.all([getReview(taskId), getTaskDetail(taskId)]);
+      setReview(nextReview.review_result);
+      setFields(nextReview.review_result.fields);
+      // 重抽取接口返回的 status 是后端权威答案(后端会 reopen_review 把 done 退回 review)
+      // 同步刷新 taskDetail.status,避免 effectiveStatus 仍读取 done
+      const reextractStatus = result.status as TaskStatus;
+      setTaskDetail({ ...nextDetail, status: reextractStatus });
+      setStatus(reextractStatus);
+      setReextractMeta({
+        status: result.status,
+        run_id: result.run_id,
+        source: result.source,
+        schema_version: result.schema_version,
+        prompt_version: result.prompt_version,
+        candidate_count: result.candidate_count
+      });
+      setMessage(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '重新抽取失败，请重试');
+    } finally {
+      reextractingRef.current = false;
+      setIsReextracting(false);
+    }
+  }
+
+  function handleDismissReextractMeta() {
+    setReextractMeta(null);
   }
 
   const displayName = taskDetail?.display_name ?? taskId;
@@ -630,12 +669,36 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                     {isCompleting ? '确认中' : '一键审核'}
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="review-reextract-button"
+                  onClick={() => void handleReextract()}
+                  disabled={isReextracting || saveStatus === 'saving' || isCompleting}
+                >
+                  {isReextracting ? '重新抽取中' : '重新抽取'}
+                </button>
                 {effectiveStatus === 'done' ? (
                   <ExportPanel task={{ task_id: taskId, status: effectiveStatus, export_summary: detail?.export_summary }} />
                 ) : null}
               </>
             ) : null}
           </div>
+
+          {reextractMeta ? (
+            <div className="review-reextract-banner" role="status">
+              <span>
+                已重新抽取 · run_id=<b>{reextractMeta.run_id}</b> · schema=<b>{reextractMeta.schema_version ?? '—'}</b> · prompt=<b>{reextractMeta.prompt_version ?? '—'}</b> · 候选 {reextractMeta.candidate_count} 项
+              </span>
+              <button
+                type="button"
+                aria-label="关闭重新抽取摘要"
+                className="review-reextract-banner__close"
+                onClick={handleDismissReextractMeta}
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
 
           {failureReason ? (
             <div className="review-failure-box" role="alert">

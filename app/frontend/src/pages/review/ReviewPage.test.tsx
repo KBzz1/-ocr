@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../../../tests/setupTests';
 import { ReviewPage } from './ReviewPage';
@@ -838,3 +838,238 @@ describe('ReviewPage', () => {
     expect(screen.queryByLabelText(/重点核验.*evidence_recovered_from_value/)).toBeNull();
   });
 });
+
+describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no warning text', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/tasks/task_001/review');
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows the reextract button only for review/done tasks; not for uploading/processing/failed', async () => {
+    // 默认 mock 是 review 状态,按钮应显示
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByRole('button', { name: '重新抽取' })).toBeTruthy();
+
+    // done 状态应显示
+    cleanup();
+    mockReviewRoutesDone();
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByRole('button', { name: '重新抽取' })).toBeTruthy();
+
+    // uploading 状态不显示:等待页面进入非可审核的只读态
+    cleanup();
+    mockReviewRoutesWithStatus('uploading');
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByText('任务尚未进入审核')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+
+    // processing 状态不显示
+    cleanup();
+    mockReviewRoutesWithStatus('processing');
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByText('任务尚未进入审核')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+
+    // failed 状态不显示
+    cleanup();
+    mockReviewRoutesWithStatus('failed');
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByText('任务处理失败')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+  });
+
+  it('clicking reextract disables the button and calls reextractTaskFromOcr', async () => {
+    const user = userEvent.setup();
+    const reextractSpy = vi.fn();
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () => {
+        reextractSpy();
+        return HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            run_id: 'reextract_20260605T101530Z',
+            source: 'ocr_text_only',
+            schema_version: 'copd.v1',
+            prompt_version: 'copd.prompt.v1',
+            candidate_count: 12
+          }
+        });
+      })
+    );
+    render(<ReviewPage taskId="task_001" />);
+    const button = await screen.findByRole('button', { name: '重新抽取' });
+    await user.click(button);
+    expect(reextractSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows run metadata banner after successful reextract and refreshes review data', async () => {
+    const user = userEvent.setup();
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            run_id: 'reextract_20260605T101530Z',
+            source: 'ocr_text_only',
+            schema_version: 'copd.v1',
+            prompt_version: 'copd.prompt.v1',
+            candidate_count: 12
+          }
+        })
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    const button = await screen.findByRole('button', { name: '重新抽取' });
+    await user.click(button);
+
+    expect(await screen.findByText(/reextract_20260605T101530Z/)).toBeTruthy();
+    expect(screen.getByText(/copd\.v1/)).toBeTruthy();
+    expect(screen.getByText(/copd\.prompt\.v1/)).toBeTruthy();
+    expect(screen.getByText(/候选\s*12\s*项/)).toBeTruthy();
+  });
+
+  it('reopens done task: status pill changes to review after reextract', async () => {
+    const user = userEvent.setup();
+    mockReviewRoutesDone();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            run_id: 'reextract_done_to_review',
+            source: 'ocr_text_only',
+            schema_version: 'copd.v1',
+            prompt_version: 'copd.prompt.v1',
+            candidate_count: 8
+          }
+        })
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    expect(await screen.findByText('已完成')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '重新抽取' }));
+    expect(await screen.findByText('待审核')).toBeTruthy();
+  });
+
+  it('shows backend error message on reextract failure without modifying review fields', async () => {
+    const user = userEvent.setup();
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        HttpResponse.json(
+          { error: { code: 'REEXTRACTION_VALIDATION_FAILED', message: '任务缺少已识别 OCR 文本,无法重新抽取', details: {} } },
+          { status: 400 }
+        )
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    const button = await screen.findByRole('button', { name: '重新抽取' });
+    await user.click(button);
+    expect(await screen.findByText('任务缺少已识别 OCR 文本,无法重新抽取')).toBeTruthy();
+  });
+
+  it('does not render any warning text about not re-OCR / not re-process / not overwriting manual results', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+    await screen.findByRole('button', { name: '重新抽取' });
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('不重新 OCR');
+    expect(body).not.toContain('不重新识别');
+    expect(body).not.toContain('不重新处理图片');
+    expect(body).not.toContain('不覆盖人工');
+    expect(body).not.toContain('不覆盖人工已修改');
+  });
+
+  it('does not render the reextract banner before reextract is triggered', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+    await screen.findByRole('button', { name: '重新抽取' });
+    expect(screen.queryByText(/reextract_/)).toBeNull();
+  });
+
+  it('clears the reextract banner when the close button is clicked', async () => {
+    const user = userEvent.setup();
+    mockReviewRoutes();
+    server.use(
+      http.post('*/api/tasks/task_001/reextract', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            run_id: 'reextract_clear_test',
+            source: 'ocr_text_only',
+            schema_version: 'copd.v1',
+            prompt_version: 'copd.prompt.v1',
+            candidate_count: 3
+          }
+        })
+      )
+    );
+    render(<ReviewPage taskId="task_001" />);
+    await user.click(await screen.findByRole('button', { name: '重新抽取' }));
+    expect(await screen.findByText(/reextract_clear_test/)).toBeTruthy();
+    const closeButton = screen.getByRole('button', { name: '关闭重新抽取摘要' });
+    await user.click(closeButton);
+    await waitFor(() => expect(screen.queryByText(/reextract_clear_test/)).toBeNull());
+  });
+});
+
+// 辅助 mock:把 review 任务改成 done
+function mockReviewRoutesDone() {
+  const detail = mockReviewRoutes();
+  // 重新覆盖 /api/tasks/task_001 的 status
+  server.use(
+    http.get('*/api/tasks/task_001', () =>
+      HttpResponse.json({
+        success: true,
+        data: {
+          task_id: 'task_001',
+          display_name: 'task_001',
+          status: 'done',
+          created_at: '2026-05-19T10:00:00+08:00',
+          updated_at: '2026-05-19T10:05:00+08:00',
+          page_count: 2,
+          processing_summary: { stage: 'done', status: 'completed', label: '处理完成', progress_percent: 100 },
+          review_summary: { confirmed_count: 2, total_count: 2 }
+        }
+      })
+    ),
+    http.get('*/api/tasks', () => detail)
+  );
+}
+
+function mockReviewRoutesWithStatus(status: 'uploading' | 'processing' | 'failed') {
+  server.use(
+    http.get('*/api/tasks/task_001', () =>
+      HttpResponse.json({
+        success: true,
+        data: {
+          task_id: 'task_001',
+          display_name: 'task_001',
+          status,
+          created_at: '2026-05-19T10:00:00+08:00',
+          updated_at: '2026-05-19T10:01:00+08:00',
+          page_count: 0,
+          error_code: status === 'failed' ? 'TASK_PROCESSING_FAILED' : null,
+          error_message: status === 'failed' ? '处理失败' : null
+        }
+      })
+    ),
+    http.get('*/api/tasks', () =>
+      HttpResponse.json({ success: true, data: { tasks: [] } })
+    )
+  );
+}
