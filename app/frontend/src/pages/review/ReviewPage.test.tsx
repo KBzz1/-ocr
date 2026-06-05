@@ -1029,7 +1029,7 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
 
 // 辅助 mock:把 review 任务改成 done
 function mockReviewRoutesDone() {
-  const detail = mockReviewRoutes();
+  mockReviewRoutes();
   // 重新覆盖 /api/tasks/task_001 的 status
   server.use(
     http.get('*/api/tasks/task_001', () =>
@@ -1046,8 +1046,7 @@ function mockReviewRoutesDone() {
           review_summary: { confirmed_count: 2, total_count: 2 }
         }
       })
-    ),
-    http.get('*/api/tasks', () => detail)
+    )
   );
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { exportTasksBatchZip } from '../../api/export';
@@ -72,7 +72,6 @@ export function TasksPage() {
   const [selectedTaskIds, setSelectedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [lastBatchExport, setLastBatchExport] = useState<BatchExportSummary | null>(null);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
-  const batchExportingRef = useRef(false);
 
   const loadTasks = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'refresh') => {
     if (mode === 'initial') {
@@ -171,8 +170,7 @@ export function TasksPage() {
   }
 
   async function handleBatchExport() {
-    if (batchExportingRef.current || selectedTaskIds.size === 0) return;
-    batchExportingRef.current = true;
+    if (isBatchExporting || selectedTaskIds.size === 0) return;
     setIsBatchExporting(true);
     const ids = Array.from(selectedTaskIds);
     try {
@@ -185,7 +183,6 @@ export function TasksPage() {
     } catch (batchError: unknown) {
       setError(getErrorMessage(batchError, '批量导出失败,请稍后重试'));
     } finally {
-      batchExportingRef.current = false;
       setIsBatchExporting(false);
     }
   }

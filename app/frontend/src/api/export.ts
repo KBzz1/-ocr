@@ -1,27 +1,12 @@
-import { ApiError } from './client';
+import { ApiError, parseErrorBody } from './client';
 
-async function parseErrorFromBlob(response: Response, fallback: string): Promise<ApiError> {
+async function parseBlobError(response: Response, fallbackMessage: string, fallbackCode = 'EXPORT_FAILED'): Promise<ApiError> {
   try {
-    const body = await response.clone().json();
-    if (
-      body &&
-      typeof body === 'object' &&
-      'error' in body &&
-      body.error &&
-      typeof body.error === 'object'
-    ) {
-      const errObj = body.error as { code?: string; message?: string; details?: Record<string, unknown> };
-      return new ApiError(
-        typeof errObj.message === 'string' ? errObj.message : fallback,
-        typeof errObj.code === 'string' ? errObj.code : 'EXPORT_FAILED',
-        response.status,
-        typeof errObj.details === 'object' && errObj.details ? errObj.details : {}
-      );
-    }
+    const body = (await response.json()) as unknown;
+    return parseErrorBody(body, response.status, fallbackMessage, fallbackCode);
   } catch {
-    // body 解析失败,使用 fallback
+    return new ApiError(fallbackMessage, fallbackCode, response.status);
   }
-  return new ApiError(fallback, 'EXPORT_FAILED', response.status);
 }
 
 async function downloadTaskExport(taskId: string, format: 'json' | 'excel') {
@@ -39,7 +24,7 @@ async function downloadTaskExport(taskId: string, format: 'json' | 'excel') {
   );
 
   if (!response.ok) {
-    throw await parseErrorFromBlob(response, '导出失败');
+    throw await parseBlobError(response, '导出失败');
   }
 
   return response.blob();
@@ -64,7 +49,7 @@ export async function exportTasksBatchZip(taskIds: string[]) {
   });
 
   if (!response.ok) {
-    throw await parseErrorFromBlob(response, '批量导出失败');
+    throw await parseBlobError(response, '批量导出失败');
   }
 
   return response.blob();

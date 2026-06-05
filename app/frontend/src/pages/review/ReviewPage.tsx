@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
-import { completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskReextractResult, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
 import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
@@ -124,8 +124,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const fieldsPanelRef = useRef<HTMLElement | null>(null);
   const [ocrPanelHeight, setOcrPanelHeight] = useState<number | null>(null);
   const [isReextracting, setIsReextracting] = useState(false);
-  const [reextractMeta, setReextractMeta] = useState<Omit<TaskReextractResult, 'task_id'> | null>(null);
-  const reextractingRef = useRef(false);
+  const [reextractMeta, setReextractMeta] = useState<{
+    run_id: string;
+    schema_version?: string;
+    prompt_version?: string;
+    candidate_count: number;
+  } | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -349,8 +353,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   }
 
   async function handleReextract() {
-    if (reextractingRef.current || isReextracting || saveStatus === 'saving' || isCompleting) return;
-    reextractingRef.current = true;
+    if (isReextracting || saveStatus === 'saving' || isCompleting) return;
     setIsReextracting(true);
     try {
       const result = await reextractTaskFromOcr(taskId);
@@ -362,11 +365,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       // 同步刷新 taskDetail.status,避免 effectiveStatus 仍读取 done
       const reextractStatus = result.status as TaskStatus;
       setTaskDetail({ ...nextDetail, status: reextractStatus });
-      setStatus(reextractStatus);
       setReextractMeta({
-        status: result.status,
         run_id: result.run_id,
-        source: result.source,
         schema_version: result.schema_version,
         prompt_version: result.prompt_version,
         candidate_count: result.candidate_count
@@ -375,7 +375,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '重新抽取失败，请重试');
     } finally {
-      reextractingRef.current = false;
       setIsReextracting(false);
     }
   }

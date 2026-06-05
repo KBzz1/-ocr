@@ -383,64 +383,10 @@ describe('Batch export (FE-MVP-03-04)', () => {
   });
 
   it('shows checkboxes; review/done rows enable, others disable with explanation', async () => {
-    // 使用自定义 fixture:uploading 任务带 1 页,确保不被 shouldShowTask 过滤
-    const customTasks: TaskSummary[] = [
-      {
-        task_id: '1',
-        display_name: '1',
-        status: 'uploading',
-        created_at: '2026-05-19T09:40:00+08:00',
-        page_count: 1,
-        review_summary: { status: null, confirmed_count: 0, total_count: 0 },
-        export_summary: { formats: [] },
-        error_code: null,
-        error_message: null
-      },
-      {
-        task_id: '2',
-        display_name: '2',
-        status: 'review',
-        created_at: '2026-05-19T09:30:00+08:00',
-        page_count: 3,
-        review_summary: { status: 'unreviewed', confirmed_count: 0, total_count: 8 },
-        export_summary: { formats: [] },
-        error_code: null,
-        error_message: null
-      },
-      {
-        task_id: '3',
-        display_name: '3',
-        status: 'processing',
-        created_at: '2026-05-19T09:20:00+08:00',
-        page_count: 2,
-        review_summary: { status: null },
-        export_summary: { formats: [] },
-        error_code: null,
-        error_message: null
-      },
-      {
-        task_id: '4',
-        display_name: '4',
-        status: 'failed',
-        created_at: '2026-05-19T09:10:00+08:00',
-        page_count: 1,
-        review_summary: { status: null },
-        export_summary: { formats: [] },
-        error_code: 'ALGORITHM_MODULE_NOT_CONFIGURED',
-        error_message: '图像处理模块未配置'
-      },
-      {
-        task_id: '5',
-        display_name: '5',
-        status: 'done',
-        created_at: '2026-05-19T09:00:00+08:00',
-        page_count: 5,
-        review_summary: { status: 'confirmed', confirmed_count: 8, total_count: 8 },
-        export_summary: { formats: ['json'] },
-        error_code: null,
-        error_message: null
-      }
-    ];
+    // 在 taskFixtures 基础上把任务 1(uploading)的 page_count 调为 1,确保不被 shouldShowTask 过滤
+    const customTasks: TaskSummary[] = taskFixtures.map((t) =>
+      t.task_id === '1' ? { ...t, page_count: 1 } : t
+    );
     server.use(http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: customTasks } })));
     render(<TasksPage />);
 

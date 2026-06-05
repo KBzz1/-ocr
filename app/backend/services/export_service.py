@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
+from ._review_field_factory import build_placeholder_field, is_field_blocking
 
 
 class ExportService:
@@ -87,45 +88,22 @@ class ExportService:
         """按 schema 顺序构造字段视图,review 中已有字段保留原值,缺失字段用空占位补齐。
 
         schema.label 优先于 review.field_name(沿用原 _build_export_model 语义),确保导出字段名与 schema 同步。
-        与 ReviewService._placeholder_field 占位结构一致,确保导出模型不依赖 review 必须先被 get_or_init 补齐。
         """
         existing = {f["field_key"]: f for f in (review.get("fields") or []) if isinstance(f, dict) and f.get("field_key")}
         view: list[dict] = []
-        for group in schema.get("field_groups", []):
+        for group in schema.get("field_groups", []) or []:
             group_key = group.get("group_key", "unknown")
             group_label = group.get("group_label", "unknown")
-            for schema_field in group.get("fields", []):
+            for schema_field in group.get("fields", []) or []:
                 fk = schema_field.get("field_key")
                 if not fk:
                     continue
                 schema_label = schema_field.get("label") or schema_field.get("field_name") or fk
                 field = existing.get(fk)
                 if field is None:
-                    field = {
-                        "field_key": fk,
-                        "field_name": schema_label,
-                        "auto_value": "",
-                        "final_value": "",
-                        "evidence": None,
-                        "page_no": None,
-                        "confidence": None,
-                        "source_hint": None,
-                        "source_text": None,
-                        "source_group_id": None,
-                        "source_section": None,
-                        "extraction_status": "not_found",
-                        "verification_status": "not_checked",
-                        "quality_flags": [],
-                        "ocr_correction": None,
-                        "status": FieldStatus.UNREVIEWED.value,
-                        "empty_accepted": False,
-                        "review_note": None,
-                        "reviewed_at": None,
-                        "updated_at": None,
-                        "history": [],
-                    }
-                else:
-                    # schema.label 优先于 review.field_name
+                    field = build_placeholder_field(fk, schema_label, now=None)
+                    field["updated_at"] = None
+                elif field.get("field_name") != schema_label:
                     field = {**field, "field_name": schema_label}
                 view.append({
                     **field,
@@ -328,15 +306,7 @@ class ExportService:
     @staticmethod
     def _compute_blocking_fields(fields: list[dict]) -> list[str]:
         """BE-MVP-05-06: 只有非空 final_value 且 status == unreviewed 才视为未确认,占位字段不阻断。"""
-        unreviewed = []
-        for f in fields:
-            if f.get("status") != FieldStatus.UNREVIEWED.value:
-                continue
-            final_value = f.get("final_value")
-            if not isinstance(final_value, str) or not final_value.strip():
-                continue
-            unreviewed.append(f["field_key"])
-        return unreviewed
+        return [f["field_key"] for f in fields if is_field_blocking(f)]
 
     # -- file writers --
 

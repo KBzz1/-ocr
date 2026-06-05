@@ -29,15 +29,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function parseErrorBody(body: unknown, status: number): ApiError {
+export function parseErrorBody(body: unknown, status: number, fallbackMessage = '请求失败', fallbackCode = 'UNKNOWN_ERROR'): ApiError {
   if (isObject(body) && isObject(body.error)) {
-    const code = typeof body.error.code === 'string' ? body.error.code : 'UNKNOWN_ERROR';
-    const message = typeof body.error.message === 'string' ? body.error.message : '请求失败';
+    const code = typeof body.error.code === 'string' ? body.error.code : fallbackCode;
+    const message = typeof body.error.message === 'string' ? body.error.message : fallbackMessage;
     const details = isObject(body.error.details) ? body.error.details : {};
     return new ApiError(message, code, status, details);
   }
 
-  return new ApiError('请求失败', 'UNKNOWN_ERROR', status);
+  return new ApiError(fallbackMessage, fallbackCode, status);
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {

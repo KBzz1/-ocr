@@ -4,6 +4,11 @@ from typing import Callable
 from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
 from ..storage.json_store import JsonStore
+from ._review_field_factory import (
+    build_placeholder_field,
+    build_review_summary,
+    is_field_blocking,
+)
 
 MVP_FIELD_STATUSES = {
     FieldStatus.UNREVIEWED.value,
@@ -19,68 +24,47 @@ class ReviewService:
         self._schema_provider = schema_provider
 
     @staticmethod
-    def _placeholder_field(schema_field: dict, group: dict) -> dict:
-        """根据 schema 字段生成占位字段(空 final_value + unreviewed)。
-
-        当 review_result.json 缺少 schema 中已声明的字段时,使用此占位补齐。
-        占位字段在导出时不阻断(由 ExportService 判定空 final_value 跳过阻断)。
-        """
-        field_key = schema_field["field_key"]
-        label = schema_field.get("label") or schema_field.get("field_name") or field_key
-        now = datetime.now(timezone.utc).isoformat()
-        return {
-            "field_key": field_key,
-            "field_name": label,
-            "auto_value": "",
-            "final_value": "",
-            "evidence": None,
-            "page_no": None,
-            "confidence": None,
-            "source_hint": None,
-            "source_text": None,
-            "source_group_id": None,
-            "source_section": None,
-            "extraction_status": "not_found",
-            "verification_status": "not_checked",
-            "quality_flags": [],
-            "ocr_correction": None,
-            "status": FieldStatus.UNREVIEWED.value,
-            "empty_accepted": False,
-            "review_note": None,
-            "reviewed_at": None,
-            "updated_at": now,
-            "history": [],
-            "_group_key": group.get("group_key", "unknown"),
-            "_group_label": group.get("group_label", "unknown"),
-        }
+    def _iter_schema_field_keys(schema: dict):
+        """按 schema 顺序产出 (field_key, label) 元组,跳过缺失 field_key 的项。"""
+        for group in schema.get("field_groups", []) or []:
+            for schema_field in group.get("fields", []) or []:
+                fk = schema_field.get("field_key")
+                if not fk:
+                    continue
+                label = schema_field.get("label") or schema_field.get("field_name") or fk
+                yield fk, label
 
     def _hydrate_missing_fields(self, review: dict, schema: dict) -> dict:
         """按 schema 顺序补齐 review 中缺失的字段,并对已存在字段按 schema 顺序重排。
 
-        返回写回 store 后的 review。若 schema 为空或非 dict,直接返回 review。
+        若 review 已对齐 schema(无缺失且顺序一致),跳过写盘。
         """
         if not isinstance(schema, dict) or not schema.get("field_groups"):
             return review
 
         existing = {f["field_key"]: f for f in review.get("fields", []) if isinstance(f, dict) and f.get("field_key")}
+        ordered_keys: list[str] = []
         new_fields: list[dict] = []
-        for group in schema.get("field_groups", []):
-            for schema_field in group.get("fields", []):
-                fk = schema_field.get("field_key")
-                if not fk:
-                    continue
-                field = existing.get(fk)
-                if field is None:
-                    field = self._placeholder_field(schema_field, group)
-                else:
-                    # 保留原 review 字段值,仅补上分组元数据(供 export 视图使用)
-                    field.setdefault("_group_key", group.get("group_key", "unknown"))
-                    field.setdefault("_group_label", group.get("group_label", "unknown"))
-                new_fields.append(field)
+        mutated = False
+        for fk, label in self._iter_schema_field_keys(schema):
+            ordered_keys.append(fk)
+            field = existing.get(fk)
+            if field is None:
+                field = build_placeholder_field(fk, label)
+                mutated = True
+            elif field.get("field_name") != label:
+                # schema.label 优先于 review.field_name(与 ExportService 语义一致)
+                field["field_name"] = label
+                mutated = True
+            new_fields.append(field)
+
+        existing_order = [f["field_key"] for f in review.get("fields", []) if isinstance(f, dict) and f.get("field_key")]
+        if not mutated and existing_order == ordered_keys:
+            return review
+
         review["fields"] = new_fields
-        review["summary"] = self._build_summary(new_fields)
+        review["summary"] = build_review_summary(new_fields)
         review["updated_at"] = datetime.now(timezone.utc).isoformat()
-        # 写回 store,后续 get_or_init 不再重复补齐
         task_id = review.get("task_id")
         if task_id:
             self._store.write(f"results/{task_id}/review_result.json", review)
@@ -153,6 +137,8 @@ class ReviewService:
         return self._enrich_with_schema(self._enrich_with_ocr(review, task_id))
 
     def _build_fields(self, candidates: list[dict], schema: dict) -> list[dict]:
+        from ._review_field_factory import build_field_from_candidate
+
         labels = {}
         order = {}
         index = 0
@@ -167,36 +153,14 @@ class ReviewService:
             candidates,
             key=lambda c: order.get(c.get("field_key"), len(order)),
         )
-        result = []
-        for item in sorted_candidates:
-            field_key = item["field_key"]
-            auto_value = item.get("original_value", "")
-            result.append(
-                {
-                    "field_key": field_key,
-                    "field_name": labels.get(field_key) or item.get("field_name") or field_key,
-                    "auto_value": auto_value,
-                    "final_value": auto_value,
-                    "evidence": item.get("evidence"),
-                    "page_no": item.get("page_no"),
-                    "confidence": item.get("confidence"),
-                    "source_hint": item.get("source_hint"),
-                    "source_text": item.get("source_text"),
-                    "source_group_id": item.get("source_group_id"),
-                    "source_section": item.get("source_section"),
-                    "extraction_status": item.get("extraction_status", "extracted"),
-                    "verification_status": item.get("verification_status", "not_checked"),
-                    "quality_flags": item.get("quality_flags", []),
-                    "ocr_correction": item.get("ocr_correction"),
-                    "status": FieldStatus.UNREVIEWED.value,
-                    "empty_accepted": False,
-                    "review_note": None,
-                    "reviewed_at": None,
-                    "updated_at": None,
-                    "history": [],
-                }
+        return [
+            build_field_from_candidate(
+                item["field_key"],
+                labels.get(item["field_key"]) or item.get("field_name") or item["field_key"],
+                item,
             )
-        return result
+            for item in sorted_candidates
+        ]
 
     def _build_source_groups(self, candidates: list[dict]) -> list[dict]:
         groups: dict[str, dict] = {}
@@ -219,16 +183,7 @@ class ReviewService:
         return list(groups.values())
 
     def _build_summary(self, fields: list[dict]) -> dict:
-        return {
-            "total_count": len(fields),
-            "unreviewed_count": sum(1 for f in fields if f["status"] == FieldStatus.UNREVIEWED.value),
-            "confirmed_count": sum(1 for f in fields if f["status"] == FieldStatus.CONFIRMED.value),
-            "modified_count": sum(1 for f in fields if f["status"] == FieldStatus.MODIFIED.value),
-            "suspicious_count": sum(1 for f in fields if f.get("verification_status") == "suspicious"),
-            "failed_verification_count": sum(1 for f in fields if f.get("verification_status") == "failed"),
-            "not_found_count": sum(1 for f in fields if f.get("extraction_status") == "not_found"),
-            "missing_evidence_count": sum(1 for f in fields if not f.get("evidence")),
-        }
+        return build_review_summary(fields)
 
     def _ensure_readable(self, task: dict) -> None:
         if task["status"] not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
@@ -360,13 +315,7 @@ class ReviewService:
         summary = self._build_summary(review["fields"])
 
         # BE-MVP-05-06: 空 final_value 占位字段不算未确认,与导出阻断逻辑保持一致
-        unreviewed = [
-            f["field_key"]
-            for f in review["fields"]
-            if f["status"] == FieldStatus.UNREVIEWED.value
-            and isinstance(f.get("final_value"), str)
-            and f["final_value"].strip()
-        ]
+        unreviewed = [f["field_key"] for f in review["fields"] if is_field_blocking(f)]
         if not review["fields"] or unreviewed:
             raise AppError(
                 ErrorCode.REVIEW_VALIDATION_FAILED,
