@@ -348,3 +348,81 @@
 .task-list-empty strong {
   color: #0f172a;
 }
+
+/* FE-MVP-03-04: 批量导出多选 + 摘要条 */
+.tasks-batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 12px;
+  flex-wrap: wrap;
+}
+
+.tasks-batch-export {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tasks-batch-export:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.tasks-batch-export:disabled {
+  background: #e2e8f0;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.tasks-batch-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.tasks-batch-summary__close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.tasks-batch-summary__close:hover {
+  color: #0f172a;
+}
+
+.task-list-table__select-col {
+  width: 44px;
+  text-align: center;
+}
+
+.task-list-table__select-col input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.task-list-table__select-col input[type='checkbox']:disabled {
+  cursor: not-allowed;
+}
+
+.task-list-row--selected > td {
+  background: #eff6ff;
+}

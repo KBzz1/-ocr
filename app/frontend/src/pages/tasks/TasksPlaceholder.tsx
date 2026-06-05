@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiError } from '../../api/client';
+import { exportTasksBatchZip } from '../../api/export';
 import { deleteTask, getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
@@ -11,9 +12,28 @@ import '../../components/tasks/tasks.css';
 
 const TASK_POLL_INTERVAL_MS = 5000;
 const visibleTaskFilters: Array<TaskStatus | 'all'> = ['all', 'uploading', 'review', 'done', 'failed'];
+const BATCH_ZIP_FILENAME = 'batch-review-export.zip';
+
+type BatchExportSummary = {
+  task_ids: string[];
+  exported_at: string;
+};
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // 释放 URL,让浏览器 GC;不立即 revoke,留给浏览器完成下载
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function getInitialStatusFilter(): TaskStatus | 'all' {
@@ -49,6 +69,10 @@ export function TasksPage() {
   const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrTask, setQrTask] = useState<TaskUploadSummary | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [lastBatchExport, setLastBatchExport] = useState<BatchExportSummary | null>(null);
+  const [isBatchExporting, setIsBatchExporting] = useState(false);
+  const batchExportingRef = useRef(false);
 
   const loadTasks = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'refresh') => {
     if (mode === 'initial') {
@@ -134,6 +158,42 @@ export function TasksPage() {
     window.history.replaceState({}, '', nextUrl);
   }
 
+  function handleToggleSelected(taskId: string) {
+    setSelectedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }
+
+  async function handleBatchExport() {
+    if (batchExportingRef.current || selectedTaskIds.size === 0) return;
+    batchExportingRef.current = true;
+    setIsBatchExporting(true);
+    const ids = Array.from(selectedTaskIds);
+    try {
+      const blob = await exportTasksBatchZip(ids);
+      triggerBlobDownload(blob, BATCH_ZIP_FILENAME);
+      const now = new Date();
+      const exportedAt = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      setLastBatchExport({ task_ids: ids, exported_at: exportedAt });
+      setError(null);
+    } catch (batchError: unknown) {
+      setError(getErrorMessage(batchError, '批量导出失败,请稍后重试'));
+    } finally {
+      batchExportingRef.current = false;
+      setIsBatchExporting(false);
+    }
+  }
+
+  function handleDismissBatchSummary() {
+    setLastBatchExport(null);
+  }
+
   return (
     <WorkstationLayout
       activeRouteId="tasks"
@@ -157,11 +217,39 @@ export function TasksPage() {
             {error ?? (isLoading ? '正在加载任务' : `共 ${tasks.length} 个任务`)}
           </p>
 
+          <div className="tasks-batch-toolbar" role="toolbar" aria-label="批量操作">
+            <button
+              type="button"
+              className="tasks-batch-export"
+              disabled={selectedTaskIds.size === 0 || isBatchExporting}
+              onClick={() => void handleBatchExport()}
+            >
+              {isBatchExporting ? '导出中' : `批量导出 (${selectedTaskIds.size})`}
+            </button>
+            {lastBatchExport ? (
+              <div className="tasks-batch-summary" role="status">
+                <span>
+                  已导出 {lastBatchExport.task_ids.length} 个任务 · {lastBatchExport.exported_at}
+                </span>
+                <button
+                  type="button"
+                  aria-label="关闭批量导出摘要"
+                  className="tasks-batch-summary__close"
+                  onClick={handleDismissBatchSummary}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+          </div>
+
           <TaskList
             activeFilter={activeFilter}
             retryingTaskId={retryingTaskId}
             deletingTaskId={deletingTaskId}
             deleteTarget={deleteTarget}
+            selectedTaskIds={selectedTaskIds}
+            onToggleSelected={handleToggleSelected}
             tasks={tasks}
             onFilterChange={handleFilterChange}
             onTaskStatusChange={handleTaskStatusChange}

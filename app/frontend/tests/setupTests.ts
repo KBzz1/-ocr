@@ -1,6 +1,20 @@
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import { setupServer } from 'msw/node';
 
+// jsdom 缺 URL.createObjectURL / revokeObjectURL,前端测试中触发下载需要打补丁
+if (typeof URL.createObjectURL !== 'function') {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: (_blob: Blob) => 'blob:fake-url'
+  });
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: (_url: string) => undefined
+  });
+}
+
 const allowedHosts = [
   'localhost',
   '127.0.0.1',

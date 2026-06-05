@@ -24,6 +24,8 @@ type TaskListProps = {
   retryingTaskId: string | null;
   deletingTaskId: string | null;
   deleteTarget: TaskSummary | null;
+  selectedTaskIds: ReadonlySet<string>;
+  onToggleSelected: (taskId: string) => void;
   onFilterChange: (filter: TaskStatus | 'all') => void;
   onTaskStatusChange: (taskId: string, patch: Partial<TaskSummary> & { status: TaskStatus }) => void;
   onDeleteTask: (task: TaskSummary) => void;
@@ -86,6 +88,8 @@ export function TaskList({
   retryingTaskId,
   deletingTaskId,
   deleteTarget,
+  selectedTaskIds,
+  onToggleSelected,
   onFilterChange,
   onTaskStatusChange,
   onDeleteTask,
@@ -136,6 +140,7 @@ export function TaskList({
           <table className="task-list-table" aria-label="任务列表">
             <thead>
               <tr>
+                <th className="task-list-table__select-col">批量导出</th>
                 <th>任务名称</th>
                 <th>创建时间</th>
                 <th>页数</th>
@@ -152,9 +157,24 @@ export function TaskList({
                 const isRetrying = retryingTaskId === task.task_id;
                 const isDeleting = deletingTaskId === task.task_id;
                 const processingProgress = task.status === 'processing' ? getProcessingProgress(task) : null;
+                const isSelectable = task.status === 'review' || task.status === 'done';
+                const isSelected = selectedTaskIds.has(task.task_id);
+                const checkboxLabel = isSelectable
+                  ? `批量导出选择 ${task.display_name ?? task.task_id}`
+                  : `批量导出不可用 ${task.display_name ?? task.task_id},仅待审核或已完成可导出`;
 
                 return (
-                  <tr key={task.task_id}>
+                  <tr key={task.task_id} className={isSelected ? 'task-list-row task-list-row--selected' : 'task-list-row'}>
+                    <td className="task-list-table__select-col">
+                      <input
+                        type="checkbox"
+                        aria-label={checkboxLabel}
+                        title={isSelectable ? '' : '导出仅支持待审核/已完成任务'}
+                        checked={isSelected}
+                        disabled={!isSelectable}
+                        onChange={() => onToggleSelected(task.task_id)}
+                      />
+                    </td>
                     <td className="task-list-table__id">{task.display_name ?? task.task_id}</td>
                     <td>{formatDateTime(task.created_at)}</td>
                     <td>{task.page_count} 页</td>

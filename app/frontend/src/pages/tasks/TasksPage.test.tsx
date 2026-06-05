@@ -10,6 +10,7 @@ import {
   mockTasks,
   taskFixtures
 } from '../../../tests/fixtures/tasks';
+import type { TaskSummary } from '../../api/tasks';
 import { server } from '../../../tests/setupTests';
 import { TasksPage } from './TasksPage';
 
@@ -139,8 +140,8 @@ describe('MVP task list and retry', () => {
 
     const table = await screen.findByRole('table', { name: '任务列表' });
     const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
-    const statusCell = processingRow.children[3] as HTMLElement;
-    const actionsCell = processingRow.children[6] as HTMLElement;
+    const statusCell = processingRow.children[4] as HTMLElement;
+    const actionsCell = processingRow.children[7] as HTMLElement;
 
     expect(statusCell.textContent).not.toContain('处理中');
     expect(statusCell.textContent).toContain('OCR 文档解析');
@@ -369,5 +370,239 @@ describe('Delete task with confirmation dialog', () => {
     await user.click(screen.getByRole('presentation'));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+});
+
+describe('Batch export (FE-MVP-03-04)', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/tasks');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows checkboxes; review/done rows enable, others disable with explanation', async () => {
+    // 使用自定义 fixture:uploading 任务带 1 页,确保不被 shouldShowTask 过滤
+    const customTasks: TaskSummary[] = [
+      {
+        task_id: '1',
+        display_name: '1',
+        status: 'uploading',
+        created_at: '2026-05-19T09:40:00+08:00',
+        page_count: 1,
+        review_summary: { status: null, confirmed_count: 0, total_count: 0 },
+        export_summary: { formats: [] },
+        error_code: null,
+        error_message: null
+      },
+      {
+        task_id: '2',
+        display_name: '2',
+        status: 'review',
+        created_at: '2026-05-19T09:30:00+08:00',
+        page_count: 3,
+        review_summary: { status: 'unreviewed', confirmed_count: 0, total_count: 8 },
+        export_summary: { formats: [] },
+        error_code: null,
+        error_message: null
+      },
+      {
+        task_id: '3',
+        display_name: '3',
+        status: 'processing',
+        created_at: '2026-05-19T09:20:00+08:00',
+        page_count: 2,
+        review_summary: { status: null },
+        export_summary: { formats: [] },
+        error_code: null,
+        error_message: null
+      },
+      {
+        task_id: '4',
+        display_name: '4',
+        status: 'failed',
+        created_at: '2026-05-19T09:10:00+08:00',
+        page_count: 1,
+        review_summary: { status: null },
+        export_summary: { formats: [] },
+        error_code: 'ALGORITHM_MODULE_NOT_CONFIGURED',
+        error_message: '图像处理模块未配置'
+      },
+      {
+        task_id: '5',
+        display_name: '5',
+        status: 'done',
+        created_at: '2026-05-19T09:00:00+08:00',
+        page_count: 5,
+        review_summary: { status: 'confirmed', confirmed_count: 8, total_count: 8 },
+        export_summary: { formats: ['json'] },
+        error_code: null,
+        error_message: null
+      }
+    ];
+    server.use(http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: customTasks } })));
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    const doneRow = within(table).getByText('5').closest('tr') as HTMLElement;
+    const uploadingRow = within(table).getByText('1').closest('tr') as HTMLElement;
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+
+    expect((within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((within(doneRow).getByRole('checkbox', { name: /批量导出.*5/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((within(uploadingRow).getByRole('checkbox', { name: /批量导出.*1/ }) as HTMLInputElement).disabled).toBe(true);
+    expect((within(processingRow).getByRole('checkbox', { name: /批量导出.*3/ }) as HTMLInputElement).disabled).toBe(true);
+    expect((within(failedRow).getByRole('checkbox', { name: /批量导出.*4/ }) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('disables batch export button when 0 selected; updates label with count when 1+ selected', async () => {
+    const user = userEvent.setup();
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    const doneRow = within(table).getByText('5').closest('tr') as HTMLElement;
+
+    const button = screen.getByRole('button', { name: /批量导出/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('批量导出');
+    expect(button.textContent).toContain('0');
+
+    await user.click(within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ }));
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('1');
+
+    await user.click(within(doneRow).getByRole('checkbox', { name: /批量导出.*5/ }));
+    expect(button.textContent).toContain('2');
+  });
+
+  it('calls exportTasksBatchZip with selected ids and triggers zip download on success', async () => {
+    const user = userEvent.setup();
+    const batchSpy = vi.fn();
+    const fakeBlob = new Blob(['PK fake zip'], { type: 'application/zip' });
+    const urlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake-url');
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    server.use(
+      mockTasks(),
+      http.post('*/api/tasks/export/batch-zip', async ({ request }) => {
+        const body = (await request.json()) as { task_ids: string[] };
+        batchSpy(body.task_ids);
+        return new HttpResponse(fakeBlob, {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' }
+        });
+      })
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    const doneRow = within(table).getByText('5').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ }));
+    await user.click(within(doneRow).getByRole('checkbox', { name: /批量导出.*5/ }));
+    await user.click(screen.getByRole('button', { name: /批量导出.*2/ }));
+
+    await waitFor(() => expect(batchSpy).toHaveBeenCalledWith(['2', '5']));
+    await waitFor(() => expect(urlSpy).toHaveBeenCalledWith(fakeBlob));
+    expect(clickSpy).toHaveBeenCalled();
+    // 摘要条出现
+    expect(screen.getByText(/已导出 2 个任务/)).toBeTruthy();
+
+    urlSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it('shows error message on batch export failure without changing the task list', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks(),
+      http.post('*/api/tasks/export/batch-zip', () =>
+        HttpResponse.json(
+          { error: { code: 'EXPORT_VALIDATION_FAILED', message: '批量导出存在不可导出任务', details: {} } },
+          { status: 400 }
+        )
+      )
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ }));
+    await user.click(screen.getByRole('button', { name: /批量导出/ }));
+
+    expect(await screen.findByText('批量导出存在不可导出任务')).toBeTruthy();
+    // 任务列表还在
+    expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('clears the summary banner when the close button is clicked', async () => {
+    const user = userEvent.setup();
+    const fakeBlob = new Blob(['PK fake zip'], { type: 'application/zip' });
+    const urlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake-url');
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    server.use(
+      mockTasks(),
+      http.post('*/api/tasks/export/batch-zip', () =>
+        new HttpResponse(fakeBlob, {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' }
+        })
+      )
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ }));
+    await user.click(screen.getByRole('button', { name: /批量导出/ }));
+
+    expect(await screen.findByText(/已导出 1 个任务/)).toBeTruthy();
+    const closeButton = screen.getByRole('button', { name: '关闭批量导出摘要' });
+    await user.click(closeButton);
+    await waitFor(() => expect(screen.queryByText(/已导出 1 个任务/)).toBeNull());
+
+    urlSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it('keeps selected task ids after silent polling refresh', async () => {
+    const user = userEvent.setup();
+    let requestCount = 0;
+    server.use(
+      http.get('*/api/tasks', () => {
+        requestCount += 1;
+        return HttpResponse.json({ success: true, data: { tasks: taskFixtures } });
+      })
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    const reviewCheckbox = within(reviewRow).getByRole('checkbox', { name: /批量导出.*2/ });
+    await user.click(reviewCheckbox);
+    expect((reviewCheckbox as HTMLInputElement).checked).toBe(true);
+    expect(requestCount).toBeGreaterThanOrEqual(1);
+
+    // 等一次轮询再触发(useSilentPolling 5s 间隔)
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    await act(async () => {
+      vi.advanceTimersByTime(5500);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5500);
+    });
+    vi.useRealTimers();
+
+    // 重新查询,验证选择状态保持(只要 TasksPage 状态未重置即可)
+    const tableAfter = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRowAfter = within(tableAfter).getByText('2').closest('tr') as HTMLElement;
+    const checkboxAfter = within(reviewRowAfter).getByRole('checkbox', { name: /批量导出.*2/ });
+    expect((checkboxAfter as HTMLInputElement).checked).toBe(true);
   });
 });
