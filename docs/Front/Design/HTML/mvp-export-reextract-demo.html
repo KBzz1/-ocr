@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MVP 阶段 2 演示 · 导出完整性 + 批量 + 重抽取</title>
+<style>
+  /* ============ 基础重置与排版 ============ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #0F172A;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  :root {
+    --primary: #2563EB;
+    --primary-hover: #1D4ED8;
+    --primary-soft: #EFF6FF;
+    --primary-border: #BFDBFE;
+    --surface: #F8FAFC;
+    --surface-2: #F1F5F9;
+    --white: #FFFFFF;
+    --border: #E2E8F0;
+    --border-strong: #CBD5E1;
+    --text-main: #0F172A;
+    --text-sub: #64748B;
+    --text-mute: #94A3B8;
+    --success: #10B981;
+    --success-soft: #ECFDF5;
+    --warning: #F59E0B;
+    --warning-soft: #FFFBEB;
+    --danger: #EF4444;
+    --danger-soft: #FEF2F2;
+    --processing: #8B5CF6;
+    --processing-soft: #F5F3FF;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --radius-sm: 6px;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  /* ============ 布局 ============ */
+  .page { min-height: 100vh; display: flex; flex-direction: column; }
+  .topbar {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 36px; height: 36px;
+    background: var(--primary); color: white;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .brand-title { font-size: 16px; font-weight: 600; color: var(--text-main); }
+  .brand-sub { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+  .topbar-meta { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-sub); }
+  .meta-pill {
+    background: var(--primary-soft);
+    color: var(--primary);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 6px; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15); }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 32px; width: 100%; }
+
+  /* ============ 标题区 ============ */
+  .hero {
+    background: linear-gradient(135deg, #FFFFFF 0%, #EFF6FF 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px 36px;
+    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 32px;
+    align-items: center;
+  }
+  .hero h1 { font-size: 26px; font-weight: 700; margin: 0 0 12px 0; color: var(--text-main); letter-spacing: -0.01em; }
+  .hero .lead { font-size: 14px; color: var(--text-sub); margin: 0 0 16px 0; max-width: 720px; }
+  .hero-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hero-tag {
+    background: var(--white);
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .hero-tag .tag-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .hero-stat {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 120px;
+    box-shadow: var(--shadow-sm);
+  }
+  .hero-stat-num { font-size: 28px; font-weight: 700; color: var(--primary); line-height: 1; }
+  .hero-stat-label { font-size: 11px; color: var(--text-sub); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* ============ 标签导航 ============ */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .tab {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    background: transparent;
+    color: var(--text-sub);
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    white-space: nowrap;
+  }
+  .tab:hover { background: var(--surface-2); color: var(--text-main); }
+  .tab.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+  }
+  .tab-badge {
+    background: rgba(255,255,255,0.25);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .tab:not(.active) .tab-badge { background: var(--surface-2); color: var(--text-sub); }
+
+  /* ============ Tab 内容 ============ */
+  .panel { display: none; animation: fadeIn 0.3s ease; }
+  .panel.active { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ============ 卡片 ============ */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin: 0 0 6px 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-sub { font-size: 12px; color: var(--text-sub); margin: 0 0 16px 0; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ============ 对比块 ============ */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .compare-side {
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .compare-side.before { background: #FEF2F2; border-color: #FECACA; }
+  .compare-side.after  { background: #ECFDF5; border-color: #A7F3D0; }
+  .compare-arrow {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-sub);
+    font-size: 24px;
+    font-weight: 300;
+  }
+  .compare-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .compare-side.before .compare-label { color: var(--danger); }
+  .compare-side.after  .compare-label { color: var(--success); }
+
+  /* ============ Mock UI: 任务管理页 ============ */
+  .mock {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .mock-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+    color: var(--text-sub);
+  }
+  .mock-bar .dot-r, .mock-bar .dot-y, .mock-bar .dot-g {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  .dot-r { background: #EF4444; } .dot-y { background: #F59E0B; } .dot-g { background: #10B981; }
+  .mock-body { padding: 16px; }
+
+  .mock-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .mock-search {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-sub);
+    flex: 1;
+    min-width: 120px;
+  }
+  .mock-btn {
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--text-main);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: default;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .mock-btn.primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .mock-btn.primary.disabled {
+    background: var(--surface-2);
+    color: var(--text-mute);
+    border-color: var(--border);
+  }
+  .mock-btn.success {
+    background: var(--success);
+    color: white;
+    border-color: var(--success);
+  }
+  .mock-btn.danger {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+  }
+
+  .mock-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .mock-table th, .mock-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mock-table th { color: var(--text-sub); font-weight: 500; background: var(--surface); }
+  .mock-table tr.selected { background: var(--primary-soft); }
+  .mock-table tr.disabled { opacity: 0.55; }
+
+  .mock-check {
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    display: inline-block;
+    position: relative;
+    vertical-align: middle;
+  }
+  .mock-check.on {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .mock-check.on::after {
+    content: ""; position: absolute;
+    left: 4px; top: 1px; width: 5px; height: 9px;
+    border: solid white; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .mock-check.disabled {
+    background: var(--surface-2);
+    border-color: var(--border);
+    cursor: not-allowed;
+  }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-pill.uploading { background: var(--primary-soft); color: var(--primary); }
+  .status-pill.uploading .dot { background: var(--primary); }
+  .status-pill.review { background: var(--processing-soft); color: var(--processing); }
+  .status-pill.review .dot { background: var(--processing); }
+  .status-pill.done { background: var(--success-soft); color: var(--success); }
+  .status-pill.done .dot { background: var(--success); }
+  .status-pill.failed { background: var(--danger-soft); color: var(--danger); }
+  .status-pill.failed .dot { background: var(--danger); }
+  .status-pill.processing { background: var(--warning-soft); color: var(--warning); }
+  .status-pill.processing .dot { background: var(--warning); }
+
+  /* ============ Excel mock ============ */
+  .excel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--white);
+  }
+  .excel-bar {
+    background: #10B981;
+    color: white;
+    padding: 8px 12px;
+    font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .excel-tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    overflow-x: auto;
+  }
+  .excel-tab {
+    padding: 8px 12px;
+    color: var(--text-sub);
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+    cursor: default;
+  }
+  .excel-tab.active {
+    background: var(--white);
+    color: var(--primary);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--primary);
+  }
+  .excel-grid {
+    display: grid;
+    font-size: 11px;
+    font-family: "SF Mono", "Consolas", monospace;
+  }
+  .excel-grid > div {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .excel-grid .header {
+    background: var(--surface-2);
+    font-weight: 600;
+    color: var(--text-main);
+    font-family: inherit;
+  }
+  .excel-grid .placeholder {
+    color: var(--text-mute);
+    font-style: italic;
+  }
+  .excel-grid .missing {
+    background: #FEF2F2;
+    color: var(--danger);
+  }
+
+  /* ============ Code ============ */
+  .code {
+    background: #0F172A;
+    color: #E2E8F0;
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    font-family: "SF Mono", "Consolas", "Menlo", monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .code .k { color: #C084FC; }   /* keyword */
+  .code .s { color: #86EFAC; }   /* string */
+  .code .n { color: #FCA5A5; }   /* number */
+  .code .c { color: #64748B; font-style: italic; } /* comment */
+  .code .v { color: #FCD34D; }   /* variable */
+  .code .h { color: #67E8F9; }   /* highlight */
+
+  /* ============ 提纲 / 列表 ============ */
+  .kv-list { list-style: none; padding: 0; margin: 0; }
+  .kv-list li {
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 13px;
+  }
+  .kv-list li:last-child { border-bottom: none; }
+  .kv-list .k { color: var(--text-sub); min-width: 100px; flex-shrink: 0; }
+  .kv-list .v { color: var(--text-main); font-weight: 500; }
+
+  .bullet-list { padding-left: 20px; margin: 0; }
+  .bullet-list li { margin-bottom: 8px; font-size: 13px; line-height: 1.7; }
+  .bullet-list li::marker { color: var(--primary); }
+
+  /* ============ 流程图 ============ */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    padding: 8px 0;
+  }
+  .flow-node {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 12px;
+    min-width: 110px;
+    text-align: center;
+    position: relative;
+    box-shadow: var(--shadow-sm);
+  }
+  .flow-node.active {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .flow-node.success {
+    border-color: var(--success);
+    background: var(--success-soft);
+    color: var(--success);
+  }
+  .flow-node.danger {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .flow-arrow {
+    color: var(--text-mute);
+    font-size: 18px;
+    padding: 0 8px;
+    user-select: none;
+  }
+
+  /* ============ 步骤指示器 ============ */
+  .step {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    width: 28px; height: 28px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .step-body { flex: 1; padding-top: 4px; }
+  .step-title { font-weight: 600; color: var(--text-main); font-size: 13px; margin-bottom: 4px; }
+  .step-desc { font-size: 12px; color: var(--text-sub); }
+
+  /* ============ 验收清单 ============ */
+  .checklist { list-style: none; padding: 0; margin: 0; }
+  .checklist li {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: flex-start; gap: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    font-size: 13px;
+  }
+  .checklist li:hover { background: var(--surface); }
+  .checklist li.checked { color: var(--text-sub); }
+  .checklist li.checked .check-text { text-decoration: line-through; }
+  .checklist .check {
+    width: 18px; height: 18px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .checklist li.checked .check {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+    font-size: 12px;
+  }
+
+  /* ============ 模拟审核页 ============ */
+  .review-mock {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .review-header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .review-title-block .label { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .review-title-block h2 { font-size: 18px; font-weight: 600; margin: 0; color: var(--text-main); }
+  .review-actions { display: flex; gap: 8px; }
+
+  .review-banner {
+    background: var(--primary-soft);
+    border-bottom: 1px solid var(--primary-border);
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--primary);
+    display: flex; align-items: center; gap: 10px;
+    animation: slideDown 0.4s ease;
+  }
+  @keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .review-banner .close {
+    margin-left: auto; cursor: pointer;
+    color: var(--text-sub);
+  }
+
+  .review-body {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    min-height: 320px;
+  }
+  .review-ocr {
+    border-right: 1px solid var(--border);
+    padding: 16px 20px;
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--text-sub);
+    line-height: 1.8;
+    font-family: "SF Mono", "Consolas", monospace;
+  }
+  .review-ocr h3 { font-size: 12px; color: var(--text-main); margin: 0 0 8px 0; font-family: inherit; }
+  .review-fields { padding: 16px 20px; }
+  .review-fields h3 { font-size: 12px; margin: 0 0 12px 0; color: var(--text-main); }
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 12px;
+  }
+  .field-row .fname { color: var(--text-sub); }
+  .field-row .fval { color: var(--text-main); font-weight: 500; }
+  .field-row .fval.empty { color: var(--text-mute); font-style: italic; }
+  .field-row .fval.changed { color: var(--primary); }
+  .field-row .fstatus {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-sub);
+  }
+  .field-row .fstatus.confirmed { background: var(--success-soft); color: var(--success); }
+  .field-row .fstatus.modified { background: var(--primary-soft); color: var(--primary); }
+  .field-row .fstatus.unreviewed { background: var(--warning-soft); color: var(--warning); }
+
+  /* ============ Footer ============ */
+  .footer {
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    padding: 20px 32px;
+    color: var(--text-sub);
+    font-size: 12px;
+    text-align: center;
+    margin-top: auto;
+  }
+  .footer a { color: var(--primary); text-decoration: none; }
+
+  /* ============ 提示 ============ */
+  .callout {
+    background: var(--warning-soft);
+    border: 1px solid #FDE68A;
+    border-left: 3px solid var(--warning);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #92400E;
+    margin: 12px 0;
+  }
+  .callout.info {
+    background: var(--primary-soft);
+    border-color: var(--primary-border);
+    border-left-color: var(--primary);
+    color: var(--primary-hover);
+  }
+  .callout.danger {
+    background: var(--danger-soft);
+    border-color: #FECACA;
+    border-left-color: var(--danger);
+    color: #991B1B;
+  }
+  .callout.success {
+    background: var(--success-soft);
+    border-color: #A7F3D0;
+    border-left-color: var(--success);
+    color: #065F46;
+  }
+  .callout-title { font-weight: 600; margin-bottom: 4px; }
+
+  /* ============ Tab 标签徽章 ============ */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+  .badge.bp { background: var(--primary-soft); color: var(--primary); }
+  .badge.bs { background: var(--success-soft); color: var(--success); }
+  .badge.bw { background: var(--warning-soft); color: var(--warning); }
+  .badge.bd { background: var(--danger-soft); color: var(--danger); }
+  .badge.bg { background: var(--processing-soft); color: var(--processing); }
+
+  /* 进度条 (动画) */
+  .progress {
+    height: 4px;
+    background: var(--surface-2);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============ 顶栏 ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">病</div>
+      <div>
+        <div class="brand-title">病历文书结构化采集工作站</div>
+        <div class="brand-sub">MVP 阶段 2 · 导出完整性 + 批量 + 重抽取演示</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span><span class="meta-dot"></span>本地部署 · 离线运行</span>
+      <span class="meta-pill">SPEC v1 · 2026-06-05</span>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- ============ Hero ============ -->
+    <section class="hero">
+      <div>
+        <h1>三块能力一起收口，让产品从「开发跑通」走向「可交付」</h1>
+        <p class="lead">
+          本演示把 PRD 阶段 2 的三块改动做成可交互的页面:修复 Excel 导出只能看到少数字段的硬缺陷、补齐任务管理页的批量导出 UI、把审核页的 OCR 文本重抽取入口落地。<b>重抽取新契约</b>:直接覆盖人工已修改的最终值,不做对比/采用 UI,不在界面加免责文案。
+        </p>
+        <div class="hero-tags">
+          <span class="hero-tag"><span class="tag-dot" style="background:#10B981"></span>BE-MVP-05-06 Excel 完整性</span>
+          <span class="hero-tag"><span class="tag-dot" style="background:#8B5CF6"></span>FE-MVP-03-04 批量导出</span>
+          <span class="hero-tag"><span class="tag-dot" style="background:#F59E0B"></span>FE-MVP-04-05 重抽取入口</span>
+          <span class="hero-tag"><span class="tag-dot" style="background:#EF4444"></span>BE-MVP-04-05 重抽取行为修订</span>
+        </div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num" id="heroNum">3</div>
+        <div class="hero-stat-label">SPEC 覆盖任务</div>
+      </div>
+    </section>
+
+    <!-- ============ 标签导航 ============ -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-target="overview">📊 总览</button>
+      <button class="tab" data-target="excel">📗 Excel 完整性<span class="tab-badge">BE-05-06</span></button>
+      <button class="tab" data-target="batch">📦 批量导出 UI<span class="tab-badge">FE-03-04</span></button>
+      <button class="tab" data-target="reextract">🔁 重抽取入口<span class="tab-badge">FE-04-05</span></button>
+      <button class="tab" data-target="contract">⚖️ 契约对比</button>
+      <button class="tab" data-target="checklist">✅ 验收清单</button>
+    </nav>
+
+    <!-- ============ 总览 ============ -->
+    <section class="panel active" id="panel-overview">
+      <div class="grid-3">
+        <div class="card">
+          <h3 class="card-title">📗 <span>Excel 字段完整性</span></h3>
+          <p class="card-sub">BE-MVP-05-06 · 后端</p>
+          <ul class="bullet-list">
+            <li>导出字段集合、顺序、分组与 JSON 模型一致</li>
+            <li>review_result.json 在 <code>get_or_init</code> 时按当前 schema 补齐缺失字段</li>
+            <li>空 final_value 占位字段不阻断导出</li>
+          </ul>
+          <div class="callout success">
+            <div class="callout-title">验收</div>
+            单任务 Excel 与 JSON 字段数、顺序、分组完全一致;占位字段空值仍能导出。
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">📦 <span>批量导出 UI</span></h3>
+          <p class="card-sub">FE-MVP-03-04 · 前端</p>
+          <ul class="bullet-list">
+            <li>任务管理页多选,只允许勾选 <code>review</code> / <code>done</code></li>
+            <li>顶部「批量导出」按钮,失败提示和摘要条</li>
+            <li>复用现有 <code>exportTasksBatchZip(taskIds)</code></li>
+          </ul>
+          <div class="callout info">
+            <div class="callout-title">设计取舍</div>
+            Excel 仍由后端单任务生成,批量 zip 维持 JSON-only,不放大 Excel 缺陷。
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">🔁 <span>重抽取入口 + 新契约</span></h3>
+          <p class="card-sub">FE-MVP-04-05 + BE-MVP-04-05 · 前后端</p>
+          <ul class="bullet-list">
+            <li>审核页「重新抽取」按钮,展示运行元数据</li>
+            <li><b>新契约</b>:直接覆盖人工已修改最终值</li>
+            <li>UI <b>不展示</b>免责文案,<b>不做</b>对比/采用页</li>
+          </ul>
+          <div class="callout danger">
+            <div class="callout-title">契约变更</div>
+            旧契约:不覆盖人工最终值,需用户在对比页采用。新契约:直接覆盖,后端写回 review_result.json。
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 class="card-title">🗺️ <span>三块改动的实施依赖与顺序</span></h3>
+        <p class="card-sub">先 Excel 修复是导出链路硬缺陷;再批量 UI 和重抽取入口都是单纯前端/后端小闭环</p>
+        <div class="flow">
+          <div class="flow-node active">1. Excel 字段完整性<br/><small>BE-MVP-05-06</small></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node">2. 批量导出 UI<br/><small>FE-MVP-03-04</small></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node">3. 重抽取入口 + 覆盖契约<br/><small>FE-MVP-04-05 + BE-MVP-04-05</small></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node success">可交付</div>
+        </div>
+        <div class="callout info" style="margin-top:8px">
+          <div class="callout-title">下一份 spec</div>
+          上传状态查询 (BE-MVP-01-03) 和正式离线验收 (REL-MVP-02) 不在本 spec 范围。
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Excel 完整性 ============ -->
+    <section class="panel" id="panel-excel">
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">🐛 <span>现在的硬缺陷</span></h3>
+          <p class="card-sub">review_result.json 在初始化时按当时 schema 写入,schema 加字段后不会被补齐</p>
+          <div class="excel">
+            <div class="excel-bar">📊 task_001.review.xlsx · 旧行为</div>
+            <div class="excel-tabs">
+              <div class="excel-tab active">全部字段 (3 列)</div>
+              <div class="excel-tab">患者背景 (2 列)</div>
+              <div class="excel-tab">体格检查 (1 列)</div>
+            </div>
+            <div class="excel-grid" style="grid-template-columns: 1.4fr 1fr 1.2fr 0.8fr 0.8fr 1.4fr;">
+              <div class="header">字段 key</div>
+              <div class="header">字段名</div>
+              <div class="header">final_value</div>
+              <div class="header">状态</div>
+              <div class="header">来源页</div>
+              <div class="header">来源证据</div>
+
+              <div>occupation</div>
+              <div>职业</div>
+              <div>退休</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>1</div>
+              <div>退休</div>
+
+              <div>smoking_history_status</div>
+              <div>吸烟状态</div>
+              <div>已戒烟</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>1</div>
+              <div>已戒烟</div>
+
+              <div>temperature</div>
+              <div>体温</div>
+              <div>36.5℃</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>2</div>
+              <div>T 36.5℃</div>
+            </div>
+          </div>
+          <div class="callout danger" style="margin-top:12px">
+            <div class="callout-title">问题</div>
+            schema 实际有 5 个字段(pulse、heart_rate 也存在),但 Excel 只看到 3 个;新增字段在 sheet1 和分组 sheet 里都缺失,医生看导出文件会误以为只抽到这些字段。
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">✅ <span>修复后</span></h3>
+          <p class="card-sub"><code>get_or_init</code> 启动时按当前 schema 补齐缺失字段;占位字段空 final_value 不阻断导出</p>
+          <div class="excel">
+            <div class="excel-bar">📊 task_001.review.xlsx · 新行为</div>
+            <div class="excel-tabs">
+              <div class="excel-tab active">全部字段 (5 列)</div>
+              <div class="excel-tab">患者背景 (2 列)</div>
+              <div class="excel-tab">体格检查 (3 列)</div>
+            </div>
+            <div class="excel-grid" style="grid-template-columns: 1.4fr 1fr 1.2fr 0.8fr 0.8fr 1.4fr;">
+              <div class="header">字段 key</div>
+              <div class="header">字段名</div>
+              <div class="header">final_value</div>
+              <div class="header">状态</div>
+              <div class="header">来源页</div>
+              <div class="header">来源证据</div>
+
+              <div>occupation</div>
+              <div>职业</div>
+              <div>退休</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>1</div>
+              <div>退休</div>
+
+              <div>smoking_history_status</div>
+              <div>吸烟状态</div>
+              <div>已戒烟</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>1</div>
+              <div>已戒烟</div>
+
+              <div>temperature</div>
+              <div>体温</div>
+              <div>36.5℃</div>
+              <div><span class="status-pill done"><span class="dot"></span>confirmed</span></div>
+              <div>2</div>
+              <div>T 36.5℃</div>
+
+              <div>pulse</div>
+              <div>脉搏</div>
+              <div class="placeholder">—</div>
+              <div><span class="status-pill failed"><span class="dot"></span>unreviewed</span></div>
+              <div>—</div>
+              <div>—</div>
+
+              <div>heart_rate</div>
+              <div>心率</div>
+              <div class="placeholder">—</div>
+              <div><span class="status-pill failed"><span class="dot"></span>unreviewed</span></div>
+              <div>—</div>
+              <div>—</div>
+            </div>
+          </div>
+          <div class="callout success" style="margin-top:12px">
+            <div class="callout-title">修复点</div>
+            5 个字段都在 sheet1;分组 sheet 也按 schema 顺序展开;占位字段空 final_value 允许导出。
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 class="card-title">🛠️ <span>后端改动点</span></h3>
+        <div class="grid-2">
+          <div>
+            <h4 style="margin:0 0 8px 0; font-size:13px;">① <code>ReviewService.get_or_init</code> 补齐</h4>
+            <div class="code"><span class="c"># 读取 review 后,按当前 schema 补齐缺失字段</span>
+review = store.read(f<span class="s">"results/{task_id}/review_result.json"</span>)
+schema = schema_provider()  <span class="c"># 或 document_profiles.get_profile(task["document_type"]).schema</span>
+existing_keys = {f[<span class="s">"field_key"</span>] <span class="k">for</span> f <span class="k">in</span> review[<span class="s">"fields"</span>]}
+
+<span class="k">for</span> group <span class="k">in</span> schema.get(<span class="s">"field_groups"</span>, []):
+    <span class="k">for</span> field <span class="k">in</span> group.get(<span class="s">"fields"</span>, []):
+        <span class="k">if</span> field[<span class="s">"field_key"</span>] <span class="k">not in</span> existing_keys:
+            review[<span class="s">"fields"</span>].append(<span class="h">placeholder</span>(field, group))
+
+store.write(f<span class="s">"results/{task_id}/review_result.json"</span>, review)
+<span class="k">return</span> review</div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 8px 0; font-size:13px;">② 阻断逻辑改为「空值不阻断」</h4>
+            <div class="code"><span class="c"># _compute_blocking_fields</span>
+unreviewed = []
+<span class="k">for</span> f <span class="k">in</span> fields:
+    <span class="k">if</span> f[<span class="s">"status"</span>] != <span class="s">"unreviewed"</span>:
+        <span class="k">continue</span>
+    <span class="c"># 空 final_value 占位字段不算未确认</span>
+    <span class="k">if not</span> (f.get(<span class="s">"final_value"</span>) <span class="k">or</span> <span class="s">""</span>).strip():
+        <span class="k">continue</span>
+    unreviewed.append(f[<span class="s">"field_key"</span>])
+<span class="k">return</span> unreviewed</div>
+          </div>
+        </div>
+        <div class="callout info" style="margin-top:12px">
+          <div class="callout-title">兼容性</div>
+          老的 review_result.json 在下次 <code>get_or_init</code> 时被补齐写回,不需要单独迁移脚本。
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 class="card-title">🧪 <span>验证用例(后端 pytest)</span></h3>
+        <ul class="bullet-list">
+          <li>review 缺 schema 字段时 <code>get_or_init</code> 补齐,summary.total_count 与 schema 字段数一致</li>
+          <li>Excel 导出 sheet1 包含全部 schema 字段,按 schema 顺序排列</li>
+          <li>JSON 导出 model 字段集合与 schema 一致</li>
+          <li>占位字段不进入 <code>blocking_fields.unreviewed</code>,不阻断导出</li>
+          <li>非空 final_value 且 status=unreviewed 的字段仍然阻断导出(沿用现有断言)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 批量导出 UI ============ -->
+    <section class="panel" id="panel-batch">
+      <div class="card">
+        <h3 class="card-title">🖥️ <span>任务管理页交互 Mock</span></h3>
+        <p class="card-sub">展示新行为:多选、禁用态、批量导出按钮、成功摘要条</p>
+
+        <!-- 场景 1:未勾选 -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px; font-weight:600;">① 默认状态 · 0 个勾选 · 批量导出按钮 disabled</div>
+          <div class="mock">
+            <div class="mock-bar">
+              <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
+              <span style="margin-left:8px">localhost:5000 / 任务管理</span>
+            </div>
+            <div class="mock-body">
+              <div class="mock-toolbar">
+                <div class="mock-search">🔍 搜索任务编号或名称</div>
+                <button class="mock-btn">🔄 刷新</button>
+                <button class="mock-btn primary disabled" disabled>📦 批量导出 (0)</button>
+              </div>
+              <table class="mock-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px"></th>
+                    <th>任务</th>
+                    <th>状态</th>
+                    <th>图片</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="mock-check"></span></td>
+                    <td>task_001 · 张三入院记录</td>
+                    <td><span class="status-pill review"><span class="dot"></span>待审核</span></td>
+                    <td>3</td>
+                    <td>2026/06/05 09:12</td>
+                    <td><a style="color:var(--primary); cursor:default">进入审核</a></td>
+                  </tr>
+                  <tr>
+                    <td><span class="mock-check"></span></td>
+                    <td>task_002 · 李四入院记录</td>
+                    <td><span class="status-pill done"><span class="dot"></span>已完成</span></td>
+                    <td>2</td>
+                    <td>2026/06/05 10:30</td>
+                    <td><a style="color:var(--primary); cursor:default">查看</a></td>
+                  </tr>
+                  <tr class="disabled">
+                    <td><span class="mock-check disabled" title="导出仅支持待审核/已完成任务"></span></td>
+                    <td>task_003 · 王五病程</td>
+                    <td><span class="status-pill uploading"><span class="dot"></span>上传中</span></td>
+                    <td>0</td>
+                    <td>2026/06/05 10:55</td>
+                    <td><a style="color:var(--text-mute); cursor:default">查看二维码</a></td>
+                  </tr>
+                  <tr class="disabled">
+                    <td><span class="mock-check disabled"></span></td>
+                    <td>task_004 · 赵六</td>
+                    <td><span class="status-pill failed"><span class="dot"></span>失败</span></td>
+                    <td>1</td>
+                    <td>2026/06/05 11:00</td>
+                    <td><a style="color:var(--text-mute); cursor:default">查看原因</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 场景 2:已勾选 2 个 -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px; font-weight:600;">② 勾选 2 个 review/done 任务 · 批量导出按钮可点击</div>
+          <div class="mock">
+            <div class="mock-bar">
+              <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
+              <span style="margin-left:8px">localhost:5000 / 任务管理</span>
+            </div>
+            <div class="mock-body">
+              <div class="mock-toolbar">
+                <div class="mock-search">🔍 搜索任务编号或名称</div>
+                <button class="mock-btn">🔄 刷新</button>
+                <button class="mock-btn primary">📦 批量导出 (2)</button>
+              </div>
+              <table class="mock-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px"></th>
+                    <th>任务</th>
+                    <th>状态</th>
+                    <th>图片</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="selected">
+                    <td><span class="mock-check on"></span></td>
+                    <td><b>task_001 · 张三入院记录</b></td>
+                    <td><span class="status-pill review"><span class="dot"></span>待审核</span></td>
+                    <td>3</td>
+                    <td>2026/06/05 09:12</td>
+                    <td><a style="color:var(--primary); cursor:default">进入审核</a></td>
+                  </tr>
+                  <tr class="selected">
+                    <td><span class="mock-check on"></span></td>
+                    <td><b>task_002 · 李四入院记录</b></td>
+                    <td><span class="status-pill done"><span class="dot"></span>已完成</span></td>
+                    <td>2</td>
+                    <td>2026/06/05 10:30</td>
+                    <td><a style="color:var(--primary); cursor:default">查看</a></td>
+                  </tr>
+                  <tr class="disabled">
+                    <td><span class="mock-check disabled"></span></td>
+                    <td>task_003 · 王五病程</td>
+                    <td><span class="status-pill uploading"><span class="dot"></span>上传中</span></td>
+                    <td>0</td>
+                    <td>2026/06/05 10:55</td>
+                    <td><a style="color:var(--text-mute); cursor:default">查看二维码</a></td>
+                  </tr>
+                  <tr class="disabled">
+                    <td><span class="mock-check disabled"></span></td>
+                    <td>task_004 · 赵六</td>
+                    <td><span class="status-pill failed"><span class="dot"></span>失败</span></td>
+                    <td>1</td>
+                    <td>2026/06/05 11:00</td>
+                    <td><a style="color:var(--text-mute); cursor:default">查看原因</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 场景 3:导出成功 -->
+        <div>
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px; font-weight:600;">③ 导出成功 · 摘要条 + 下载触发</div>
+          <div class="mock">
+            <div class="mock-bar">
+              <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
+              <span style="margin-left:8px">localhost:5000 / 任务管理</span>
+            </div>
+            <div class="mock-body">
+              <div style="background: var(--success-soft); border: 1px solid #A7F3D0; border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: #065F46;">
+                <span>✅</span>
+                <span>已导出 2 个任务 · 2026/06/05 14:32</span>
+                <span style="margin-left:auto; cursor:default; color: var(--text-sub);">×</span>
+              </div>
+              <div style="background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px; font-family: monospace; font-size: 11px; color: var(--text-sub);">
+                ↓ batch-review-export.zip<br/>
+                &nbsp;&nbsp;├─ manifest.json (导出摘要: 2 个任务成功)<br/>
+                &nbsp;&nbsp;├─ task_001/task_001.review.json (15 字段)<br/>
+                &nbsp;&nbsp;└─ task_002/task_002.review.json (15 字段)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:20px">
+        <div class="card">
+          <h3 class="card-title">🎯 <span>设计要点</span></h3>
+          <ul class="bullet-list">
+            <li>顶部按钮按勾选数动态变化:<code>批量导出 (0)</code> → <code>批量导出 (2)</code></li>
+            <li>不可导出任务的复选框禁用 + 灰色行 + tooltip 说明原因</li>
+            <li>已选行高亮(<code>primary-soft</code> 背景),用户清楚看到勾选范围</li>
+            <li>成功摘要条 24h 内可重复触发,关闭按钮清空</li>
+            <li>失败展示后端错误消息(<code>EXPORT_FAILED</code> / <code>EXPORT_VALIDATION_FAILED</code>),任务列表不动</li>
+            <li>复用 <code>useSilentPolling</code> 轮询,选择状态在轮询刷新时不清空</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="card-title">🚫 <span>明确不做</span></h3>
+          <ul class="bullet-list">
+            <li>不在前端拼 Excel,Excel 仍由后端单任务生成</li>
+            <li>批量 zip 维持 JSON-only 范围,不放大当前 Excel 缺陷</li>
+            <li>不修改失败语义:任一任务不可导出整体失败,无部分成功</li>
+            <li>不引入独立 <code>exported</code> 任务状态</li>
+            <li>不提供「全选所有可见任务」开关,避免误选非可导出任务</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 重抽取入口 ============ -->
+    <section class="panel" id="panel-reextract">
+      <div class="card">
+        <h3 class="card-title">🔁 <span>审核页交互 Mock</span></h3>
+        <p class="card-sub">展示新行为:重新抽取按钮、运行元数据条、自动刷新审核字段</p>
+
+        <!-- 场景 1:点击前 -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px; font-weight:600;">① 点击「重新抽取」前 · 审核页顶部操作区</div>
+          <div class="review-mock">
+            <div class="review-header">
+              <div class="review-title-block">
+                <div class="label">当前任务</div>
+                <h2>task_001 · 张三入院记录</h2>
+              </div>
+              <div class="review-actions">
+                <span class="status-pill review"><span class="dot"></span>待审核</span>
+                <button class="mock-btn">💾 保存修改</button>
+                <button class="mock-btn primary">🔁 重新抽取</button>
+                <button class="mock-btn success">✅ 一键审核</button>
+              </div>
+            </div>
+            <div class="review-body">
+              <div class="review-ocr">
+                <h3>OCR 合并文本</h3>
+                患者因反复咳嗽、咳痰 10 年,活动后气促 3 年,加重 5 天入院。体温 36.5℃,脉搏 78 次/分,呼吸 20 次/分,血压 130/80 mmHg。既往吸烟史 30 年,平均 20 支/日,已戒烟 5 年...
+              </div>
+              <div class="review-fields">
+                <h3>字段校对 · 8 个字段,6 个已确认</h3>
+                <div class="field-row">
+                  <span class="fname">姓名 (patient_name)</span>
+                  <span class="fval">张三</span>
+                  <span class="fstatus confirmed">confirmed</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">职业 (occupation)</span>
+                  <span class="fval">退休</span>
+                  <span class="fstatus confirmed">confirmed</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">吸烟状态 (smoking_history_status)</span>
+                  <span class="fval">已戒烟 5 年</span>
+                  <span class="fstatus modified">modified</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">体温 (temperature)</span>
+                  <span class="fval">36.5℃</span>
+                  <span class="fstatus confirmed">confirmed</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 场景 2:点击后 -->
+        <div>
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:8px; font-weight:600;">② 点击后 · 摘要条 + 字段被覆盖(状态回到 unreviewed)</div>
+          <div class="review-mock">
+            <div class="review-header">
+              <div class="review-title-block">
+                <div class="label">当前任务</div>
+                <h2>task_001 · 张三入院记录</h2>
+              </div>
+              <div class="review-actions">
+                <span class="status-pill review"><span class="dot"></span>待审核</span>
+                <button class="mock-btn">💾 保存修改</button>
+                <button class="mock-btn primary">🔁 重新抽取</button>
+                <button class="mock-btn success">✅ 一键审核</button>
+              </div>
+            </div>
+            <div class="review-banner">
+              <span>🔁</span>
+              <span>已重新抽取 · run_id=<b>reextract_20260605T143210Z</b> · schema=<b>copd.v1</b> · prompt=<b>copd.prompt.v1</b> · 候选 8 项</span>
+              <span class="close">×</span>
+            </div>
+            <div class="review-body">
+              <div class="review-ocr">
+                <h3>OCR 合并文本</h3>
+                患者因反复咳嗽、咳痰 10 年,活动后气促 3 年,加重 5 天入院。体温 36.5℃,脉搏 78 次/分,呼吸 20 次/分,血压 130/80 mmHg。既往吸烟史 30 年,平均 20 支/日,已戒烟 5 年...
+              </div>
+              <div class="review-fields">
+                <h3>字段校对 · 8 个字段,0 个已确认</h3>
+                <div class="field-row">
+                  <span class="fname">姓名 (patient_name)</span>
+                  <span class="fval">张三</span>
+                  <span class="fstatus unreviewed">unreviewed</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">职业 (occupation)</span>
+                  <span class="fval changed">工人</span>
+                  <span class="fstatus unreviewed">unreviewed</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">吸烟状态 (smoking_history_status)</span>
+                  <span class="fval changed">吸烟 30 年,20 支/日</span>
+                  <span class="fstatus unreviewed">unreviewed</span>
+                </div>
+                <div class="field-row">
+                  <span class="fname">体温 (temperature)</span>
+                  <span class="fval">36.5℃</span>
+                  <span class="fstatus unreviewed">unreviewed</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="callout danger" style="margin-top:12px">
+            <div class="callout-title">⚠️ 新契约语义</div>
+            字段 <code>occupation</code> 之前是 <code>confirmed</code>(人工核对为"退休"),被新候选覆盖为"工人",状态回到 <code>unreviewed</code>;<code>history</code> 末项追加 <code>action=reextract</code>,记录覆盖前值和 run_id。
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:20px">
+        <div class="card">
+          <h3 class="card-title">🎯 <span>前端设计</span></h3>
+          <ul class="bullet-list">
+            <li>按钮在 <code>review</code> / <code>done</code> 状态可点击,与现有 <code>isReextracting</code> 防重</li>
+            <li>成功后调用 <code>getReview</code> + <code>getTaskDetail</code> 刷新数据</li>
+            <li>展示运行元数据条:<code>run_id</code> / <code>schema_version</code> / <code>prompt_version</code> / <code>candidate_count</code></li>
+            <li>任务 <code>done</code> 会回退到 <code>review</code>,状态徽标自动更新</li>
+            <li>失败展示后端错误(<code>REEXTRACTION_VALIDATION_FAILED</code>),审核数据不动</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="card-title">🚫 <span>UI 明确不做</span></h3>
+          <ul class="bullet-list">
+            <li>不展示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等免责文案</li>
+            <li>不弹确认对话框(避免假安全感)</li>
+            <li>不做重抽取结果对比与采用 UI</li>
+            <li>不做逐字段 diff / 采用 / 保留</li>
+            <li>不展示完整 LLM 候选值,只展示元数据 + 覆盖后的字段</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 class="card-title">🛠️ <span>后端改动(契约修订)</span></h3>
+        <div class="callout danger">
+          <div class="callout-title">⚠️ 旧契约 vs 新契约</div>
+          <div style="margin-top:6px">
+            <b>旧契约</b>:重抽取只写 <code>field_candidates.json</code> + <code>reextract_runs/{run_id}.json</code>,<b>不覆盖</b> <code>review_result.json</code>;前端需在对比采用页里决定是否采用。<br/>
+            <b>新契约(本 spec)</b>:重抽取直接覆盖 <code>review_result.json["fields"]</code>,包括 final_value/auto_value/evidence/.../extraction_status/verification_status/quality_flags/ocr_correction;字段状态重置为 unreviewed;history 追加一条 reextract 记录。
+          </div>
+        </div>
+        <h4 style="margin:16px 0 8px 0; font-size:13px;">覆盖逻辑(伪代码)</h4>
+        <div class="code"><span class="c"># ReextractionService.reextract(改造后)</span>
+candidates = field_port.extract({<span class="s">"document_result"</span>: ocr_doc, <span class="s">"source"</span>: <span class="s">"ocr_text_only"</span>, ...})
+<span class="c"># 校验 candidates 非空、契约合法 ...</span>
+
+review = store.read(f<span class="s">"results/{task_id}/review_result.json"</span>)
+existing = {f[<span class="s">"field_key"</span>]: f <span class="k">for</span> f <span class="k">in</span> review[<span class="s">"fields"</span>]}
+
+<span class="c"># done → review 提前回退,避免脏状态</span>
+<span class="k">if</span> task[<span class="s">"status"</span>] == <span class="s">"done"</span>:
+    task = task_service.reopen_review(task_id)
+
+<span class="k">for</span> group <span class="k">in</span> schema.get(<span class="s">"field_groups"</span>, []):
+    <span class="k">for</span> schema_field <span class="k">in</span> group[<span class="s">"fields"</span>]:
+        new = next((c <span class="k">for</span> c <span class="k">in</span> candidates <span class="k">if</span> c[<span class="s">"field_key"</span>] == schema_field[<span class="s">"field_key"</span>]), <span class="k">None</span>)
+        <span class="k">if not</span> new: <span class="k">continue</span>  <span class="c"># 候选里没有,保持原 review 字段</span>
+        f = existing.get(schema_field[<span class="s">"field_key"</span>], placeholder_for(schema_field))
+        old = f.get(<span class="s">"final_value"</span>)
+        f.update({<span class="s">"auto_value"</span>: new[<span class="s">"original_value"</span>], <span class="s">"final_value"</span>: new[<span class="s">"original_value"</span>], ...})
+        f[<span class="s">"status"</span>] = <span class="s">"unreviewed"</span>
+        f[<span class="s">"history"</span>].append({<span class="s">"action"</span>: <span class="s">"reextract"</span>, <span class="s">"from_value"</span>: old, <span class="s">"to_value"</span>: new[<span class="s">"original_value"</span>], <span class="s">"run_id"</span>: run_id, <span class="s">"changed_at"</span>: now})
+
+store.write(f<span class="s">"results/{task_id}/review_result.json"</span>, review)
+store.write(f<span class="s">"results/{task_id}/reextract_runs/{run_id}.json"</span>, {...})</div>
+        <div class="callout info" style="margin-top:12px">
+          <div class="callout-title">测试断言更新</div>
+          现有 <code>test_reextract_uses_saved_document_text_and_records_versions</code> 改为断言:<code>final_value</code> = 新候选 <code>original_value</code>;<code>status == unreviewed</code>;<code>history</code> 末项 <code>action == reextract</code>;<code>from_value</code> 是覆盖前的人工值。
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 契约对比 ============ -->
+    <section class="panel" id="panel-contract">
+      <div class="card">
+        <h3 class="card-title">⚖️ <span>三块改动的契约变化(新 vs 旧)</span></h3>
+        <p class="card-sub">本 spec 是新行为的权威来源;旧 spec/plan 中冲突的措辞视为已废弃,不再追溯修订</p>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">📗 <span>Excel 导出字段完整性</span></h3>
+        <div class="grid-2">
+          <div class="compare-side before">
+            <div class="compare-label">⚠️ 旧行为</div>
+            <ul class="bullet-list">
+              <li>导出字段集合 = <code>review_result.json["fields"]</code></li>
+              <li>schema 加字段后,旧 review 不会被补齐</li>
+              <li>Excel sheet1 字段数 ≠ schema 字段数</li>
+              <li>医生看 Excel 误以为只抽到这些字段</li>
+            </ul>
+          </div>
+          <div class="compare-side after">
+            <div class="compare-label">✅ 新行为</div>
+            <ul class="bullet-list">
+              <li><code>get_or_init</code> 按当前 schema 补齐 review 缺失字段</li>
+              <li>占位字段 <code>final_value=""</code>,<code>status=unreviewed</code></li>
+              <li>Excel sheet1 字段数 = schema 字段数</li>
+              <li>占位字段不阻断导出;非空字段沿用原规则</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">📦 <span>批量导出 UI</span></h3>
+        <div class="grid-2">
+          <div class="compare-side before">
+            <div class="compare-label">⚠️ 旧行为</div>
+            <ul class="bullet-list">
+              <li>前端只有 <code>exportTasksBatchZip(taskIds)</code> API client</li>
+              <li>任务管理页无多选 UI、无批量按钮</li>
+              <li>用户需要逐个点导出,效率低</li>
+            </ul>
+          </div>
+          <div class="compare-side after">
+            <div class="compare-label">✅ 新行为</div>
+            <ul class="bullet-list">
+              <li>任务行首多选框,只允许 <code>review</code>/<code>done</code> 勾选</li>
+              <li>顶部「批量导出」按钮,按勾选数动态更新</li>
+              <li>成功摘要条 + 失败展示后端错误</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">🔁 <span>OCR 文本重抽取入口 + 行为契约</span></h3>
+        <div class="grid-2">
+          <div class="compare-side before">
+            <div class="compare-label">⚠️ 旧契约</div>
+            <ul class="bullet-list">
+              <li>UI 需展示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"</li>
+              <li>后端只写 candidates + runs,<b>不覆盖</b> review_result.json</li>
+              <li>需要重做「重抽取结果对比与采用」UI(FE-MVP-04-06)</li>
+              <li>用户逐字段决定采用或保留原人工值</li>
+            </ul>
+          </div>
+          <div class="compare-side after">
+            <div class="compare-label">✅ 新契约(本 spec)</div>
+            <ul class="bullet-list">
+              <li>UI <b>不展示</b>任何免责文案</li>
+              <li>后端<b>直接覆盖</b> <code>review_result.json["fields"]</code></li>
+              <li>字段状态重置为 <code>unreviewed</code>,<code>history</code> 追加 <code>reextract</code> 记录</li>
+              <li>不做对比 / 采用 UI(FE-MVP-04-06 <b>已废弃</b>)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">📑 <span>文档同步</span></h3>
+        <ul class="bullet-list">
+          <li>本 spec <code>docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md</code> 是新行为权威来源</li>
+          <li>PRD 任务清单 <code>BE-MVP-04-05</code>、<code>FE-MVP-04-05</code> 状态/边界已更新</li>
+          <li>FE-MVP-04-06(重抽取结果对比与采用)<b>从 PRD 任务清单移除</b></li>
+          <li>旧 spec/plan 中"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等措辞视为已废弃,不再追溯修订</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 验收清单 ============ -->
+    <section class="panel" id="panel-checklist">
+      <div class="card">
+        <h3 class="card-title">✅ <span>实施完成后的验收清单</span></h3>
+        <p class="card-sub">点击勾选,作为你和实施 agent 一起 review 的依据</p>
+
+        <h4 style="margin:16px 0 8px 0; font-size:13px;">📗 Excel 字段完整性</h4>
+        <ul class="checklist" id="cl-excel">
+          <li><span class="check">✓</span><span class="check-text">后端测试:review 缺 schema 字段时 <code>get_or_init</code> 补齐,summary.total_count 与 schema 字段数一致</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:Excel 导出 sheet1 包含全部 schema 字段,按 schema 顺序排列</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:JSON 导出 model 字段集合与 schema 一致</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:占位字段不进入 blocking_fields.unreviewed,不阻断导出</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:非空 final_value 且 status=unreviewed 的字段仍然阻断导出</span></li>
+          <li><span class="check">✓</span><span class="check-text">手动验证:实际打开 .xlsx 文件,sheet1 字段数 = schema 字段数</span></li>
+        </ul>
+
+        <h4 style="margin:16px 0 8px 0; font-size:13px;">📦 批量导出 UI</h4>
+        <ul class="checklist" id="cl-batch">
+          <li><span class="check">✓</span><span class="check-text">前端测试:review/done 任务行复选框可勾选;uploading/processing/failed 行禁用 + 说明</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:勾选 0 个时按钮 disabled;勾选 1+ 时可点击</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:模拟 exportTasksBatchZip 成功,触发下载且摘要条出现</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:模拟 exportTasksBatchZip 失败,展示错误消息,数据不变</span></li>
+          <li><span class="check">✓</span><span class="check-text">手动验证:实际下载 zip,内含 manifest.json + 每任务 review.json</span></li>
+        </ul>
+
+        <h4 style="margin:16px 0 8px 0; font-size:13px;">🔁 重抽取入口 + 新契约</h4>
+        <ul class="checklist" id="cl-reextract">
+          <li><span class="check">✓</span><span class="check-text">后端测试:reextract 后 final_value = 新候选 original_value,status=unreviewed,history 末项 action=reextract</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:done 任务 reextract 后,review_result.json 已被覆盖且 status=review</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试:缺少 OCR 文本时返回 REEXTRACTION_VALIDATION_FAILED,不修改 review_result.json</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:review/done 任务顶部"重新抽取"按钮可见;其他状态不显示</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:点击后调用 reextractTaskFromOcr,成功后刷新 review 字段,展示运行元数据条</span></li>
+          <li><span class="check">✓</span><span class="check-text">前端测试:断言 ReviewPage 渲染结果中不包含"不重新 OCR"、"不重新处理图片"、"不覆盖人工"等文案</span></li>
+          <li><span class="check">✓</span><span class="check-text">手动验证:实际改 confirmed 字段值,调重抽取,该字段 final_value 变成新候选值,status=unreviewed,history 出现 reextract 记录</span></li>
+        </ul>
+
+        <h4 style="margin:16px 0 8px 0; font-size:13px;">📚 文档</h4>
+        <ul class="checklist" id="cl-docs">
+          <li><span class="check">✓</span><span class="check-text">PRD 任务清单:BE-MVP-04-05、FE-MVP-04-05、BE-MVP-05-06 状态/边界同步</span></li>
+          <li><span class="check">✓</span><span class="check-text">PRD 任务清单:FE-MVP-04-06(重抽取结果对比与采用)从清单移除</span></li>
+          <li><span class="check">✓</span><span class="check-text">后端测试断言(尤其是 test_reextract_uses_saved_document_text_and_records_versions)更新为新契约</span></li>
+        </ul>
+      </div>
+
+      <div class="callout success" style="margin-top:16px">
+        <div class="callout-title">🟢 全部勾选 = 可交付</div>
+        跑通 <code>conda run -n manzufei_ocr python -m pytest app/backend/tests -q</code> + 前后端手动验证后,可以进入下一份 spec:上传状态查询(BE-MVP-01-03)与正式离线验收(REL-MVP-02)。
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="footer">
+    <div>📄 <a href="docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md" target="_blank">新 spec:2026-06-05-mvp-export-reextract-ui-design.md</a> &nbsp;·&nbsp; PRD 任务清单已同步 &nbsp;·&nbsp; 旧 spec/plan 中冲突措辞视为已废弃</div>
+  </footer>
+
+</div>
+
+<script>
+  // ============ Tab 切换 ============
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+  tabs.forEach(t => {
+    t.addEventListener('click', () => {
+      tabs.forEach(x => x.classList.remove('active'));
+      panels.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      const target = t.getAttribute('data-target');
+      document.getElementById('panel-' + target).classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  // ============ 验收清单点击 ============
+  document.querySelectorAll('.checklist li').forEach(li => {
+    li.addEventListener('click', () => {
+      li.classList.toggle('checked');
+    });
+  });
+
+  // ============ Hero 数字动画 ============
+  const num = document.getElementById('heroNum');
+  if (num) {
+    let v = 0;
+    const target = 3;
+    const tick = () => {
+      v += 0.2;
+      if (v >= target) { num.textContent = target; return; }
+      num.textContent = Math.floor(v);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+</script>
+</body>
+</html>

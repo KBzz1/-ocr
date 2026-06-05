@@ -112,8 +112,8 @@
 
 - [x] **BE-MVP-04-05 基于已保存 OCR 文本重新抽取框架**
   - 范围：新增 `POST /api/tasks/{task_id}/reextract`，读取已保存 `document_result.json` 或审核结果中的 OCR 文本，复用现有 LLM 字段抽取端口和 schema 校验，生成新的字段候选。
-  - 边界：不重新跑 OCR，不重新处理图片，不覆盖已保存的人工审核最终值；缺少 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`。
-  - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`。
+  - 边界：不重新跑 OCR，不重新处理图片；重抽取结果直接覆盖 `review_result.json["fields"]`(新 final_value、抽取元数据、状态重置为 `unreviewed`,并在 `history` 追加 `reextract` 记录);任务为 `done` 时回退到 `review`;缺少 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`。
+  - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`、`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`(新行为权威来源)。
   - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
 
 - [x] **BE-MVP-04-06 schema/prompt 版本元数据框架**
@@ -176,9 +176,10 @@
   - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`。
   - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
 
-- [ ] **BE-MVP-05-06 Excel 导出字段完整性修复**
+- [~] **BE-MVP-05-06 Excel 导出字段完整性修复**
   - 范围：排查当前 Excel 只能看到少数字段的问题，确保导出字段数量、字段顺序、sheet 分组和 JSON 导出模型一致。
-  - 边界：修复单任务 Excel 后，再考虑是否把 Excel 纳入批量 zip；不得在前端拼 Excel。
+  - 边界：review_result.json 在 `get_or_init` 时按当前 schema 补齐缺失字段(占位字段 final_value 为空,status=unreviewed),占位字段不阻断导出;修复单任务 Excel 后再考虑是否把 Excel 纳入批量 zip;不得在前端拼 Excel。
+  - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 - [x] **BE-MVP-05-07 批量导出清单与失败报告**
   - 范围：批量 zip 内增加 manifest 或导出摘要，记录任务数、成功任务、跳过/失败原因和生成时间。
@@ -232,9 +233,10 @@
   - 范围：查看二维码、查看进度、进入审核、重新处理、导出、查看原因。
   - 边界：不提供修订采集或取消会话。
 
-- [ ] **FE-MVP-03-04 批量导出多选入口**
+- [~] **FE-MVP-03-04 批量导出多选入口**
   - 范围：任务管理页支持选择多个 `review` / `done` 任务并调用批量 zip 下载 API。
-  - 边界：当前前端已具备 `exportTasksBatchZip(taskIds)` API client；完整多选 UI、禁用态、失败提示和下载反馈后续实现。
+  - 边界：当前前端已具备 `exportTasksBatchZip(taskIds)` API client；本阶段补多选 UI、禁用态(非可导出任务不可勾选)、下载触发、失败提示和导出摘要条。
+  - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 - [ ] **FE-MVP-03-05 字段方案管理入口占位**
   - 范围：为后续字段方案/版本选择预留入口，展示当前 schema/prompt 版本和重抽取来源。
@@ -258,13 +260,10 @@
   - 范围：审核页触发 JSON/Excel 导出。
   - 边界：不在前端拼 Excel。
 
-- [ ] **FE-MVP-04-05 OCR 文本重抽取确认入口**
-  - 范围：审核页或任务详情页提供“基于现有 OCR 文本重新抽取”入口，调用 `reextractTaskFromOcr(taskId)`，展示 `schema_version`、`prompt_version`、`run_id` 和候选数量。
-  - 边界：当前前端已具备 API client；UI 必须明确说明不重新识别图片、不覆盖人工已修改最终值，重抽取结果需回到审核页人工确认。
-
-- [ ] **FE-MVP-04-06 重抽取结果对比与采用**
-  - 范围：对比旧人工最终值、新候选值和证据，支持逐字段采用或保留原人工结果。
-  - 边界：不得自动覆盖 `confirmed` / `modified` 字段；不得由前端推断字段值。
+- [~] **FE-MVP-04-05 OCR 文本重抽取确认入口**
+  - 范围：审核页提供"重新抽取"入口，调用 `reextractTaskFromOcr(taskId)`，成功后展示 `schema_version`、`prompt_version`、`run_id` 和候选数量，并刷新审核页字段。
+  - 边界：当前前端已具备 API client；**新契约**:UI 不展示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等免责文案,后端重抽取直接覆盖审核页当前字段;不做重抽取结果对比与采用 UI。
+  - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 ## E2E 和发布任务
 
@@ -312,11 +311,11 @@
 
 以下能力已经有后端框架或 API 基础，但完整产品化仍需继续排期：
 
-- 批量导出完整 UI：任务多选、批量 zip 下载、失败提示和导出摘要。
-- Excel 导出字段完整性修复：先修复单任务 Excel 只能看到少数字段的问题，再评估是否纳入批量 zip。
-- 基于 OCR 文本重新抽取完整 UI：在审核页或任务详情页增加确认入口、版本信息展示和重抽取结果对比。
+- 批量导出完整 UI：任务多选、批量 zip 下载、失败提示和导出摘要（FE-MVP-03-04 本阶段 spec 收敛）。
+- Excel 导出字段完整性修复：先修复单任务 Excel 只能看到少数字段的问题，再评估是否纳入批量 zip（BE-MVP-05-06 本阶段 spec 收敛）。
+- 基于 OCR 文本重新抽取完整 UI：在审核页增加入口、版本信息展示；本阶段按新契约直接覆盖人工最终值，不再做对比与采用。
 - 字段方案/schema/prompt 版本管理：后端受控维护字段 schema 和 prompt 版本，支持选择版本后基于已保存 OCR 文本重新抽取。
-- 重抽取结果采用策略：新候选结果不得静默覆盖人工已审核字段，需支持逐字段采用、保留和审计。
+- 重抽取结果采用策略：**已废弃**,新契约下重抽取直接覆盖人工最终值,不做逐字段采用/保留 UI。
 
 ## 全局边界
 
