@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Optional
 
 from ..enums import FieldStatus, TaskStatus
 from ..errors import AppError, ErrorCode
@@ -25,6 +26,7 @@ class ReextractionService:
         schema_validator=None,
         prompt_version_provider=None,
         document_profiles=None,
+        job_registry=None,
     ):
         self._store = store
         self._task_service = task_service
@@ -33,8 +35,13 @@ class ReextractionService:
         self._schema_validator = schema_validator
         self._prompt_version_provider = prompt_version_provider or (lambda: "")
         self._document_profiles = document_profiles
+        self._job_registry = job_registry
 
-    def reextract(self, task_id: str) -> dict:
+    def reextract(
+        self,
+        task_id: str,
+        cancellation_token: Optional[object] = None,
+    ) -> dict:
         task = self._task_service.get_task(task_id)
         if task["status"] not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
             raise AppError(
@@ -87,6 +94,7 @@ class ReextractionService:
                 "schema": schema,
                 "source": "ocr_text_only",
                 "document_type": task.get("document_type") or "copd_admission_record",
+                "cancellation_token": cancellation_token,
             }
         )
         if not isinstance(candidates, list) or not candidates or all_fields_empty(candidates):

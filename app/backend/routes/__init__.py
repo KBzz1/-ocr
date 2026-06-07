@@ -17,6 +17,10 @@ def _get_reextraction_service():
     return current_app.config["REEXTRACTION_SERVICE"]
 
 
+def _get_reextract_job_registry():
+    return current_app.config["REEXTRACT_JOB_REGISTRY"]
+
+
 def _safe_event(event, level="INFO", **payload):
     """安全写入事件日志，日志写入失败不中断业务。"""
     try:

@@ -2,7 +2,7 @@ from flask import Blueprint, current_app, request, send_file
 
 from ..errors import AppError, ErrorCode
 from ..responses import success
-from . import _get_reextraction_service, _get_task_service, _safe_event
+from . import _get_reextract_job_registry, _get_reextraction_service, _get_task_service, _safe_event
 
 task_bp = Blueprint("task", __name__)
 
@@ -50,7 +50,19 @@ def retry_task(task_id):
 
 @task_bp.route("/api/tasks/<task_id>/reextract", methods=["POST"])
 def reextract_task(task_id):
-    result = _get_reextraction_service().reextract(task_id)
+    registry = _get_reextract_job_registry()
+    cancellation_token = registry.register(task_id)
+    try:
+        result = _get_reextraction_service().reextract(task_id, cancellation_token=cancellation_token)
+    except AppError as exc:
+        if exc.code == ErrorCode.REEXTRACTION_CANCELLED.code:
+            _safe_event(
+                "task_reextract_cancelled",
+                task_id=task_id,
+            )
+        raise
+    finally:
+        registry.unregister(task_id)
     _safe_event(
         "task_reextracted",
         task_id=task_id,
@@ -60,6 +72,22 @@ def reextract_task(task_id):
         candidate_count=result.get("candidate_count"),
     )
     return success(data=result)
+
+
+@task_bp.route("/api/tasks/<task_id>/cancel-reextract", methods=["POST"])
+def cancel_reextract_task(task_id):
+    # 404 if task missing, 409 if no in-flight job — keep semantics parallel
+    # to /cancel-processing for the user-visible contract.
+    _get_task_service().get_task(task_id)
+    registry = _get_reextract_job_registry()
+    cancelled = registry.cancel(task_id)
+    if not cancelled:
+        raise AppError(
+            ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+            message="当前没有正在进行的重新抽取任务",
+            details={"reason": "no_inflight_reextract"},
+        )
+    return success(data={"task_id": task_id, "cancelled": True})
 
 
 @task_bp.route("/api/tasks/<task_id>/cancel-processing", methods=["POST"])

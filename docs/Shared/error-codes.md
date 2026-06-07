@@ -17,6 +17,7 @@
 | `ALGORITHM_CONTRACT_INVALID` | — | 本地算法模块返回结构不符合契约（任务进入 `failed`） |
 | `REVIEW_VALIDATION_FAILED` | 400 | 审核保存或确认请求非法 |
 | `REEXTRACTION_VALIDATION_FAILED` | 400 | 重新抽取请求非法、任务状态不允许或缺少可用 OCR 文本 |
+| `REEXTRACTION_CANCELLED` | 409 | 用户取消重新抽取,后端在下一个 LLM 批次边界停止,review_result 不被覆盖 |
 | `EXPORT_VALIDATION_FAILED` | 400 | 导出请求非法或任务状态不允许导出 |
 | `EXPORT_FAILED` | 500 | 导出文件系统写入失败 |
 

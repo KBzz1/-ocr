@@ -256,7 +256,11 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     )
 
     from .services.copd_extraction.prompts import COPD_EXTRACTION_PROMPT_VERSION
+    from .services.reextract_jobs import ReextractJobRegistry
     from .services.reextraction_service import ReextractionService
+
+    reextract_job_registry = ReextractJobRegistry()
+    app.config["REEXTRACT_JOB_REGISTRY"] = reextract_job_registry
 
     app.config["REEXTRACTION_SERVICE"] = ReextractionService(
         store=store,
@@ -266,6 +270,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_validator=schema_service.build_validator(),
         prompt_version_provider=lambda: COPD_EXTRACTION_PROMPT_VERSION,
         document_profiles=document_profile_registry,
+        job_registry=reextract_job_registry,
     )
 
     if image_port is None or doc_port is None or field_port is None:

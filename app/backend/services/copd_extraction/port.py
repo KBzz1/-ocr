@@ -1,6 +1,26 @@
 import threading
 
+from ...errors import AppError, ErrorCode
 from .extractor import COPDFieldExtractor, STRATEGY_SECTION_GROUPS
+
+
+def _raise_if_cancelled(token) -> None:
+    """检查取消 token;若已 set 则抛 REEXTRACTION_CANCELLED。
+
+    Token 是 reextract 调用方注入的 threading.Event（或任意带 ``is_set()`` 的
+    对象）。COPD 抽取在 LLM 批次之间会调用本函数,单次 in-flight 推理无法中断,
+    但能在下一个批次边界让 GPU 链路停下。LlmClient 不在端口契约里,这是端口
+    层之上的 orchestrator/服务层传下来的事件。
+    """
+    if token is None:
+        return
+    is_set = getattr(token, "is_set", None)
+    if callable(is_set) and is_set():
+        raise AppError(
+            ErrorCode.REEXTRACTION_CANCELLED,
+            message="用户取消重新抽取",
+            details={"reason": "user_cancelled"},
+        )
 
 
 class COPDFieldPort:
@@ -8,9 +28,11 @@ class COPDFieldPort:
         self._extractor = extractor
 
     def extract(self, input: dict) -> list[dict]:
+        cancellation_token = input.get("cancellation_token")
+        _raise_if_cancelled(cancellation_token)
         document_result = input.get("document_result") or {}
         text = document_result.get("merged_text") or ""
-        return self._extractor.extract(text)
+        return self._extractor.extract(text, cancellation_token=cancellation_token)
 
 
 class _LazyCOPDFieldPort:

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPayload, type ReviewResult } from '../../api/review';
-import { completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { cancelReextractTask, completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
 import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
@@ -404,6 +404,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     if (!isReextracting) return;
     reextractCancelledRef.current = true;
     reextractControllerRef.current?.abort();
+    // 提示后端在下一个 LLM 批次边界停下 GPU 推理。
+    // 单次 in-flight LLM 调用本身无法中断,本调用让 reextract 链路上
+    // _extract_section_groups / _verify_source_groups 的批次间检查抛 REEXTRACTION_CANCELLED。
+    void cancelReextractTask(taskId).catch(() => {
+      // 后端可能已经返回 200 并 unregister 完,网络/超时失败都安全忽略。
+    });
   }
 
   function handleDismissReextractMeta() {

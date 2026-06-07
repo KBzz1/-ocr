@@ -146,6 +146,15 @@ export function reextractTaskFromOcr(taskId: string, options?: { signal?: AbortS
   });
 }
 
+// Fire-and-forget 提示后端在下一个 LLM 批次边界停下 GPU 推理,只让单次 in-flight 调用跑完。
+// 返回 Promise<{cancelled: boolean}> 以便上层在极端情况下感知,但失败/超时都不应阻塞 UI。
+export function cancelReextractTask(taskId: string) {
+  return apiRequest<{ task_id: string; cancelled: boolean }>(
+    `/api/tasks/${encodeURIComponent(taskId)}/cancel-reextract`,
+    { method: 'POST' }
+  );
+}
+
 export function cancelTaskProcessing(taskId: string) {
   return apiRequest<TaskRetryResult>(`/api/tasks/${encodeURIComponent(taskId)}/cancel-processing`, {
     method: 'POST'

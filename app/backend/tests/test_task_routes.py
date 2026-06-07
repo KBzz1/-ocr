@@ -287,7 +287,7 @@ def test_delete_processing_task_returns_400(client, app):
 
 def test_reextract_task_route_returns_run_metadata(client, app):
     class FakeReextractionService:
-        def reextract(self, task_id):
+        def reextract(self, task_id, cancellation_token=None):
             return {
                 "task_id": task_id,
                 "status": "review",
@@ -314,3 +314,174 @@ def test_delete_nonexistent_task_returns_404(client):
 
     assert response.status_code == 404
     assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+# --- 重新抽取取消(BE-MVP-04-05 补)---
+
+import threading
+from app.backend.errors import AppError, ErrorCode
+from app.backend.services.reextract_jobs import ReextractJobRegistry
+
+
+def test_reextract_job_registry_lifecycle():
+    registry = ReextractJobRegistry()
+    event = registry.register("t1")
+    assert isinstance(event, threading.Event)
+    assert not event.is_set()
+    # cancel 不会自动 unregister;事件持续到 unregister 调用,以便在飞行中的
+    # reextract 协程下一次检查时还能看到 set 状态。
+    assert registry.cancel("t1") is True
+    assert event.is_set()
+    assert registry.cancel("t1") is True  # 幂等
+    registry.unregister("t1")
+    assert registry.get("t1") is None
+    assert registry.cancel("t1") is False  # unregister 后才能 False
+
+
+def test_reextract_job_registry_reuses_event_for_same_task():
+    registry = ReextractJobRegistry()
+    first = registry.register("t1")
+    second = registry.register("t1")
+    assert first is second
+    assert registry.cancel("t1") is True
+    assert first.is_set()
+
+
+def test_cancel_reextract_route_rejects_when_no_inflight_job(client, app):
+    write_task(app, task_id="1", status="review")
+
+    response = client.post("/api/tasks/1/cancel-reextract")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == ErrorCode.REEXTRACTION_VALIDATION_FAILED.code
+    assert response.get_json()["error"]["details"]["reason"] == "no_inflight_reextract"
+
+
+def test_cancel_reextract_route_returns_404_for_missing_task(client):
+    response = client.post("/api/tasks/missing/cancel-reextract")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_cancel_reextract_route_aborts_reextract_between_llm_batches(client, app, tmp_path):
+    """模拟一个跑在 LLM 批次间检查取消 token 的 field port,验证取消生效后
+    reextract 返回 409 REEXTRACTION_CANCELLED,review_result.json 不被覆盖,
+    任务在 _reextract_runs/ 下没有写入 run 记录(因为没跑完)。"""
+    write_task(app, task_id="1", status="review")
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    store.write(
+        "results/1/document_result.json",
+        {
+            "task_id": "1",
+            "stage": "document_parsing",
+            "status": "success",
+            "merged_text": "姓名：张三",
+            "pages": [{"page_id": "page_001", "page_no": 1, "text": "姓名：张三"}],
+        },
+    )
+    # 预先放一份 review 用来检验"取消后不被覆盖"
+    store.write(
+        "results/1/review_result.json",
+        {
+            "task_id": "1",
+            "schema_version": "old",
+            "fields": [
+                {
+                    "field_key": "patient_name",
+                    "field_name": "姓名",
+                    "auto_value": "李四",
+                    "final_value": "手工",
+                    "status": "modified",
+                }
+            ],
+        },
+    )
+
+    cancel_event_holder: dict = {}
+
+    class CancellableReextractService:
+        def reextract(self, task_id, cancellation_token=None):
+            cancel_event_holder["event"] = cancellation_token
+            # 模拟"在某个批次后被取消":先 sleep 等到外部 set 事件
+            assert cancellation_token is not None
+            deadline = time.monotonic() + 2.0
+            while not cancellation_token.is_set() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if cancellation_token.is_set():
+                raise AppError(
+                    ErrorCode.REEXTRACTION_CANCELLED,
+                    message="用户取消重新抽取",
+                    details={"reason": "user_cancelled"},
+                )
+            return {"task_id": task_id, "status": "review", "run_id": "r1",
+                    "source": "ocr_text_only", "candidate_count": 1}
+
+    app.config["REEXTRACTION_SERVICE"] = CancellableReextractService()
+
+    result_box: dict = {}
+
+    def call_reextract():
+        # Flask test client 是同步的,需要在另一个线程中跑,以便我们能 cancel 它
+        result_box["response"] = client.post("/api/tasks/1/reextract")
+
+    t = threading.Thread(target=call_reextract)
+    t.start()
+    # 等服务拿到 cancellation_token 后再 cancel
+    deadline = time.monotonic() + 2.0
+    while "event" not in cancel_event_holder and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert "event" in cancel_event_holder
+    cancel_response = client.post("/api/tasks/1/cancel-reextract")
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "reextract 线程没在取消后退出"
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.get_json()["data"]["cancelled"] is True
+    assert result_box["response"].status_code == 409
+    assert result_box["response"].get_json()["error"]["code"] == ErrorCode.REEXTRACTION_CANCELLED.code
+
+    # 取消后 review_result.json 应保持原样
+    review = store.read("results/1/review_result.json")
+    assert review["schema_version"] == "old"
+    assert review["fields"][0]["final_value"] == "手工"
+    # reextract_runs 不应写入
+    assert store.list_json("results/1/reextract_runs") == []
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.get_json()["data"]["cancelled"] is True
+    assert result_box["response"].status_code == 409
+    assert result_box["response"].get_json()["error"]["code"] == ErrorCode.REEXTRACTION_CANCELLED.code
+
+    # 取消后 review_result.json 应保持原样
+    review = store.read("results/1/review_result.json")
+    assert review["schema_version"] == "old"
+    assert review["fields"][0]["final_value"] == "手工"
+    # reextract_runs 不应写入
+    assert store.list_json("results/1/reextract_runs") == []
+
+
+def test_cancel_reextract_unregisters_after_normal_completion(client, app):
+    """正常完成的 reextract 之后,registry 应当清空任务,后续 cancel 返回 400。"""
+    write_task(app, task_id="1", status="review")
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    store.write(
+        "results/1/document_result.json",
+        {"task_id": "1", "stage": "document_parsing", "status": "success",
+         "merged_text": "姓名:张三", "pages": []},
+    )
+
+    class QuickService:
+        def reextract(self, task_id, cancellation_token=None):
+            return {"task_id": task_id, "status": "review", "run_id": "r1",
+                    "source": "ocr_text_only", "candidate_count": 0}
+
+    app.config["REEXTRACTION_SERVICE"] = QuickService()
+
+    response = client.post("/api/tasks/1/reextract")
+    assert response.status_code == 200
+
+    # 完成后 registry 应已 unregister
+    follow_up = client.post("/api/tasks/1/cancel-reextract")
+    assert follow_up.status_code == 400
+    assert follow_up.get_json()["error"]["details"]["reason"] == "no_inflight_reextract"
