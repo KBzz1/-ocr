@@ -299,20 +299,79 @@ def test_delete_task_removes_from_listing(client, app):
 
     response = client.get("/api/tasks/1")
     assert response.status_code == 404
+    # 任务 JSON 仍保留(逻辑删除)
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    assert store.exists("tasks/1.json")
+    raw = store.read("tasks/1.json")
+    assert raw.get("deleted_at")
 
 
-def test_delete_task_with_cleanup(client, app):
+def test_delete_task_does_not_cleanup_files(client, app):
+    """Task 6: 逻辑删除不应触发 CleanupService,
+    任务/pages/results 目录均保留。"""
     write_task(app, task_id="1", status="review", session_id="session_abc")
     store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
     storage_dir = app.config["BACKEND_CONFIG"]["storage_dir"]
     import os
     os.makedirs(os.path.join(storage_dir, "results", "1"), exist_ok=True)
     os.makedirs(os.path.join(storage_dir, "pages", "session_abc"), exist_ok=True)
+    pages_marker = os.path.join(storage_dir, "pages", "session_abc", "marker.txt")
+    with open(pages_marker, "w", encoding="utf-8") as f:
+        f.write("page")
+    results_marker = os.path.join(storage_dir, "results", "1", "marker.txt")
+    with open(results_marker, "w", encoding="utf-8") as f:
+        f.write("result")
 
     response = client.delete("/api/tasks/1")
 
     assert response.status_code == 200
-    assert not store.exists("tasks/1.json")
+    # 任务/pages/results 目录均保留
+    assert store.exists("tasks/1.json")
+    assert os.path.isdir(os.path.join(storage_dir, "pages", "session_abc"))
+    assert os.path.exists(pages_marker)
+    assert os.path.isdir(os.path.join(storage_dir, "results", "1"))
+    assert os.path.exists(results_marker)
+    raw = store.read("tasks/1.json")
+    assert raw.get("deleted_at")
+
+
+def test_deleted_task_does_not_break_listing_with_other_tasks(client, app):
+    write_task(app, task_id="1", status="review")
+    write_task(app, task_id="2", status="failed")
+
+    client.delete("/api/tasks/1")
+    tasks = client.get("/api/tasks").get_json()["data"]["tasks"]
+    assert [t["task_id"] for t in tasks] == ["2"]
+
+
+def test_deleted_task_blocks_metadata_patch(client, app):
+    write_task(app, task_id="1", status="review")
+    client.delete("/api/tasks/1")
+
+    response = client.patch("/api/tasks/1/metadata", json={"record_date": "2026-06-08"})
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_deleted_task_blocks_reextract(client, app):
+    write_task(app, task_id="1", status="review")
+    client.delete("/api/tasks/1")
+
+    response = client.post("/api/tasks/1/reextract")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_deleted_task_blocks_export(client, app):
+    write_task(app, task_id="1", status="review")
+    client.delete("/api/tasks/1")
+
+    response = client.get("/api/tasks/1/export/json")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
 
 
 def test_delete_processing_task_returns_400(client, app):

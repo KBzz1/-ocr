@@ -79,8 +79,34 @@ class ExportService:
             "exported_at": self._now(),
             "schema_version": (review or {}).get("schema_version") or task.get("schema_version", ""),
             "document_type": (review or {}).get("document_type") or task.get("document_type", ""),
+            "patient": self._patient_metadata(task),
+            "record": self._record_metadata(task),
             "fields": model_fields,
             "summary": self._compute_summary(model_fields),
+        }
+
+    def _patient_metadata(self, task: dict) -> dict:
+        """导出场景下的患者元数据。优先使用 task_service 提供的实现,
+        未提供时回落到 task.patient_snapshot。"""
+        provider = getattr(self._task_service, "patient_export_metadata", None)
+        if callable(provider):
+            try:
+                return provider(task)
+            except Exception:
+                pass
+        snapshot = task.get("patient_snapshot") or {}
+        return {
+            "patient_id": task.get("patient_id"),
+            "name": snapshot.get("name"),
+            "deleted": False,
+        }
+
+    def _record_metadata(self, task: dict) -> dict:
+        return {
+            "document_type": task.get("document_type"),
+            "document_type_label": task.get("document_type_label"),
+            "record_date": task.get("record_date"),
+            "record_time": task.get("record_time"),
         }
 
     @staticmethod
@@ -332,6 +358,8 @@ class ExportService:
         worksheets = [{"name": "全部字段", "fields": model["fields"]}]
         for group in groups.values():
             worksheets.append({"name": group["group_label"], "fields": group["fields"]})
+        # 任务信息 sheet 固定追加在分组 sheet 之后
+        worksheets.append({"name": "任务信息", "fields": [], "metadata": True, "model": model})
         sheet_names = self._build_sheet_names([worksheet["name"] for worksheet in worksheets])
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -341,8 +369,67 @@ class ExportService:
             z.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels_xml(sheet_names))
 
             for idx, worksheet in enumerate(worksheets, start=1):
-                sheet_xml = self._sheet_xml(worksheet["fields"])
+                if worksheet.get("metadata"):
+                    sheet_xml = self._metadata_sheet_xml(worksheet["model"])
+                else:
+                    sheet_xml = self._sheet_xml(worksheet["fields"])
                 z.writestr(f"xl/worksheets/sheet{idx}.xml", sheet_xml)
+
+    _METADATA_ROWS = [
+        ("patient.patient_id", "患者编号"),
+        ("patient.name", "患者姓名"),
+        ("patient.deleted", "患者已删除"),
+        ("record.document_type", "记录类型"),
+        ("record.document_type_label", "记录类型名称"),
+        ("record.record_date", "记录日期"),
+        ("record.record_time", "记录时间"),
+        ("task_id", "任务编号"),
+        ("document_type", "导出记录类型"),
+        ("exported_at", "导出时间"),
+    ]
+
+    @classmethod
+    def _metadata_sheet_xml(cls, model: dict) -> str:
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+            "<sheetData>",
+        ]
+        lines.append('<row r="1">')
+        for letter, header in zip(["A", "B"], ["字段", "值"]):
+            escaped = escape(header)
+            lines.append(f'<c r="{letter}1" t="inlineStr"><is><t>{escaped}</t></is></c>')
+        lines.append("</row>")
+
+        patient = model.get("patient") or {}
+        record = model.get("record") or {}
+
+        def _lookup(path: str):
+            if path.startswith("patient."):
+                return patient.get(path.split(".", 1)[1])
+            if path.startswith("record."):
+                return record.get(path.split(".", 1)[1])
+            return model.get(path)
+
+        for row_idx, (key, header) in enumerate(cls._METADATA_ROWS, start=2):
+            lines.append(f'<row r="{row_idx}">')
+            value = _lookup(key)
+            if isinstance(value, bool):
+                display = "是" if value else "否"
+            elif value is None:
+                display = ""
+            else:
+                display = str(value)
+            for letter, val in zip(["A", "B"], [header, display]):
+                escaped = escape(val)
+                lines.append(
+                    f'<c r="{letter}{row_idx}" t="inlineStr"><is><t>{escaped}</t></is></c>'
+                )
+            lines.append("</row>")
+
+        lines.append("</sheetData>")
+        lines.append("</worksheet>")
+        return "\n".join(lines)
 
     def _build_sheet_names(self, raw_names: list[str]) -> list[str]:
         names = []

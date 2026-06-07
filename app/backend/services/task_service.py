@@ -148,21 +148,29 @@ class TaskService:
         return [self._to_task_summary(task, base_url=base_url) for task in sorted(tasks, key=lambda item: item["task_id"])]
 
     def _should_list_task(self, task: dict) -> bool:
+        if task.get("deleted_at"):
+            return False
         return not (task["status"] == TaskStatus.UPLOADING.value and task["page_count"] == 0)
 
     def delete_task(self, task_id: str) -> dict:
-        """永久删除任务：校验状态后移除任务 JSON 文件。
+        """逻辑删除任务：标记 deleted_at,JSON 保留,
+        pages/results 目录不删除。
 
-        processing 状态的任务不可删除，需先取消处理。
-        关联的 pages/results/exports 目录由 CleanupService 清理。
+        processing 状态的任务不可删除,需先取消处理。
+        已删除任务普通 API 返回 TASK_NOT_FOUND。
         """
-        task = self._read_task(task_id)
+        task = self._read_task(task_id, include_deleted=True)
+        if task.get("deleted_at"):
+            raise AppError(ErrorCode.TASK_NOT_FOUND)
         if task["status"] == TaskStatus.PROCESSING.value:
             raise AppError(
                 ErrorCode.INVALID_TASK_TRANSITION,
                 details={"current": task["status"], "target": "deleted"},
             )
-        self._store.delete(f"tasks/{task_id}.json")
+        now = self._now()
+        task["deleted_at"] = now
+        task["updated_at"] = now
+        self._write_task(task)
         return task
 
     def update_metadata(
@@ -214,17 +222,20 @@ class TaskService:
             _parse_record_time(record_time)
 
         new_patient_snapshot = None
-        if patient_id is not None and patient_id != task.get("patient_id"):
+        if patient_id is not None:
             if self._patient_service is None:
                 raise AppError(
                     ErrorCode.INVALID_REQUEST_PARAMS,
                     message="患者服务未配置",
                 )
+            # 始终校验患者可绑定(已删除患者立即返回 PATIENT_DELETED),
+            # 即使 patient_id 与任务当前值相同也要阻断
             patient = self._patient_service.get_bindable(patient_id)
-            new_patient_snapshot = {
-                "patient_id": patient["patient_id"],
-                "name": patient.get("name"),
-            }
+            if patient_id != task.get("patient_id"):
+                new_patient_snapshot = {
+                    "patient_id": patient["patient_id"],
+                    "name": patient.get("name"),
+                }
 
         document_type_changed = (
             document_type is not None
@@ -410,10 +421,33 @@ class TaskService:
             "deleted": deleted,
         }
 
+    def patient_export_metadata(self, task: dict) -> dict:
+        """导出场景下的患者元数据：若患者已删除,使用 patient_snapshot.name。"""
+        patient_id = task.get("patient_id")
+        if not patient_id:
+            return {"patient_id": None, "name": None, "deleted": False}
+        snapshot = task.get("patient_snapshot") or {}
+        snapshot_name = snapshot.get("name")
+        deleted = False
+        name = snapshot_name
+        if self._patient_service is not None and hasattr(self._patient_service, "get"):
+            try:
+                patient = self._patient_service.get(patient_id, include_deleted=True)
+                name = patient.get("name") or snapshot_name
+                deleted = bool(patient.get("deleted_at"))
+            except AppError:
+                deleted = True
+        return {
+            "patient_id": patient_id,
+            "name": name,
+            "deleted": deleted,
+        }
+
     def get_task(self, task_id: str) -> dict:
         task = self._read_task(task_id)
         public = self._normalize_task(task)
         public.pop("metadata_history", None)
+        public["patient"] = self._task_patient_summary(task)
         return public
 
     def process(self, task_id: str, schema: dict | None = None) -> dict:
@@ -681,11 +715,14 @@ class TaskService:
         task = self._read_task(task_id)
         return task["status"] != TaskStatus.PROCESSING.value
 
-    def _read_task(self, task_id: str) -> dict:
+    def _read_task(self, task_id: str, *, include_deleted: bool = False) -> dict:
         task = self._store.read(f"tasks/{task_id}.json")
         if task is None:
             raise AppError(ErrorCode.TASK_NOT_FOUND)
-        return self._normalize_task(task)
+        normalized = self._normalize_task(task)
+        if not include_deleted and normalized.get("deleted_at"):
+            raise AppError(ErrorCode.TASK_NOT_FOUND)
+        return normalized
 
     def _write_task(self, task: dict) -> None:
         self._store.write(f"tasks/{task['task_id']}.json", task)

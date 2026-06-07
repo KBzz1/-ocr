@@ -505,3 +505,303 @@ def test_export_uses_task_document_profile_schema_when_available(tmp_path):
 
     assert content["fields"][0]["field_name"] == "病程姓名"
     assert content["schema_version"] == "progress_note.v1"
+
+
+# --- Task 6: 导出元数据(患者 + 记录) ---
+
+
+class _StubPatientService:
+    def get(self, patient_id, *, include_deleted=False):
+        record = self._patients.get(patient_id)
+        if record is None:
+            from app.backend.errors import AppError, ErrorCode
+            raise AppError(ErrorCode.PATIENT_NOT_FOUND)
+        return record
+
+    def __init__(self):
+        self._patients = {}
+
+    def add(self, patient_id, name, deleted_at=None):
+        self._patients[patient_id] = {
+            "patient_id": patient_id,
+            "name": name,
+            "deleted_at": deleted_at,
+        }
+
+
+def _make_export_with_patient(tmp_path, patient_id="P-A1B2C3D4", patient_name="测试用例",
+                              patient_deleted=False, record_date="2026-06-07",
+                              record_time="09:30", document_type="general_medical_record",
+                              status="review"):
+    store = JsonStore(str(tmp_path / "data"))
+    stub = _StubPatientService()
+    stub.add(patient_id, patient_name, deleted_at=("2026-06-07T10:00:00+00:00" if patient_deleted else None))
+
+    class PatientAwareTaskService:
+        def __init__(self, store, patient_service):
+            self._store = store
+            self._patient_service = patient_service
+            self._impl = TaskService(store=store)
+
+        def get_task(self, task_id):
+            task = self._impl.get_task(task_id)
+            return task
+
+        def record_export(self, *args, **kwargs):
+            return self._impl.record_export(*args, **kwargs)
+
+        def patient_export_metadata(self, task):
+            pid = task.get("patient_id")
+            if pid is None:
+                return {"patient_id": None, "name": None, "deleted": False}
+            try:
+                record = self._patient_service.get(pid, include_deleted=True)
+            except Exception:
+                snapshot = task.get("patient_snapshot") or {}
+                return {
+                    "patient_id": pid,
+                    "name": snapshot.get("name"),
+                    "deleted": True,
+                }
+            snapshot = task.get("patient_snapshot") or {}
+            return {
+                "patient_id": pid,
+                "name": record.get("name") or snapshot.get("name"),
+                "deleted": bool(record.get("deleted_at")),
+            }
+
+    task_service = PatientAwareTaskService(store, stub)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "1.0.0",
+            "document_type": document_type,
+            "field_groups": [
+                {"group_key": "basic", "group_label": "基本信息", "fields": [{"field_key": "patient_name", "label": "姓名"}]}
+            ],
+        },
+    )
+    store.write(
+        f"tasks/task_001.json",
+        {
+            "task_id": "task_001",
+            "status": status,
+            "created_at": "2026-06-07T10:00:00+00:00",
+            "updated_at": "2026-06-07T10:00:00+00:00",
+            "upload_token": "token_001",
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "patient_id": patient_id,
+            "patient_snapshot": {"patient_id": patient_id, "name": patient_name},
+            "document_type": document_type,
+            "document_type_label": "入院记录" if document_type == "copd_admission_record" else "通用病历",
+            "schema_version": "1.0.0",
+            "prompt_version": "1.0.0",
+            "record_date": record_date,
+            "record_time": record_time,
+            "deleted_at": None,
+        },
+    )
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "1.0.0",
+            "document_type": document_type,
+            "fields": [
+                {
+                    "field_key": "patient_name",
+                    "field_name": "姓名",
+                    "final_value": patient_name,
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "第1页",
+                    "page_no": 1,
+                }
+            ],
+        },
+    )
+    return export_service, store
+
+
+def test_export_json_includes_patient_and_record_metadata(tmp_path):
+    export_service, _ = _make_export_with_patient(tmp_path)
+
+    info = export_service.export_json("task_001")
+
+    with open(info["path"], encoding="utf-8") as f:
+        content = json.load(f)
+    assert content["patient"] == {
+        "patient_id": "P-A1B2C3D4",
+        "name": "测试用例",
+        "deleted": False,
+    }
+    assert content["record"] == {
+        "document_type": "general_medical_record",
+        "document_type_label": "通用病历",
+        "record_date": "2026-06-07",
+        "record_time": "09:30",
+    }
+    # 元数据不暴露
+    assert "metadata_history" not in content
+    assert "name_history" not in content
+
+
+def test_export_json_uses_snapshot_name_when_patient_deleted(tmp_path):
+    export_service, _ = _make_export_with_patient(tmp_path, patient_deleted=True,
+                                                  patient_name="测试快照")
+
+    info = export_service.export_json("task_001")
+
+    with open(info["path"], encoding="utf-8") as f:
+        content = json.load(f)
+    assert content["patient"]["name"] == "测试快照"
+    assert content["patient"]["deleted"] is True
+
+
+def test_export_excel_has_task_info_sheet_with_patient_and_record(tmp_path):
+    export_service, _ = _make_export_with_patient(tmp_path)
+
+    info = export_service.export_excel("task_001")
+
+    with zipfile.ZipFile(info["path"]) as archive:
+        workbook_xml = archive.read("xl/workbook.xml").decode("utf-8")
+        names = [name for name in workbook_xml.split("name=") if "sheet" in name]
+    assert 'sheet name="任务信息"' in workbook_xml
+    assert 'sheet name="全部字段"' in workbook_xml
+
+
+def test_export_excel_keeps_field_sheets_intact_with_task_info(tmp_path):
+    """新增"任务信息" sheet 后,既有"全部字段"和分组 sheet 仍存在,列结构不变。"""
+    store = JsonStore(str(tmp_path / "data"))
+    stub = _StubPatientService()
+    stub.add("P-A1B2C3D4", "测试用例", deleted_at=None)
+
+    class PatientAwareTaskService:
+        def __init__(self, store, patient_service):
+            self._store = store
+            self._patient_service = patient_service
+            self._impl = TaskService(store=store)
+
+        def get_task(self, task_id):
+            return self._impl.get_task(task_id)
+
+        def record_export(self, *args, **kwargs):
+            return self._impl.record_export(*args, **kwargs)
+
+        def patient_export_metadata(self, task):
+            pid = task.get("patient_id")
+            record = self._patient_service.get(pid, include_deleted=True)
+            return {
+                "patient_id": pid,
+                "name": record.get("name"),
+                "deleted": bool(record.get("deleted_at")),
+            }
+
+    task_service = PatientAwareTaskService(store, stub)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "field_groups": [
+                {
+                    "group_key": "profile",
+                    "group_label": "患者背景",
+                    "fields": [
+                        {"field_key": "occupation", "label": "职业"},
+                    ],
+                },
+            ],
+        },
+    )
+    store.write(
+        "tasks/task_001.json",
+        {
+            "task_id": "task_001",
+            "status": "done",
+            "created_at": "2026-06-07T10:00:00+00:00",
+            "updated_at": "2026-06-07T10:00:00+00:00",
+            "upload_token": "token_001",
+            "images": [],
+            "error_code": None,
+            "error_message": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "patient_id": "P-A1B2C3D4",
+            "patient_snapshot": {"patient_id": "P-A1B2C3D4", "name": "测试用例"},
+            "document_type": "copd_admission_record",
+            "document_type_label": "入院记录",
+            "schema_version": "1.0.0",
+            "prompt_version": "1.0.0",
+            "record_date": "2026-06-07",
+            "record_time": "09:30",
+            "deleted_at": None,
+        },
+    )
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "fields": [
+                {
+                    "field_key": "occupation",
+                    "field_name": "职业",
+                    "final_value": "退休",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "evidence": "退休",
+                    "page_no": 1,
+                },
+            ],
+        },
+    )
+
+    info = export_service.export_excel("task_001")
+
+    with zipfile.ZipFile(info["path"]) as archive:
+        workbook_xml = archive.read("xl/workbook.xml").decode("utf-8")
+        sheet1 = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        sheet2 = archive.read("xl/worksheets/sheet2.xml").decode("utf-8")
+        sheet3 = archive.read("xl/worksheets/sheet3.xml").decode("utf-8")
+
+    # 既有 sheet 与新增任务信息 sheet 都存在
+    assert 'sheet name="全部字段"' in workbook_xml
+    assert 'sheet name="患者背景"' in workbook_xml
+    assert 'sheet name="任务信息"' in workbook_xml
+    # 全部字段 sheet 仍包含 6 列(字段 key/字段名/final_value/状态/来源页/来源证据)
+    for header in ("字段 key", "字段名", "final_value", "状态", "来源页", "来源证据"):
+        assert header in sheet1
+    # 分组 sheet 仍只包含对应字段
+    assert "occupation" in sheet2
+    # 任务信息 sheet(第三张)包含患者和记录元数据
+    for keyword in ("P-A1B2C3D4", "测试用例", "入院记录", "2026-06-07", "09:30"):
+        assert keyword in sheet3, f"任务信息 sheet 缺 {keyword}"
+
+
+def test_batch_zip_model_includes_patient_and_record_metadata(tmp_path):
+    export_service, _ = _make_export_with_patient(tmp_path)
+
+    info = export_service.export_batch_zip(["task_001"])
+
+    with zipfile.ZipFile(info["path"]) as archive:
+        exported = json.loads(archive.read("task_001/task_001.review.json").decode("utf-8"))
+    assert exported["patient"]["patient_id"] == "P-A1B2C3D4"
+    assert exported["record"]["record_date"] == "2026-06-07"
+
+
+def test_export_json_rejects_deleted_task(tmp_path):
+    export_service, store = _make_export_with_patient(tmp_path)
+    task = store.read("tasks/task_001.json")
+    task["deleted_at"] = "2026-06-07T11:00:00+00:00"
+    store.write("tasks/task_001.json", task)
+
+    from app.backend.errors import AppError, ErrorCode
+    with pytest.raises(AppError) as exc:
+        export_service.export_json("task_001")
+    assert exc.value.code == ErrorCode.TASK_NOT_FOUND.code

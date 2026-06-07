@@ -45,8 +45,8 @@ def get_task(task_id):
 
 @task_bp.route("/api/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id):
-    task = _get_task_service().delete_task(task_id)
-    current_app.config["CLEANUP_SERVICE"].cleanup_task(task_id, confirm=True)
+    """逻辑删除任务：标记 deleted_at,JSON 保留,不调用 CleanupService。"""
+    _get_task_service().delete_task(task_id)
     return success(data={"task_id": task_id, "deleted": True})
 
 

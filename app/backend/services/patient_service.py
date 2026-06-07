@@ -91,6 +91,35 @@ class PatientService:
         self._write_patient(record)
         return record
 
+    def refresh_snapshots_for_active_tasks(self, patient_id: str, *, deleted_task_ids: set[str] | None = None) -> int:
+        """仅对 patient_id 仍指向该患者且未删除的任务刷新 patient_snapshot。
+
+        返回被刷新的任务数。
+        """
+        deleted_task_ids = deleted_task_ids or set()
+        patient = self._read_raw(patient_id)
+        snapshot = {
+            "patient_id": patient["patient_id"],
+            "name": patient.get("name"),
+        }
+        updated = 0
+        for task in self._store.list_json("tasks"):
+            if not isinstance(task, dict):
+                continue
+            if task.get("patient_id") != patient_id:
+                continue
+            if task.get("deleted_at"):
+                continue
+            if task.get("task_id") in deleted_task_ids:
+                continue
+            current_snapshot = task.get("patient_snapshot") or {}
+            if current_snapshot == snapshot:
+                continue
+            task["patient_snapshot"] = snapshot
+            self._store.write(f"tasks/{task['task_id']}.json", task)
+            updated += 1
+        return updated
+
     def list(self, query: str | None = None) -> list[dict]:
         records = [self._normalize(item) for item in self._store.list_json("patients")]
         records = [item for item in records if not item.get("deleted_at")]

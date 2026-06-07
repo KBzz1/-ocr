@@ -388,17 +388,26 @@ def test_rename_task_updates_display_name(tmp_path):
     assert summary["task_id"] == "1"
 
 
-def test_delete_task_removes_from_store(tmp_path):
+def test_delete_task_marks_soft_deleted_and_keeps_json(tmp_path):
+    """Task 6: 任务逻辑删除,JSON 保留,deleted_at 设置,
+    普通 get_task 返回 TASK_NOT_FOUND。"""
     write_task(tmp_path, status="review")
     service = make_service(tmp_path)
 
     result = service.delete_task("1")
 
     assert result["task_id"] == "1"
+    assert result.get("deleted_at")
+    # 任务不再出现在列表
     assert service.list_tasks() == []
+    # 普通 get_task 返回 TASK_NOT_FOUND
     with pytest.raises(AppError) as exc_info:
         service.get_task("1")
     assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+    # 任务 JSON 仍保留
+    assert JsonStore(str(tmp_path)).exists("tasks/1.json")
+    raw = JsonStore(str(tmp_path)).read("tasks/1.json")
+    assert raw.get("deleted_at")
 
 
 def test_delete_task_rejects_processing_status(tmp_path):
@@ -420,6 +429,16 @@ def test_delete_task_nonexistent_raises_not_found(tmp_path):
     assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
 
 
+def test_delete_task_twice_returns_not_found(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+    service.delete_task("1")
+
+    with pytest.raises(AppError) as exc_info:
+        service.delete_task("1")
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
 @pytest.mark.parametrize("status", ["uploading", "review", "done", "failed"])
 def test_delete_task_works_for_non_processing_statuses(tmp_path, status):
     write_task(tmp_path, status=status)
@@ -428,7 +447,35 @@ def test_delete_task_works_for_non_processing_statuses(tmp_path, status):
     result = service.delete_task("1")
 
     assert result["task_id"] == "1"
+    assert result.get("deleted_at")
+    # 任务 JSON 仍保留
+    assert JsonStore(str(tmp_path)).exists("tasks/1.json")
+    # 任务不再出现在列表
     assert service.list_tasks() == []
+    # 普通 get_task 找不到
+    with pytest.raises(AppError) as exc_info:
+        service.get_task("1")
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+def test_read_task_default_rejects_deleted_tasks(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+    service.delete_task("1")
+
+    with pytest.raises(AppError) as exc_info:
+        service._read_task("1")
+    assert exc_info.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+def test_read_task_include_deleted_returns_deleted_task(tmp_path):
+    write_task(tmp_path, status="review")
+    service = make_service(tmp_path)
+    service.delete_task("1")
+
+    task = service._read_task("1", include_deleted=True)
+    assert task["task_id"] == "1"
+    assert task.get("deleted_at")
 
 
 class FakeDocumentProfiles:
