@@ -183,3 +183,23 @@ def test_review_events_logged_without_field_values(client, app):
     assert review_event["field_key"] == "name"
     assert review_event["status"] == "confirmed"
     assert "张三" not in json.dumps(records, ensure_ascii=False)
+
+
+def test_patient_event_log_has_no_pii(client, app):
+    created = client.post("/api/patients", json={"name": "测试用例"})
+    patient_id = created.get_json()["data"]["patient_id"]
+    renamed = client.patch(
+        f"/api/patients/{patient_id}",
+        json={"name": "测试用例-改"},
+    )
+    assert renamed.status_code == 200
+
+    records = events(app)
+    names = [item["event"] for item in records]
+    assert "patient_created" in names
+    assert "patient_renamed" in names
+
+    serialized = json.dumps(records, ensure_ascii=False)
+    assert patient_id in serialized
+    assert "测试用例" not in serialized
+    assert "测试用例-改" not in serialized

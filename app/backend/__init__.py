@@ -114,6 +114,11 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     app.config["CLEANUP_SERVICE"] = CleanupService(config=config, store=store)
 
+    from .services.patient_service import PatientService
+
+    patient_service = PatientService(store=store)
+    app.config["PATIENT_SERVICE"] = patient_service
+
     event_log.safe_write(
         "system_started",
         port=config["port"],
@@ -292,10 +297,12 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     from .routes.mobile import mobile_bp
     from .routes.task import task_bp
+    from .routes.patient import patient_bp
     from .routes.schema import schema_bp
     from .routes.maintenance import maintenance_bp
     app.register_blueprint(mobile_bp)
     app.register_blueprint(task_bp)
+    app.register_blueprint(patient_bp)
     app.register_blueprint(schema_bp)
     app.register_blueprint(maintenance_bp)
 

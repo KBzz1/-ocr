@@ -21,6 +21,8 @@ class ErrorCode(Enum):
     REEXTRACTION_CANCELLED = ("REEXTRACTION_CANCELLED", 409, "用户取消重新抽取")
     EXPORT_VALIDATION_FAILED = ("EXPORT_VALIDATION_FAILED", 400, "导出请求非法或任务状态不允许导出")
     EXPORT_FAILED = ("EXPORT_FAILED", 500, "导出文件写入失败")
+    PATIENT_NOT_FOUND = ("PATIENT_NOT_FOUND", 404, "患者不存在")
+    PATIENT_DELETED = ("PATIENT_DELETED", 409, "患者已删除，不能继续使用")
 
     @property
     def code(self):

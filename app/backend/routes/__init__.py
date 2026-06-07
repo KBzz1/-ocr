@@ -5,6 +5,10 @@ def _get_task_service():
     return current_app.config["TASK_SERVICE"]
 
 
+def _get_patient_service():
+    return current_app.config["PATIENT_SERVICE"]
+
+
 def _get_review_service():
     return current_app.config["REVIEW_SERVICE"]
 

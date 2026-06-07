@@ -8,6 +8,13 @@ def test_mvp_error_codes_include_upload_errors():
     assert ErrorCode.TASK_EMPTY.http_status == 400
 
 
+def test_patient_error_codes_are_registered():
+    assert ErrorCode.PATIENT_NOT_FOUND.code == "PATIENT_NOT_FOUND"
+    assert ErrorCode.PATIENT_NOT_FOUND.http_status == 404
+    assert ErrorCode.PATIENT_DELETED.code == "PATIENT_DELETED"
+    assert ErrorCode.PATIENT_DELETED.http_status == 409
+
+
 def test_session_and_quad_error_codes_are_not_public_contract():
     codes = {item.code for item in ErrorCode}
     assert "SESSION_NOT_FOUND" not in codes

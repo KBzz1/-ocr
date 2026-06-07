@@ -40,6 +40,9 @@ ALLOWED_EVENTS = {
     "gpu_stage_started",
     "gpu_stage_finished",
     "processing_tasks_recovered_after_restart",
+    "patient_created",
+    "patient_renamed",
+    "patient_deleted",
 }
 
 EVENT_FIELDS = {
@@ -79,6 +82,9 @@ EVENT_FIELDS = {
     "gpu_stage_started": {"task_id", "stage", "wait_ms"},
     "gpu_stage_finished": {"task_id", "stage", "elapsed_ms", "status"},
     "processing_tasks_recovered_after_restart": {"task_ids", "count"},
+    "patient_created": {"patient_id"},
+    "patient_renamed": {"patient_id"},
+    "patient_deleted": {"patient_id", "delete_tasks", "task_count"},
 }
 
 
