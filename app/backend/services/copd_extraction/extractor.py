@@ -1,3 +1,4 @@
+from ...errors import AppError, ErrorCode
 from .field_result import _default_result, all_fields_empty, complete_field_results
 from .prompts import (
     build_extraction_prompt,
@@ -15,6 +16,22 @@ MAX_VERIFICATION_DOCUMENT_CONTEXT_CHARS = 1600
 
 STRATEGY_FIELD_BATCHES = "field_batches"
 STRATEGY_SECTION_GROUPS = "section_groups"
+
+
+def _raise_if_cancelled(token) -> None:
+    """批次之间检查取消 token;若 set 则抛 REEXTRACTION_CANCELLED。
+
+    Token 是任意带 ``is_set()`` 的对象(实际是 threading.Event)。单次 in-flight
+    LLM 调用本身不可中断,这里只能让链路在下一个批次边界停下。
+    """
+    if token is None:
+        return
+    if getattr(token, "is_set", lambda: False)():
+        raise AppError(
+            ErrorCode.REEXTRACTION_CANCELLED,
+            message="用户取消重新抽取",
+            details={"reason": "user_cancelled"},
+        )
 
 
 SECTION_GROUPS = [
@@ -75,21 +92,8 @@ class COPDFieldExtractor:
         self._extraction_strategy = extraction_strategy
 
     def extract(self, text: str, cancellation_token=None) -> list[dict]:
-        from ...errors import AppError, ErrorCode
-
-        def _raise_if_cancelled():
-            if cancellation_token is None:
-                return
-            is_set = getattr(cancellation_token, "is_set", None)
-            if callable(is_set) and is_set():
-                raise AppError(
-                    ErrorCode.REEXTRACTION_CANCELLED,
-                    message="用户取消重新抽取",
-                    details={"reason": "user_cancelled"},
-                )
-
         sections = split_sections(text)
-        _raise_if_cancelled()
+        _raise_if_cancelled(cancellation_token)
         if self._extraction_strategy == STRATEGY_SECTION_GROUPS:
             raw_results = self._extract_section_groups(sections, cancellation_token=cancellation_token)
         else:
@@ -102,7 +106,7 @@ class COPDFieldExtractor:
         results = apply_quality_checks(results, text)
         if not self._enable_verification:
             return results
-        _raise_if_cancelled()
+        _raise_if_cancelled(cancellation_token)
         verdicts = self._verify_source_groups(results, text, cancellation_token=cancellation_token)
         return self._merge_verdicts(results, verdicts)
 
@@ -123,17 +127,10 @@ class COPDFieldExtractor:
         return results
 
     def _extract_section_groups(self, sections: dict[str, str], cancellation_token=None) -> list[dict]:
-        from ...errors import AppError, ErrorCode
-
         raw_results = []
         allowed = set(self._field_keys)
         for group_name, section_names, group_field_keys in SECTION_GROUPS:
-            if cancellation_token is not None and getattr(cancellation_token, "is_set", lambda: False)():
-                raise AppError(
-                    ErrorCode.REEXTRACTION_CANCELLED,
-                    message="用户取消重新抽取",
-                    details={"reason": "user_cancelled"},
-                )
+            _raise_if_cancelled(cancellation_token)
             field_keys = [key for key in group_field_keys if key in allowed]
             if not field_keys:
                 continue
@@ -211,16 +208,9 @@ class COPDFieldExtractor:
         return "\n\n".join(collected)
 
     def _extract_field_batches(self, sections: dict[str, str], cancellation_token=None) -> list[dict]:
-        from ...errors import AppError, ErrorCode
-
         raw_results = []
         for field_keys in self._field_key_batches():
-            if cancellation_token is not None and getattr(cancellation_token, "is_set", lambda: False)():
-                raise AppError(
-                    ErrorCode.REEXTRACTION_CANCELLED,
-                    message="用户取消重新抽取",
-                    details={"reason": "user_cancelled"},
-                )
+            _raise_if_cancelled(cancellation_token)
             extraction_payload = self._llm_client.complete_json(build_extraction_prompt(sections, field_keys))
             fields = extraction_payload.get("fields") if isinstance(extraction_payload, dict) else None
             if not isinstance(fields, list):
@@ -236,8 +226,6 @@ class COPDFieldExtractor:
         ]
 
     def _verify_source_groups(self, results: list[dict], document_text: str = "", cancellation_token=None) -> list[dict]:
-        from ...errors import AppError, ErrorCode
-
         verdicts = []
         source_groups = build_source_groups(results)
         if not source_groups:
@@ -245,12 +233,7 @@ class COPDFieldExtractor:
         document_context = _bounded_document_context(document_text)
         batch_size = max(1, self._verification_batch_size)
         for index in range(0, len(source_groups), batch_size):
-            if cancellation_token is not None and getattr(cancellation_token, "is_set", lambda: False)():
-                raise AppError(
-                    ErrorCode.REEXTRACTION_CANCELLED,
-                    message="用户取消重新抽取",
-                    details={"reason": "user_cancelled"},
-                )
+            _raise_if_cancelled(cancellation_token)
             batch = source_groups[index:index + batch_size]
             verification_payload = self._llm_client.complete_json(
                 build_verification_prompt(batch, document_context=document_context)

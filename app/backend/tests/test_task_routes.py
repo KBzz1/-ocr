@@ -1,8 +1,11 @@
+import threading
 import time
 
 import pytest
 
 from app.backend import create_backend_app
+from app.backend.errors import AppError, ErrorCode
+from app.backend.services.reextract_jobs import ReextractJobRegistry
 from app.backend.storage.json_store import JsonStore
 
 
@@ -318,10 +321,6 @@ def test_delete_nonexistent_task_returns_404(client):
 
 # --- 重新抽取取消(BE-MVP-04-05 补)---
 
-import threading
-from app.backend.errors import AppError, ErrorCode
-from app.backend.services.reextract_jobs import ReextractJobRegistry
-
 
 def test_reextract_job_registry_lifecycle():
     registry = ReextractJobRegistry()
@@ -398,17 +397,14 @@ def test_cancel_reextract_route_aborts_reextract_between_llm_batches(client, app
         },
     )
 
-    cancel_event_holder: dict = {}
+    service_ready = threading.Event()
 
     class CancellableReextractService:
         def reextract(self, task_id, cancellation_token=None):
-            cancel_event_holder["event"] = cancellation_token
-            # 模拟"在某个批次后被取消":先 sleep 等到外部 set 事件
             assert cancellation_token is not None
-            deadline = time.monotonic() + 2.0
-            while not cancellation_token.is_set() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            if cancellation_token.is_set():
+            service_ready.set()
+            # 阻塞等待 cancel 信号,wait 在 set 时立即返回 True
+            if cancellation_token.wait(timeout=2.0):
                 raise AppError(
                     ErrorCode.REEXTRACTION_CANCELLED,
                     message="用户取消重新抽取",
@@ -427,26 +423,11 @@ def test_cancel_reextract_route_aborts_reextract_between_llm_batches(client, app
 
     t = threading.Thread(target=call_reextract)
     t.start()
-    # 等服务拿到 cancellation_token 后再 cancel
-    deadline = time.monotonic() + 2.0
-    while "event" not in cancel_event_holder and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert "event" in cancel_event_holder
+    # 等服务拿到 cancellation_token 并开始等待
+    assert service_ready.wait(timeout=2.0), "reextract 服务没及时启动"
     cancel_response = client.post("/api/tasks/1/cancel-reextract")
     t.join(timeout=2.0)
     assert not t.is_alive(), "reextract 线程没在取消后退出"
-
-    assert cancel_response.status_code == 200
-    assert cancel_response.get_json()["data"]["cancelled"] is True
-    assert result_box["response"].status_code == 409
-    assert result_box["response"].get_json()["error"]["code"] == ErrorCode.REEXTRACTION_CANCELLED.code
-
-    # 取消后 review_result.json 应保持原样
-    review = store.read("results/1/review_result.json")
-    assert review["schema_version"] == "old"
-    assert review["fields"][0]["final_value"] == "手工"
-    # reextract_runs 不应写入
-    assert store.list_json("results/1/reextract_runs") == []
 
     assert cancel_response.status_code == 200
     assert cancel_response.get_json()["data"]["cancelled"] is True

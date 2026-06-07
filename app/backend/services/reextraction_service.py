@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from threading import Event
 from typing import Optional
 
 from ..enums import FieldStatus, TaskStatus
@@ -26,7 +27,6 @@ class ReextractionService:
         schema_validator=None,
         prompt_version_provider=None,
         document_profiles=None,
-        job_registry=None,
     ):
         self._store = store
         self._task_service = task_service
@@ -35,12 +35,11 @@ class ReextractionService:
         self._schema_validator = schema_validator
         self._prompt_version_provider = prompt_version_provider or (lambda: "")
         self._document_profiles = document_profiles
-        self._job_registry = job_registry
 
     def reextract(
         self,
         task_id: str,
-        cancellation_token: Optional[object] = None,
+        cancellation_token: Optional[Event] = None,
     ) -> dict:
         task = self._task_service.get_task(task_id)
         if task["status"] not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
