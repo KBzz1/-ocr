@@ -10,6 +10,7 @@ type CreateTaskDialogProps = {
   isSubmitting: boolean;
   onClose: () => void;
   onSubmit: (input: CreateTaskInput) => Promise<void>;
+  initialPatient?: { patient_id: string; name: string } | null;
 };
 
 type DocumentTypeOption = {
@@ -42,11 +43,12 @@ export function CreateTaskDialog({
   isOpen,
   isSubmitting,
   onClose,
-  onSubmit
+  onSubmit,
+  initialPatient = null
 }: CreateTaskDialogProps) {
   const [patientName, setPatientName] = useState('');
   const [searchResults, setSearchResults] = useState<PatientSummary[] | null>(null);
-  const [selectedPatient, setSelectedPatient] = useState<{ patient_id: string; name: string } | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<{ patient_id: string; name: string } | null>(initialPatient);
   const [isSearchingPatient, setIsSearchingPatient] = useState(false);
   const [isCreatingPatient, setIsCreatingPatient] = useState(false);
   const [patientError, setPatientError] = useState<string | null>(null);
@@ -56,7 +58,27 @@ export function CreateTaskDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      // 弹窗打开时:如果有 initialPatient,预填姓名和已选择
+      if (initialPatient) {
+        setPatientName(initialPatient.name);
+        setSelectedPatient({ patient_id: initialPatient.patient_id, name: initialPatient.name });
+        setSearchResults(null);
+        setPatientError(null);
+      } else {
+        setPatientName('');
+        setSearchResults(null);
+        setSelectedPatient(null);
+        setIsSearchingPatient(false);
+        setIsCreatingPatient(false);
+        setPatientError(null);
+        setDocumentType(DOCUMENT_TYPE_OPTIONS[0]?.value ?? '');
+        setRecordDate(todayDateString());
+        setRecordTime('');
+        setSubmitError(null);
+      }
+    } else {
+      // 弹窗关闭时:重置所有状态
       setPatientName('');
       setSearchResults(null);
       setSelectedPatient(null);
@@ -68,7 +90,7 @@ export function CreateTaskDialog({
       setRecordTime('');
       setSubmitError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, initialPatient]);
 
   const exactNameMatches = useMemo(() => {
     if (!searchResults) return [];

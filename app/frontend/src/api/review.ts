@@ -121,6 +121,7 @@ export async function getReviewResult(taskId: string) {
   return {
     task_id: data.task_id,
     fields: data.review_result.fields,
+    field_groups: data.review_result.field_groups,
     summary: { unreviewed: 0, confirmed: 0, modified: 0 }
   };
 }

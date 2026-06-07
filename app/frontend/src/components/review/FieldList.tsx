@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import type { ReviewField } from '../../api/review';
+import type { FieldStatus } from '../../styles/status';
 
 type FieldGroupDef = {
   group_key: string;
@@ -14,11 +15,23 @@ type FieldListProps = {
   onChange: (fields: ReviewField[]) => void;
   onFocusField: (field: ReviewField) => void;
   onToggleReviewed: (field: ReviewField) => void;
+  readOnly?: boolean;
 };
+
+function buildEmptyFieldStub(fieldKey: string, label: string): ReviewField {
+  return {
+    field_key: fieldKey,
+    field_name: label,
+    label,
+    value: '',
+    status: 'unreviewed' as FieldStatus
+  };
+}
 
 function groupFields(
   fields: ReviewField[],
   fieldGroups: FieldGroupDef[] | undefined,
+  includeAllSchemaFields = false,
 ): Array<{ groupKey: string; groupLabel: string; fields: ReviewField[] }> {
   if (!fieldGroups || fieldGroups.length === 0) {
     return [{ groupKey: '_all', groupLabel: '全部字段', fields }];
@@ -39,9 +52,11 @@ function groupFields(
       if (field) {
         groupFields.push({ ...field, field_name: fdef.label || field.field_name });
         usedKeys.add(fdef.field_key);
+      } else if (includeAllSchemaFields) {
+        groupFields.push(buildEmptyFieldStub(fdef.field_key, fdef.label));
       }
     }
-    if (groupFields.length > 0) {
+    if (groupFields.length > 0 || includeAllSchemaFields) {
       groups.push({ groupKey: group.group_key, groupLabel: group.group_label, fields: groupFields });
     }
   }
@@ -150,11 +165,13 @@ function AutoGrowTextarea({
   value,
   onChange,
   onFocus,
+  readOnly = false,
 }: {
   field: ReviewField;
   value: string;
   onChange: (value: string) => void;
   onFocus: () => void;
+  readOnly?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
@@ -173,6 +190,7 @@ function AutoGrowTextarea({
       rows={1}
       value={value}
       aria-label={field.field_key}
+      readOnly={readOnly}
       onChange={(e) => onChange(e.currentTarget.value)}
       onFocus={onFocus}
     />
@@ -186,12 +204,13 @@ export function FieldList({
   onChange,
   onFocusField,
   onToggleReviewed,
+  readOnly = false,
 }: FieldListProps) {
-  if (fields.length === 0) {
+  if (fields.length === 0 && !(fieldGroups && fieldGroups.length > 0)) {
     return <p className="review-empty">后端未返回可审核字段</p>;
   }
 
-  const groups = groupFields(fields, fieldGroups);
+  const groups = groupFields(fields, fieldGroups, readOnly);
 
   function updateField(fieldKey: string, value: string) {
     onChange(
@@ -257,12 +276,14 @@ export function FieldList({
                       value={value}
                       onChange={(nextValue) => updateField(field.field_key, nextValue)}
                       onFocus={() => onFocusField(field)}
+                      readOnly={readOnly}
                     />
                     <button
                       type="button"
                       className="field-card__review-check"
                       aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
                       aria-pressed={isReviewed}
+                      disabled={readOnly}
                       onClick={(event) => {
                         event.stopPropagation();
                         onFocusField(field);
