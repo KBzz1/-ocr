@@ -2,12 +2,30 @@ import { apiRequest } from './client';
 
 export type TaskStatus = 'uploading' | 'processing' | 'review' | 'done' | 'failed';
 
+export interface TaskPatientSummary {
+  patient_id: string;
+  name: string;
+  deleted: boolean;
+}
+
+export interface CreateTaskInput {
+  patient_id: string;
+  document_type: string;
+  record_date: string;
+  record_time?: string | null;
+}
+
 export interface CreateTaskResult {
   task_id: string;
   display_name: string;
   status: 'uploading';
   upload_token: string;
   mobile_upload_url: string;
+  patient?: TaskPatientSummary | null;
+  document_type?: string;
+  document_type_label?: string;
+  record_date?: string;
+  record_time?: string | null;
 }
 
 export interface TaskSummary {
@@ -41,6 +59,18 @@ export interface TaskSummary {
     formats?: string[];
     files?: Array<{ format: string; relative_path: string }>;
   };
+  patient?: TaskPatientSummary | null;
+  document_type?: string;
+  document_type_label?: string;
+  record_date?: string;
+  record_time?: string | null;
+}
+
+export interface UpdateTaskMetadataInput {
+  patient_id?: string;
+  document_type?: string;
+  record_date?: string;
+  record_time?: string | null;
 }
 
 export type TaskDetail = TaskSummary & {
@@ -113,8 +143,14 @@ export async function getTasks() {
   return data.tasks.map(normalizeTaskSummary).filter(shouldShowTask);
 }
 
-export function createTask() {
-  return apiRequest<CreateTaskResult>('/api/tasks', { method: 'POST' });
+export function createTask(input?: CreateTaskInput) {
+  // input 在 Task 8 之后变为必填;Task 7 暂保留可选签名,以便逐步迁移现有调用点。
+  const init: Parameters<typeof apiRequest>[1] = { method: 'POST' };
+  if (input) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(input);
+  }
+  return apiRequest<CreateTaskResult>('/api/tasks', init);
 }
 
 export function getTaskDetail(taskId: string) {
@@ -166,6 +202,14 @@ export function renameTask(taskId: string, displayName: string) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ display_name: displayName })
+  });
+}
+
+export function updateTaskMetadata(taskId: string, patch: UpdateTaskMetadataInput) {
+  return apiRequest<TaskSummary>(`/api/tasks/${encodeURIComponent(taskId)}/metadata`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
   });
 }
 

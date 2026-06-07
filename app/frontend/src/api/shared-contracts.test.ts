@@ -4,8 +4,25 @@ import { http, HttpResponse } from 'msw';
 import { exportTaskExcel, exportTaskJson, exportTasksBatchZip } from './export';
 import { normalizeApiError } from './errors';
 import { getReviewResult, saveReviewField } from './review';
-import { buildTaskImageFormData, finishTaskUpload, updateTaskDocumentType, uploadTaskImage } from './mobileUpload';
-import { cancelTaskProcessing, createTask, getTaskDetail, getTasks, processTask, reextractTaskFromOcr, type TaskStatus } from './tasks';
+import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
+import {
+  createPatient,
+  deletePatient,
+  getPatientDetail,
+  getPatientRecords,
+  getPatients,
+  updatePatient
+} from './patients';
+import {
+  cancelTaskProcessing,
+  createTask,
+  getTaskDetail,
+  getTasks,
+  processTask,
+  reextractTaskFromOcr,
+  updateTaskMetadata,
+  type TaskStatus
+} from './tasks';
 import { fieldStatusMeta, getTaskStatusLabel, taskStatusMeta } from '../styles/status';
 import { server } from '../../tests/setupTests';
 
@@ -33,6 +50,7 @@ describe('shared frontend contracts', () => {
 
   it('creates task, uploads task image and finishes task upload', async () => {
     let uploadEndpointWasCalled = false;
+    let createBody: Record<string, unknown> | null = null;
     const file = new File(['image'], 'page.jpg', { type: 'image/jpeg' });
     const formData = buildTaskImageFormData(file, { image_width: 1200, image_height: 1600 });
 
@@ -42,17 +60,23 @@ describe('shared frontend contracts', () => {
     expect(formData.has('quad_points')).toBe(false);
 
     server.use(
-      http.post('*/api/tasks', () =>
-        HttpResponse.json({
+      http.post('*/api/tasks', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
           success: true,
           data: {
             task_id: 'task_001',
             status: 'uploading',
             upload_token: 'token_001',
-            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001'
+            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001',
+            patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-07',
+            record_time: '09:30'
           }
-        })
-      ),
+        });
+      }),
       http.post('*/api/mobile-upload/task_001/images', () => {
         uploadEndpointWasCalled = true;
         return HttpResponse.json({
@@ -78,7 +102,27 @@ describe('shared frontend contracts', () => {
       )
     );
 
-    await expect(createTask()).resolves.toMatchObject({ task_id: 'task_001', status: 'uploading' });
+    await expect(
+      createTask({
+        patient_id: 'P-A1B2C3D4',
+        document_type: 'copd_admission_record',
+        record_date: '2026-06-07',
+        record_time: '09:30'
+      })
+    ).resolves.toMatchObject({
+      task_id: 'task_001',
+      status: 'uploading',
+      patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+      document_type: 'copd_admission_record',
+      record_date: '2026-06-07',
+      record_time: '09:30'
+    });
+    expect(createBody).toEqual({
+      patient_id: 'P-A1B2C3D4',
+      document_type: 'copd_admission_record',
+      record_date: '2026-06-07',
+      record_time: '09:30'
+    });
     await expect(uploadTaskImage('task_001', 'token_001', file)).resolves.toMatchObject({ page_no: 1 });
     expect(uploadEndpointWasCalled).toBe(true);
     await expect(finishTaskUpload('task_001', 'token_001')).resolves.toMatchObject({ status: 'processing' });
@@ -263,27 +307,215 @@ describe('shared frontend contracts', () => {
     await expect(exportTasksBatchZip(['task_001', 'task_002'])).resolves.toBeInstanceOf(Blob);
   });
 
-  it('updates mobile task document type', async () => {
+  it('updates task metadata to rebind patient', async () => {
+    let metadataBody: Record<string, unknown> | null = null;
     server.use(
-      http.patch('*/api/mobile-upload/task_001/document-type', async ({ request }) => {
-        const body = await request.json() as { document_type: string };
-        expect(body.document_type).toBe('copd_admission_record');
+      http.patch('*/api/tasks/1/metadata', async ({ request }) => {
+        metadataBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           success: true,
           data: {
-            task_id: 'task_001',
+            task_id: '1',
+            status: 'review',
+            created_at: '2026-06-07T10:00:00+08:00',
+            page_count: 2,
+            patient: { patient_id: 'P-E5F6A7B8', name: '新患者', deleted: false },
             document_type: 'copd_admission_record',
             document_type_label: '入院记录',
-            schema_version: 'copd.v1'
+            record_date: '2026-06-07',
+            record_time: '09:30'
           }
         });
       })
     );
 
-    await expect(updateTaskDocumentType('task_001', 'token_001', 'copd_admission_record')).resolves.toMatchObject({
-      document_type: 'copd_admission_record',
-      document_type_label: '入院记录'
+    await expect(updateTaskMetadata('1', { patient_id: 'P-E5F6A7B8' })).resolves.toMatchObject({
+      task_id: '1',
+      patient: { patient_id: 'P-E5F6A7B8', name: '新患者', deleted: false }
     });
+    expect(metadataBody).toEqual({ patient_id: 'P-E5F6A7B8' });
+  });
+
+  it('creates a patient', async () => {
+    let createBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post('*/api/patients', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: 'P-A1B2C3D4',
+            name: '测试用例',
+            created_at: '2026-06-07T10:00:00+08:00',
+            updated_at: '2026-06-07T10:00:00+08:00',
+            deleted_at: null
+          }
+        }, { status: 201 });
+      })
+    );
+
+    await expect(createPatient({ name: '测试用例' })).resolves.toMatchObject({
+      patient_id: 'P-A1B2C3D4',
+      name: '测试用例'
+    });
+    expect(createBody).toEqual({ name: '测试用例' });
+  });
+
+  it('searches patients with query param and parses task_count/latest_record_at', async () => {
+    let requestUrl = '';
+    server.use(
+      http.get('*/api/patients', ({ request }) => {
+        requestUrl = request.url;
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patients: [
+              {
+                patient_id: 'P-A1B2C3D4',
+                name: '测试用例',
+                task_count: 2,
+                latest_record_at: '2026-06-07T09:30',
+                created_at: '2026-06-01T08:00:00+08:00',
+                updated_at: '2026-06-07T09:30:00+08:00',
+                deleted_at: null
+              }
+            ]
+          }
+        });
+      })
+    );
+
+    await expect(getPatients('测试')).resolves.toEqual([
+      expect.objectContaining({
+        patient_id: 'P-A1B2C3D4',
+        name: '测试用例',
+        task_count: 2,
+        latest_record_at: '2026-06-07T09:30'
+      })
+    ]);
+    expect(requestUrl).toContain('query=%E6%B5%8B%E8%AF%95');
+  });
+
+  it('gets patient detail with patient and record groups', async () => {
+    server.use(
+      http.get('*/api/patients/P-A1B2C3D4/records', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            patient: {
+              patient_id: 'P-A1B2C3D4',
+              name: '测试用例',
+              created_at: '2026-06-01T08:00:00+08:00',
+              updated_at: '2026-06-07T09:30:00+08:00',
+              deleted_at: null
+            },
+            record_groups: [
+              {
+                document_type: 'copd_admission_record',
+                document_type_label: '入院记录',
+                tasks: [
+                  {
+                    task_id: '1',
+                    display_name: '1',
+                    status: 'review',
+                    created_at: '2026-06-07T10:00:00+08:00',
+                    page_count: 2,
+                    document_type: 'copd_admission_record',
+                    document_type_label: '入院记录',
+                    record_date: '2026-06-07',
+                    record_time: '09:30',
+                    patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false }
+                  }
+                ]
+              }
+            ]
+          }
+        })
+      )
+    );
+
+    await expect(getPatientRecords('P-A1B2C3D4')).resolves.toMatchObject({
+      patient: { patient_id: 'P-A1B2C3D4', name: '测试用例' },
+      record_groups: [
+        {
+          document_type: 'copd_admission_record',
+          document_type_label: '入院记录',
+          tasks: [expect.objectContaining({ task_id: '1', record_date: '2026-06-07' })]
+        }
+      ]
+    });
+  });
+
+  it('reads patient detail through the dedicated endpoint', async () => {
+    server.use(
+      http.get('*/api/patients/P-A1B2C3D4', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: 'P-A1B2C3D4',
+            name: '测试用例',
+            created_at: '2026-06-01T08:00:00+08:00',
+            updated_at: '2026-06-07T09:30:00+08:00',
+            deleted_at: null
+          }
+        })
+      )
+    );
+
+    await expect(getPatientDetail('P-A1B2C3D4')).resolves.toMatchObject({
+      patient_id: 'P-A1B2C3D4',
+      name: '测试用例'
+    });
+  });
+
+  it('updates a patient name', async () => {
+    let updateBody: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/patients/P-A1B2C3D4', async ({ request }) => {
+        updateBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: 'P-A1B2C3D4',
+            name: '测试患者',
+            created_at: '2026-06-01T08:00:00+08:00',
+            updated_at: '2026-06-07T11:00:00+08:00',
+            deleted_at: null
+          }
+        });
+      })
+    );
+
+    await expect(updatePatient('P-A1B2C3D4', { name: '测试患者' })).resolves.toMatchObject({
+      patient_id: 'P-A1B2C3D4',
+      name: '测试患者'
+    });
+    expect(updateBody).toEqual({ name: '测试患者' });
+  });
+
+  it('deletes patient with delete_tasks flag passed to query string', async () => {
+    let requestUrl = '';
+    server.use(
+      http.delete('*/api/patients/P-A1B2C3D4', ({ request }) => {
+        requestUrl = request.url;
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: 'P-A1B2C3D4',
+            deleted: true,
+            tasks_deleted: false,
+            deleted_task_count: 0
+          }
+        });
+      })
+    );
+
+    await expect(deletePatient('P-A1B2C3D4', false)).resolves.toMatchObject({
+      patient_id: 'P-A1B2C3D4',
+      deleted: true,
+      tasks_deleted: false
+    });
+    expect(requestUrl).toContain('delete_tasks=false');
   });
 
   it('requests OCR-only reextraction and receives version metadata', async () => {

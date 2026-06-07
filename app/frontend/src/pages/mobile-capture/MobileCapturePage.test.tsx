@@ -140,8 +140,7 @@ describe('MobileCapturePage', () => {
     expect(await screen.findByText('上传已完成，请回到电脑端查看处理结果')).toBeTruthy();
   });
 
-  it('shows document template selector and updates selection before finish', async () => {
-    const user = userEvent.setup();
+  it('shows document type label read-only and does not render template selector', async () => {
     server.use(
       http.get('*/api/mobile-upload/task_001', () => HttpResponse.json({
         success: true,
@@ -152,18 +151,6 @@ describe('MobileCapturePage', () => {
           images: [],
           document_type: 'copd_admission_record',
           document_type_label: '入院记录',
-          schema_version: 'copd.v1',
-          available_document_types: [
-            { document_type: 'copd_admission_record', label: '入院记录', schema_version: 'copd.v1' }
-          ]
-        }
-      })),
-      http.patch('*/api/mobile-upload/task_001/document-type', () => HttpResponse.json({
-        success: true,
-        data: {
-          task_id: 'task_001',
-          document_type: 'copd_admission_record',
-          document_type_label: '入院记录',
           schema_version: 'copd.v1'
         }
       }))
@@ -171,9 +158,8 @@ describe('MobileCapturePage', () => {
 
     render(<MobileCapturePage taskId="task_001" token="token_001" />);
 
-    const select = await screen.findByLabelText('文书模板');
-    expect((select as HTMLSelectElement).value).toBe('copd_admission_record');
-    await user.selectOptions(select, 'copd_admission_record');
-    expect(await screen.findByText('当前模板：入院记录')).toBeTruthy();
+    expect(await screen.findByText('记录类型：入院记录')).toBeTruthy();
+    expect(screen.queryByLabelText('文书模板')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 });
