@@ -380,12 +380,35 @@ class TaskService:
             "document_type_label": task.get("document_type_label"),
             "schema_version": task.get("schema_version"),
             "prompt_version": task.get("prompt_version"),
+            "record_date": task.get("record_date"),
+            "record_time": task.get("record_time"),
+            "patient": self._task_patient_summary(task),
         }
         upload_token = task.get("upload_token")
         if task["status"] == TaskStatus.UPLOADING.value and upload_token and base_url:
             summary["upload_token"] = upload_token
             summary["mobile_upload_url"] = self._build_mobile_upload_url(base_url, task["task_id"], upload_token)
         return summary
+
+    def _task_patient_summary(self, task: dict) -> dict | None:
+        patient_id = task.get("patient_id")
+        if not patient_id:
+            return None
+        snapshot = task.get("patient_snapshot") or {}
+        deleted = False
+        name = snapshot.get("name")
+        if self._patient_service is not None and hasattr(self._patient_service, "get"):
+            try:
+                patient = self._patient_service.get(patient_id, include_deleted=True)
+                name = patient.get("name") or name
+                deleted = bool(patient.get("deleted_at"))
+            except AppError:
+                deleted = True
+        return {
+            "patient_id": patient_id,
+            "name": name,
+            "deleted": deleted,
+        }
 
     def get_task(self, task_id: str) -> dict:
         task = self._read_task(task_id)

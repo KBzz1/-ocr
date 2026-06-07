@@ -9,6 +9,10 @@ def _get_patient_service():
     return current_app.config["PATIENT_SERVICE"]
 
 
+def _get_patient_query_service():
+    return current_app.config["PATIENT_QUERY_SERVICE"]
+
+
 def _get_review_service():
     return current_app.config["REVIEW_SERVICE"]
 

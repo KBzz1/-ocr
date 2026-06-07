@@ -253,6 +253,13 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         )
     app.config["TASK_SERVICE"] = task_service
 
+    from .services.patient_query_service import PatientQueryService
+
+    app.config["PATIENT_QUERY_SERVICE"] = PatientQueryService(
+        patient_service=patient_service,
+        task_service=task_service,
+    )
+
     from .services.review_service import ReviewService
 
     app.config["REVIEW_SERVICE"] = ReviewService(

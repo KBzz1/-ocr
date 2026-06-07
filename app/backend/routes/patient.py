@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, request
 
 from ..errors import AppError, ErrorCode
 from ..responses import success
-from . import _safe_event
+from . import _get_patient_query_service, _safe_event
 
 patient_bp = Blueprint("patient", __name__)
 
@@ -30,8 +30,7 @@ def create_patient():
 @patient_bp.route("/api/patients", methods=["GET"])
 def list_patients():
     query = request.args.get("query", "")
-    service = _get_patient_service()
-    items = [service.to_public(item) for item in service.list(query)]
+    items = _get_patient_query_service().list_patients(query)
     return success(data={"patients": items})
 
 
@@ -39,6 +38,11 @@ def list_patients():
 def get_patient(patient_id):
     service = _get_patient_service()
     return success(data=service.to_public(service.get(patient_id)))
+
+
+@patient_bp.route("/api/patients/<patient_id>/records", methods=["GET"])
+def get_patient_records(patient_id):
+    return success(data=_get_patient_query_service().get_detail(patient_id))
 
 
 @patient_bp.route("/api/patients/<patient_id>", methods=["PATCH"])
