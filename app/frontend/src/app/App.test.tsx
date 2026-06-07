@@ -15,6 +15,64 @@ function renderWorkstation() {
   return render(<App />);
 }
 
+function mockPatientSearch(
+  patients: Array<{ patient_id: string; name: string }> = [
+    { patient_id: 'P-A1B2C3D4', name: '测试用例' }
+  ]
+) {
+  return http.get('*/api/patients', () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        patients: patients.map((patient) => ({
+          patient_id: patient.patient_id,
+          name: patient.name,
+          created_at: '2026-06-07T10:00:00+08:00',
+          updated_at: '2026-06-07T10:00:00+08:00',
+          deleted_at: null,
+          task_count: 0,
+          latest_record_at: null
+        }))
+      }
+    })
+  );
+}
+
+async function submitCreateTaskDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  options: {
+    patientName?: string;
+    patientId?: string;
+    documentType?: string;
+    recordDate?: string;
+    recordTime?: string;
+  } = {}
+) {
+  const dialog = await screen.findByRole('dialog', { name: '新建任务' });
+  const patientName = options.patientName ?? '测试用例';
+  const patientId = options.patientId ?? 'P-A1B2C3D4';
+  await user.type(within(dialog).getByLabelText('患者姓名'), patientName);
+  await user.click(within(dialog).getByRole('button', { name: '搜索患者' }));
+  const selectButton = await within(dialog).findByRole('button', {
+    name: new RegExp(`选择.*${patientId}`)
+  });
+  await user.click(selectButton);
+  await user.selectOptions(
+    within(dialog).getByLabelText('记录类型') as HTMLSelectElement,
+    options.documentType ?? 'copd_admission_record'
+  );
+  await user.clear(within(dialog).getByLabelText('记录日期'));
+  await user.type(
+    within(dialog).getByLabelText('记录日期'),
+    options.recordDate ?? '2026-06-07'
+  );
+  if (options.recordTime) {
+    await user.clear(within(dialog).getByLabelText('记录时间（可选）'));
+    await user.type(within(dialog).getByLabelText('记录时间（可选）'), options.recordTime);
+  }
+  await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+}
+
 function mockReadyTaskReview() {
   return http.get('*/api/tasks/2/review', () =>
     HttpResponse.json({
@@ -230,11 +288,12 @@ describe('Workstation data integration', () => {
 
   it('creates an uploading task and shows task upload QR dialog', async () => {
     const user = userEvent.setup();
-    server.use(mockSystemStatus(), mockTasks(taskFixtures), mockCreateTask());
+    server.use(mockSystemStatus(), mockTasks(taskFixtures), mockPatientSearch(), mockCreateTask());
     render(<App />);
 
     await screen.findByText('系统已启动');
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
+    await submitCreateTaskDialog(user, { recordTime: '09:30' });
 
     const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
     const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
@@ -256,6 +315,7 @@ describe('Workstation data integration', () => {
     server.use(
       mockSystemStatus(),
       mockTasks(taskFixtures),
+      mockPatientSearch(),
       http.post('*/api/tasks', () => {
         createCount += 1;
         return HttpResponse.json({
@@ -265,7 +325,12 @@ describe('Workstation data integration', () => {
             display_name: '1',
             status: 'uploading',
             upload_token: 'token_001',
-            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/1?token=token_001'
+            mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/1?token=token_001',
+            patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-07',
+            record_time: null
           }
         });
       })
@@ -274,6 +339,7 @@ describe('Workstation data integration', () => {
 
     await screen.findByText('系统已启动');
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
+    await submitCreateTaskDialog(user);
 
     const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
     const firstQrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
@@ -292,11 +358,12 @@ describe('Workstation data integration', () => {
 
   it('shows only copy link guidance when the QR dialog help is opened', async () => {
     const user = userEvent.setup();
-    server.use(mockSystemStatus(), mockTasks(taskFixtures), mockCreateTask());
+    server.use(mockSystemStatus(), mockTasks(taskFixtures), mockPatientSearch(), mockCreateTask());
     render(<App />);
 
     await screen.findByText('系统已启动');
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
+    await submitCreateTaskDialog(user, { recordTime: '09:30' });
 
     const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
     await within(dialog).findByRole('img', { name: '任务上传二维码' });
@@ -314,10 +381,11 @@ describe('Workstation data integration', () => {
 
   it('shows task creation errors without keeping an old QR dialog', async () => {
     const user = userEvent.setup();
-    server.use(mockSystemStatus(), mockTasks([]), mockCreateTaskError());
+    server.use(mockSystemStatus(), mockTasks([]), mockPatientSearch(), mockCreateTaskError());
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /新建任务/ }));
+    await submitCreateTaskDialog(user);
 
     expect(await screen.findByText('创建任务失败，请重试')).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: '任务上传二维码' })).toBeNull();

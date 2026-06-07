@@ -2,12 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '../api/client';
 import { getSystemStatus, type SystemStatus as ApiSystemStatus } from '../api/system';
-import { createTask, getTasks, type CreateTaskResult, type TaskSummary as ApiTaskSummary } from '../api/tasks';
+import {
+  createTask,
+  getTasks,
+  type CreateTaskInput,
+  type CreateTaskResult,
+  type TaskSummary as ApiTaskSummary
+} from '../api/tasks';
 import {
   buildSystemReminders,
   sortRecentTasks
 } from '../state/workstationStore';
 import { MOBILE_UPLOAD_PREFIX } from './routes';
+import { CreateTaskDialog } from '../components/workstation/CreateTaskDialog';
 import { ExportPlaceholder } from '../pages/export/ExportPlaceholder';
 import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
 import { ReviewEntryPage } from '../pages/review/ReviewEntryPage';
@@ -153,6 +160,7 @@ function WorkstationApp() {
   const [taskError, setTaskError] = useState<string | null>(null);
   const [currentTask, setCurrentTask] = useState<CreateTaskResult | null>(null);
   const [isQrOpen, setIsQrOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isRetryingSystem, setIsRetryingSystem] = useState(false);
@@ -218,13 +226,24 @@ function WorkstationApp() {
   }, [currentTask, systemError, systemStatus, taskError, tasks]);
 
   async function handleCreateSession() {
+    setCreateError(null);
+    setIsCreateDialogOpen(true);
+  }
+
+  function handleCloseCreateDialog() {
+    if (isCreatingSession) return;
+    setIsCreateDialogOpen(false);
+  }
+
+  async function handleSubmitCreate(input: CreateTaskInput) {
     setIsCreatingSession(true);
     setCreateError(null);
     setIsQrOpen(false);
 
     try {
-      const task = await createTask();
+      const task = await createTask(input);
       setCurrentTask(task);
+      setIsCreateDialogOpen(false);
       setIsQrOpen(true);
       await loadDashboard('manual');
     } catch (error) {
@@ -234,25 +253,34 @@ function WorkstationApp() {
           ? '当前后端版本不支持新建任务，请重启服务后再试'
           : '创建任务失败，请重试'
       );
+      throw error;
     } finally {
       setIsCreatingSession(false);
     }
   }
 
   return (
-    <WorkstationPage
-      data={pageData}
-      isQrOpen={isQrOpen}
-      isCreatingSession={isCreatingSession}
-      createError={createError}
-      isSystemReady={systemStatus?.status === 'running' && !systemError}
-      isRetryingSystem={isRetryingSystem}
-      onRetrySystem={handleRetrySystem}
-      onNewCapture={handleCreateSession}
-      onViewQr={() => setIsQrOpen(true)}
-      onCloseQr={() => setIsQrOpen(false)}
-      lanAddresses={systemStatus?.lan_addresses ?? []}
-    />
+    <>
+      <WorkstationPage
+        data={pageData}
+        isQrOpen={isQrOpen}
+        isCreatingSession={isCreatingSession}
+        createError={createError}
+        isSystemReady={systemStatus?.status === 'running' && !systemError}
+        isRetryingSystem={isRetryingSystem}
+        onRetrySystem={handleRetrySystem}
+        onNewCapture={handleCreateSession}
+        onViewQr={() => setIsQrOpen(true)}
+        onCloseQr={() => setIsQrOpen(false)}
+        lanAddresses={systemStatus?.lan_addresses ?? []}
+      />
+      <CreateTaskDialog
+        isOpen={isCreateDialogOpen}
+        isSubmitting={isCreatingSession}
+        onClose={handleCloseCreateDialog}
+        onSubmit={handleSubmitCreate}
+      />
+    </>
   );
 }
 
