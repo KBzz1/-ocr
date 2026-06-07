@@ -242,6 +242,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
         background_runner=run_processing_background,
         document_profiles=document_profile_registry,
+        patient_service=patient_service,
     )
     recovered_processing_tasks = task_service.fail_interrupted_processing_tasks()
     if recovered_processing_tasks:

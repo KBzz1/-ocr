@@ -40,7 +40,15 @@ algorithms:
 
 
 def _create_task(client):
-    return client.post("/api/tasks").get_json()["data"]
+    patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    return client.post(
+        "/api/tasks",
+        json={
+            "patient_id": patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+    ).get_json()["data"]
 
 
 def _upload(client, task, image_name="page.png"):
@@ -136,8 +144,8 @@ def test_upload_rejects_closed_task(client):
     assert response.get_json()["error"]["code"] == "TASK_UPLOAD_CLOSED"
 
 
-def test_mobile_upload_status_returns_document_type_options(client):
-    task = client.post("/api/tasks").get_json()["data"]
+def test_mobile_upload_status_omits_document_type_options(client):
+    task = _create_task(client)
 
     response = client.get(f"/api/mobile-upload/{task['task_id']}?token={task['upload_token']}")
 
@@ -145,24 +153,15 @@ def test_mobile_upload_status_returns_document_type_options(client):
     data = response.get_json()["data"]
     assert data["document_type"] == "copd_admission_record"
     assert data["document_type_label"] == "入院记录"
-    assert data["available_document_types"] == [
-        {
-            "document_type": "copd_admission_record",
-            "label": "入院记录",
-            "schema_version": data["schema_version"],
-        }
-    ]
+    assert "available_document_types" not in data
 
 
-def test_mobile_upload_can_change_document_type_while_uploading(client):
-    task = client.post("/api/tasks").get_json()["data"]
+def test_mobile_upload_document_type_route_is_removed(client):
+    task = _create_task(client)
 
     response = client.patch(
         f"/api/mobile-upload/{task['task_id']}/document-type?token={task['upload_token']}",
         json={"document_type": "copd_admission_record"},
     )
 
-    assert response.status_code == 200
-    data = response.get_json()["data"]
-    assert data["document_type"] == "copd_admission_record"
-    assert data["document_type_label"] == "入院记录"
+    assert response.status_code == 404

@@ -17,7 +17,19 @@ def _mobile_base_url():
 
 @task_bp.route("/api/tasks", methods=["POST"])
 def create_task():
-    return success(data=_get_task_service().create_uploading_task(base_url=_mobile_base_url()), status=201)
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="请求体必须为 JSON 对象")
+    return success(
+        data=_get_task_service().create_uploading_task(
+            base_url=_mobile_base_url(),
+            patient_id=body.get("patient_id"),
+            document_type=body.get("document_type"),
+            record_date=body.get("record_date"),
+            record_time=body.get("record_time"),
+        ),
+        status=201,
+    )
 
 
 @task_bp.route("/api/tasks", methods=["GET"])

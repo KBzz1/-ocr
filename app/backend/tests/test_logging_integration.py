@@ -98,6 +98,19 @@ def upload_jpeg(client, task):
     )
 
 
+def _create_patient_and_task(client):
+    patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    task = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+    ).get_json()["data"]
+    return patient, task
+
+
 def test_startup_event_logged(app):
     names = [item["event"] for item in events(app)]
     assert "system_started" in names
@@ -105,7 +118,7 @@ def test_startup_event_logged(app):
 
 
 def test_task_upload_finish_events_logged(client, app):
-    task = client.post("/api/tasks").get_json()["data"]
+    _, task = _create_patient_and_task(client)
     upload_resp = upload_jpeg(client, task)
     assert upload_resp.status_code == 201
     finish_resp = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}")
@@ -118,7 +131,7 @@ def test_task_upload_finish_events_logged(client, app):
 
 
 def test_task_processing_failure_event_has_context_and_no_sensitive_text(client, app):
-    task = client.post("/api/tasks").get_json()["data"]
+    _, task = _create_patient_and_task(client)
     upload_jpeg(client, task)
     task_id = client.post(f"/api/mobile-upload/{task['task_id']}/finish?token={task['upload_token']}").get_json()["data"]["task_id"]
 

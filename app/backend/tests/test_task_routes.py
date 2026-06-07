@@ -70,7 +70,15 @@ def wait_for_task_status(client, task_id: str, status: str, timeout: float = 1.0
 
 
 def test_post_tasks_creates_uploading_task(client):
-    response = client.post("/api/tasks")
+    created_patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    response = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": created_patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+    )
 
     assert response.status_code == 201
     data = response.get_json()["data"]
@@ -79,10 +87,21 @@ def test_post_tasks_creates_uploading_task(client):
     assert data["status"] == "uploading"
     assert data["upload_token"]
     assert f"/mobile/upload/{data['task_id']}?token={data['upload_token']}" in data["mobile_upload_url"]
+    assert data["patient_id"] == created_patient["patient_id"]
+    assert data["record_date"] == "2026-06-07"
 
 
 def test_post_tasks_uses_lan_address_for_mobile_upload_url(client):
-    response = client.post("/api/tasks", base_url="http://127.0.0.1:8081")
+    created_patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    response = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": created_patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+        base_url="http://127.0.0.1:8081",
+    )
 
     assert response.status_code == 201
     data = response.get_json()["data"]
@@ -93,8 +112,17 @@ def test_post_tasks_uses_lan_address_for_mobile_upload_url(client):
 def test_post_tasks_prefers_public_base_url_over_container_lan_address(client, app):
     app.config["BACKEND_CONFIG"]["public_base_url"] = "http://172.20.10.5:8081"
     app.config["LAN_ADDRESSES"] = ["172.18.0.2:8081"]
+    created_patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
 
-    response = client.post("/api/tasks", base_url="http://127.0.0.1:8081")
+    response = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": created_patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+        base_url="http://127.0.0.1:8081",
+    )
 
     assert response.status_code == 201
     data = response.get_json()["data"]
@@ -103,7 +131,15 @@ def test_post_tasks_prefers_public_base_url_over_container_lan_address(client, a
 
 
 def test_get_task_returns_mvp_shape_without_session(client):
-    created = client.post("/api/tasks").get_json()["data"]
+    created_patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    created = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": created_patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+    ).get_json()["data"]
 
     response = client.get(f"/api/tasks/{created['task_id']}")
 

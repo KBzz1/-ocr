@@ -9,6 +9,27 @@ from ..routes import _safe_event
 from ..storage.json_store import JsonStore
 
 
+def _parse_record_date(value):
+    if not isinstance(value, str) or not value:
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="record_date 必须为 YYYY-MM-DD")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="record_date 必须为 YYYY-MM-DD") from exc
+
+
+def _parse_record_time(value):
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="record_time 必须为 HH:mm 或空")
+    try:
+        datetime.strptime(value, "%H:%M")
+    except ValueError as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="record_time 必须为 HH:mm 或空") from exc
+    return value
+
+
 class TaskService:
     def __init__(
         self,
@@ -17,12 +38,14 @@ class TaskService:
         schema_provider: Callable[[], dict] | None = None,
         background_runner: Callable[[Callable[[], None]], None] | None = None,
         document_profiles=None,
+        patient_service=None,
     ):
         self._store = store
         self._orchestrator = orchestrator
         self._schema_provider = schema_provider
         self._background_runner = background_runner or self._run_in_thread
         self._document_profiles = document_profiles
+        self._patient_service = patient_service
 
     def _document_summary_for(self, document_type: str | None = None) -> dict:
         if self._document_profiles is None:
@@ -37,12 +60,30 @@ class TaskService:
         resolved_type = document_type or self._document_profiles.get_default_document_type()
         return self._document_profiles.to_task_document_summary(resolved_type)
 
-    def create_uploading_task(self, base_url: str) -> dict:
-        existing_count = len(self._store.list_json("tasks"))
-        task_id = str(existing_count + 1)
+    def create_uploading_task(
+        self,
+        base_url: str,
+        *,
+        patient_id: str | None = None,
+        document_type: str | None = None,
+        record_date: str | None = None,
+        record_time: str | None = None,
+    ) -> dict:
+        if not isinstance(patient_id, str) or not patient_id.strip():
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="patient_id 必填")
+        if not isinstance(document_type, str) or not document_type.strip():
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="document_type 必填")
+        record_date_str = record_date or ""
+        _parse_record_date(record_date_str)
+        record_time_str = _parse_record_time(record_time)
+        patient = self._patient_service.get_bindable(patient_id) if self._patient_service else {
+            "patient_id": patient_id,
+            "name": None,
+        }
+        task_id = self._next_task_id()
         now = self._now()
         upload_token = token_urlsafe(24)
-        document_summary = self._document_summary_for()
+        document_summary = self._document_summary_for(document_type)
         task = {
             "task_id": task_id,
             "display_name": task_id,
@@ -61,6 +102,15 @@ class TaskService:
             "schema_version": document_summary["schema_version"],
             "prompt_version": document_summary["prompt_version"],
             "extraction_profile": document_summary["extraction_profile"],
+            "patient_id": patient["patient_id"],
+            "patient_snapshot": {
+                "patient_id": patient["patient_id"],
+                "name": patient.get("name"),
+            },
+            "record_date": record_date_str,
+            "record_time": record_time_str,
+            "deleted_at": None,
+            "metadata_history": [],
             "status_history": [
                 {
                     "from_status": None,
@@ -74,6 +124,18 @@ class TaskService:
         task = self._normalize_task(task)
         task["mobile_upload_url"] = self._build_mobile_upload_url(base_url, task_id, upload_token)
         return task
+
+    def _next_task_id(self) -> str:
+        max_id = 0
+        for record in self._store.list_json("tasks"):
+            task_id = record.get("task_id") if isinstance(record, dict) else None
+            if not task_id or not task_id.isdigit():
+                continue
+            max_id = max(max_id, int(task_id))
+        candidate = str(max_id + 1)
+        while self._store.exists(f"tasks/{candidate}.json"):
+            candidate = str(int(candidate) + 1)
+        return candidate
 
     def _build_mobile_upload_url(self, base_url: str, task_id: str, upload_token: str) -> str:
         return f"{base_url.rstrip('/')}/mobile/upload/{task_id}?token={upload_token}"
@@ -108,21 +170,6 @@ class TaskService:
         task["display_name"] = display_name
         task["updated_at"] = self._now()
         self._write_task(task)
-        return self._normalize_task(task)
-
-    def change_document_type(self, task_id: str, document_type: str) -> dict:
-        task = self._read_task(task_id)
-        if task["status"] != TaskStatus.UPLOADING.value:
-            raise AppError(
-                ErrorCode.INVALID_TASK_TRANSITION,
-                details={"current": task["status"], "target": "document_type_change"},
-            )
-        document_summary = self._document_summary_for(document_type)
-        task.update(document_summary)
-        task["updated_at"] = self._now()
-        self._write_task(task)
-        if self._document_profiles is not None:
-            self._document_profiles.remember_last_document_type(document_summary["document_type"])
         return self._normalize_task(task)
 
     def _to_task_summary(self, task: dict, base_url: str | None = None) -> dict:

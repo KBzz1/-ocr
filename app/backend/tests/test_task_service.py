@@ -25,12 +25,18 @@ class CancellationAwareOrchestrator:
         return task_service.get_task(task["task_id"])
 
 
-def make_service(tmp_path, orchestrator=None, schema_provider=None):
+class StubPatientService:
+    def get_bindable(self, patient_id):
+        return {"patient_id": patient_id, "name": "测试用例", "deleted_at": None}
+
+
+def make_service(tmp_path, orchestrator=None, schema_provider=None, patient_service=None):
     return TaskService(
         JsonStore(str(tmp_path)),
         orchestrator=orchestrator,
         schema_provider=schema_provider,
         background_runner=lambda task_id, run: run(),
+        patient_service=patient_service or StubPatientService(),
     )
 
 
@@ -54,7 +60,12 @@ def write_task(tmp_path, task_id="1", status="uploading", **overrides):
 def test_create_uploading_task_has_upload_token_and_empty_images(tmp_path):
     service = make_service(tmp_path)
 
-    task = service.create_uploading_task(base_url="http://192.168.1.5:8081")
+    task = service.create_uploading_task(
+        base_url="http://192.168.1.5:8081",
+        patient_id="P-ABCDEF12",
+        document_type="copd_admission_record",
+        record_date="2026-06-07",
+    )
 
     assert task["task_id"] == "1"
     assert task["display_name"] == "1"
@@ -86,7 +97,12 @@ def test_list_tasks_does_not_expose_session_id(tmp_path):
 
 def test_list_tasks_hides_empty_uploading_placeholders(tmp_path):
     service = make_service(tmp_path)
-    service.create_uploading_task(base_url="http://127.0.0.1:8081")
+    service.create_uploading_task(
+        base_url="http://127.0.0.1:8081",
+        patient_id="P-ABCDEF12",
+        document_type="copd_admission_record",
+        record_date="2026-06-07",
+    )
     write_task(
         tmp_path,
         task_id="2",
@@ -459,39 +475,22 @@ class ProfileAwareOrchestrator:
 def test_create_task_uses_last_document_type_default(tmp_path):
     profiles = FakeDocumentProfiles()
     profiles.default_document_type = "progress_note"
-    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
+    service = TaskService(
+        JsonStore(str(tmp_path)),
+        document_profiles=profiles,
+        patient_service=StubPatientService(),
+    )
 
-    task = service.create_uploading_task("http://127.0.0.1:8081")
+    task = service.create_uploading_task(
+        base_url="http://127.0.0.1:8081",
+        patient_id="P-ABCDEF12",
+        document_type="progress_note",
+        record_date="2026-06-07",
+    )
 
     assert task["document_type"] == "progress_note"
     assert task["schema_version"] == "progress_note.v1"
     assert task["prompt_version"] == "progress_note.prompt.v1"
-
-
-def test_change_document_type_updates_uploading_task_and_default(tmp_path):
-    profiles = FakeDocumentProfiles()
-    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
-    task = service.create_uploading_task("http://127.0.0.1:8081")
-
-    updated = service.change_document_type(task["task_id"], "progress_note")
-
-    assert updated["document_type"] == "progress_note"
-    assert updated["schema_version"] == "progress_note.v1"
-    assert profiles.remembered == ["progress_note"]
-
-
-def test_change_document_type_rejects_non_uploading_task(tmp_path):
-    profiles = FakeDocumentProfiles()
-    service = TaskService(JsonStore(str(tmp_path)), document_profiles=profiles)
-    task = service.create_uploading_task("http://127.0.0.1:8081")
-    persisted = service.get_task(task["task_id"])
-    persisted["status"] = "processing"
-    JsonStore(str(tmp_path)).write(f"tasks/{task['task_id']}.json", persisted)
-
-    with pytest.raises(AppError) as exc:
-        service.change_document_type(task["task_id"], "progress_note")
-
-    assert exc.value.code == ErrorCode.INVALID_TASK_TRANSITION.code
 
 
 def test_processing_uses_task_document_profile_without_overwriting_document_type(tmp_path):
@@ -503,8 +502,14 @@ def test_processing_uses_task_document_profile_without_overwriting_document_type
         orchestrator=orchestrator,
         document_profiles=profiles,
         background_runner=lambda task_id, run: run(),
+        patient_service=StubPatientService(),
     )
-    task = service.create_uploading_task("http://127.0.0.1:8081")
+    task = service.create_uploading_task(
+        base_url="http://127.0.0.1:8081",
+        patient_id="P-ABCDEF12",
+        document_type="progress_note",
+        record_date="2026-06-07",
+    )
     persisted = service.get_task(task["task_id"])
     persisted["status"] = "processing"
     persisted["images"] = [{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page-1.jpg"}]

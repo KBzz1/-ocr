@@ -407,7 +407,15 @@ def test_fixture_client_starts_with_system_status(tmp_path, monkeypatch):
 def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, monkeypatch):
     client, app = make_client(tmp_path, monkeypatch)
     install_simulated_processing(app, mode="success")
-    created = client.post("/api/tasks").get_json()["data"]
+    patient = client.post("/api/patients", json={"name": "测试用例"}).get_json()["data"]
+    created = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-07",
+        },
+    ).get_json()["data"]
 
     for index in range(3):
         upload = upload_task_image(client, created, filename=f"page-{index + 1}.jpg")

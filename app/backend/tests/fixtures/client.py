@@ -52,8 +52,38 @@ def upload_task_image(client, task, image_bytes=None, filename="test.jpg", image
     )
 
 
-def setup_task_with_images(client, page_count=1):
-    created = client.post("/api/tasks").get_json()["data"]
+def create_test_patient(client, name="测试用例"):
+    response = client.post("/api/patients", json={"name": name})
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["data"]
+
+
+def create_test_task(
+    client,
+    patient_id=None,
+    name="测试用例",
+    document_type="copd_admission_record",
+    record_date="2026-06-07",
+    record_time=None,
+):
+    if patient_id is None:
+        patient = create_test_patient(client, name=name)
+        patient_id = patient["patient_id"]
+    response = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": patient_id,
+            "document_type": document_type,
+            "record_date": record_date,
+            "record_time": record_time,
+        },
+    )
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["data"]
+
+
+def setup_task_with_images(client, page_count=1, name="测试用例"):
+    created = create_test_task(client, name=name)
     for index in range(page_count):
         response = upload_task_image(client, created, filename=f"page-{index + 1}.jpg")
         assert response.status_code == 201
