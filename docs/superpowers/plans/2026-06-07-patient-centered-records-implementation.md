@@ -20,6 +20,7 @@
 - Python 命令使用 `conda run -n manzufei_ocr`。
 - Git commit message 使用中文。
 - 不提交真实患者数据、日志、导出文件、模型、密钥或本机私有路径。
+- 所有前端 fixture 使用“测试用例”等虚构信息；不得 `console.*` 输出患者姓名、OCR 原文、结构化字段值或包含这些内容的对象。
 - 正常用户删除不得调用 `CleanupService.cleanup_task`；物理清理不属于本功能。
 - 不新增 `record_type` 字段；界面叫“记录类型”，后端继续使用 `document_type` / `document_type_label`。
 
@@ -46,6 +47,8 @@
 - Modify: `docs/Backend/Backend_TDD/AGENTS.md`
 - Modify: `docs/Front/Front_BDD/AGENTS.md`
 - Modify: `docs/Front/Front_TDD/AGENTS.md`
+- Modify: `app/backend/CLAUDE.md`
+- Modify: `app/frontend/README.md`
 
 - [ ] **Step 1: 写入共享术语和错误码契约**
 
@@ -66,6 +69,8 @@
 | `PATIENT_DELETED` | 409 | 患者已删除，不能用于创建或改绑任务 |
 ```
 
+BDD/TDD 同步写明：查询不存在或已删除患者、重复删除患者返回 `PATIENT_NOT_FOUND`；创建任务或改绑到已删除患者返回 `PATIENT_DELETED`；已逻辑删除任务继续返回 `TASK_NOT_FOUND`。
+
 - [ ] **Step 2: 更新 PRD 和任务清单**
 
 在 PRD 中明确：
@@ -85,6 +90,8 @@
 ```
 
 同时把 `FE-MVP-02-05 手机端文书模板选择` 标记为“需收敛”，注明本功能将移除手机端模板切换。
+
+在 `app/backend/CLAUDE.md` 增加 `routes/patient.py`、`patient_service.py`、`patient_query_service.py` 指针；在 `app/frontend/README.md` 增加患者管理和患者详情页面职责。
 
 - [ ] **Step 3: 写 BDD 场景**
 
@@ -127,7 +134,7 @@ Expected:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/PRD文档 docs/Shared docs/Backend/Backend_BDD docs/Backend/Backend_TDD docs/Front/Front_BDD docs/Front/Front_TDD
+git add docs/PRD文档 docs/Shared docs/Backend/Backend_BDD docs/Backend/Backend_TDD docs/Front/Front_BDD docs/Front/Front_TDD app/backend/CLAUDE.md app/frontend/README.md
 git commit -m "文档：补充患者中心业务与测试契约"
 ```
 
@@ -140,6 +147,7 @@ git commit -m "文档：补充患者中心业务与测试契约"
 - Create: `app/backend/routes/patient.py`
 - Create: `app/backend/tests/test_patient_service.py`
 - Create: `app/backend/tests/test_patient_routes.py`
+- Create: `app/backend/tests/conftest.py`
 - Modify: `app/backend/errors.py`
 - Modify: `app/backend/routes/__init__.py`
 - Modify: `app/backend/__init__.py`
@@ -187,6 +195,30 @@ def test_get_bindable_rejects_deleted_patient(tmp_path):
     assert exc.value.code == ErrorCode.PATIENT_DELETED.code
 ```
 
+另加两个边界测试：
+
+```python
+def test_patient_id_retries_on_collision(tmp_path, monkeypatch):
+    values = iter([
+        type("U", (), {"hex": "a1b2c3d4ffffffffffffffffffffffff"})(),
+        type("U", (), {"hex": "a1b2c3d4eeeeeeeeeeeeeeeeeeeeeeee"})(),
+        type("U", (), {"hex": "e5f6a7b8dddddddddddddddddddddddd"})(),
+    ])
+    monkeypatch.setattr("app.backend.services.patient_service.uuid4", lambda: next(values))
+    service = PatientService(JsonStore(str(tmp_path)))
+    assert service.create("甲")["patient_id"] == "P-A1B2C3D4"
+    assert service.create("乙")["patient_id"] == "P-E5F6A7B8"
+
+def test_patient_public_shape_omits_name_history(tmp_path):
+    service = PatientService(JsonStore(str(tmp_path)))
+    patient = service.create("甲")
+    renamed = service.rename(patient["patient_id"], "乙")
+    assert "name_history" in renamed
+    assert "name_history" not in service.to_public(renamed)
+```
+
+`conftest.py` 提供本功能共用的 `store`、`patient_service`、`task_service`、`write_task`、`seeded_patient_task` 和 `seeded_processing_patient_task` fixture。`write_task` 固定签名为 `write_task(task_id="1", status="uploading", **overrides)`，只服务本轮新增测试，不强制重构所有旧测试文件。
+
 - [ ] **Step 2: 运行测试确认失败**
 
 Run:
@@ -232,7 +264,7 @@ def _new_patient_id(self) -> str:
             return patient_id
 ```
 
-姓名使用 `.strip()`，空姓名抛出 `INVALID_REQUEST_PARAMS`。查询对患者编号做精确匹配，对姓名做包含匹配；默认排除 `deleted_at` 非空记录。
+姓名使用 `.strip()`，空姓名抛出 `INVALID_REQUEST_PARAMS`。查询参数也先 `.strip()`；空查询返回全部未删除患者，患者编号做精确匹配，姓名做包含匹配。`PatientService` 内部记录保留 `name_history`，患者路由和 `PatientQueryService` 返回前统一调用 `to_public()` 过滤该字段。
 
 - [ ] **Step 4: 运行 PatientService 测试**
 
@@ -278,7 +310,7 @@ PATIENT_NOT_FOUND = ("PATIENT_NOT_FOUND", 404, "患者不存在")
 PATIENT_DELETED = ("PATIENT_DELETED", 409, "患者已删除，不能继续使用")
 ```
 
-在 `routes/__init__.py` 增加 `_get_patient_service()`；在 app factory 创建 `PatientService` 并注册 `patient_bp`。
+在 `routes/__init__.py` 增加 `_get_patient_service()`；在 app factory 中先创建 `PatientService` 并写入 `app.config["PATIENT_SERVICE"]`，再创建 `TaskService`。Task 3 将该实例注入 `TaskService`。Task 5 在 `TaskService` 创建完成后再创建 `PatientQueryService`，避免循环依赖。注册 `patient_bp` 后运行 app factory 测试确认 getter 可用。
 
 患者 API：
 
@@ -295,6 +327,16 @@ PATCH  /api/patients/{patient_id}
 patient_created
 patient_renamed
 ```
+
+同步更新固定白名单：
+
+```python
+ALLOWED_EVENTS |= {"patient_created", "patient_renamed"}
+EVENT_FIELDS["patient_created"] = {"patient_id"}
+EVENT_FIELDS["patient_renamed"] = {"patient_id"}
+```
+
+在 `test_logging_integration.py` 增加 `test_patient_event_log_has_no_pii`：执行创建和改名后读取 `backend-events.jsonl`，断言两个事件存在、包含 `patient_id`，且不包含修改前后姓名。
 
 - [ ] **Step 8: 运行患者和日志测试**
 
@@ -313,7 +355,7 @@ Expected: PASS，日志断言中不存在患者姓名。
 - [ ] **Step 9: Commit**
 
 ```bash
-git add app/backend/errors.py app/backend/__init__.py app/backend/routes/__init__.py app/backend/routes/patient.py app/backend/services/patient_service.py app/backend/services/local_event_log.py app/backend/tests/test_patient_service.py app/backend/tests/test_patient_routes.py app/backend/tests/test_errors.py app/backend/tests/test_logging_integration.py
+git add app/backend/errors.py app/backend/__init__.py app/backend/routes/__init__.py app/backend/routes/patient.py app/backend/services/patient_service.py app/backend/services/local_event_log.py app/backend/tests/conftest.py app/backend/tests/test_patient_service.py app/backend/tests/test_patient_routes.py app/backend/tests/test_errors.py app/backend/tests/test_logging_integration.py
 git commit -m "功能：新增患者档案服务和接口"
 ```
 
@@ -332,6 +374,11 @@ git commit -m "功能：新增患者档案服务和接口"
 - Modify: `app/backend/tests/test_backend_e2e.py`
 - Modify: `app/backend/tests/test_logging_integration.py`
 - Modify: `app/backend/tests/test_mobile_upload_routes.py`
+- Modify: `app/backend/tests/test_export_service.py`
+- Modify: `app/backend/tests/test_orchestrator.py`
+- Modify: `app/backend/tests/test_reextraction_service.py`
+- Modify: `app/backend/tests/test_review_service.py`
+- Modify: `app/backend/tests/fixtures/processing.py`
 - Modify: `app/backend/tests/fixtures/client.py`
 
 - [ ] **Step 1: 写创建契约失败测试**
@@ -358,6 +405,8 @@ assert data["record_time"] == "09:30"
 - 日期不是 `YYYY-MM-DD`、时间不是 `HH:mm` 时拒绝。
 - 已删除患者返回 `PATIENT_DELETED`。
 - 任务 ID 继续保持数字字符串兼容现有 UI；生成规则固定为所有任务 JSON（包括已逻辑删除任务）的最大数字 ID 加一，并在写入前检查目标文件不存在。禁止继续使用 `len(tasks)+1`。
+- 增加 `test_create_task_id_uses_max_plus_one_even_with_gaps`：已有 `1.json`、`5.json` 和 `task_legacy.json` 时，新任务 ID 为 `"6"`；非数字旧 ID 不参与最大值计算，但文件继续保留。
+- 日期/时间使用 `pytest.mark.parametrize` 覆盖 `2026-13-45`、`2026-02-30`、`24:00`、`23:60`，均返回 `INVALID_REQUEST_PARAMS`。
 - 迁移 `test_backend_e2e.py`、`test_logging_integration.py`、`test_mobile_upload_routes.py` 和 `tests/fixtures/client.py` 中所有无请求体的 `POST /api/tasks`，统一先创建测试患者，再提交完整任务 payload。
 - 删除 `PATCH /api/mobile-upload/{task_id}/document-type` 路由测试，改为断言该路径返回 404；手机上传状态响应移除 `available_document_types`。
 
@@ -405,6 +454,8 @@ task.update({
 })
 ```
 
+`TaskService.__init__` 增加必需的 `patient_service` 参数；app factory 传入 Task 2 已注册的 `app.config["PATIENT_SERVICE"]`。同步更新 `test_task_service.py`、`test_backend_e2e.py`、`test_export_service.py`、`test_orchestrator.py`、`test_reextraction_service.py`、`test_review_service.py`、`tests/fixtures/processing.py` 中所有直接构造点，注入 `PatientService` 或最小 fake。
+
 使用 `datetime.strptime` 严格校验日期和时间。`_to_task_summary` 返回：
 
 ```python
@@ -437,6 +488,8 @@ return success(
 
 同时从 `routes/mobile.py` 删除 `change_task_document_type` 路由；手机上传状态只返回当前任务的 `document_type`、`document_type_label` 和 `schema_version`，不返回可选类型列表。
 
+删除不再使用的 `TaskService.change_document_type` 和对应服务测试；`DocumentProfileRegistry.remember_last_document_type` 不再由手机上传流程调用。记录类型修改统一走 Task 4 的 `update_metadata`。
+
 - [ ] **Step 5: 运行聚焦测试**
 
 Run:
@@ -456,7 +509,7 @@ Expected: PASS。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/backend/services/task_service.py app/backend/routes/task.py app/backend/routes/mobile.py app/backend/__init__.py app/backend/tests/test_task_service.py app/backend/tests/test_task_routes.py app/backend/tests/test_api_contracts.py app/backend/tests/test_backend_e2e.py app/backend/tests/test_logging_integration.py app/backend/tests/test_mobile_upload_routes.py app/backend/tests/fixtures/client.py
+git add app/backend/services/task_service.py app/backend/routes/task.py app/backend/routes/mobile.py app/backend/__init__.py app/backend/tests/test_task_service.py app/backend/tests/test_task_routes.py app/backend/tests/test_api_contracts.py app/backend/tests/test_backend_e2e.py app/backend/tests/test_logging_integration.py app/backend/tests/test_mobile_upload_routes.py app/backend/tests/test_export_service.py app/backend/tests/test_orchestrator.py app/backend/tests/test_reextraction_service.py app/backend/tests/test_review_service.py app/backend/tests/fixtures/processing.py app/backend/tests/fixtures/client.py
 git commit -m "功能：创建任务时绑定患者和记录时间"
 ```
 
@@ -470,6 +523,7 @@ git commit -m "功能：创建任务时绑定患者和记录时间"
 - Modify: `app/backend/tests/test_task_service.py`
 - Modify: `app/backend/tests/test_task_routes.py`
 - Modify: `app/backend/tests/test_backend_e2e.py`
+- Modify: `app/backend/tests/test_orchestrator.py`
 
 - [ ] **Step 1: 写元数据修改失败测试**
 
@@ -489,7 +543,7 @@ def test_rebind_patient_preserves_images_and_review_results(task_service, store,
     assert updated["images"] == [{"page_id": "p1"}]
     assert store.read("results/1/review_result.json") == {"task_id": "1", "fields": []}
 
-def test_change_document_type_after_review_restarts_full_processing(task_service, write_task):
+def test_change_document_type_after_review_reuses_ocr_and_reextracts_fields(task_service, write_task):
     write_task(status="review", document_type="copd_admission_record")
     updated = task_service.update_metadata("1", document_type="progress_note")
     assert updated["status"] == "processing"
@@ -501,8 +555,13 @@ def test_change_document_type_after_review_restarts_full_processing(task_service
 - `uploading` 可直接修改患者、`document_type`、日期和时间。
 - `processing` 返回 `INVALID_TASK_TRANSITION`。
 - `review` / `done` 只修改患者或时间时不改变任务状态、图片和审核结果。
-- `review` / `done` 修改 `document_type` 时更新 schema/prompt 元数据并进入完整 `processing`。
-- `metadata_history` 只记录发生变化的字段和 `changed_at`。
+- `review` / `done` 修改 `document_type` 时更新 schema/prompt 元数据并进入 `processing`。
+- 成功 `document_result.json` 存在时，`doc_port.parse` 调用次数为 0，新记录类型的 `field_port.extract` 调用次数为 1。
+- 缺少成功 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`，任务和旧审核结果保持不变。
+- `ReextractJobRegistry.get(task_id)` 非空时，记录类型更正返回 `INVALID_TASK_TRANSITION`，不修改任务或审核结果。
+- `metadata_history` 每项严格等于 `{field, from_value, to_value, changed_at}`，不通过普通任务 API 返回。
+- `GET /api/tasks` 和 `GET /api/tasks/{task_id}` 的响应均不包含 `metadata_history`；服务内部持久化记录仍保留。
+- 记录类型更正前，把旧 `review_result.json` 写入 `results/{task_id}/record_type_change_archive/{change_id}.json`；新审核结果不得读取旧 Schema 字段。
 
 - [ ] **Step 2: 运行失败测试**
 
@@ -544,6 +603,8 @@ if task["status"] == TaskStatus.PROCESSING.value:
 
 document_type_changed = document_type is not None and document_type != task["document_type"]
 if document_type_changed and task["status"] != TaskStatus.UPLOADING.value:
+    self._assert_saved_ocr_available(task_id)
+    self._archive_review_result(task_id)
     task.update(self._document_summary_for(document_type))
     self._append_metadata_history(task, "document_type", previous_type, document_type)
     self._write_task(task)
@@ -551,7 +612,9 @@ if document_type_changed and task["status"] != TaskStatus.UPLOADING.value:
     return self._dispatch_orchestrator(processing_task)
 ```
 
-重新处理必须复用现有 orchestrator，不调用 OCR 文本重抽取接口；失败仍进入现有 `failed`。
+`_archive_review_result` 先写归档副本，再删除当前 `review_result.json`，确保后续审核初始化只读取新候选。归档不通过普通 API 暴露。
+
+重新处理复用现有 orchestrator 和 GPU 队列。`ProcessingOrchestrator` 已会读取成功的 `document_result.json` 并跳过 `doc_port.parse`；本任务补回归测试锁定该行为。图片输入仍经过现有轻量 image port，OCR/文档解析不重跑，字段抽取使用新 `document_type` 的端口。字段抽取失败仍进入现有 `failed`。
 
 - [ ] **Step 4: 增加 PATCH API**
 
@@ -572,6 +635,9 @@ PATCH /api/tasks/{task_id}/metadata
 
 至少一个字段出现，否则返回 `INVALID_REQUEST_PARAMS`。
 
+`TaskService` 增加内部/公开边界：持久化和服务内部可读取 `metadata_history`，`_to_task_summary` 与任务详情公开序列化均显式移除该字段。
+路由在提交 `document_type` 变更前查询 `REEXTRACT_JOB_REGISTRY.get(task_id)`；存在活动重抽取时返回 `INVALID_TASK_TRANSITION`。患者改绑和记录时间修改不触碰字段结果，可继续按任务状态规则处理。
+
 - [ ] **Step 5: 运行聚焦与 E2E 测试**
 
 Run:
@@ -580,7 +646,8 @@ Run:
 conda run -n manzufei_ocr python -m pytest \
   app/backend/tests/test_task_service.py \
   app/backend/tests/test_task_routes.py \
-  app/backend/tests/test_backend_e2e.py -q
+  app/backend/tests/test_backend_e2e.py \
+  app/backend/tests/test_orchestrator.py -q
 ```
 
 Expected: PASS。
@@ -588,7 +655,7 @@ Expected: PASS。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/backend/services/task_service.py app/backend/routes/task.py app/backend/tests/test_task_service.py app/backend/tests/test_task_routes.py app/backend/tests/test_backend_e2e.py
+git add app/backend/services/task_service.py app/backend/routes/task.py app/backend/tests/test_task_service.py app/backend/tests/test_task_routes.py app/backend/tests/test_backend_e2e.py app/backend/tests/test_orchestrator.py
 git commit -m "功能：支持任务归属修改和记录类型重处理"
 ```
 
@@ -740,9 +807,19 @@ def test_deleted_task_behaves_as_task_not_found(client, seeded_patient_task):
     response = client.get(f"/api/tasks/{task_id}")
     assert response.status_code == 404
     assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
+
+def test_deleted_patient_error_matrix(client, seeded_patient_task):
+    patient_id, task_id = seeded_patient_task
+    client.delete(f"/api/patients/{patient_id}?delete_tasks=false")
+    assert client.get(f"/api/patients/{patient_id}").status_code == 404
+    assert client.delete(f"/api/patients/{patient_id}?delete_tasks=false").status_code == 404
+    response = client.patch(f"/api/tasks/{task_id}/metadata", json={"patient_id": patient_id})
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "PATIENT_DELETED"
 ```
 
 测试必须记录任务 JSON、图片路径和结果文件在删除前后都存在。
+增加查询参数解析测试：`?delete_tasks=false` 必须保留任务，`?delete_tasks=true` 才逻辑删除关联任务，其他字符串返回 `INVALID_REQUEST_PARAMS`。不要使用 Flask `type=bool`，显式比较 `"true"` / `"false"`。
 
 - [ ] **Step 2: 写导出失败测试**
 
@@ -796,7 +873,7 @@ DELETE /api/patients/{patient_id}?delete_tasks=true
 ```python
 def delete_task(self, task_id: str) -> dict:
     task = self._read_task(task_id)
-if task["status"] == TaskStatus.PROCESSING.value:
+    if task["status"] == TaskStatus.PROCESSING.value:
         raise AppError(
             ErrorCode.INVALID_TASK_TRANSITION,
             details={"current": task["status"], "target": "deleted"},
@@ -814,6 +891,7 @@ current_app.config["CLEANUP_SERVICE"].cleanup_task(task_id, confirm=True)
 ```
 
 将读取方法签名改为 `_read_task(self, task_id: str, *, include_deleted: bool = False)`。普通调用保持默认值并拒绝已删除任务；内部逻辑删除批处理显式调用 `_read_task(task_id, include_deleted=True)`。
+删除患者时，只对 `task.patient_id` 仍等于目标患者且 `deleted_at` 为空的任务刷新 `patient_snapshot`；已改绑任务不修改。
 
 - [ ] **Step 5: 增加导出元数据**
 
@@ -848,6 +926,14 @@ conda run -n manzufei_ocr python -m pytest \
 Expected: PASS，且测试确认任务文件和结果文件仍存在。
 
 - [ ] **Step 7: 运行后端全量测试**
+
+先明确翻面现有删除测试，不删除测试用例：
+
+- `test_task_service.py::test_delete_task_removes_from_store` 改为断言任务 JSON 仍存在、`deleted_at` 非空、普通 `get_task` 返回 `TASK_NOT_FOUND`。
+- `test_task_service.py::test_delete_task_works_for_non_processing_statuses` 对每个状态断言逻辑删除成功且 JSON 保留。
+- `test_task_routes.py::test_delete_task_removes_from_listing` 保留列表过滤和 404 断言，并增加底层 JSON 仍存在。
+- `test_task_routes.py::test_delete_task_with_cleanup` 改名为 `test_delete_task_does_not_cleanup_files`，断言任务、pages、results 目录均保留。
+- 其余 processing 和 missing-task 删除测试保持原语义。
 
 Run:
 
@@ -936,6 +1022,19 @@ export interface CreateTaskInput {
   record_time?: string | null;
 }
 
+export interface TaskPatientSummary {
+  patient_id: string;
+  name: string;
+  deleted: boolean;
+}
+
+// CreateTaskResult 和 TaskSummary 均增加：
+// patient: TaskPatientSummary
+// document_type: string
+// document_type_label?: string
+// record_date: string
+// record_time?: string | null
+
 export function createTask(input: CreateTaskInput) {
   return apiRequest<CreateTaskResult>('/api/tasks', {
     method: 'POST',
@@ -944,6 +1043,8 @@ export function createTask(input: CreateTaskInput) {
   });
 }
 ```
+
+`latest_record_at` 是该患者未删除任务中最大的记录时间，格式为本地 `YYYY-MM-DDTHH:mm`；仅日期记录使用 `YYYY-MM-DD`。无任务时为 `null`。
 
 - [ ] **Step 4: 移除手机端记录类型选择**
 
@@ -1033,6 +1134,8 @@ type CreateTaskDialogProps = {
 
 `handleCreateSession` 不再直接调用 `createTask()`。点击“新建任务”只打开表单；表单提交成功后设置 `currentTask` 并切换到现有 `CaptureQrDialog`。
 
+`currentTask` 继续使用扩展后的 `CreateTaskResult | null`；同步更新 `tests/fixtures/tasks.ts` 的 `mockCreateTask` 默认结果和 `App.test.tsx` 中所有创建任务 mock，使其包含患者、记录类型和记录时间。
+
 - [ ] **Step 5: 运行测试**
 
 Run:
@@ -1099,7 +1202,7 @@ Expected: FAIL，路由和页面尚不存在。
 patients: { id: 'patients', label: '患者管理', path: '/patients' }
 ```
 
-页面使用 `WorkstationLayout activeRouteId="patients"`，搜索输入防止每次击键产生并发错序：使用显式“搜索”按钮或 250ms debounce + 请求序号。首版优先显式按钮，保持简单。
+页面使用 `WorkstationLayout activeRouteId="patients"`，采用显式“搜索”按钮。请求期间禁用搜索按钮，避免快速连击产生响应错序；组件测试使用延迟 MSW 响应断言第二次点击不会发出并发请求。
 
 - [ ] **Step 4: 注册 App 路由和导航**
 
@@ -1238,6 +1341,8 @@ git commit -m "功能：新增患者记录时间轴和字段阅览"
 改绑患者
 ```
 
+在 `TaskList.tsx` 增加一个合并列“患者与记录”，同一单元格显示患者姓名/编号、记录类型和记录时间；患者已删除时在该列显示状态标记。不要拆成多个窄列，避免现有桌面表格横向膨胀。
+
 覆盖：
 
 - 改绑到现有患者。
@@ -1364,6 +1469,8 @@ def test_prepare_demo_data_keeps_one_visible_task_and_binds_test_patient(tmp_pat
 - 其他任务仅设置 `deleted_at`，文件和结果目录保留。
 - 保留任务补充有效 `record_date`、`document_type`。
 - 重复运行脚本幂等，不创建多个“测试用例”患者。
+- `--keep-task-id` 不存在时进程返回非零，目录内文件内容和 mtime 均不变化。
+- 任务 JSON 中即使包含病历原文、手机号或身份证号，stdout/stderr 也不包含这些内容。
 
 - [ ] **Step 2: 运行失败测试**
 
@@ -1391,6 +1498,7 @@ python scripts/maintenance/prepare_patient_demo_data.py \
 - 必须显式传 `--storage-dir` 和 `--keep-task-id`。
 - 找不到保留任务时退出非零，不修改数据。
 - 默认 dry-run；只有 `--apply` 才写入。
+- 启动时输出 `DEV TOOL ONLY`，`--apply` 还必须同时提供 `--confirm-dev-data`。
 - 输出只显示任务 ID、患者 ID 和计数，不输出患者病历内容。
 
 - [ ] **Step 4: 运行脚本测试**
@@ -1415,7 +1523,11 @@ E2E 覆盖：
 → 患者详情显示该任务及记录时间
 → review fixture 任务可展开字段摘要
 → 进入审核页
+→ 仅删除患者
+→ 任务管理仍显示该任务并标记“患者已删除”
 ```
+
+E2E 只覆盖上述主闭环和最关键删除可见性。记录类型更正失败、逻辑删除文件保留、导出元数据、日期边界、错误码矩阵由后端 API/服务测试和前端组件测试覆盖，不重复扩大浏览器测试。
 
 Run:
 
@@ -1423,7 +1535,7 @@ Run:
 npm --prefix app/frontend run test:e2e -- patient-records.spec.ts
 ```
 
-Expected: PASS。若仓库 E2E runner 不支持文件参数，则运行完整 `npm --prefix app/frontend run test:e2e`。
+Expected: PASS。
 
 - [ ] **Step 6: 执行最终全量验证**
 
@@ -1435,6 +1547,7 @@ npm --prefix app/frontend run test
 npm --prefix app/frontend run build
 npm --prefix app/frontend run test:e2e
 git diff --check
+! rg -n "console\\.(log|debug|info|warn|error)" app/frontend/src
 ```
 
 Expected:
@@ -1444,6 +1557,7 @@ Expected:
 - TypeScript/Vite 构建成功。
 - Playwright E2E 全部 PASS。
 - `git diff --check` 无输出。
+- 前端业务源码没有 `console.*` 调用，避免输出患者姓名、OCR 原文或字段值。
 
 - [ ] **Step 7: 仅在用户确认目标开发数据目录后执行整理**
 
@@ -1467,6 +1581,7 @@ conda run -n manzufei_ocr python scripts/maintenance/prepare_patient_demo_data.p
   --storage-dir "$STORAGE_DIR" \
   --keep-task-id "$KEEP_TASK_ID" \
   --record-date 2026-06-07 \
+  --confirm-dev-data \
   --apply
 ```
 
@@ -1491,7 +1606,7 @@ git commit -m "测试：补充患者中心验收和演示数据整理"
 - [ ] 手机上传页不能修改记录类型。
 - [ ] 患者详情不复制审核字段契约，只按需调用审核 API。
 - [ ] `processing` 期间不能改绑或修改记录元数据。
-- [ ] 处理后修改记录类型会完整重新处理。
+- [ ] 处理后修改记录类型复用成功 OCR 文本，只重新执行新记录类型的字段抽取。
 - [ ] 删除任务和患者不会物理删除文件。
 - [ ] 已删除患者的保留任务可以改绑和导出，导出使用姓名快照并标记删除。
 - [ ] 已删除任务普通 API 返回 `TASK_NOT_FOUND`。
