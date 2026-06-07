@@ -64,7 +64,7 @@ class TestYamlLoading:
     def test_paths_normalized_to_absolute(self, tmp_path):
         import yaml
 
-        default_yaml = {"paths": {"data_dir": "./my_data"}}
+        default_yaml = {"paths": {"data_dir": str(tmp_path / "my_data")}}
         with open(tmp_path / "default.yaml", "w") as f:
             yaml.dump(default_yaml, f)
 
@@ -128,7 +128,7 @@ class TestDeepMerge:
         with open(tmp_path / "default.yaml", "w") as f:
             yaml.dump(default_yaml, f)
 
-        local_yaml = {"paths": {"data_dir": "./my_data"}}
+        local_yaml = {"paths": {"data_dir": str(tmp_path / "my_data")}}
         with open(tmp_path / "local.yaml", "w") as f:
             yaml.dump(local_yaml, f)
 
