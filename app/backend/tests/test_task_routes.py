@@ -478,6 +478,98 @@ def test_cancel_reextract_route_aborts_reextract_between_llm_batches(client, app
     assert store.list_json("results/1/reextract_runs") == []
 
 
+# --- 任务元数据修改 (Task 4: PATCH /api/tasks/<task_id>/metadata) ---
+
+
+def _create_test_patient(client, name="测试用例"):
+    response = client.post("/api/patients", json={"name": name})
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["data"]
+
+
+def test_patch_metadata_route_requires_at_least_one_field(client, app):
+    patient = _create_test_patient(client)
+    write_task(app, task_id="1", status="review", patient_id=patient["patient_id"])
+
+    response = client.patch("/api/tasks/1/metadata", json={})
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_REQUEST_PARAMS"
+
+
+def test_patch_metadata_route_rebinds_patient(client, app):
+    patient_a = _create_test_patient(client, name="测试用例一")
+    patient_b = _create_test_patient(client, name="测试用例二")
+    write_task(app, task_id="1", status="review", patient_id=patient_a["patient_id"])
+
+    response = client.patch(
+        "/api/tasks/1/metadata",
+        json={"patient_id": patient_b["patient_id"]},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["patient_id"] == patient_b["patient_id"]
+    assert "metadata_history" not in data
+
+
+def test_patch_metadata_route_rejects_processing_task(client, app):
+    patient = _create_test_patient(client)
+    write_task(app, task_id="1", status="processing", patient_id=patient["patient_id"])
+
+    response = client.patch(
+        "/api/tasks/1/metadata",
+        json={"patient_id": patient["patient_id"]},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+
+def test_patch_metadata_route_rejects_deleted_patient(client, app):
+    patient = _create_test_patient(client)
+    deleted_patient = _create_test_patient(client, name="待删除")
+    app.config["PATIENT_SERVICE"].mark_deleted(deleted_patient["patient_id"])
+    write_task(app, task_id="1", status="review", patient_id=patient["patient_id"])
+
+    response = client.patch(
+        "/api/tasks/1/metadata",
+        json={"patient_id": deleted_patient["patient_id"]},
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "PATIENT_DELETED"
+
+
+def test_patch_metadata_route_blocks_document_type_change_with_active_reextract(client, app):
+    patient = _create_test_patient(client)
+    other_patient = _create_test_patient(client, name="改绑参考")
+    write_task(app, task_id="1", status="review", patient_id=patient["patient_id"])
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    store.write(
+        "results/1/document_result.json",
+        {
+            "task_id": "1",
+            "stage": "document_parsing",
+            "status": "success",
+            "merged_text": "x",
+            "pages": [{"page_id": "p1", "page_no": 1, "status": "success", "text": "x"}],
+        },
+    )
+    app.config["REEXTRACT_JOB_REGISTRY"].register("1")
+    try:
+        # 当存在活动重抽取时,仅改绑患者(不修改 document_type)仍允许
+        response = client.patch(
+            "/api/tasks/1/metadata",
+            json={"patient_id": other_patient["patient_id"]},
+        )
+    finally:
+        app.config["REEXTRACT_JOB_REGISTRY"].unregister("1")
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["patient_id"] == other_patient["patient_id"]
+
+
 def test_cancel_reextract_unregisters_after_normal_completion(client, app):
     """正常完成的 reextract 之后,registry 应当清空任务,后续 cancel 返回 400。"""
     write_task(app, task_id="1", status="review")

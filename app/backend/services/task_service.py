@@ -165,6 +165,197 @@ class TaskService:
         self._store.delete(f"tasks/{task_id}.json")
         return task
 
+    def update_metadata(
+        self,
+        task_id: str,
+        *,
+        patient_id: str | None = None,
+        document_type: str | None = None,
+        record_date: str | None = None,
+        record_time: str | None = None,
+        reextract_registry=None,
+    ) -> dict:
+        """统一更新任务归属元数据。
+
+        - processing 任务全部拒绝(INVALID_TASK_TRANSITION)
+        - uploading 任务允许修改 patient/document_type/record_date/record_time,
+          不触发重新处理
+        - review/done/failed 修改 document_type 时需复用已保存 OCR 文本,
+          归档旧 review 并重新进入 processing 跑字段抽取
+        - 仅修改 patient/record_date/record_time 时,任务状态不变,
+          图片和审核结果不动
+        """
+        provided_fields = {
+            key: value
+            for key, value in {
+                "patient_id": patient_id,
+                "document_type": document_type,
+                "record_date": record_date,
+                "record_time": record_time,
+            }.items()
+            if value is not None
+        }
+        if not provided_fields:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST_PARAMS,
+                message="至少提供一项可更新字段",
+            )
+
+        task = self._read_task(task_id)
+        if task["status"] == TaskStatus.PROCESSING.value:
+            raise AppError(
+                ErrorCode.INVALID_TASK_TRANSITION,
+                details={"current": task["status"], "target": "metadata_change"},
+            )
+
+        if record_date is not None:
+            _parse_record_date(record_date)
+        if "record_time" in provided_fields:
+            _parse_record_time(record_time)
+
+        new_patient_snapshot = None
+        if patient_id is not None and patient_id != task.get("patient_id"):
+            if self._patient_service is None:
+                raise AppError(
+                    ErrorCode.INVALID_REQUEST_PARAMS,
+                    message="患者服务未配置",
+                )
+            patient = self._patient_service.get_bindable(patient_id)
+            new_patient_snapshot = {
+                "patient_id": patient["patient_id"],
+                "name": patient.get("name"),
+            }
+
+        document_type_changed = (
+            document_type is not None
+            and document_type != task.get("document_type")
+        )
+
+        # 计划要求:document_type 修改且任务非 uploading 时,先校验有可用 OCR
+        # 文本并阻断活动的重抽取任务。
+        triggers_reprocess = document_type_changed and task["status"] != TaskStatus.UPLOADING.value
+        if triggers_reprocess:
+            if reextract_registry is not None and reextract_registry.get(task_id) is not None:
+                raise AppError(
+                    ErrorCode.INVALID_TASK_TRANSITION,
+                    details={
+                        "current": task["status"],
+                        "target": "document_type_change",
+                        "reason": "reextract_in_flight",
+                    },
+                )
+            self._assert_saved_ocr_available(task_id)
+
+        now = self._now()
+        history_entries: list[dict] = []
+
+        if patient_id is not None and new_patient_snapshot is not None:
+            history_entries.append(
+                self._build_history_entry(
+                    "patient_id",
+                    task.get("patient_id"),
+                    patient_id,
+                    now,
+                )
+            )
+            task["patient_id"] = patient_id
+            task["patient_snapshot"] = new_patient_snapshot
+
+        if record_date is not None and record_date != task.get("record_date"):
+            history_entries.append(
+                self._build_history_entry(
+                    "record_date",
+                    task.get("record_date"),
+                    record_date,
+                    now,
+                )
+            )
+            task["record_date"] = record_date
+
+        if "record_time" in provided_fields and record_time != task.get("record_time"):
+            history_entries.append(
+                self._build_history_entry(
+                    "record_time",
+                    task.get("record_time"),
+                    record_time,
+                    now,
+                )
+            )
+            task["record_time"] = record_time
+
+        if document_type_changed:
+            previous_type = task.get("document_type")
+            document_summary = self._document_summary_for(document_type)
+            task.update(document_summary)
+            history_entries.append(
+                self._build_history_entry(
+                    "document_type",
+                    previous_type,
+                    document_type,
+                    now,
+                )
+            )
+
+        task.setdefault("metadata_history", [])
+        task["metadata_history"].extend(history_entries)
+        task["updated_at"] = now
+
+        if not triggers_reprocess:
+            self._write_task(task)
+            return self._normalize_task_public(task)
+
+        # 触发重新处理:归档旧 review,重新进入 processing,复用 OCR 文本只跑字段抽取
+        self._archive_review_result(task_id, now)
+        self._write_task(task)
+        processing_task = self._start_processing(task_id, "更正记录类型后重新处理")
+        return self._dispatch_orchestrator(processing_task)
+
+    def list_for_patient(self, patient_id: str) -> list[dict]:
+        """返回归属指定患者的未删除任务摘要;不受空 uploading 任务隐藏规则影响。"""
+        tasks = [self._normalize_task(task) for task in self._store.list_json("tasks")]
+        tasks = [
+            task
+            for task in tasks
+            if task.get("patient_id") == patient_id and not task.get("deleted_at")
+        ]
+        return [self._to_task_summary(task) for task in sorted(tasks, key=lambda item: item["task_id"])]
+
+    def _assert_saved_ocr_available(self, task_id: str) -> None:
+        from .algorithm_ports.results import AlgorithmResultStore
+
+        result_store = AlgorithmResultStore(self._store)
+        if result_store.read_success_document_result(task_id) is None:
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message="任务缺少已识别 OCR 文本，无法仅重新抽取字段",
+                details={"reason": "ocr_text_missing"},
+            )
+
+    def _archive_review_result(self, task_id: str, now: str) -> None:
+        existing = self._store.read(f"results/{task_id}/review_result.json")
+        if existing is None:
+            return
+        archive_id = now.replace(":", "").replace("-", "").replace(".", "")
+        self._store.write(
+            f"results/{task_id}/record_type_change_archive/{archive_id}.json",
+            existing,
+        )
+        self._store.delete(f"results/{task_id}/review_result.json")
+
+    def _build_history_entry(self, field: str, from_value, to_value, changed_at: str) -> dict:
+        return {
+            "field": field,
+            "from_value": from_value,
+            "to_value": to_value,
+            "changed_at": changed_at,
+        }
+
+    def _normalize_task_public(self, task: dict) -> dict:
+        """对外公开的任务表示:剥离 metadata_history 等后台维护字段。"""
+        normalized = self._normalize_task(task)
+        normalized.pop("metadata_history", None)
+        return normalized
+
     def rename_task(self, task_id: str, display_name: str) -> dict:
         task = self._read_task(task_id)
         task["display_name"] = display_name
@@ -198,7 +389,9 @@ class TaskService:
 
     def get_task(self, task_id: str) -> dict:
         task = self._read_task(task_id)
-        return self._normalize_task(task)
+        public = self._normalize_task(task)
+        public.pop("metadata_history", None)
+        return public
 
     def process(self, task_id: str, schema: dict | None = None) -> dict:
         task = self._start_processing(task_id, "触发任务处理")

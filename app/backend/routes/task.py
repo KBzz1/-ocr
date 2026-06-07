@@ -116,6 +116,27 @@ def rename_task(task_id):
     return success(data=_get_task_service().rename_task(task_id, display_name))
 
 
+@task_bp.route("/api/tasks/<task_id>/metadata", methods=["PATCH"])
+def update_task_metadata(task_id):
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="请求体必须为 JSON 对象")
+    allowed = {"patient_id", "document_type", "record_date", "record_time"}
+    provided = {key: body[key] for key in allowed if key in body}
+    if not provided:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST_PARAMS,
+            message="至少提供一项可更新字段",
+        )
+    return success(
+        data=_get_task_service().update_metadata(
+            task_id,
+            reextract_registry=_get_reextract_job_registry(),
+            **provided,
+        )
+    )
+
+
 @task_bp.route("/api/tasks/<task_id>/images/<page_id>", methods=["GET"])
 def serve_task_image(task_id, page_id):
     task = _get_task_service().get_task(task_id)
