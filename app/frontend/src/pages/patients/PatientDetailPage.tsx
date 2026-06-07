@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import {
-  deletePatient,
   getPatientRecords,
   updatePatient,
   type PatientDetailResponse,
@@ -12,9 +11,10 @@ import {
 import { getReviewResult, type ReviewField, type ReviewResult } from '../../api/review';
 import { createTask, type CreateTaskInput, type CreateTaskResult, type TaskSummary } from '../../api/tasks';
 import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
-import { buildPatientPath, buildReviewPath, PATIENTS_PATH_PREFIX } from '../../app/routes';
+import { buildReviewPath, PATIENTS_PATH_PREFIX } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { CreateTaskDialog } from '../../components/workstation/CreateTaskDialog';
+import { DeletePatientDialog } from '../../components/patients/DeletePatientDialog';
 import { FieldList } from '../../components/review/FieldList';
 import './patients.css';
 
@@ -56,7 +56,7 @@ export function PatientDetailPage() {
   const [renameDraft, setRenameDraft] = useState('');
   const [isRenamingSubmitting, setIsRenamingSubmitting] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [createDialog, setCreateDialog] = useState<CreateDialogState>({
     isOpen: false,
@@ -173,21 +173,19 @@ export function PatientDetailPage() {
   }
 
   async function handleDeletePatient() {
-    if (!patient || isDeleting) return;
-    if (!window.confirm(`确认逻辑删除患者「${patient.name}」？\n将仅删除患者档案,关联任务保留。`)) {
-      return;
-    }
-    setIsDeleting(true);
+    if (!patient) return;
     setDeleteError(null);
-    try {
-      await deletePatient(patientId, false);
-      window.history.pushState({}, '', PATIENTS_PATH_PREFIX);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    } catch (error) {
-      setDeleteError(getErrorMessage(error, '删除患者失败，请重试'));
-    } finally {
-      setIsDeleting(false);
-    }
+    setIsDeleteDialogOpen(true);
+  }
+
+  function handleCloseDeleteDialog() {
+    if (isDeleteDialogOpen) setIsDeleteDialogOpen(false);
+  }
+
+  function handleDeletedPatient() {
+    setIsDeleteDialogOpen(false);
+    window.history.pushState({}, '', PATIENTS_PATH_PREFIX);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   function handleOpenCreateDialog() {
@@ -325,9 +323,8 @@ export function PatientDetailPage() {
               type="button"
               className="patient-detail-page__action patient-detail-page__action--danger"
               onClick={() => void handleDeletePatient()}
-              disabled={isDeleting}
             >
-              {isDeleting ? '删除中' : '删除患者'}
+              删除患者
             </button>
           </div>
         </header>
@@ -445,6 +442,13 @@ export function PatientDetailPage() {
         initialPatient={createDialog.initialPatient}
         onClose={handleCloseCreateDialog}
         onSubmit={handleSubmitCreate}
+      />
+      <DeletePatientDialog
+        isOpen={isDeleteDialogOpen && Boolean(patient)}
+        patientId={patient?.patient_id ?? patientId}
+        patientName={patient?.name ?? '该患者'}
+        onClose={handleCloseDeleteDialog}
+        onDeleted={handleDeletedPatient}
       />
     </WorkstationLayout>
   );

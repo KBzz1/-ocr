@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { exportTasksBatchZip } from '../../api/export';
-import { deleteTask, getTasks, type TaskStatus, type TaskSummary } from '../../api/tasks';
+import { deleteTask, getTasks, updateTaskMetadata, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
 import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
@@ -67,6 +67,8 @@ export function TasksPage() {
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
+  const [rebindingTaskId, setRebindingTaskId] = useState<string | null>(null);
+  const [rebindTarget, setRebindTarget] = useState<TaskSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrTask, setQrTask] = useState<TaskUploadSummary | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -147,6 +149,33 @@ export function TasksPage() {
       setError(getErrorMessage(deleteError, '删除任务失败，请稍后重试'));
     } finally {
       setDeletingTaskId(null);
+    }
+  }
+
+  function handleRebindPatient(task: TaskSummary) {
+    setError(null);
+    setRebindTarget(task);
+  }
+
+  function handleCancelRebind() {
+    setRebindTarget(null);
+    setRebindingTaskId(null);
+  }
+
+  async function handleConfirmRebind(task: TaskSummary, patientId: string) {
+    setRebindingTaskId(task.task_id);
+    try {
+      const updated = await updateTaskMetadata(task.task_id, { patient_id: patientId });
+      setTasks((currentTasks) =>
+        currentTasks.map((t) => (t.task_id === task.task_id ? { ...t, ...updated } : t))
+      );
+      setError(null);
+      setRebindTarget(null);
+    } catch (rebindError: unknown) {
+      // 错误交给 RebindPatientDialog 内部展示,这里不写全局错误条
+      throw rebindError;
+    } finally {
+      setRebindingTaskId(null);
     }
   }
 
@@ -245,6 +274,8 @@ export function TasksPage() {
             retryingTaskId={retryingTaskId}
             deletingTaskId={deletingTaskId}
             deleteTarget={deleteTarget}
+            rebindingTaskId={rebindingTaskId}
+            rebindTarget={rebindTarget}
             selectedTaskIds={selectedTaskIds}
             onToggleSelected={handleToggleSelected}
             tasks={tasks}
@@ -253,6 +284,9 @@ export function TasksPage() {
             onDeleteTask={handleDeleteTask}
             onCancelDelete={handleCancelDelete}
             onConfirmDelete={handleConfirmDelete}
+            onRebindPatient={handleRebindPatient}
+            onCancelRebind={handleCancelRebind}
+            onConfirmRebind={handleConfirmRebind}
             onViewUploadQr={(task) => setQrTask(toTaskUploadSummary(task))}
           />
         </div>

@@ -2,6 +2,7 @@ import type { TaskStatus, TaskSummary } from '../../api/tasks';
 import { cancelTaskProcessing, retryTaskProcessing } from '../../api/tasks';
 import { buildReviewPath, buildTaskExportPath } from '../../app/routes';
 import { IconButton } from '../common/IconButton';
+import { RebindPatientDialog } from './RebindPatientDialog';
 import { taskStatusMeta } from '../../styles/status';
 
 const statusFilters: Array<{ label: string; value: TaskStatus | 'all' }> = [
@@ -24,6 +25,8 @@ type TaskListProps = {
   retryingTaskId: string | null;
   deletingTaskId: string | null;
   deleteTarget: TaskSummary | null;
+  rebindingTaskId: string | null;
+  rebindTarget: TaskSummary | null;
   selectedTaskIds: ReadonlySet<string>;
   onToggleSelected: (taskId: string) => void;
   onFilterChange: (filter: TaskStatus | 'all') => void;
@@ -31,6 +34,9 @@ type TaskListProps = {
   onDeleteTask: (task: TaskSummary) => void;
   onCancelDelete: () => void;
   onConfirmDelete: (task: TaskSummary) => void;
+  onRebindPatient: (task: TaskSummary) => void;
+  onCancelRebind: () => void;
+  onConfirmRebind: (task: TaskSummary, patientId: string) => Promise<void> | void;
   onViewUploadQr?: (task: TaskSummary) => void;
 };
 
@@ -44,6 +50,15 @@ function formatDateTime(value: string) {
   const hour = String(date.getHours()).padStart(2, '0');
   const minute = String(date.getMinutes()).padStart(2, '0');
   return `${year}/${month}/${day} ${hour}:${minute}`;
+}
+
+function formatRecordDateLabel(recordDate?: string | null, recordTime?: string | null) {
+  if (!recordDate) return '记录时间未知';
+  return recordTime ? `${recordDate} ${recordTime}` : recordDate;
+}
+
+function getRecordTypeLabel(task: TaskSummary) {
+  return task.document_type_label || task.document_type || '未指定记录类型';
 }
 
 function getReviewLabel(task: TaskSummary) {
@@ -88,6 +103,8 @@ export function TaskList({
   retryingTaskId,
   deletingTaskId,
   deleteTarget,
+  rebindingTaskId,
+  rebindTarget,
   selectedTaskIds,
   onToggleSelected,
   onFilterChange,
@@ -95,6 +112,9 @@ export function TaskList({
   onDeleteTask,
   onCancelDelete,
   onConfirmDelete,
+  onRebindPatient,
+  onCancelRebind,
+  onConfirmRebind,
   onViewUploadQr
 }: TaskListProps) {
   const visibleTasks =
@@ -142,6 +162,7 @@ export function TaskList({
               <tr>
                 <th className="task-list-table__select-col">批量导出</th>
                 <th>任务名称</th>
+                <th>患者与记录</th>
                 <th>创建时间</th>
                 <th>页数</th>
                 <th>处理状态</th>
@@ -162,6 +183,12 @@ export function TaskList({
                 const checkboxLabel = isSelectable
                   ? `批量导出选择 ${task.display_name ?? task.task_id}`
                   : `批量导出不可用 ${task.display_name ?? task.task_id},仅待审核或已完成可导出`;
+                const patient = task.patient;
+                const patientDeleted = patient?.deleted === true;
+                const canRebind = task.status !== 'processing';
+                const rebindTitle = canRebind
+                  ? '改绑患者'
+                  : '任务处理中,不允许改绑患者;请等待处理完成或先取消处理';
 
                 return (
                   <tr key={task.task_id} className={isSelected ? 'task-list-row task-list-row--selected' : 'task-list-row'}>
@@ -176,6 +203,23 @@ export function TaskList({
                       />
                     </td>
                     <td className="task-list-table__id">{task.display_name ?? task.task_id}</td>
+                    <td className="task-list-patient-cell" data-testid={`task-list-patient-${task.task_id}`}>
+                      <div className="task-list-patient-line">
+                        <span className="task-list-patient-name">{patient?.name ?? '未指定患者'}</span>
+                        <span className="task-list-patient-id">{patient?.patient_id ?? '—'}</span>
+                        {patientDeleted ? (
+                          <span className="task-list-patient-deleted" data-testid={`task-list-patient-deleted-${task.task_id}`}>
+                            患者已删除
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="task-list-patient-meta">
+                        <span className="task-list-patient-record-type">{getRecordTypeLabel(task)}</span>
+                        <span className="task-list-patient-record-time">
+                          {formatRecordDateLabel(task.record_date, task.record_time)}
+                        </span>
+                      </div>
+                    </td>
                     <td>{formatDateTime(task.created_at)}</td>
                     <td>{task.page_count} 页</td>
                     <td className="task-status-cell-td">
@@ -261,6 +305,15 @@ export function TaskList({
                             {isRetrying ? '提交中' : '重新处理'}
                           </button>
                         ) : null}
+                        <button
+                          className="task-list-action task-list-action--rebind"
+                          disabled={!canRebind}
+                          type="button"
+                          title={rebindTitle}
+                          onClick={() => onRebindPatient(task)}
+                        >
+                          改绑患者
+                        </button>
                         {task.status !== 'processing' ? (
                           <IconButton
                             label={isDeleting ? '删除中' : '删除'}
@@ -282,6 +335,18 @@ export function TaskList({
           </table>
         </div>
       )}
+
+      {rebindTarget ? (
+        <RebindPatientDialog
+          isOpen={Boolean(rebindTarget)}
+          task={rebindTarget}
+          isSubmitting={rebindingTaskId === rebindTarget.task_id}
+          onClose={onCancelRebind}
+          onSubmit={async (patientId) => {
+            await onConfirmRebind(rebindTarget, patientId);
+          }}
+        />
+      ) : null}
 
       {deleteTarget ? (
         <div className="confirm-dialog-backdrop" role="presentation" onMouseDown={onCancelDelete}>

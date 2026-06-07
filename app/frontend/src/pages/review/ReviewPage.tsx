@@ -633,6 +633,41 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
 
           <div className="review-task-metrics" aria-label="审核摘要">
             <div>
+              <span>患者</span>
+              <strong>
+                {detail?.patient ? (
+                  detail.patient.deleted ? (
+                    <span className="review-task-card__patient-deleted" data-testid="review-patient-deleted-marker">
+                      患者已删除
+                    </span>
+                  ) : (
+                    <>
+                      {detail.patient.name}
+                      <span className="review-task-card__patient-id">({detail.patient.patient_id})</span>
+                    </>
+                  )
+                ) : (
+                  '未指定'
+                )}
+              </strong>
+            </div>
+            <div>
+              <span>记录类型</span>
+              <strong>
+                {detail?.document_type_label || detail?.document_type || '未指定记录类型'}
+              </strong>
+            </div>
+            <div>
+              <span>记录时间</span>
+              <strong>
+                {detail?.record_date
+                  ? detail.record_time
+                    ? `${detail.record_date} ${detail.record_time}`
+                    : detail.record_date
+                  : '未填写'}
+              </strong>
+            </div>
+            <div>
               <span>创建时间</span>
               <strong>{formatDateTime(detail?.created_at)}</strong>
             </div>

@@ -1,4 +1,4 @@
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +28,11 @@ function mockReviewRoutes() {
             confirmed_count: 0,
             total_count: 2
           },
+          patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+          document_type: 'copd_admission_record',
+          document_type_label: '入院记录',
+          record_date: '2026-06-07',
+          record_time: '09:30',
           status_history: [
             { status: 'uploading', changed_at: '2026-05-19T10:00:00+08:00', message: '创建上传任务' },
             { status: 'processing', changed_at: '2026-05-19T10:01:00+08:00', message: '开始处理' },
@@ -836,6 +841,62 @@ describe('ReviewPage', () => {
     expect(screen.queryByText(/evidence_recovered_from_value/)).toBeNull();
     expect(screen.queryByLabelText(/已用 original_value 恢复/)).toBeNull();
     expect(screen.queryByLabelText(/重点核验.*evidence_recovered_from_value/)).toBeNull();
+  });
+
+  it('shows patient name/id, record type, and record date/time in the task card header', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+
+    const summary = await screen.findByLabelText('任务信息');
+    expect(within(summary).getByText('测试用例')).toBeTruthy();
+    expect(within(summary).getByText('(P-A1B2C3D4)')).toBeTruthy();
+    expect(within(summary).getByText('入院记录')).toBeTruthy();
+    // record_date + record_time 拼接
+    expect(within(summary).getByText('2026-06-07 09:30')).toBeTruthy();
+  });
+
+  it('renders 患者已删除 marker when the patient of a review task is deleted', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            display_name: 'task_001',
+            status: 'review',
+            created_at: '2026-05-19T10:00:00+08:00',
+            updated_at: '2026-05-19T10:03:00+08:00',
+            page_count: 2,
+            processing_summary: { stage: 'done', status: 'completed', label: '处理完成', progress_percent: 100 },
+            review_summary: { confirmed_count: 0, total_count: 1 },
+            patient: { patient_id: 'P-E5F6A7B8', name: '已删除患者', deleted: true },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-07',
+            record_time: '09:30'
+          }
+        })
+      ),
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '',
+              pages: [],
+              fields: []
+            }
+          }
+        })
+      ),
+      http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: [] } }))
+    );
+    render(<ReviewPage taskId="task_001" />);
+
+    const summary = await screen.findByLabelText('任务信息');
+    expect(within(summary).getByText('患者已删除')).toBeTruthy();
   });
 });
 

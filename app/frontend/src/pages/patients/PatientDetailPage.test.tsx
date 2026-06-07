@@ -411,3 +411,115 @@ describe('PatientDetailPage', () => {
     expect(await screen.findByText('新名字')).toBeTruthy();
   });
 });
+
+describe('PatientDetailPage delete dialog', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', `/patients/${patientId}`);
+  });
+
+  it('opens a delete dialog with two options when 删除患者 is clicked', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '删除患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '删除患者' });
+    expect(within(dialog).getByRole('button', { name: '仅删除患者' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeTruthy();
+  });
+
+  it('calls deletePatient(patientId, false) when 仅删除患者 is chosen and navigates back', async () => {
+    const user = userEvent.setup();
+    const deleteSpy = vi.fn();
+    server.use(
+      http.delete(`*/api/patients/${patientId}*`, ({ request }) => {
+        const url = new URL(request.url);
+        deleteSpy(url.searchParams.get('delete_tasks'));
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: patientId,
+            deleted: true,
+            tasks_deleted: false,
+            deleted_task_count: 0
+          }
+        });
+      })
+    );
+    server.use(...mockPatientDetail());
+    render(<PatientDetailPage />);
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '删除患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '删除患者' });
+    await user.click(within(dialog).getByRole('button', { name: '仅删除患者' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith('false'));
+    expect(window.location.pathname).toMatch(/^\/patients\/?$/);
+  });
+
+  it('calls deletePatient(patientId, true) when 同时删除患者及关联任务 is chosen', async () => {
+    const user = userEvent.setup();
+    const deleteSpy = vi.fn();
+    server.use(
+      http.delete(`*/api/patients/${patientId}*`, ({ request }) => {
+        const url = new URL(request.url);
+        deleteSpy(url.searchParams.get('delete_tasks'));
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: patientId,
+            deleted: true,
+            tasks_deleted: true,
+            deleted_task_count: 4
+          }
+        });
+      })
+    );
+    server.use(...mockPatientDetail());
+    render(<PatientDetailPage />);
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '删除患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '删除患者' });
+    await user.click(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith('true'));
+    expect(window.location.pathname).toMatch(/^\/patients\/?$/);
+  });
+
+  it('keeps patient data on screen and shows error when deletePatient rejects', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.delete(`*/api/patients/${patientId}*`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'INVALID_TASK_TRANSITION',
+              message: '存在处理中的任务,无法同时删除',
+              details: {}
+            }
+          },
+          { status: 400 }
+        )
+      )
+    );
+    server.use(...mockPatientDetail());
+    render(<PatientDetailPage />);
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '删除患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '删除患者' });
+    await user.click(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' }));
+
+    expect(await screen.findByText('存在处理中的任务,无法同时删除')).toBeTruthy();
+    // 患者姓名仍在(对话框说明里也出现,所以用 getAllByText 验证至少一处仍在)
+    expect(screen.getAllByText('测试用例').length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe(`/patients/${patientId}`);
+  });
+});

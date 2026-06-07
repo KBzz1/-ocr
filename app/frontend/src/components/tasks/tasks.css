@@ -426,3 +426,232 @@
 .task-list-row--selected > td {
   background: #eff6ff;
 }
+
+/* Task 11: 患者与记录合并列 */
+.task-list-patient-cell {
+  min-width: 220px;
+  display: grid;
+  gap: 4px;
+}
+
+.task-list-patient-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.task-list-patient-name {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.task-list-patient-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #475569;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.task-list-patient-deleted {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.task-list-patient-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.task-list-patient-record-type {
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 8px;
+}
+
+.task-list-patient-record-time {
+  color: #475569;
+  font-weight: 700;
+}
+
+.task-list-action--rebind {
+  width: 88px;
+  border-color: #cbd5e1;
+  color: #1d4ed8;
+  background: #ffffff;
+}
+
+.task-list-action--rebind:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+/* Rebind dialog */
+.rebind-patient-dialog {
+  width: min(560px, 100%);
+}
+
+.rebind-patient-dialog__subtitle {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rebind-patient-dialog__body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 28px 8px;
+}
+
+.rebind-patient-dialog__notice {
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rebind-patient-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.rebind-patient-field input {
+  min-height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.rebind-patient-field input:focus {
+  border-color: #2563eb;
+  outline: 3px solid rgba(37, 99, 235, 0.14);
+}
+
+.rebind-patient-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rebind-patient-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.rebind-patient-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.rebind-patient-meta {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.rebind-patient-meta strong {
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.rebind-patient-empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.rebind-patient-selected {
+  margin: 0;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Delete patient dialog */
+.delete-patient-dialog {
+  width: min(520px, 100%);
+}
+
+.delete-patient-dialog__body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 28px 8px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.delete-patient-dialog__warning {
+  margin: 0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.delete-patient-dialog__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.delete-patient-dialog__options li {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.delete-patient-dialog__options strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.delete-patient-dialog__options span {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+}
+

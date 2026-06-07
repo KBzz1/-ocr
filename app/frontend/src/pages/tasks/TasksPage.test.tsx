@@ -140,8 +140,8 @@ describe('MVP task list and retry', () => {
 
     const table = await screen.findByRole('table', { name: '任务列表' });
     const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
-    const statusCell = processingRow.children[4] as HTMLElement;
-    const actionsCell = processingRow.children[7] as HTMLElement;
+    const statusCell = processingRow.querySelector('td.task-status-cell-td') as HTMLElement;
+    const actionsCell = processingRow.querySelector('td:last-child') as HTMLElement;
 
     expect(statusCell.textContent).not.toContain('处理中');
     expect(statusCell.textContent).toContain('OCR 文档解析');
@@ -370,6 +370,271 @@ describe('Delete task with confirmation dialog', () => {
     await user.click(screen.getByRole('presentation'));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+});
+
+describe('Task list patient/record binding and rebind', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/tasks');
+  });
+
+  it('shows a single 患者与记录 column with patient, record type, and record date', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const headerCells = within(table).getAllByRole('columnheader').map((cell) => cell.textContent?.trim() ?? '');
+    expect(headerCells).toContain('患者与记录');
+
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    // 患者姓名 + 患者编号在同一单元格
+    expect(within(reviewRow).getByText('测试用例')).toBeTruthy();
+    expect(within(reviewRow).getByText('P-A1B2C3D4')).toBeTruthy();
+    // 记录类型
+    expect(within(reviewRow).getByText('入院记录')).toBeTruthy();
+    // 记录日期(无时间时只显示日期)
+    expect(within(reviewRow).getByText('2026-06-06')).toBeTruthy();
+  });
+
+  it('shows the record time after the date when present', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const doneRow = within(table).getByText('5').closest('tr') as HTMLElement;
+    // 任务 5 有具体时间,单元格内应同时出现日期 + 时间
+    expect(within(doneRow).getByText('2026-06-03 10:15')).toBeTruthy();
+  });
+
+  it('marks tasks whose patient is deleted with a 患者已删除 badge in the same cell', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const failedRow = within(table).getByText('4').closest('tr') as HTMLElement;
+    expect(within(failedRow).getByText('患者已删除')).toBeTruthy();
+    // 删除任务 4 之外,其余行不应出现"患者已删除"
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    expect(within(reviewRow).queryByText('患者已删除')).toBeNull();
+  });
+
+  it('opens a rebind dialog with a search box and 选择/新建 actions', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks(),
+      http.get('*/api/patients*', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            patients: [
+              {
+                patient_id: 'P-AABBCCDD',
+                name: '测试用例',
+                created_at: '2026-06-07T10:00:00+08:00',
+                updated_at: '2026-06-07T10:00:00+08:00',
+                task_count: 2,
+                latest_record_at: '2026-06-07'
+              }
+            ]
+          }
+        })
+      )
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
+    expect(within(dialog).getByLabelText('搜索患者')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '搜索' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '仍然新建' })).toBeTruthy();
+    expect(within(dialog).getByLabelText('新患者姓名')).toBeTruthy();
+  });
+
+  it('rebinds the task to an existing patient via PATCH /api/tasks/{id}/metadata', async () => {
+    const user = userEvent.setup();
+    const patchSpy = vi.fn();
+    server.use(
+      mockTasks(),
+      http.get('*/api/patients*', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            patients: [
+              {
+                patient_id: 'P-AABBCCDD',
+                name: '新患者',
+                created_at: '2026-06-07T10:00:00+08:00',
+                updated_at: '2026-06-07T10:00:00+08:00',
+                task_count: 1,
+                latest_record_at: '2026-06-06'
+              }
+            ]
+          }
+        })
+      ),
+      http.patch('*/api/tasks/2/metadata', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        patchSpy(body);
+        return HttpResponse.json({
+          success: true,
+          data: {
+            task_id: '2',
+            display_name: '2',
+            status: 'review',
+            created_at: '2026-05-19T09:30:00+08:00',
+            page_count: 3,
+            patient: {
+              patient_id: 'P-AABBCCDD',
+              name: '新患者',
+              deleted: false
+            },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-06',
+            record_time: null,
+            review_summary: { status: 'unreviewed', confirmed_count: 0, total_count: 8 },
+            export_summary: { formats: [] },
+            error_code: null,
+            error_message: null
+          }
+        });
+      })
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
+    const searchInput = within(dialog).getByLabelText('搜索患者');
+    await user.type(searchInput, '新患者');
+    await user.click(within(dialog).getByRole('button', { name: '搜索' }));
+    await user.click(within(dialog).getByRole('button', { name: /选择 P-AABBCCDD/ }));
+    await user.click(within(dialog).getByRole('button', { name: '确认改绑' }));
+
+    await waitFor(() => expect(patchSpy).toHaveBeenCalledWith({ patient_id: 'P-AABBCCDD' }));
+    await waitFor(() => expect(within(reviewRow).getByText('新患者')).toBeTruthy());
+    expect(within(reviewRow).getByText('P-AABBCCDD')).toBeTruthy();
+  });
+
+  it('creates a new patient in the rebind dialog and rebinds to it', async () => {
+    const user = userEvent.setup();
+    const createPatientSpy = vi.fn();
+    const patchSpy = vi.fn();
+    server.use(
+      mockTasks(),
+      http.get('*/api/patients*', () =>
+        HttpResponse.json({ success: true, data: { patients: [] } })
+      ),
+      http.post('*/api/patients', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        createPatientSpy(body);
+        return HttpResponse.json({
+          success: true,
+          data: {
+            patient_id: 'P-FFEEDDCC',
+            name: body.name,
+            created_at: '2026-06-07T10:00:00+08:00',
+            updated_at: '2026-06-07T10:00:00+08:00',
+            deleted_at: null
+          }
+        });
+      }),
+      http.patch('*/api/tasks/2/metadata', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        patchSpy(body);
+        return HttpResponse.json({
+          success: true,
+          data: {
+            task_id: '2',
+            display_name: '2',
+            status: 'review',
+            created_at: '2026-05-19T09:30:00+08:00',
+            page_count: 3,
+            patient: { patient_id: 'P-FFEEDDCC', name: '新档案', deleted: false },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-06',
+            record_time: null,
+            review_summary: { status: 'unreviewed', confirmed_count: 0, total_count: 8 },
+            export_summary: { formats: [] },
+            error_code: null,
+            error_message: null
+          }
+        });
+      })
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
+    const newNameInput = within(dialog).getByLabelText('新患者姓名');
+    await user.type(newNameInput, '新档案');
+    await user.click(within(dialog).getByRole('button', { name: '仍然新建' }));
+    // 新建后该患者已自动选择;直接点确认改绑
+    await user.click(within(dialog).getByRole('button', { name: '确认改绑' }));
+
+    await waitFor(() => expect(createPatientSpy).toHaveBeenCalledWith({ name: '新档案' }));
+    await waitFor(() => expect(patchSpy).toHaveBeenCalledWith({ patient_id: 'P-FFEEDDCC' }));
+  });
+
+  it('disables rebind for processing tasks and explains the reason', async () => {
+    renderTaskList();
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
+    const button = within(processingRow).getByRole('button', { name: /改绑患者/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('title') ?? '').toMatch(/处理中/);
+  });
+
+  it('shows backend error message when rebind fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks(),
+      http.get('*/api/patients*', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            patients: [
+              {
+                patient_id: 'P-AAAABBBB',
+                name: '已删除患者',
+                created_at: '2026-06-07T10:00:00+08:00',
+                updated_at: '2026-06-07T10:00:00+08:00',
+                task_count: 0,
+                latest_record_at: null,
+                deleted_at: '2026-06-07T10:30:00+08:00'
+              }
+            ]
+          }
+        })
+      ),
+      http.patch('*/api/tasks/2/metadata', () =>
+        HttpResponse.json(
+          { error: { code: 'PATIENT_DELETED', message: '患者已删除,不能继续使用', details: {} } },
+          { status: 409 }
+        )
+      )
+    );
+    render(<TasksPage />);
+
+    const table = await screen.findByRole('table', { name: '任务列表' });
+    const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
+    await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
+    const searchInput = within(dialog).getByLabelText('搜索患者');
+    await user.type(searchInput, '已删除');
+    await user.click(within(dialog).getByRole('button', { name: '搜索' }));
+    await user.click(within(dialog).getByRole('button', { name: /选择 P-AAAABBBB/ }));
+    await user.click(within(dialog).getByRole('button', { name: '确认改绑' }));
+
+    expect(await within(dialog).findByText('患者已删除,不能继续使用')).toBeTruthy();
   });
 });
 

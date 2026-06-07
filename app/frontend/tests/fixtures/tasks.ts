@@ -2,6 +2,18 @@ import { http, HttpResponse } from 'msw';
 
 import type { TaskSummary } from '../../src/api/tasks';
 
+export const patientFixture = {
+  patient_id: 'P-A1B2C3D4',
+  name: '测试用例',
+  deleted: false
+};
+
+export const deletedPatientFixture = {
+  patient_id: 'P-E5F6A7B8',
+  name: '已删除患者',
+  deleted: true
+};
+
 export const taskFixtures: TaskSummary[] = [
   {
     task_id: '1',
@@ -12,7 +24,12 @@ export const taskFixtures: TaskSummary[] = [
     review_summary: { status: null, confirmed_count: 0, total_count: 0 },
     export_summary: { formats: [] },
     error_code: null,
-    error_message: null
+    error_message: null,
+    patient: patientFixture,
+    document_type: 'copd_admission_record',
+    document_type_label: '入院记录',
+    record_date: '2026-06-07',
+    record_time: '09:30'
   },
   {
     task_id: '2',
@@ -23,7 +40,12 @@ export const taskFixtures: TaskSummary[] = [
     review_summary: { status: 'unreviewed', confirmed_count: 0, total_count: 8 },
     export_summary: { formats: [] },
     error_code: null,
-    error_message: null
+    error_message: null,
+    patient: patientFixture,
+    document_type: 'copd_admission_record',
+    document_type_label: '入院记录',
+    record_date: '2026-06-06',
+    record_time: null
   },
   {
     task_id: '3',
@@ -44,7 +66,12 @@ export const taskFixtures: TaskSummary[] = [
     review_summary: { status: null },
     export_summary: { formats: [] },
     error_code: null,
-    error_message: null
+    error_message: null,
+    patient: patientFixture,
+    document_type: 'copd_admission_record',
+    document_type_label: '入院记录',
+    record_date: '2026-06-05',
+    record_time: '14:00'
   },
   {
     task_id: '4',
@@ -55,7 +82,12 @@ export const taskFixtures: TaskSummary[] = [
     review_summary: { status: null },
     export_summary: { formats: [] },
     error_code: 'ALGORITHM_MODULE_NOT_CONFIGURED',
-    error_message: '图像处理模块未配置'
+    error_message: '图像处理模块未配置',
+    patient: deletedPatientFixture,
+    document_type: 'copd_admission_record',
+    document_type_label: '入院记录',
+    record_date: '2026-06-04',
+    record_time: null
   },
   {
     task_id: '5',
@@ -66,7 +98,12 @@ export const taskFixtures: TaskSummary[] = [
     review_summary: { status: 'confirmed', confirmed_count: 8, total_count: 8 },
     export_summary: { formats: ['json'] },
     error_code: null,
-    error_message: null
+    error_message: null,
+    patient: patientFixture,
+    document_type: 'copd_admission_record',
+    document_type_label: '入院记录',
+    record_date: '2026-06-03',
+    record_time: '10:15'
   }
 ];
 
