@@ -30,8 +30,9 @@
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
 | FE-MVP-04 审核界面 | 已完成 | `app/frontend/src/pages/review/` | 原图、OCR 文本、结构化字段编辑、保存、完成、导出 |
-| BE-PAT-01 患者档案与任务归属 | 待开始 | `app/backend/services/patient_service.py`、`app/backend/services/task_service.py` | 患者、记录时间、改绑、逻辑删除 |
-| FE-PAT-01 患者中心页面 | 待开始 | `app/frontend/src/pages/patients/`、工作台新建任务弹窗 | 患者搜索、详情时间轴、字段摘要 |
+| BE-PAT-01 患者档案与任务归属 | 已完成 | `app/backend/services/patient_service.py`、`app/backend/services/patient_query_service.py`、`app/backend/services/task_service.py` | 患者、记录时间、改绑、逻辑删除 |
+| FE-PAT-01 患者中心页面 | 已完成 | `app/frontend/src/pages/patients/`、`app/frontend/src/components/workstation/CreateTaskDialog.tsx` | 患者搜索、详情时间轴、字段摘要、改绑、删除 |
+| DEV-DATA-01 一次性测试数据整理 | 已完成 | `scripts/maintenance/prepare_patient_demo_data.py` | 把开发数据收敛到 1 个可见任务 + 1 个"测试用例"患者 |
 | FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
 | REL-MVP-01 本地运行包 | 已完成 | `scripts/deploy/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 

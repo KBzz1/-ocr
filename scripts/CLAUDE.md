@@ -58,6 +58,7 @@
 - 修改 `scripts/dev/run.sh` 等启停脚本前，先读 `docs/部署/` 相关 Windows 离线 Docker 与 GPU/OCR 文档，确认启停契约没漂移。
 - 修改 `scripts/checks/offline_startup_check.py` 的扫描目标（如新增 bat/sh）时，同步更新 `SCAN_FILES` 之类的显式清单，不要靠通配符偷懒。
 - 修改 `scripts/maintenance/archive_logs.sh` 的归档目标时，确认目标目录在 `.gitignore` 范围内且不会污染根目录可见文件。
+- `scripts/maintenance/prepare_patient_demo_data.py` 一次性开发数据整理脚本，只在用户显式 `--confirm-dev-data --apply` 时写入；默认 dry-run；输出只显示任务 ID、患者 ID、计数，禁止打印病历内容、身份证号、手机号或患者姓名。
 - 调试和现场排障时优先用 `set -x` 或独立 `checks/` 脚本复现，不要直接改 `dev/` 的入口脚本做临时实验。
 
 ## 不再下设的 agent 文件
