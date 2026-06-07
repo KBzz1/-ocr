@@ -12,7 +12,7 @@ const baseNavigationItems = [
 
 type WorkstationLayoutProps = {
   children: ReactNode;
-  activeRouteId?: 'workstation' | 'tasks' | 'review';
+  activeRouteId?: 'workstation' | 'tasks' | 'review' | 'patients';
   reviewTaskHref?: string;
   headerKicker?: string;
   headerTitle?: string;
@@ -51,6 +51,7 @@ export function WorkstationLayout({
 }: WorkstationLayoutProps) {
   const navigationItems = [
     ...baseNavigationItems,
+    { id: appRoutes.patients.id, label: '患者管理', href: appRoutes.patients.path },
     { id: appRoutes.review.id, label: '任务详情', href: reviewTaskHref ?? appRoutes.review.path }
   ];
   const hasHeaderText = Boolean(headerKicker || headerTitle);

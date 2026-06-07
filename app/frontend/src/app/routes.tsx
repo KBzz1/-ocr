@@ -1,15 +1,18 @@
 export type AppRoute = {
-  id: 'workstation' | 'mobileCapture' | 'tasks' | 'review' | 'export';
+  id: 'workstation' | 'mobileCapture' | 'tasks' | 'review' | 'export' | 'patients';
   label: string;
   path: string;
 };
+
+export const PATIENTS_PATH_PREFIX = '/patients/';
 
 export const appRoutes = {
   workstation: { id: 'workstation', label: '首页', path: '/' },
   mobileCapture: { id: 'mobileCapture', label: '手机上传', path: '/mobile/upload/:taskId' },
   tasks: { id: 'tasks', label: '任务管理', path: '/tasks' },
   review: { id: 'review', label: '任务详情', path: '/review' },
-  export: { id: 'export', label: '导出结果', path: '/tasks/:taskId/export' }
+  export: { id: 'export', label: '导出结果', path: '/tasks/:taskId/export' },
+  patients: { id: 'patients', label: '患者管理', path: '/patients' }
 } as const satisfies Record<string, AppRoute>;
 
 export const routes: AppRoute[] = [
@@ -17,7 +20,8 @@ export const routes: AppRoute[] = [
   appRoutes.mobileCapture,
   appRoutes.tasks,
   appRoutes.review,
-  appRoutes.export
+  appRoutes.export,
+  appRoutes.patients
 ];
 
 export const MOBILE_UPLOAD_PREFIX = '/mobile/upload/';
@@ -36,4 +40,8 @@ export function buildReviewPath(taskId: string) {
 
 export function buildTaskExportPath(taskId: string) {
   return `/tasks/${encodeSegment(taskId)}/export`;
+}
+
+export function buildPatientPath(patientId: string) {
+  return `${PATIENTS_PATH_PREFIX}${encodeSegment(patientId)}`;
 }

@@ -17,6 +17,7 @@ import { MOBILE_UPLOAD_PREFIX } from './routes';
 import { CreateTaskDialog } from '../components/workstation/CreateTaskDialog';
 import { ExportPlaceholder } from '../pages/export/ExportPlaceholder';
 import { MobileCapturePage } from '../pages/mobile-capture/MobileCapturePage';
+import { PatientsPage } from '../pages/patients/PatientsPage';
 import { ReviewEntryPage } from '../pages/review/ReviewEntryPage';
 import { ReviewPage } from '../pages/review/ReviewPage';
 import { TasksPage } from '../pages/tasks/TasksPage';
@@ -305,6 +306,10 @@ export function App() {
 
   if (pathname === '/tasks' || pathname === '/tasks/') {
     return <TasksPage />;
+  }
+
+  if (pathname === '/patients' || pathname === '/patients/') {
+    return <PatientsPage />;
   }
 
   return <WorkstationApp />;

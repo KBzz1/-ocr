@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { appRoutes, buildMobileUploadPath, buildReviewPath, buildTaskExportPath } from './routes';
+import {
+  appRoutes,
+  buildMobileUploadPath,
+  buildPatientPath,
+  buildReviewPath,
+  buildTaskExportPath
+} from './routes';
 
 describe('frontend route skeleton', () => {
   it('uses task-bound mobile upload route', () => {
@@ -15,5 +21,11 @@ describe('frontend route skeleton', () => {
     expect(routePaths).not.toContain('/mobile/sessions/:sessionId');
     expect(buildReviewPath('task/001')).toBe('/tasks/task%2F001/review');
     expect(buildTaskExportPath('task/001')).toBe('/tasks/task%2F001/export');
+  });
+
+  it('exposes the patients management route and encodes patient ids', () => {
+    expect(appRoutes.patients.path).toBe('/patients');
+    expect(buildPatientPath('P/A')).toBe('/patients/P%2FA');
+    expect(buildPatientPath('P-A1B2C3D4')).toBe('/patients/P-A1B2C3D4');
   });
 });
