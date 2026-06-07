@@ -20,6 +20,8 @@
 | `REEXTRACTION_CANCELLED` | 409 | 用户取消重新抽取,后端在下一个 LLM 批次边界停止,review_result 不被覆盖 |
 | `EXPORT_VALIDATION_FAILED` | 400 | 导出请求非法或任务状态不允许导出 |
 | `EXPORT_FAILED` | 500 | 导出文件系统写入失败 |
+| `PATIENT_NOT_FOUND` | 404 | 患者不存在 |
+| `PATIENT_DELETED` | 409 | 患者已删除，不能用于创建或改绑任务 |
 
 MVP 不再使用 `SESSION_*` 和 `INVALID_QUAD_POINTS` 错误码；手机扫码上传直接绑定任务，不单独维护采集会话或四边形框选坐标。
 

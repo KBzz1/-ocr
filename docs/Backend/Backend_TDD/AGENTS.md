@@ -11,6 +11,7 @@
 - `03-system-startup.md`、`04-capture-sessions.md`、`05-file-upload.md`、`06-task-lifecycle.md`：启动、旧采集会话收敛、任务图片上传、任务生命周期。
 - `08-schema-management.md`、`09-review-results.md`、`10-export-service.md`、`11-logging-privacy.md`：Schema、审核、导出、日志隐私。
 - `12-api-contracts.md`、`13-deployment.md`、`14-fixtures.md`、`15-implementation-order.md`、`16-prohibited-items.md`：API、部署、fixtures、实施顺序、禁止项。
+- `17-patient-records.md`：患者档案、记录时间、记录类型重处理、任务改绑、逻辑删除与导出元数据。
 
 ## 工作规则
 

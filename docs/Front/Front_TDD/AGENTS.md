@@ -11,6 +11,7 @@
 - `07-task-list.md`、`08-manual-review.md`、`09-field-evidence.md`、`10-field-status-confirmation.md`：任务列表、人工审核、字段来源、字段状态。
 - `11-export.md`、`12-error-recovery.md`、`13-offline-security-privacy.md`：导出、错误恢复、离线隐私。
 - `14-e2e-paths.md`、`15-fixtures.md`、`16-implementation-order.md`：E2E、fixtures、实施顺序。
+- `17-patient-records.md`：患者 API client、新建任务弹窗、患者管理/详情、任务改绑与删除。
 
 ## 工作规则
 

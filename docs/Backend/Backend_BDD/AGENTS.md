@@ -10,6 +10,7 @@
 - `task-lifecycle.md`、`algorithm-integration.md`、`schema-management.md`：任务状态、算法集成、Schema。
 - `review-persistence.md`、`export.md`：审核结果持久化和导出。
 - `logging-privacy.md`、`error-recovery.md`：日志隐私和错误恢复。
+- `patient-records.md`：患者档案、记录类型、记录时间、任务改绑、逻辑删除。
 
 ## 工作规则
 

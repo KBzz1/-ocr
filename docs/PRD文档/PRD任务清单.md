@@ -30,6 +30,8 @@
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
 | FE-MVP-04 审核界面 | 已完成 | `app/frontend/src/pages/review/` | 原图、OCR 文本、结构化字段编辑、保存、完成、导出 |
+| BE-PAT-01 患者档案与任务归属 | 待开始 | `app/backend/services/patient_service.py`、`app/backend/services/task_service.py` | 患者、记录时间、改绑、逻辑删除 |
+| FE-PAT-01 患者中心页面 | 待开始 | `app/frontend/src/pages/patients/`、工作台新建任务弹窗 | 患者搜索、详情时间轴、字段摘要 |
 | FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
 | REL-MVP-01 本地运行包 | 已完成 | `scripts/deploy/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 
@@ -218,6 +220,9 @@
 - [x] **FE-MVP-02-05 手机端文书模板选择**
   - 范围：上传页展示后端可用文书模板，允许 `uploading` 任务在完成上传前切换模板。
   - 边界：电脑端新建任务弹窗不选择模板；前端不从 OCR 或图片推断模板。
+- [~] **FE-MVP-02-05 手机端文书模板选择 (需收敛)**
+  - 范围：随患者中心记录归档功能落地，电脑端在新建任务时已确定记录类型和记录时间，手机端不再展示或修改文书模板切换入口；`PATCH /api/mobile-upload/{task_id}/document-type` 路由随之下线。
+  - 边界：手机端只读展示 `document_type_label`；后端继续以 `document_type` / `document_type_label` 为唯一数据源，不新增同义的 `record_type` 字段。
 
 ### FE-MVP-03 任务管理
 
