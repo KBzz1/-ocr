@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '../api/client';
+import { ApiError, getApiErrorMessage } from '../api/client';
 import { getSystemStatus, type SystemStatus as ApiSystemStatus } from '../api/system';
 import {
   createTask,
@@ -128,10 +128,6 @@ function formatDateTime(value: string) {
   });
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
-
 function areTasksEqual(current: ApiTaskSummary[], next: ApiTaskSummary[]) {
   return JSON.stringify(current) === JSON.stringify(next);
 }
@@ -180,7 +176,7 @@ function WorkstationApp() {
     } else {
       if (mode !== 'silent') {
         setSystemStatus(null);
-        setSystemError(getErrorMessage(statusResult.reason, '服务无响应'));
+        setSystemError(getApiErrorMessage(statusResult.reason, '服务无响应'));
       }
     }
 
@@ -190,7 +186,7 @@ function WorkstationApp() {
     } else {
       if (mode !== 'silent') {
         setTasks([]);
-        setTaskError(getErrorMessage(tasksResult.reason, '任务列表加载失败'));
+        setTaskError(getApiErrorMessage(tasksResult.reason, '任务列表加载失败'));
       }
     }
   }, []);

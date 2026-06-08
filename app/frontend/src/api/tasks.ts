@@ -143,14 +143,12 @@ export async function getTasks() {
   return data.tasks.map(normalizeTaskSummary).filter(shouldShowTask);
 }
 
-export function createTask(input?: CreateTaskInput) {
-  // input 在 Task 8 之后变为必填;Task 7 暂保留可选签名,以便逐步迁移现有调用点。
-  const init: Parameters<typeof apiRequest>[1] = { method: 'POST' };
-  if (input) {
-    init.headers = { 'Content-Type': 'application/json' };
-    init.body = JSON.stringify(input);
-  }
-  return apiRequest<CreateTaskResult>('/api/tasks', init);
+export function createTask(input: CreateTaskInput) {
+  return apiRequest<CreateTaskResult>('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  });
 }
 
 export function getTaskDetail(taskId: string) {

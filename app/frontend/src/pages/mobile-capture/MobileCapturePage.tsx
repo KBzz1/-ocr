@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import { finishTaskUpload, getTaskUploadStatus, uploadTaskImage, type UploadedImage } from '../../api/mobileUpload';
 import { CapturePhotoButton } from './CapturePhotoButton';
 import { CapturePageList } from './CapturePageList';
@@ -23,10 +23,6 @@ function getTaskIdFromLocation() {
 
 function getTokenFromLocation() {
   return new URLSearchParams(window.location.search).get('token') ?? '';
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
 }
 
 function isSupportedImage(file: File) {
@@ -85,7 +81,7 @@ export function MobileCapturePage({
       })
       .catch((statusError) => {
         if (!isMounted) return;
-        setError(getErrorMessage(statusError, '上传状态加载失败，请重新扫描二维码'));
+        setError(getApiErrorMessage(statusError, '上传状态加载失败，请重新扫描二维码'));
       });
 
     return () => {
@@ -135,7 +131,7 @@ export function MobileCapturePage({
         setPages((current) =>
           current.map((page) =>
             page.localId === localId
-              ? { ...page, status: 'failed', errorMessage: getErrorMessage(uploadError, '上传失败，请重试') }
+              ? { ...page, status: 'failed', errorMessage: getApiErrorMessage(uploadError, '上传失败，请重试') }
               : page
           )
         );
@@ -153,7 +149,7 @@ export function MobileCapturePage({
       await finishTaskUpload(taskId, token);
       setIsFinished(true);
     } catch (finishError) {
-      setError(getErrorMessage(finishError, '完成上传失败，请重试'));
+      setError(getApiErrorMessage(finishError, '完成上传失败，请重试'));
     } finally {
       setIsFinishing(false);
     }

@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import { getTasks, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { ReviewPage } from './ReviewPage';
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
 
 function selectTaskForDetail(tasks: TaskSummary[]) {
   return tasks.find((task) => task.status === 'review') ?? tasks[0] ?? null;
@@ -29,7 +25,7 @@ export function ReviewEntryPage() {
       })
       .catch((error: unknown) => {
         if (!isCurrent) return;
-        setMessage(getErrorMessage(error, '待审核任务加载失败，请稍后重试'));
+        setMessage(getApiErrorMessage(error, '待审核任务加载失败，请稍后重试'));
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);

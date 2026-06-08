@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import { createPatient, getPatients, type PatientSummary } from '../../api/patients';
 import type { CreateTaskInput } from '../../api/tasks';
 import { IconButton } from '../common/IconButton';
@@ -28,15 +28,6 @@ function todayDateString() {
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
   const day = now.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function formatRecordTime(value: string | null | undefined) {
-  if (!value) return '未填写时间';
-  return value;
-}
-
-function getApiMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
 }
 
 export function CreateTaskDialog({
@@ -115,7 +106,7 @@ export function CreateTaskDialog({
       const patients = await getPatients(trimmed);
       setSearchResults(patients);
     } catch (error) {
-      setPatientError(getApiMessage(error, '患者搜索失败，请重试'));
+      setPatientError(getApiErrorMessage(error, '患者搜索失败，请重试'));
       setSearchResults(null);
     } finally {
       setIsSearchingPatient(false);
@@ -146,7 +137,7 @@ export function CreateTaskDialog({
         }
       ]);
     } catch (error) {
-      setPatientError(getApiMessage(error, '新建患者失败，请重试'));
+      setPatientError(getApiErrorMessage(error, '新建患者失败，请重试'));
     } finally {
       setIsCreatingPatient(false);
     }
@@ -179,7 +170,7 @@ export function CreateTaskDialog({
       }
       await onSubmit(payload);
     } catch (error) {
-      setSubmitError(getApiMessage(error, '创建任务失败，请重试'));
+      setSubmitError(getApiErrorMessage(error, '创建任务失败，请重试'));
     }
   }
 
@@ -193,7 +184,7 @@ export function CreateTaskDialog({
     !recordDate;
 
   return (
-    <div className="qr-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="qr-dialog-backdrop" role="presentation" onMouseDown={isSubmitting ? undefined : onClose}>
       <section
         className="qr-dialog create-task-dialog"
         role="dialog"
@@ -204,7 +195,7 @@ export function CreateTaskDialog({
       >
         <header className="qr-dialog__header">
           <h2 id="create-task-dialog-title">新建任务</h2>
-          <IconButton label="关闭弹窗" onClick={onClose} variant="soft">
+          <IconButton label="关闭弹窗" onClick={onClose} variant="soft" disabled={isSubmitting}>
             x
           </IconButton>
         </header>
@@ -265,8 +256,8 @@ export function CreateTaskDialog({
                     <li key={patient.patient_id} className="create-task-patient-row">
                       <div className="create-task-patient-meta">
                         <strong>{patient.patient_id}</strong>
-                        <span>共 {patient.task_count} 个任务</span>
-                        <span>最近记录：{patient.latest_record_at ?? '暂无'}</span>
+                        <span>{patient.name}</span>
+                        <span>{patient.task_count} 个任务 · {patient.latest_record_at ?? '暂无记录'}</span>
                       </div>
                       <button
                         type="button"
@@ -296,9 +287,9 @@ export function CreateTaskDialog({
             ) : null}
 
             {selectedPatient ? (
-              <p className="create-task-selected" role="status">
-                已选择患者：{selectedPatient.patient_id}
-              </p>
+              <div className="create-task-selected" role="status">
+                <strong>{selectedPatient.name}</strong>
+              </div>
             ) : null}
           </fieldset>
 
@@ -334,9 +325,11 @@ export function CreateTaskDialog({
                 onChange={(event) => setRecordTime(event.currentTarget.value)}
               />
             </label>
-            <p className="create-task-hint">
-              当前选择：{recordDate || '未填写日期'} {formatRecordTime(recordTime)}
-            </p>
+            <div className="create-task-summary" aria-label="记录选择">
+              <span>{DOCUMENT_TYPE_OPTIONS.find((option) => option.value === documentType)?.label ?? '记录类型'}</span>
+              <span>{recordDate || '未填日期'}</span>
+              <span>{recordTime || '无具体时间'}</span>
+            </div>
           </fieldset>
 
           {submitError ? (
@@ -346,7 +339,7 @@ export function CreateTaskDialog({
           ) : null}
 
           <footer className="create-task-footer">
-            <button type="button" className="ghost-action" onClick={onClose}>
+            <button type="button" className="ghost-action" onClick={onClose} disabled={isSubmitting}>
               取消
             </button>
             <button type="submit" className="primary-action" disabled={submitDisabled}>

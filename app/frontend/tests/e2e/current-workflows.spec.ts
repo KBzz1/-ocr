@@ -17,13 +17,37 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
   let uploadedPages = 0;
 
   await mockSystemStatus(page);
+  await page.route(/\/api\/patients(?:\?.*)?$/, async (route) => {
+    await fulfillJson(route, {
+      patients: [
+        {
+          patient_id: 'P-A1B2C3D4',
+          name: '测试用例',
+          task_count: 0,
+          latest_record_at: null
+        }
+      ]
+    });
+  });
   await page.route('**/api/tasks', async (route) => {
     if (route.request().method() === 'POST') {
+      const body = JSON.parse(route.request().postData() || '{}');
+      expect(body).toMatchObject({
+        patient_id: 'P-A1B2C3D4',
+        document_type: 'copd_admission_record',
+        record_date: '2026-06-07'
+      });
       await fulfillJson(route, {
         task_id: 'task_001',
+        display_name: 'task_001',
         status: 'uploading',
         upload_token: 'token_001',
-        mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001'
+        mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/task_001?token=token_001',
+        patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+        document_type: 'copd_admission_record',
+        document_type_label: '入院记录',
+        record_date: '2026-06-07',
+        record_time: null
       });
       return;
     }
@@ -58,6 +82,9 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
       task_id: 'task_001',
       status: 'uploading',
       page_count: uploadedPages,
+      document_type: 'copd_admission_record',
+      document_type_label: '入院记录',
+      schema_version: 'v1',
       images: Array.from({ length: uploadedPages }, (_, index) => ({
         page_id: `page_${index + 1}`,
         task_id: 'task_001',
@@ -118,8 +145,13 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
 
   await page.goto('/');
   await page.getByRole('button', { name: '新建任务' }).click();
-  await expect(page.getByText('上传任务已创建')).toBeVisible();
-  await expect(page.getByText(/task_001/)).toBeVisible();
+  await page.getByLabel('患者姓名').fill('测试用例');
+  await page.getByRole('button', { name: '搜索患者' }).click();
+  await page.getByRole('button', { name: '选择 P-A1B2C3D4' }).click();
+  await page.getByLabel('记录类型').selectOption('copd_admission_record');
+  await page.getByLabel('记录日期').fill('2026-06-07');
+  await page.getByRole('button', { name: '创建任务' }).click();
+  await expect(page.getByRole('dialog', { name: '任务上传二维码' })).toBeVisible();
   await expect(page.getByRole('img', { name: '任务上传二维码' })).toBeVisible();
 
   await page.goto('/mobile/upload/task_001?token=token_001');

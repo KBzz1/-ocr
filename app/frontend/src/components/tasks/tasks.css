@@ -617,6 +617,27 @@
   line-height: 1.6;
 }
 
+.delete-patient-dialog__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.delete-patient-dialog__summary strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.delete-patient-dialog__summary span {
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
 .delete-patient-dialog__warning {
   margin: 0;
   border-radius: 6px;
@@ -630,28 +651,49 @@
 .delete-patient-dialog__options {
   margin: 0;
   padding: 0;
-  list-style: none;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.delete-patient-dialog__options li {
+.delete-patient-option {
   display: grid;
+  text-align: left;
   gap: 4px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px;
   background: #f8fafc;
+  cursor: pointer;
 }
 
-.delete-patient-dialog__options strong {
+.delete-patient-option:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.delete-patient-option--danger {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.delete-patient-option--danger:hover {
+  border-color: #fdba74;
+  background: #ffedd5;
+}
+
+.delete-patient-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.delete-patient-option strong {
   color: #0f172a;
   font-size: 14px;
 }
 
-.delete-patient-dialog__options span {
+.delete-patient-option span {
   color: #475569;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.4;
 }
-

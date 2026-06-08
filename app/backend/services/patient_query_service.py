@@ -45,23 +45,26 @@ class PatientQueryService:
             )
             group["tasks"].append(task)
 
-        # 同一组内排序:按 record_date 倒序;同一天有时间记录在仅日期记录之前
+        # 同一组内排序:按 record_date 倒序;同一天有时间记录在仅日期记录之前;
+        # record_date/record_time 相同则用 task_id 做稳定 tie-breaker。
         for group in groups.values():
             group["tasks"].sort(key=self._task_sort_key, reverse=True)
 
         # 组之间排序:按该组最近记录时间倒序
         ordered = sorted(
             groups.values(),
-            key=lambda g: self._task_sort_key(g["tasks"][0]) if g["tasks"] else ("", ""),
+            key=lambda g: self._task_sort_key(g["tasks"][0]) if g["tasks"] else ("", "", ""),
             reverse=True,
         )
         return ordered
 
     @staticmethod
-    def _task_sort_key(task: dict) -> tuple[str, str]:
+    def _task_sort_key(task: dict) -> tuple[str, str, int | str]:
         # 时间字段缺失时使用空字符串,空字符串小于任意 "HH:mm",
         # 倒序排时仅日期记录排在带时间记录之后,满足 spec。
-        return (task.get("record_date") or "", task.get("record_time") or "")
+        task_id = str(task.get("task_id") or "")
+        task_id_key: int | str = int(task_id) if task_id.isdigit() else task_id
+        return (task.get("record_date") or "", task.get("record_time") or "", task_id_key)
 
     @staticmethod
     def _compute_latest_record_at(tasks: list[dict]) -> str | None:

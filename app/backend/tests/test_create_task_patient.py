@@ -79,6 +79,22 @@ def test_create_task_rejects_blank_date(tmp_path):
         )
 
     assert exc.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+    assert exc.value.message == "record_date 必填"
+
+
+def test_create_task_rejects_missing_date_with_required_message(tmp_path):
+    store = JsonStore(str(tmp_path))
+    service = make_service(store, patient_service=_StubPatientService())
+
+    with pytest.raises(AppError) as exc:
+        service.create_uploading_task(
+            base_url="http://127.0.0.1:8081",
+            patient_id="P-ABCDEF12",
+            document_type="copd_admission_record",
+        )
+
+    assert exc.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+    assert exc.value.message == "record_date 必填"
 
 
 def test_create_task_rejects_blank_document_type(tmp_path):

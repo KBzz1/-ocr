@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import {
   getPatientRecords,
   updatePatient,
@@ -14,19 +14,17 @@ import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
 import { buildReviewPath, PATIENTS_PATH_PREFIX } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { CreateTaskDialog } from '../../components/workstation/CreateTaskDialog';
+import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
 import { DeletePatientDialog } from '../../components/patients/DeletePatientDialog';
 import { FieldList } from '../../components/review/FieldList';
+import type { TaskUploadSummary } from '../workstation/workstation.types';
 import './patients.css';
 
 type ReviewsByTaskId = Record<string, { fields: ReviewField[]; field_groups?: ReviewResult['field_groups'] } | undefined>;
 
 type CreateDialogState =
-  | { isOpen: false; initialPatient: null; pendingTask: null }
-  | { isOpen: true; initialPatient: { patient_id: string; name: string } | null; pendingTask: CreateTaskResult | null };
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
+  | { isOpen: false; initialPatient: null }
+  | { isOpen: true; initialPatient: { patient_id: string; name: string } | null };
 
 function getPatientIdFromPath() {
   const match = window.location.pathname.match(/^\/patients\/([^/]+)\/?$/);
@@ -40,6 +38,17 @@ function formatRecordDateLabel(recordDate?: string | null, recordTime?: string |
 
 function isReviewableStatus(status: TaskSummary['status']) {
   return status === 'review' || status === 'done';
+}
+
+function toTaskUploadSummary(task: CreateTaskResult | null): TaskUploadSummary | null {
+  if (!task) return null;
+  return {
+    ...task,
+    id: task.task_id,
+    displayName: task.display_name ?? task.task_id,
+    uploadedPages: 0,
+    createdAtText: '刚刚'
+  };
 }
 
 export function PatientDetailPage() {
@@ -60,9 +69,10 @@ export function PatientDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [createDialog, setCreateDialog] = useState<CreateDialogState>({
     isOpen: false,
-    initialPatient: null,
-    pendingTask: null
+    initialPatient: null
   });
+  const [isCreateSubmitting, setIsCreateSubmitting] = useState(false);
+  const [createdQrTask, setCreatedQrTask] = useState<CreateTaskResult | null>(null);
   const loadRequestId = useRef(0);
 
   const loadDetail = useCallback(async (mode: 'initial' | 'refresh') => {
@@ -85,7 +95,7 @@ export function PatientDetailPage() {
       setRecordGroups(detail.record_groups ?? []);
     } catch (error) {
       if (requestId !== loadRequestId.current) return;
-      setLoadError(getErrorMessage(error, '患者详情加载失败，请重试'));
+      setLoadError(getApiErrorMessage(error, '患者详情加载失败，请重试'));
     } finally {
       if (requestId === loadRequestId.current) {
         setIsLoading(false);
@@ -134,7 +144,7 @@ export function PatientDetailPage() {
     } catch (error) {
       setReviewLoadError({
         taskId: task.task_id,
-        message: getErrorMessage(error, '字段加载失败，请重试')
+        message: getApiErrorMessage(error, '字段加载失败，请重试')
       });
     }
   }, [reviewsByTaskId]);
@@ -166,7 +176,7 @@ export function PatientDetailPage() {
       // 改名后刷新详情聚合,确保任务里的 patient_snapshot 也及时反映
       await loadDetail('refresh');
     } catch (error) {
-      setRenameError(getErrorMessage(error, '修改姓名失败，请重试'));
+      setRenameError(getApiErrorMessage(error, '修改姓名失败，请重试'));
     } finally {
       setIsRenamingSubmitting(false);
     }
@@ -192,28 +202,32 @@ export function PatientDetailPage() {
     if (!patient) return;
     setCreateDialog({
       isOpen: true,
-      initialPatient: { patient_id: patient.patient_id, name: patient.name },
-      pendingTask: null
+      initialPatient: { patient_id: patient.patient_id, name: patient.name }
     });
   }
 
   function handleCloseCreateDialog() {
-    if (createDialog.pendingTask) return;
-    setCreateDialog({ isOpen: false, initialPatient: null, pendingTask: null });
+    if (isCreateSubmitting) return;
+    setCreateDialog({ isOpen: false, initialPatient: null });
   }
 
   async function handleSubmitCreate(input: CreateTaskInput) {
+    if (isCreateSubmitting) return;
+    setIsCreateSubmitting(true);
     try {
       const result = await createTask(input);
-      setCreateDialog({ isOpen: true, initialPatient: null, pendingTask: result });
+      setCreateDialog({ isOpen: false, initialPatient: null });
+      setCreatedQrTask(result);
       await loadDetail('refresh');
     } catch (error) {
       throw error;
+    } finally {
+      setIsCreateSubmitting(false);
     }
   }
 
   function handleCloseCreateResult() {
-    setCreateDialog({ isOpen: false, initialPatient: null, pendingTask: null });
+    setCreatedQrTask(null);
   }
 
   if (!patientId) {
@@ -438,10 +452,15 @@ export function PatientDetailPage() {
       </main>
       <CreateTaskDialog
         isOpen={createDialog.isOpen}
-        isSubmitting={Boolean(createDialog.pendingTask)}
+        isSubmitting={isCreateSubmitting}
         initialPatient={createDialog.initialPatient}
         onClose={handleCloseCreateDialog}
         onSubmit={handleSubmitCreate}
+      />
+      <CaptureQrDialog
+        isOpen={Boolean(createdQrTask)}
+        task={toTaskUploadSummary(createdQrTask)}
+        onClose={handleCloseCreateResult}
       />
       <DeletePatientDialog
         isOpen={isDeleteDialogOpen && Boolean(patient)}

@@ -444,10 +444,11 @@ describe('Task list patient/record binding and rebind', () => {
     await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
-    expect(within(dialog).getByLabelText('搜索患者')).toBeTruthy();
+    expect(within(dialog).getByLabelText('患者姓名')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '搜索' })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '仍然新建' })).toBeTruthy();
-    expect(within(dialog).getByLabelText('新患者姓名')).toBeTruthy();
+    expect(within(dialog).queryByLabelText('搜索患者')).toBeNull();
+    expect(within(dialog).queryByLabelText('新患者姓名')).toBeNull();
   });
 
   it('rebinds the task to an existing patient via PATCH /api/tasks/{id}/metadata', async () => {
@@ -507,7 +508,7 @@ describe('Task list patient/record binding and rebind', () => {
     await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
-    const searchInput = within(dialog).getByLabelText('搜索患者');
+    const searchInput = within(dialog).getByLabelText('患者姓名');
     await user.type(searchInput, '新患者');
     await user.click(within(dialog).getByRole('button', { name: '搜索' }));
     await user.click(within(dialog).getByRole('button', { name: /选择 P-AABBCCDD/ }));
@@ -572,7 +573,7 @@ describe('Task list patient/record binding and rebind', () => {
     await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
-    const newNameInput = within(dialog).getByLabelText('新患者姓名');
+    const newNameInput = within(dialog).getByLabelText('患者姓名');
     await user.type(newNameInput, '新档案');
     await user.click(within(dialog).getByRole('button', { name: '仍然新建' }));
     // 新建后该患者已自动选择;直接点确认改绑
@@ -628,7 +629,7 @@ describe('Task list patient/record binding and rebind', () => {
     await user.click(within(reviewRow).getByRole('button', { name: '改绑患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '改绑患者' });
-    const searchInput = within(dialog).getByLabelText('搜索患者');
+    const searchInput = within(dialog).getByLabelText('患者姓名');
     await user.type(searchInput, '已删除');
     await user.click(within(dialog).getByRole('button', { name: '搜索' }));
     await user.click(within(dialog).getByRole('button', { name: /选择 P-AAAABBBB/ }));

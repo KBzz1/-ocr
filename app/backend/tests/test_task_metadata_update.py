@@ -178,6 +178,21 @@ def test_update_metadata_changes_record_date_and_time_in_uploading(tmp_path):
     assert updated["status"] == "uploading"
 
 
+def test_update_metadata_clears_record_time_to_none(tmp_path):
+    write_task(tmp_path, status="review", record_time="14:00")
+    service = make_service(tmp_path)
+
+    updated = service.update_metadata("1", record_time="")
+
+    assert updated["record_time"] is None
+    raw = JsonStore(str(tmp_path)).read("tasks/1.json")
+    assert raw["record_time"] is None
+    [history] = raw["metadata_history"]
+    assert history["field"] == "record_time"
+    assert history["from_value"] == "14:00"
+    assert history["to_value"] is None
+
+
 def test_update_metadata_rejects_deleted_patient(tmp_path):
     write_task(tmp_path, status="review")
     service = make_service(tmp_path)

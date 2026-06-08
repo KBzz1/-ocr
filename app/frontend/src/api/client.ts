@@ -40,6 +40,10 @@ export function parseErrorBody(body: unknown, status: number, fallbackMessage = 
   return new ApiError(fallbackMessage, fallbackCode, status);
 }
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
 export interface ApiRequestOptions extends RequestInit {
   /** 请求超时(毫秒)。0 或负数表示不超时(长任务使用)。默认 8000。 */
   timeoutMs?: number;

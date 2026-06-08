@@ -217,6 +217,30 @@ def test_delete_patient_with_processing_tasks_is_rejected(tmp_path, monkeypatch)
     assert detail.status_code == 200
 
 
+def test_delete_patient_and_tasks_keeps_patient_active_if_task_delete_races_to_processing(tmp_path, monkeypatch):
+    client, app = make_client(tmp_path, monkeypatch)
+    patient = _create_patient(client, "测试用例")
+    _write_task_with_patient(app, "1", patient["patient_id"], status="review")
+    task_service = app.config["TASK_SERVICE"]
+    original_delete_task = task_service.delete_task
+
+    def race_to_processing(task_id):
+        store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+        raw = store.read(f"tasks/{task_id}.json")
+        raw["status"] = "processing"
+        store.write(f"tasks/{task_id}.json", raw)
+        return original_delete_task(task_id)
+
+    monkeypatch.setattr(task_service, "delete_task", race_to_processing)
+
+    response = client.delete(f"/api/patients/{patient['patient_id']}?delete_tasks=true")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+    detail = client.get(f"/api/patients/{patient['patient_id']}")
+    assert detail.status_code == 200
+
+
 def test_delete_patient_with_processing_tasks_allowed_when_only_patient(tmp_path, monkeypatch):
     """仅删除患者时不应被 processing 任务阻断。"""
     client, app = make_client(tmp_path, monkeypatch)

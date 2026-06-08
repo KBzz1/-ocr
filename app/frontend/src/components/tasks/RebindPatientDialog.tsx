@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import { createPatient, getPatients, type PatientSummary } from '../../api/patients';
 import type { TaskSummary } from '../../api/tasks';
 import { IconButton } from '../common/IconButton';
@@ -12,10 +12,6 @@ type RebindPatientDialogProps = {
   onClose: () => void;
   onSubmit: (patientId: string) => Promise<void>;
 };
-
-function getApiMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
 
 export function RebindPatientDialog({
   isOpen,
@@ -64,7 +60,7 @@ export function RebindPatientDialog({
       const filtered = patients.filter((p) => p.patient_id !== task?.patient?.patient_id);
       setSearchResults(filtered);
     } catch (searchError: unknown) {
-      setError(getApiMessage(searchError, '患者搜索失败,请重试'));
+      setError(getApiErrorMessage(searchError, '患者搜索失败,请重试'));
       setSearchResults(null);
     } finally {
       setIsSearching(false);
@@ -90,7 +86,7 @@ export function RebindPatientDialog({
       setSelectedPatient(summary);
       setSearchResults([summary]);
     } catch (createError: unknown) {
-      setError(getApiMessage(createError, '新建患者失败,请重试'));
+      setError(getApiErrorMessage(createError, '新建患者失败,请重试'));
     } finally {
       setIsCreating(false);
     }
@@ -110,7 +106,7 @@ export function RebindPatientDialog({
     try {
       await onSubmit(selectedPatient.patient_id);
     } catch (submitErrorCatch: unknown) {
-      setSubmitError(getApiMessage(submitErrorCatch, '改绑失败,请重试'));
+      setSubmitError(getApiErrorMessage(submitErrorCatch, '改绑失败,请重试'));
     }
   }
 
@@ -152,7 +148,7 @@ export function RebindPatientDialog({
           ) : null}
 
           <label className="rebind-patient-field">
-            <span>搜索患者 / 新建患者</span>
+            <span>患者姓名</span>
             <input
               type="text"
               value={name}
@@ -165,24 +161,7 @@ export function RebindPatientDialog({
                 setCreatedPatient(null);
               }}
               placeholder="输入患者姓名"
-              aria-label="搜索患者"
-            />
-          </label>
-          <label className="rebind-patient-field">
-            <span>新患者姓名</span>
-            <input
-              type="text"
-              value={name}
-              autoComplete="off"
-              disabled={isProcessing}
-              onChange={(event) => {
-                setName(event.currentTarget.value);
-                setSelectedPatient(null);
-                setSearchResults(null);
-                setCreatedPatient(null);
-              }}
-              placeholder="输入新患者姓名"
-              aria-label="新患者姓名"
+              aria-label="患者姓名"
             />
           </label>
 

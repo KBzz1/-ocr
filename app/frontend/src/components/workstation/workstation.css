@@ -896,6 +896,138 @@
   font-weight: 800;
 }
 
+.create-task-dialog {
+  width: min(620px, 100%);
+}
+
+.create-task-form {
+  display: grid;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 14px 28px 24px;
+}
+
+.create-task-fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.create-task-fieldset legend {
+  padding: 0 6px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.create-task-field {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.create-task-field input,
+.create-task-field select {
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.create-task-field input:focus,
+.create-task-field select:focus {
+  border-color: #2563eb;
+  outline: 3px solid rgba(37, 99, 235, 0.14);
+}
+
+.create-task-actions,
+.create-task-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.create-task-patient-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.create-task-patient-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.create-task-patient-meta {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.create-task-patient-meta strong {
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.create-task-empty,
+.create-task-alternate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.create-task-empty p,
+.create-task-alternate p {
+  margin: 0;
+}
+
+.create-task-selected,
+.create-task-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-task-selected strong,
+.create-task-selected span,
+.create-task-summary span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 @media (max-width: 1500px) {
   .workstation-hero,
   .workstation-lower-grid {

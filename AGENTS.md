@@ -2,7 +2,7 @@
 
 ## 作用
 
-本文件是全仓库长期 onboarding，只保留所有任务都适用的项目定位、目录边界和工作规则。文档目录的细节先读 `docs/AGENTS.md`；代码/部署/脚本目录的细节先读目标目录的 `CLAUDE.md`（如 `app/backend/CLAUDE.md`、`deploy/CLAUDE.md`、`scripts/CLAUDE.md`），没有 CLAUDE.md 的再读 `README.md`。
+本文件是全仓库长期 onboarding，只保留所有任务都适用的项目定位、目录边界和工作规则。文档目录的细节先读 `docs/AGENTS.md`；代码/部署/脚本目录的细节先读目标目录的 `AGENTS.md` / `CLAUDE.md`（如 `app/frontend/AGENTS.md`、`app/backend/CLAUDE.md`、`deploy/CLAUDE.md`、`scripts/CLAUDE.md`），没有这些文件的再读 `README.md`。
 
 ## 项目定位
 
@@ -54,7 +54,7 @@
 
 ## 工作方式
 
-- 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 `CLAUDE.md`/`README.md`。
+- 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 `AGENTS.md`/`CLAUDE.md`/`README.md`。
 - 修改行为、状态或错误码前，先检查 `docs/PRD文档/产品PRD.md`、`docs/Shared/` 和相关 TDD/BDD 文档，如果对应文档跟当前任务有冲突，请告知我。
 - 新增实现时，测试设计和契约文档先于实现落地；OCR/图像处理只写端口契约和失败处理，慢阻肺专病字段抽取按对应 spec/plan 实现。
 - 当前 PRD 进度以 `docs/PRD文档/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。

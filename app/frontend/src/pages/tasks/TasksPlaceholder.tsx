@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import { exportTasksBatchZip } from '../../api/export';
 import { deleteTask, getTasks, updateTaskMetadata, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
@@ -18,10 +18,6 @@ type BatchExportSummary = {
   task_ids: string[];
   exported_at: string;
 };
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
 
 function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -91,7 +87,7 @@ export function TasksPage() {
       setError(null);
     } catch (loadError: unknown) {
       if (mode !== 'silent') {
-        setError(getErrorMessage(loadError, '任务列表加载失败，请刷新重试'));
+        setError(getApiErrorMessage(loadError, '任务列表加载失败，请刷新重试'));
       }
     } finally {
       if (mode === 'initial') {
@@ -146,7 +142,7 @@ export function TasksPage() {
       setTasks((currentTasks) => currentTasks.filter((t) => t.task_id !== task.task_id));
       setError(null);
     } catch (deleteError: unknown) {
-      setError(getErrorMessage(deleteError, '删除任务失败，请稍后重试'));
+      setError(getApiErrorMessage(deleteError, '删除任务失败，请稍后重试'));
     } finally {
       setDeletingTaskId(null);
     }
@@ -210,7 +206,7 @@ export function TasksPage() {
       setLastBatchExport({ task_ids: ids, exported_at: exportedAt });
       setError(null);
     } catch (batchError: unknown) {
-      setError(getErrorMessage(batchError, '批量导出失败,请稍后重试'));
+      setError(getApiErrorMessage(batchError, '批量导出失败,请稍后重试'));
     } finally {
       setIsBatchExporting(false);
     }

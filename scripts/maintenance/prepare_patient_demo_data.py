@@ -94,9 +94,6 @@ def prepare_demo_data(
 
     # 找到或创建"测试用例"患者
     patient = None
-    for record in [store.read(p) for p in [item for item in []] if False]:  # placeholder
-        pass
-    # 实际查询:扫 patients 目录
     for item in store.list_json("patients"):
         if isinstance(item, dict) and item.get("name") == patient_name and not item.get("deleted_at"):
             patient = item

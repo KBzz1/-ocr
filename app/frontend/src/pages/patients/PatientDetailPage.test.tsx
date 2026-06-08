@@ -410,6 +410,100 @@ describe('PatientDetailPage', () => {
     await waitFor(() => expect(patchBody).toEqual({ name: '新名字' }));
     expect(await screen.findByText('新名字')).toBeTruthy();
   });
+
+  it('shows upload QR dialog after creating a task from patient detail', async () => {
+    const user = userEvent.setup();
+    let createBody: unknown = null;
+    server.use(
+      ...mockPatientDetail(),
+      http.post('*/api/tasks', async ({ request }) => {
+        createBody = await request.json();
+        return HttpResponse.json(
+          {
+            success: true,
+            data: {
+              task_id: '3001',
+              display_name: '3001',
+              status: 'uploading',
+              upload_token: 'token_3001',
+              mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/3001?token=token_3001',
+              patient: { patient_id: patientId, name: '测试用例', deleted: false },
+              document_type: 'copd_admission_record',
+              document_type_label: '入院记录',
+              record_date: '2026-06-08',
+              record_time: null
+            }
+          },
+          { status: 201 }
+        );
+      })
+    );
+    render(<PatientDetailPage />);
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '新建任务' });
+    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() =>
+      expect(createBody).toMatchObject({
+        patient_id: patientId,
+        document_type: 'copd_admission_record'
+      })
+    );
+    expect(await screen.findByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
+  });
+
+  it('locks the create task dialog while submit is pending', async () => {
+    const user = userEvent.setup();
+    let resolveCreate: () => void = () => undefined;
+    server.use(
+      ...mockPatientDetail(),
+      http.post('*/api/tasks', async () => {
+        await new Promise<void>((resolve) => {
+          resolveCreate = resolve;
+        });
+        return HttpResponse.json(
+          {
+            success: true,
+            data: {
+              task_id: '3001',
+              display_name: '3001',
+              status: 'uploading',
+              upload_token: 'token_3001',
+              mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/3001?token=token_3001',
+              patient: { patient_id: patientId, name: '测试用例', deleted: false },
+              document_type: 'copd_admission_record',
+              document_type_label: '入院记录',
+              record_date: '2026-06-08',
+              record_time: null
+            }
+          },
+          { status: 201 }
+        );
+      })
+    );
+    render(<PatientDetailPage />);
+
+    const header = await screen.findByLabelText('患者头部');
+    await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
+    const dialog = await screen.findByRole('dialog', { name: '新建任务' });
+    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() => {
+      const submitButton = within(dialog).getByRole('button', { name: '正在创建' }) as HTMLButtonElement;
+      expect(submitButton.disabled).toBe(true);
+    });
+    const cancelButton = within(dialog).getByRole('button', { name: '取消' }) as HTMLButtonElement;
+    expect(cancelButton.disabled).toBe(true);
+
+    await user.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(screen.getByRole('dialog', { name: '新建任务' })).toBeTruthy();
+
+    resolveCreate();
+    expect(await screen.findByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
+  });
 });
 
 describe('PatientDetailPage delete dialog', () => {
@@ -426,7 +520,7 @@ describe('PatientDetailPage delete dialog', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '删除患者' });
     expect(within(dialog).getByRole('button', { name: '仅删除患者' })).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '患者和任务都删除' })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '取消' })).toBeTruthy();
   });
 
@@ -486,7 +580,7 @@ describe('PatientDetailPage delete dialog', () => {
     await user.click(within(header).getByRole('button', { name: '删除患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '删除患者' });
-    await user.click(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '患者和任务都删除' }));
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith('true'));
     expect(window.location.pathname).toMatch(/^\/patients\/?$/);
@@ -515,7 +609,7 @@ describe('PatientDetailPage delete dialog', () => {
     await user.click(within(header).getByRole('button', { name: '删除患者' }));
 
     const dialog = await screen.findByRole('dialog', { name: '删除患者' });
-    await user.click(within(dialog).getByRole('button', { name: '同时删除患者及关联任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '患者和任务都删除' }));
 
     expect(await screen.findByText('存在处理中的任务,无法同时删除')).toBeTruthy();
     // 患者姓名仍在(对话框说明里也出现,所以用 getAllByText 验证至少一处仍在)

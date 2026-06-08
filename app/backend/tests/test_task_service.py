@@ -1,4 +1,6 @@
 import pytest
+from threading import Event
+import time
 
 from app.backend.errors import AppError, ErrorCode
 from app.backend.services.task_service import TaskService
@@ -28,6 +30,15 @@ class CancellationAwareOrchestrator:
 class StubPatientService:
     def get_bindable(self, patient_id):
         return {"patient_id": patient_id, "name": "测试用例", "deleted_at": None}
+
+
+class EventOrchestrator:
+    def __init__(self):
+        self.called = Event()
+
+    def run(self, task, task_service, schema=None):
+        self.called.set()
+        return task_service.get_task(task["task_id"])
 
 
 def make_service(tmp_path, orchestrator=None, schema_provider=None, patient_service=None):
@@ -220,6 +231,43 @@ def test_finish_upload_returns_processing_after_dispatching_background_run(tmp_p
     assert orchestrator.calls == [("1", {"version": "1.0.0"})]
     assert summary["processing_summary"]["stage"] == "document_parsing"
     assert summary["processing_summary"]["progress_percent"] == 55
+
+
+def test_default_background_runner_accepts_task_id_and_runs_callback(tmp_path):
+    write_task(
+        tmp_path,
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page.jpg"}],
+    )
+    orchestrator = EventOrchestrator()
+    service = TaskService(JsonStore(str(tmp_path)), orchestrator=orchestrator)
+
+    result = service.finish_upload("1")
+
+    assert result["status"] == "processing"
+    assert orchestrator.called.wait(timeout=1)
+
+
+def test_default_background_runner_serializes_same_task_callbacks(tmp_path):
+    service = TaskService(JsonStore(str(tmp_path)))
+    first_started = Event()
+    release_first = Event()
+    second_entered = Event()
+
+    def first_run():
+        first_started.set()
+        assert release_first.wait(timeout=1)
+
+    def second_run():
+        second_entered.set()
+
+    service._run_in_thread("1", first_run)
+    assert first_started.wait(timeout=1)
+    service._run_in_thread("1", second_run)
+    time.sleep(0.05)
+
+    assert not second_entered.is_set()
+    release_first.set()
+    assert second_entered.wait(timeout=1)
 
 
 def test_field_extraction_stage_label_describes_llm_structuring(tmp_path):

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ApiError } from '../../api/client';
+import { getApiErrorMessage } from '../../api/client';
 import {
   createPatient,
   getPatients,
@@ -9,10 +9,6 @@ import {
 import { buildPatientPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import './patients.css';
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
 
 function formatLatestRecord(value: string | null | undefined) {
   if (!value) return '暂无';
@@ -52,7 +48,7 @@ export function PatientsPage() {
       setPatients(results);
     } catch (error) {
       if (requestId !== searchRequestId.current) return;
-      setLoadError(getErrorMessage(error, '患者列表加载失败,请重试'));
+      setLoadError(getApiErrorMessage(error, '患者列表加载失败,请重试'));
       setPatients([]);
     } finally {
       if (requestId === searchRequestId.current) {
@@ -109,7 +105,7 @@ export function PatientsPage() {
       ]);
       navigateToPatient(created.patient_id);
     } catch (error) {
-      setCreateError(getErrorMessage(error, '新建患者失败,请重试'));
+      setCreateError(getApiErrorMessage(error, '新建患者失败,请重试'));
     } finally {
       setIsCreating(false);
     }

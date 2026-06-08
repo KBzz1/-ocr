@@ -84,17 +84,18 @@ def delete_patient(patient_id):
     deleted_task_ids: set[str] = set()
     if delete_tasks:
         task_service = _get_task_service()
-        for task in task_service.list_for_patient(patient_id):
+        tasks_to_delete = task_service.list_for_patient(patient_id)
+        for task in tasks_to_delete:
             if task["status"] == TaskStatus.PROCESSING.value:
                 raise AppError(
                     ErrorCode.INVALID_TASK_TRANSITION,
                     details={"current": task["status"], "target": "deleted"},
                 )
-        # 校验通过后再标记患者删除
-        record = service.mark_deleted(patient_id)
-        for task in task_service.list_for_patient(patient_id):
+        for task in tasks_to_delete:
             task_service.delete_task(task["task_id"])
             deleted_task_ids.add(task["task_id"])
+        # 所有关联任务删除成功后再标记患者删除,避免中途失败留下半删除患者。
+        record = service.mark_deleted(patient_id)
     else:
         # 仅删除患者时,只对仍指向该患者且未删除的任务刷新 patient_snapshot
         record = service.mark_deleted(patient_id)

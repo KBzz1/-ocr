@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from secrets import token_urlsafe
-from threading import Thread
+from threading import Lock, Thread
 from typing import Callable
 
 from ..enums import TaskStatus
@@ -36,7 +36,7 @@ class TaskService:
         store: JsonStore,
         orchestrator=None,
         schema_provider: Callable[[], dict] | None = None,
-        background_runner: Callable[[Callable[[], None]], None] | None = None,
+        background_runner: Callable[[str, Callable[[], None]], None] | None = None,
         document_profiles=None,
         patient_service=None,
     ):
@@ -46,6 +46,8 @@ class TaskService:
         self._background_runner = background_runner or self._run_in_thread
         self._document_profiles = document_profiles
         self._patient_service = patient_service
+        self._task_locks: dict[str, Lock] = {}
+        self._task_locks_guard = Lock()
 
     def _document_summary_for(self, document_type: str | None = None) -> dict:
         if self._document_profiles is None:
@@ -73,7 +75,9 @@ class TaskService:
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="patient_id 必填")
         if not isinstance(document_type, str) or not document_type.strip():
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="document_type 必填")
-        record_date_str = record_date or ""
+        if not isinstance(record_date, str) or not record_date:
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="record_date 必填")
+        record_date_str = record_date
         _parse_record_date(record_date_str)
         record_time_str = _parse_record_time(record_time)
         patient = self._patient_service.get_bindable(patient_id) if self._patient_service else {
@@ -218,8 +222,7 @@ class TaskService:
 
         if record_date is not None:
             _parse_record_date(record_date)
-        if "record_time" in provided_fields:
-            _parse_record_time(record_time)
+        parsed_record_time = _parse_record_time(record_time) if "record_time" in provided_fields else None
 
         new_patient_snapshot = None
         if patient_id is not None:
@@ -283,16 +286,16 @@ class TaskService:
             )
             task["record_date"] = record_date
 
-        if "record_time" in provided_fields and record_time != task.get("record_time"):
+        if "record_time" in provided_fields and parsed_record_time != task.get("record_time"):
             history_entries.append(
                 self._build_history_entry(
                     "record_time",
                     task.get("record_time"),
-                    record_time,
+                    parsed_record_time,
                     now,
                 )
             )
-            task["record_time"] = record_time
+            task["record_time"] = parsed_record_time
 
         if document_type_changed:
             previous_type = task.get("document_type")
@@ -818,8 +821,20 @@ class TaskService:
             "elapsed_seconds": elapsed_seconds,
         }
 
-    def _run_in_thread(self, run: Callable[[], None]) -> None:
-        Thread(target=run, daemon=True).start()
+    def _take_default_task_lock(self, task_id: str) -> Lock:
+        with self._task_locks_guard:
+            lock = self._task_locks.get(task_id)
+            if lock is None:
+                lock = Lock()
+                self._task_locks[task_id] = lock
+            return lock
+
+    def _run_in_thread(self, task_id: str, run: Callable[[], None]) -> None:
+        def target():
+            with self._take_default_task_lock(task_id):
+                run()
+
+        Thread(target=target, daemon=True).start()
 
 
 _PROCESSING_STAGE_LABELS = {

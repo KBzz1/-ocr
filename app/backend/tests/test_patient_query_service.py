@@ -83,6 +83,23 @@ def test_get_detail_groups_tasks_by_document_type_and_sorts_by_record_time(tmp_p
     assert [task["task_id"] for task in copd_tasks] == ["1", "2"]
 
 
+def test_get_detail_uses_task_id_as_stable_tie_breaker_for_same_record_time(tmp_path):
+    store = JsonStore(str(tmp_path))
+    patient_service = PatientService(store, now=lambda: "2026-06-07T10:00:00+08:00")
+    patient = patient_service.create("测试用例")
+    task_service = make_task_service(tmp_path)
+
+    _seed_task(store, task_id="1", patient_id=patient["patient_id"],
+               document_type="copd_admission_record", record_date="2026-06-07", record_time="09:30")
+    _seed_task(store, task_id="2", patient_id=patient["patient_id"],
+               document_type="copd_admission_record", record_date="2026-06-07", record_time="09:30")
+
+    detail = PatientQueryService(patient_service, task_service).get_detail(patient["patient_id"])
+    [group] = detail["record_groups"]
+
+    assert [task["task_id"] for task in group["tasks"]] == ["2", "1"]
+
+
 def test_get_detail_orders_groups_by_most_recent_record_first(tmp_path):
     store = JsonStore(str(tmp_path))
     patient_service = PatientService(store, now=lambda: "2026-06-07T10:00:00+08:00")

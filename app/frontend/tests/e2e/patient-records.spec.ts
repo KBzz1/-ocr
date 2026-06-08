@@ -16,9 +16,11 @@ test.beforeEach(async ({ page }) => {
 
 test('patient records: create patient, create task, view detail, delete patient keeps task', async ({ page }) => {
   await mockSystemStatus(page);
+  let taskCreated = false;
+  let patientDeleted = false;
 
-  // 创建患者
-  await page.route('**/api/patients', async (route) => {
+  // 患者列表 / 创建患者
+  await page.route(/\/api\/patients(?:\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
       await fulfillJson(
         route,
@@ -33,7 +35,16 @@ test('patient records: create patient, create task, view detail, delete patient 
       );
       return;
     }
-    await fulfillJson(route, { patients: [] });
+    await fulfillJson(route, {
+      patients: [
+        {
+          patient_id: patientId,
+          name: '测试用例',
+          task_count: 1,
+          latest_record_at: '2026-06-07'
+        }
+      ]
+    });
   });
 
   // 创建任务
@@ -43,6 +54,7 @@ test('patient records: create patient, create task, view detail, delete patient 
       expect(body.patient_id).toBe(patientId);
       expect(body.document_type).toBe('copd_admission_record');
       expect(body.record_date).toBe('2026-06-07');
+      taskCreated = true;
       await fulfillJson(
         route,
         {
@@ -61,20 +73,24 @@ test('patient records: create patient, create task, view detail, delete patient 
       );
       return;
     }
-    await fulfillJson(route, { tasks: [] });
-  });
-
-  // 患者列表 (含 1 个)
-  await page.route('**/api/patients?**', async (route) => {
     await fulfillJson(route, {
-      patients: [
-        {
-          patient_id: patientId,
-          name: '测试用例',
-          task_count: 1,
-          latest_record_at: '2026-06-07'
-        }
-      ]
+      tasks: taskCreated
+        ? [
+            {
+              task_id: taskId,
+              display_name: taskId,
+              status: 'review',
+              created_at: '2026-06-07T10:00:00+08:00',
+              updated_at: '2026-06-07T11:00:00+08:00',
+              page_count: 1,
+              document_type: 'copd_admission_record',
+              document_type_label: '入院记录',
+              record_date: '2026-06-07',
+              record_time: null,
+              patient: { patient_id: patientId, name: '测试用例', deleted: patientDeleted }
+            }
+          ]
+        : []
     });
   });
 
@@ -114,6 +130,7 @@ test('patient records: create patient, create task, view detail, delete patient 
   // 删除患者 (仅删除)
   await page.route(`**/api/patients/${patientId}**`, async (route) => {
     if (route.request().method() === 'DELETE') {
+      patientDeleted = true;
       await fulfillJson(route, {
         patient_id: patientId,
         deleted: true,
@@ -122,27 +139,6 @@ test('patient records: create patient, create task, view detail, delete patient 
       return;
     }
     await route.continue();
-  });
-
-  // 任务列表 (患者已删除但任务保留)
-  await page.route('**/api/tasks?**', async (route) => {
-    await fulfillJson(route, {
-      tasks: [
-        {
-          task_id: taskId,
-          display_name: taskId,
-          status: 'review',
-          created_at: '2026-06-07T10:00:00+08:00',
-          updated_at: '2026-06-07T11:00:00+08:00',
-          page_count: 1,
-          document_type: 'copd_admission_record',
-          document_type_label: '入院记录',
-          record_date: '2026-06-07',
-          record_time: null,
-          patient: { patient_id: patientId, name: '测试用例', deleted: true }
-        }
-      ]
-    });
   });
 
   // 1. 工作台首页 -> 点击新建任务
@@ -154,13 +150,10 @@ test('patient records: create patient, create task, view detail, delete patient 
   await expect(page.getByRole('dialog', { name: '新建任务' })).toBeVisible();
   const nameInput = page.getByLabel('患者姓名');
   await nameInput.fill('测试用例');
-  // 触发同名搜索 (弹窗可能会自动搜索)
+  await page.getByRole('button', { name: '搜索患者' }).click();
 
-  // 3. 选择已有患者(避免同名干扰)
-  const patientButton = page.getByRole('button', { name: new RegExp(patientId) });
-  if (await patientButton.isVisible().catch(() => false)) {
-    await patientButton.click();
-  }
+  // 3. 选择已有患者
+  await page.getByRole('button', { name: `选择 ${patientId}` }).click();
 
   // 4. 选择记录类型/日期
   await page.getByLabel('记录类型').selectOption('copd_admission_record');
@@ -170,7 +163,7 @@ test('patient records: create patient, create task, view detail, delete patient 
   await page.getByRole('button', { name: '创建任务' }).click();
 
   // 6. 二维码出现
-  await expect(page.getByText(/mobile\/upload/)).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '任务上传二维码' })).toBeVisible();
 
   // 7. 导航到患者管理
   await page.goto('/patients');
