@@ -101,7 +101,7 @@ def _sample_admission_schema():
     ]
     return {
         "version": "admission_record_structured_fields.v1",
-        "document_type": "admission_record",
+        "document_type": "copd_admission_record",
         "field_groups": [
             {
                 "group_key": gk,
@@ -192,12 +192,31 @@ def test_admission_prompt_requires_not_found_for_missing_fields():
     units = _sample_evidence_units()
     prompt = build_admission_structured_fields_prompt(schema, units)
 
-    # not_found 必须显式存在，且 value=""、evidence_ids=[]。
-    assert "not_found" in prompt
-    # 关键三件套：status、value、evidence_ids 的 not_found 形式。
-    assert '"status": "not_found"' in prompt or 'status="not_found"' in prompt or "status" in prompt
-    assert '"value": ""' in prompt or 'value=""' in prompt or "value=\"\"" in prompt
-    assert '"evidence_ids": []' in prompt or "evidence_ids=[]" in prompt
+    # 关键三件套必须同时出现：status="not_found"、value=""、evidence_ids=[]。
+    # 任何一项缺失都意味着模型可能输出非规约的 not_found 形式（例如 value=null）。
+    not_found_triple = (
+        'status="not_found"' in prompt,
+        'value=""' in prompt,
+        'evidence_ids=[]' in prompt,
+    )
+    assert all(not_found_triple), (
+        "not_found 三件套必须同时出现，缺失项："
+        f"status={'status=\"not_found\"' if not_found_triple[0] else 'MISSING'}, "
+        f"value={'value=\"\"' if not_found_triple[1] else 'MISSING'}, "
+        f"evidence_ids={'evidence_ids=[]' if not_found_triple[2] else 'MISSING'}"
+    )
+    # 额外的 JSON 形式示例（status: "not_found"、value: ""、evidence_ids: []）也应出现。
+    json_triple = (
+        '"status": "not_found"' in prompt,
+        '"value": ""' in prompt,
+        '"evidence_ids": []' in prompt,
+    )
+    assert all(json_triple), (
+        "JSON 形式示例中 not_found 三件套也必须同时出现，缺失项："
+        f"status={'\"status\": \"not_found\"' if not_found_triple[0] else 'MISSING'}, "
+        f"value={'\"value\": \"\"' if not_found_triple[1] else 'MISSING'}, "
+        f"evidence_ids={'\"evidence_ids\": []' if not_found_triple[2] else 'MISSING'}"
+    )
     # 必须明示未找到字段也要输出，禁止省略。
     assert "不得省略" in prompt or "不能省略" in prompt or "必须输出" in prompt
 
@@ -212,11 +231,9 @@ def test_admission_prompt_forbids_subjective_diagnosis():
     prompt = build_admission_structured_fields_prompt(schema, units)
 
     # 诊断字段必须显式存在
-    assert "diagnosis_preliminary" in prompt
-    assert "diagnosis_final" in prompt
-    # 提示词必须限制诊断字段只能从 OCR 证据提取，禁止推断/改写/添加诊断
-    assert "diagnosis_preliminary" in prompt
-    assert "diagnosis_final" in prompt
+    diagnosis_field_keys = ("diagnosis_preliminary", "diagnosis_final")
+    for field_key in diagnosis_field_keys:
+        assert field_key in prompt
     # 禁止推断、补充、改写诊断
     assert "推断" in prompt
     assert "改写" in prompt
@@ -234,9 +251,15 @@ def test_admission_prompt_allows_shared_evidence_ids():
     units = _sample_evidence_units()
     prompt = build_admission_structured_fields_prompt(schema, units)
 
-    # 提示词必须明示多个字段可以共用同一条 evidence，特别是血气 6 个字段。
-    assert "共享" in prompt or "共用" in prompt
-    assert "血气" in prompt
+    # 提示词必须同时出现 血气 + 共享/共用 + 证据 三类关键词，缺一不可。
+    # 这是共享 evidence 的核心条件：血气 6 个字段共享同一条血气分析证据单元。
+    co_occurrence = ("血气" in prompt, "共享" in prompt or "共用" in prompt, "证据" in prompt)
+    assert all(co_occurrence), (
+        "血气 + 共享/共用 + 证据 必须同时出现，缺失项："
+        f"血气={'YES' if co_occurrence[0] else 'NO'}, "
+        f"共享/共用={'YES' if co_occurrence[1] else 'NO'}, "
+        f"证据={'YES' if co_occurrence[2] else 'NO'}"
+    )
     # 必须是正向允许（不是禁止）。
     assert "允许" in prompt or "可以" in prompt
 

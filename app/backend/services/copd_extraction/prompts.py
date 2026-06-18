@@ -312,6 +312,9 @@ document_type：{document_type}
 - 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
 - 允许多个字段共用同一条 evidence unit，特别是血气 6 项。
 
+# 末尾的 schema_keys 列表是给模型的 field_key 自检参考；固定字段表已在上方枚举，
+# 这里只在末尾以 JSON 数组形式再次列出 61 个 key 便于模型逐项核对，避免漏字段或
+# 写错 key。token 预算上 ~1.5KB，可接受。
 允许的 field_key 集合（参考，必须按上表顺序全量输出）：
 {json.dumps(schema_keys, ensure_ascii=False)}
 """.strip()
