@@ -156,6 +156,105 @@ function mockReviewRoutes() {
 }
 
 describe('ReviewPage', () => {
+  it('renders_schema_order_even_when_ocr_page_order_is_odd', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            display_name: 'task_001',
+            status: 'review',
+            created_at: '2026-05-19T10:00:00+08:00',
+            updated_at: '2026-05-19T10:03:00+08:00',
+            page_count: 2,
+            processing_summary: { stage: 'done', status: 'completed', label: '处理完成', progress_percent: 100 },
+            review_summary: { confirmed_count: 0, total_count: 3 },
+            patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-07',
+            record_time: '09:30'
+          }
+        })
+      ),
+      http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: [] } })),
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '## 初步诊断\n慢性阻塞性肺疾病急性加重\n\n## 主诉\n反复咳嗽、咳痰15年，加重伴喘憋3天。\n\n## 现病史\n患者15年前出现反复咳嗽咳痰...',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '## 初步诊断\n慢性阻塞性肺疾病急性加重'
+                },
+                {
+                  page_id: 'page_002',
+                  page_no: 2,
+                  preview_url: '/api/tasks/task_001/images/page_002',
+                  parsed_text: '## 主诉\n反复咳嗽、咳痰15年，加重伴喘憋3天。\n\n## 现病史\n患者15年前出现反复咳嗽咳痰...'
+                }
+              ],
+              fields: [
+                {
+                  field_key: 'chief_complaint',
+                  label: '主诉',
+                  value: '反复咳嗽、咳痰15年，加重伴喘憋3天。',
+                  status: 'unreviewed',
+                  attention_required: false,
+                  evidence: [{ page_id: 'page_002', page_no: 2, text: '反复咳嗽、咳痰15年' }]
+                },
+                {
+                  field_key: 'present_illness',
+                  label: '现病史',
+                  value: '患者15年前出现反复咳嗽咳痰',
+                  status: 'unreviewed',
+                  attention_required: false,
+                  evidence: [{ page_id: 'page_002', page_no: 2, text: '患者15年前出现反复咳嗽咳痰' }]
+                },
+                {
+                  field_key: 'diagnosis_final',
+                  label: '最终诊断',
+                  value: '慢性阻塞性肺疾病急性加重',
+                  status: 'unreviewed',
+                  attention_required: false,
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '慢性阻塞性肺疾病急性加重' }]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    const chiefComplaintCard = await screen.findByTestId('review-field-card-chief_complaint');
+    const presentIllnessCard = await screen.findByTestId('review-field-card-present_illness');
+    const diagnosisCard = await screen.findByTestId('review-field-card-diagnosis_final');
+
+    // When the backend provides field_groups, the order is schema order:
+    // 主诉 before 现病史 before 诊断. OCR/parser page order is odd (diagnosis
+    // appears on page 1, but the schema keeps 主诉 first).
+    const allCards = Array.from(document.querySelectorAll('[data-testid^="review-field-card-"]'));
+    const keysInDom = allCards.map((el) => (el as HTMLElement).getAttribute('data-testid') ?? '');
+    const chiefIdx = keysInDom.indexOf('review-field-card-chief_complaint');
+    const presentIdx = keysInDom.indexOf('review-field-card-present_illness');
+    const diagnosisIdx = keysInDom.indexOf('review-field-card-diagnosis_final');
+    expect(chiefIdx).toBeGreaterThanOrEqual(0);
+    expect(presentIdx).toBeGreaterThan(chiefIdx);
+    expect(diagnosisIdx).toBeGreaterThan(presentIdx);
+    expect(chiefComplaintCard).toBeTruthy();
+    expect(presentIllnessCard).toBeTruthy();
+    expect(diagnosisCard).toBeTruthy();
+  });
+
   it('uses the shared workstation navigation shell', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);

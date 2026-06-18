@@ -28,6 +28,7 @@ export interface ReviewField {
   extraction_status?: string;
   verification_status?: string;
   attention_required?: boolean;
+  attention_message?: string;
   quality_flags?: Array<{ flag: string; severity: string; message: string }>;
   ocr_correction?: {
     applied: boolean;

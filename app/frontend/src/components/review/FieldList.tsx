@@ -80,84 +80,23 @@ function getFieldValueLengthClass(value: string) {
   return 'field-card__item--short';
 }
 
-const evidenceRiskFlags = new Set([
-  'value_not_in_evidence',
-  'missing_evidence',
-  'evidence_missing',
-  'evidence_not_found',
-  'source_not_found',
-]);
-
-const ocrRiskFlags = new Set([
-  'ocr_label_ambiguity',
-  'unit_symbol_ambiguity',
-  'ocr_numeric_conflict',
-  'low_ocr_quality',
-  'llm_review_suspicious',
-  'llm_review_failed',
-]);
-
-function getInitialExtractedSnippet(field: ReviewField) {
-  return (field.candidate_value ?? field.auto_value ?? field.final_value ?? field.value ?? '').trim();
+// 医生可见的"重点核验"只来自后端给出的 attention_required / attention_message;
+// 不再根据内部 quality_flags 的标识名推断,以免内部审计名泄漏到 UI。
+function getAttentionMessage(field: ReviewField): string | null {
+  if (!field.attention_required) return null;
+  const text = field.attention_message?.trim();
+  if (text) return text;
+  return '需要重点核验，请核对原文';
 }
 
-function hasEvidenceText(field: ReviewField) {
-  return (field.evidence ?? []).some((evidence) => (evidence.text ?? '').trim().length > 0);
-}
-
-function isRiskFlag(
-  flag: { flag: string; message: string },
-  flagSet: Set<string>,
-  keywords: string[],
-) {
-  const flagName = flag.flag.toLowerCase();
-  const message = flag.message.toLowerCase();
-  return (
-    flagSet.has(flag.flag) ||
-    keywords.some((kw) => flagName.includes(kw) || message.includes(kw))
-  );
-}
-
-function isEvidenceRiskFlag(flag: { flag: string; message: string }) {
-  return isRiskFlag(flag, evidenceRiskFlags, [
-    '未找到证据',
-    '未能在 evidence',
-    '无 evidence',
-    'source_not_found',
-    'evidence_not_found',
-    'missing_evidence',
-    'value_not_in_evidence',
-  ]);
-}
-
-function isOcrRiskFlag(flag: { flag: string; message: string }) {
-  return isRiskFlag(flag, ocrRiskFlags, ['ocr', '错读', '纠偏']);
-}
-
-function shouldShowRiskFlag(field: ReviewField) {
-  const flags = field.quality_flags ?? [];
-  if (flags.some(isEvidenceRiskFlag)) return true;
-  if (flags.some(isOcrRiskFlag)) return true;
-  if (flags.length > 0) return false;
-  return (
-    field.verification_status === 'suspicious' &&
-    getInitialExtractedSnippet(field).length > 0 &&
-    !hasEvidenceText(field)
-  );
-}
-
-function getFieldRiskDescription(field: ReviewField) {
-  const flags = field.quality_flags ?? [];
-  const ocrFlag = flags.find(isOcrRiskFlag);
-  if (ocrFlag) {
-    return ocrFlag.message || 'OCR 结果需重点核验';
-  }
-  const evidenceFlag = flags.find(isEvidenceRiskFlag);
-  if (evidenceFlag) {
-    return evidenceFlag.message || '证据风险';
-  }
-  const snippet = getInitialExtractedSnippet(field);
-  return snippet ? `未找到证据；最开始提取片段：${snippet}` : '未找到证据';
+// not_found 字段默认是安静状态:空值时显示"未提及",不展示黄色感叹号。
+// 注意:attention_required === true 时,即便 extraction_status 是 not_found,
+// 仍然展示重点核验提示,因为这是后端明确标注的可疑字段。
+function isQuietNotFound(field: ReviewField) {
+  if (field.attention_required) return false;
+  if (field.extraction_status !== 'not_found') return false;
+  const value = (field.final_value ?? field.auto_value ?? field.value ?? '').toString().trim();
+  return value.length === 0;
 }
 
 function AutoGrowTextarea({
@@ -229,76 +168,114 @@ export function FieldList({
 
   return (
     <div className="field-cards">
-      {groups.map((group) => (
-        <section key={group.groupKey} className="field-card" aria-label={group.groupLabel}>
-          <header className="field-card__header">
-            <h3>{group.groupLabel}</h3>
-            <span>{group.fields.length} 个字段</span>
-          </header>
+      {groups.map((group) => {
+        const hideDuplicateFieldLabel =
+          group.fields.length === 1 && (group.fields[0]?.field_name ?? group.fields[0]?.label ?? '') === group.groupLabel;
 
-          <div className="field-card__body">
-            {group.fields.map((field) => {
-              const isSuspicious = field.verification_status === 'suspicious';
-              const isSelected = field.field_key === selectedFieldKey;
-              const isReviewed = field.status === 'confirmed';
-              const value = field.final_value ?? field.auto_value ?? '';
-              const fieldLabel = field.field_name ?? field.label ?? field.field_key;
-              const riskDescription = shouldShowRiskFlag(field) ? getFieldRiskDescription(field) : null;
+        return (
+          <section key={group.groupKey} className="field-card" aria-label={group.groupLabel}>
+            <header className="field-card__header">
+              <h3>{group.groupLabel}</h3>
+              <span>{group.fields.length} 个字段</span>
+            </header>
 
-              return (
-                <div
-                  key={field.field_key}
-                  className={`field-card__item ${getFieldValueLengthClass(value)}${isSelected ? ' is-focused' : ''}${isSuspicious ? ' is-suspicious' : ''}${isReviewed ? ' is-reviewed' : ''}`}
-                  data-testid={`review-field-card-${field.field_key}`}
-                  onClick={() => onFocusField(field)}
-                >
-                  <div className="field-card__topline">
-                    <label
-                      className="field-card__label"
-                      htmlFor={`review-field-${field.field_key}`}
-                    >
-                      {fieldLabel}
-                    </label>
-                    {riskDescription ? (
-                      <span
-                        className="field-card__flag"
-                        aria-label={`重点核验：${riskDescription}`}
-                        data-tooltip={riskDescription}
-                        tabIndex={0}
-                      >
-                        !
-                      </span>
+            <div className="field-card__body">
+              {group.fields.map((field) => {
+                const isSuspicious = field.verification_status === 'suspicious';
+                const isSelected = field.field_key === selectedFieldKey;
+                const isReviewed = field.status === 'confirmed';
+                const value = field.final_value ?? field.auto_value ?? '';
+                const fieldLabel = field.field_name ?? field.label ?? field.field_key;
+                const quietNotFound = isQuietNotFound(field);
+                const attentionMessage = getAttentionMessage(field);
+                const isAttention = attentionMessage !== null;
+                const attentionAriaLabel = `重点核验：${attentionMessage ?? ''}`;
+
+                return (
+                  <div
+                    key={field.field_key}
+                    className={`field-card__item ${getFieldValueLengthClass(value)}${isSelected ? ' is-focused' : ''}${isSuspicious ? ' is-suspicious' : ''}${isReviewed ? ' is-reviewed' : ''}${quietNotFound ? ' is-not-found' : ''}${isAttention ? ' is-attention' : ''}`}
+                    data-testid={`review-field-card-${field.field_key}`}
+                    onClick={() => onFocusField(field)}
+                  >
+                    {!hideDuplicateFieldLabel ? (
+                      <div className="field-card__topline">
+                        <label
+                          className="field-card__label"
+                          htmlFor={`review-field-${field.field_key}`}
+                        >
+                          {fieldLabel}
+                        </label>
+                        {isAttention ? (
+                          <span
+                            className="field-card__flag"
+                            aria-label={attentionAriaLabel}
+                            data-tooltip={attentionMessage ?? ''}
+                            tabIndex={0}
+                          >
+                            !
+                          </span>
+                        ) : null}
+                      </div>
                     ) : null}
+                    {isAttention ? (
+                      hideDuplicateFieldLabel ? (
+                        <div className="field-card__topline">
+                          <span
+                            className="field-card__flag"
+                            aria-label={attentionAriaLabel}
+                            data-tooltip={attentionMessage ?? ''}
+                            tabIndex={0}
+                          >
+                            !
+                          </span>
+                        </div>
+                      ) : null
+                    ) : null}
+                    <div className="field-card__value-row">
+                      {quietNotFound ? (
+                        <div
+                          id={`review-field-${field.field_key}`}
+                          className="field-card__placeholder"
+                          role="textbox"
+                          aria-readonly="true"
+                          aria-label={field.field_key}
+                          data-placeholder="未提及"
+                          onClick={() => onFocusField(field)}
+                        >
+                          未提及
+                        </div>
+                      ) : (
+                        <AutoGrowTextarea
+                          field={field}
+                          value={value}
+                          onChange={(nextValue) => updateField(field.field_key, nextValue)}
+                          onFocus={() => onFocusField(field)}
+                          readOnly={readOnly}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="field-card__review-check"
+                        aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
+                        aria-pressed={isReviewed}
+                        disabled={readOnly}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onFocusField(field);
+                          onToggleReviewed(field);
+                        }}
+                      >
+                        {isReviewed ? '✓' : ''}
+                      </button>
+                    </div>
                   </div>
-                  <div className="field-card__value-row">
-                    <AutoGrowTextarea
-                      field={field}
-                      value={value}
-                      onChange={(nextValue) => updateField(field.field_key, nextValue)}
-                      onFocus={() => onFocusField(field)}
-                      readOnly={readOnly}
-                    />
-                    <button
-                      type="button"
-                      className="field-card__review-check"
-                      aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
-                      aria-pressed={isReviewed}
-                      disabled={readOnly}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onFocusField(field);
-                        onToggleReviewed(field);
-                      }}
-                    >
-                      {isReviewed ? '✓' : ''}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

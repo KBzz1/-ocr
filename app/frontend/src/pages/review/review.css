@@ -1615,6 +1615,26 @@
   line-height: 1.5;
 }
 
+/* ── Field: quiet not-found placeholder (T8) ── */
+.field-card__placeholder {
+  min-height: 30px;
+  box-sizing: border-box;
+  border: 1px dashed #d2dce9;
+  border-radius: 5px;
+  padding: 6px 32px 6px 8px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: text;
+  user-select: none;
+}
+
+.field-card__item.is-not-found {
+  /* keep it visually quiet: no suspicious background, no flag */
+  background: transparent;
+}
+
 .field-card__review-check {
   position: absolute;
   top: 50%;
