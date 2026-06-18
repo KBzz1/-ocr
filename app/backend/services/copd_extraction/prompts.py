@@ -1,6 +1,7 @@
 import json
 
 COPD_EXTRACTION_PROMPT_VERSION = "copd_extraction_prompt.v1"
+ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION = "admission_record_structured_fields_prompt.v1"
 
 _OCR_RISK_WARNINGS = (
     "OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、"
@@ -159,4 +160,158 @@ def build_adversarial_verification_prompt(source_groups: list[dict], document_co
 
 来源分组：
 {json.dumps(source_groups, ensure_ascii=False)}
+""".strip()
+
+
+# ---------------------------------------------------------------------------
+# 新固定字段 Qwen 提示词契约（Task 3）
+# ---------------------------------------------------------------------------
+#
+# 该 builder 是活动入院记录结构化抽取路径的唯一公开入口。
+# 旧的 build_extraction_prompt / build_section_group_extraction_prompt /
+# build_source_hint_regeneration_prompt 保留为内部辅助（Task 11 删除）。
+# 新契约核心：
+# - 按 schema 固定字段表全量输出，不得自由生成 schema 外字段或二级 key。
+# - evidence 用 evidence_ids（编号列表），不允许模型自行撰写 evidence 文本。
+# - 严禁 OCR 文本修正、标题纠正（如把"品后诊断"改成"最后诊断"）和页序重排。
+# - 诊断字段仅摘录原文记录，禁止主观医学判断、推断、补充或改写。
+# - 允许多个字段共用同一条 evidence unit（特别是血气 6 项）。
+# - 未找到字段返回 status="not_found", value="", evidence_ids=[]，不得省略。
+
+
+def build_admission_structured_fields_prompt(
+    schema: dict,
+    evidence_units: list[dict],
+    document_text: str = "",
+) -> str:
+    """按 admission_record_structured_fields.v1 schema 构建 Qwen 结构化抽取 prompt。
+
+    Args:
+        schema: schema_loader.load_schema 规范化后的 dict，包含
+            version / document_type / field_groups。
+        evidence_units: 后端生成的轻量证据单元列表，每项包含 id / text，
+            可选 start_offset / end_offset / page_no / section_key。
+        document_text: 合并后的 OCR 原文（仅供模型理解上下文；不参与字段抽取）。
+
+    Returns:
+        完整的 Qwen prompt 字符串。
+    """
+    schema_version = schema.get("version", "")
+    document_type = schema.get("document_type", "")
+
+    # ---- 1. 固定字段表 ----
+    table_lines = []
+    for group in schema.get("field_groups", []):
+        group_key = group.get("group_key", "")
+        group_label = group.get("group_label", "")
+        for field in group.get("fields", []):
+            field_key = field.get("field_key", "")
+            field_label = field.get("label", "")
+            table_lines.append(
+                f"- [{group_key}/{group_label}] {field_key}（{field_label}）"
+            )
+    fixed_field_table = "\n".join(table_lines)
+
+    # ---- 2. 编号证据单元 ----
+    unit_blocks = []
+    for unit in evidence_units or []:
+        unit_id = unit.get("id", "")
+        unit_text = unit.get("text", "")
+        page_no = unit.get("page_no")
+        page_part = f"（page_no={page_no}）" if page_no else ""
+        unit_blocks.append(f"- {unit_id}{page_part}：{unit_text}")
+    evidence_units_section = "\n".join(unit_blocks) if unit_blocks else "（未提供 evidence_units）"
+
+    schema_keys = [
+        field.get("field_key", "")
+        for group in schema.get("field_groups", [])
+        for field in group.get("fields", [])
+    ]
+
+    return f"""
+你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
+
+schema_version：{schema_version}
+document_type：{document_type}
+
+【硬约束 — 输出 JSON 形状】
+输出必须是单个 JSON 对象，顶层键固定为 `schema_version`、`document_type`、`fields`，不得新增顶层键。`fields` 是数组，每个 schema 字段对应一项，不得增删。
+
+字段状态枚举仅允许：`found` / `not_found` / `uncertain`。
+- found：原文中明确出现该字段语义，`value` 非空，`evidence_ids` 应非空。
+- not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
+- uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
+
+每项字段输出固定包含：`section_key`、`section_label`、`field_key`、`field_label`、`status`、`value`、`evidence_ids`。`evidence_ids` 必须是字符串列表（list[str]），只允许从下方"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+
+输出示例：
+```json
+{{
+  "schema_version": "{schema_version}",
+  "document_type": "{document_type}",
+  "fields": [
+    {{
+      "section_key": "chief_complaint",
+      "section_label": "主诉",
+      "field_key": "chief_complaint",
+      "field_label": "主诉",
+      "status": "found",
+      "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
+      "evidence_ids": ["u001"]
+    }},
+    {{
+      "section_key": "history_of_present_illness",
+      "section_label": "现病史",
+      "field_key": "hpi_initial_onset",
+      "field_label": "初次发病情况",
+      "status": "not_found",
+      "value": "",
+      "evidence_ids": []
+    }}
+  ]
+}}
+```
+
+【硬约束 — 字段与 key】
+- field_key 只允许使用下方"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
+- section_key / section_label 必须与固定字段表中的定义一致，不得改写或拼接。
+- 字段顺序按固定字段表顺序输出，便于后端对齐。
+
+【硬约束 — evidence 与原文】
+- evidence_ids 只允许从下方编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
+- 不允许在 value 或 evidence_ids 之外再输出 evidence 原文片段、章节标题字符串作为定位依据，也不得输出任何章节定位字符串或历史版本遗留的来源元数据字段。新契约不要求算法直接输出旧版抽取元数据（章节定位字符串、原文短片段字段、置信度、抽取状态、复核状态、原始/修正对比、质控标记等一律不输出）。
+- value 必须是 OCR 原文中可定位的语义片段，不得根据医学常识补全、合并或重写。
+
+【硬约束 — OCR 原文保持原样】
+- 不得静默修正 OCR 文本；不得把 1/I/l、0/O/o、P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等疑似错读标签自动改成标准标签。
+- 不得纠正章节标题错字；例如 `品后诊断` 必须保留原文写法，禁止替换为 `最后诊断`；同样禁止为单个错字写专门规则。
+- 不得重排页序或重新组织 OCR 原文；raw OCR 顺序即真相。
+- 字段归属不得依赖 OCR 是否正确识别章节标题；按固定字段表从全文/证据单元抽取。
+
+【硬约束 — 诊断字段禁止主观】
+- diagnosis_preliminary（初步诊断）和 diagnosis_final（最终诊断）只能摘录 OCR 原文中已经写出的诊断文本。
+- 禁止对诊断字段做主观医学判断、推断、改写、合并、添加诊断或医学推理。
+- 诊断字段不可结合其他字段或常识推断"应该是"什么诊断；证据缺失时输出 not_found。
+
+【硬约束 — 共享证据单元】
+- 允许多个字段共用同一条 evidence unit；evidence_ids 可以包含 1 个或多个 ID。
+- 血气 6 个字段（血气pH、血气pCO2、血气pO2、血气Na+、血气FIO2、血气氧合指数）通常共享同一条血气分析证据单元，应当显式共享 evidence_ids。
+
+【固定字段表】
+{fixed_field_table}
+
+【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
+{evidence_units_section}
+
+【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
+{document_text or "（未提供 document_text）"}
+
+【再次强调】
+- 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
+- 禁止 schema 外字段；禁止自由生成二级 key；禁止输出任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
+- 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
+- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。
+
+允许的 field_key 集合（参考，必须按上表顺序全量输出）：
+{json.dumps(schema_keys, ensure_ascii=False)}
 """.strip()
