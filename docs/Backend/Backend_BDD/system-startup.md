@@ -42,8 +42,8 @@ Feature: 本地服务启动与离线运行
     And 日志应记录 "配置文件缺失，使用默认配置" 的 warning
     And GET /api/system/status 仍应返回 200
 
-  Scenario: 算法模块未配置时系统仍可启动
-    Given 外部算法模块文件未放置在预期目录
+  Scenario: 算法子系统未配置时系统仍可启动
+    Given 算法子系统文件未放置在预期目录
     When 我执行启动脚本
     Then 系统应正常启动
     And GET /api/system/status 应返回 200

@@ -1,24 +1,34 @@
 .patients-page {
   min-height: 100vh;
+  padding: 26px 32px 32px;
   background: #f5f8fd;
   color: #0f172a;
 }
 
 .patients-page__header {
-  min-height: 44px;
+  min-height: 96px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 20px;
-  padding: 0 32px;
+  gap: 22px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid #dbe3ef;
   background: transparent;
+}
+
+.patients-page__title h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.25;
+  letter-spacing: 0;
 }
 
 .patients-page__content {
   width: 100%;
   max-width: 1680px;
   margin: 0 auto;
-  padding: 0 20px 28px;
+  padding: 22px 0 0;
 }
 
 .patients-page__status {
@@ -38,7 +48,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: 0 0 16px;
+  margin: 0;
 }
 
 .patients-search-input {
@@ -60,13 +70,13 @@
 
 .patients-search-button,
 .patients-new-button {
-  min-height: 40px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid #1d4ed8;
   border-radius: 7px;
-  padding: 0 16px;
+  padding: 0 20px;
   background: #1d4ed8;
   color: #ffffff;
   cursor: pointer;
@@ -130,7 +140,7 @@
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .patients-table {
@@ -142,8 +152,8 @@
 
 .patients-table th,
 .patients-table td {
-  min-height: 56px;
-  padding: 12px 18px;
+  height: 66px;
+  padding: 0 28px;
   border-bottom: 1px solid #edf1f7;
   text-align: left;
   vertical-align: middle;
@@ -178,6 +188,53 @@
   padding: 0;
 }
 
+.patients-table__subtext {
+  margin-top: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.patients-table__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.patients-table__detail-button,
+.patients-table__task-button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.patients-table__detail-button {
+  border: 0;
+  background: transparent;
+  color: #334155;
+}
+
+.patients-table__detail-button:hover {
+  color: #1d4ed8;
+}
+
+.patients-table__task-button {
+  border: 1px solid #2563eb;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+.patients-table__task-button:hover {
+  background: #eff6ff;
+}
+
 .patients-table__name-button:hover {
   text-decoration: underline;
 }
@@ -200,6 +257,7 @@
 /* ---------- 患者详情页 ---------- */
 .patient-detail-page {
   min-height: 100vh;
+  padding: 28px 32px 32px;
   background: #f5f8fd;
   color: #0f172a;
 }
@@ -209,9 +267,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 32px 16px;
+  padding: 0 0 18px;
   border-bottom: 1px solid #e2e8f0;
-  background: #ffffff;
+  background: transparent;
 }
 
 .patient-detail-page__identity {
@@ -257,6 +315,18 @@
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.patient-detail-page__action:not(.patient-detail-page__action--danger):first-of-type {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+}
+
+.patient-detail-page__action:not(.patient-detail-page__action--danger):nth-of-type(2) {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #ffffff;
 }
 
 .patient-detail-page__action:disabled {
@@ -347,7 +417,7 @@
   display: grid;
   grid-template-columns: 240px 1fr;
   gap: 20px;
-  padding: 20px 32px 32px;
+  padding: 22px 0 0;
   max-width: 1680px;
   margin: 0 auto;
 }
@@ -358,7 +428,7 @@
   border-radius: 8px;
   padding: 8px;
   align-self: start;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.03);
 }
 
 .patient-detail-page__type-list {
@@ -421,7 +491,7 @@
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   padding: 16px 20px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .patient-detail-page__record-list {
@@ -504,6 +574,14 @@
 .patient-detail-page__record-status--neutral {
   background: #e2e8f0;
   color: #334155;
+}
+
+.patient-detail-page__record-action-text {
+  flex: 0 0 112px;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
 }
 
 .patient-detail-page__record-detail {

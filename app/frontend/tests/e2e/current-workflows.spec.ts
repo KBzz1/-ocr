@@ -148,10 +148,11 @@ test('MVP flow: create task, upload images, finish, review, done, export', async
   await page.getByLabel('患者姓名').fill('测试用例');
   await page.getByRole('button', { name: '搜索患者' }).click();
   await page.getByRole('button', { name: '选择 P-A1B2C3D4' }).click();
+  await page.getByRole('button', { name: '下一步' }).click();
   await page.getByLabel('记录类型').selectOption('copd_admission_record');
   await page.getByLabel('记录日期').fill('2026-06-07');
-  await page.getByRole('button', { name: '创建任务' }).click();
-  await expect(page.getByRole('dialog', { name: '任务上传二维码' })).toBeVisible();
+  await page.getByRole('button', { name: '创建任务并显示二维码' }).click();
+  await expect(page.getByRole('dialog', { name: '手机扫码上传' })).toBeVisible();
   await expect(page.getByRole('img', { name: '任务上传二维码' })).toBeVisible();
 
   await page.goto('/mobile/upload/task_001?token=token_001');

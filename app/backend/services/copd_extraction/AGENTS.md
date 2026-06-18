@@ -4,16 +4,16 @@
 
 本文件管辖 `app/backend/services/copd_extraction/`，是慢阻肺/呼吸系统入院记录专病字段抽取核心业务代码的长期独有规则。它补充仓库根级 `CLAUDE.md`、`docs/AGENTS.md` 与 `app/backend/CLAUDE.md`，只列进入本目录工作时才需要的额外约束。
 
-## 范围（仓库边界内的允许实现）
+## 范围
 
-- 慢阻肺/呼吸系统入院记录的专病字段抽取主流程。
-- 规则分段、字段结果归一化、薄规则质量核验。
-- 本地 LLM prompt harness：prompt 编排、结果解析、失败映射和可审计风险标记。
+- 慢阻肺/呼吸系统入院记录的字段体系、输出契约、结果归一化和薄规则质量核验。
+- 当前内置抽取实现包含规则分段、本地 LLM prompt harness、结果解析、失败映射和可审计风险标记。
+- 如果后续改用新的 OCR/LLM 结构化算法包，本目录优先保留字段契约、质量核验和适配层；算法具体实现可以被替换。
 - 第一版只支持慢阻肺/呼吸系统入院记录，**不得扩展为通用医学规则引擎**（根级硬约束）。
 
 ## 明确不在本目录做
 
-- OCR、图像预处理、裁剪、透视矫正、版面分析。
+- OCR、图像预处理、裁剪、透视矫正、版面分析算法本体。
 - HIS/EMR 接入、医学诊断建议、云服务调用。
 - OCR / 文档解析客户端；这些是 `services/algorithm_ports/` 的事，本目录只消费其输出。
 - 在算法失败时凭空补造"看起来合理"的字段；空就空，必须进 `failed`。
@@ -27,13 +27,13 @@
 
 ## 模块职责（指针，不复制代码）
 
-- `extractor.py`：抽取主流程入口；策略选择（`field_batches` / `section_groups`）、失败映射、输出全量字段结果。
-- `port.py`：与 `services/algorithm_ports/` 的端口契约边界（消费 OCR/文档解析结果）。
+- `extractor.py`：抽取主流程入口；策略选择（`field_batches` / `section_groups`）、证据匹配与恢复、失败降级、常规复核 + 对抗性复核编排、输出全量字段结果。
+- `port.py`：与 `services/algorithm_ports/` 的端口契约边界（消费 OCR/文档解析结果）；通过 `enable_verification` / `enable_adversarial_verification` 控制复核层级。
 - `section_splitter.py`：规则分段；将原文切到 schema 使用的 `source_section`（主诉、现病史、既往史、个人史、体格检查、辅助检查等）。
-- `prompts.py`：抽取与复核 prompt 模板、section group 抽取 prompt、source hint 重生 prompt；prompt 改动视为契约变更。
-- `llm_client.py`：本地 LLM 客户端抽象；调用方注入，实现可替换。
+- `prompts.py`：抽取、常规复核、对抗性复核和 source hint 重生 prompt 模板；prompt 改动视为契约变更。
+- `llm_client.py`：LLM 客户端抽象，含超时保护；调用方注入，实现可替换。
 - `field_result.py`：字段结果结构、`_default_result`、补齐全量字段、空值判定。
-- `quality_checks.py`：薄规则质量核验，产出 `quality_flags`；不静默改写原文。
+- `quality_checks.py`：薄规则质量核验，产出 `quality_flags`；不静默改写原文；生理阈值模块级常量化。
 - `__init__.py`：对外只导出 extractor 与必要类型，不暴露内部 prompt 模板和分段细节。
 
 ## 输出契约

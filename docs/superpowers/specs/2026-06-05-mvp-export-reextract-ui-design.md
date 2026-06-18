@@ -13,7 +13,7 @@
 1. 单任务 Excel 导出只能看到少数字段(PRD 明确记录的硬缺陷)。导出的字段集合来自 `results/{task_id}/review_result.json["fields"]`,而该列表是在 `ReviewService.get_or_init` 当下按当时 schema 初始化出来的;schema 增加字段后,旧的 review_result.json 不会被补齐,导致 Excel 实际只看到初始化时已经存在的字段。
 2. 任务管理页已有 `exportTasksBatchZip(taskIds)` API client,但缺多选 UI、批量按钮、失败提示、下载反馈和导出摘要展示。
 3. 审核页已有 `reextractTaskFromOcr(taskId)` API client,但缺触发入口和成功后的元数据展示。
-4. **新契约**:重抽取入口不再向用户提示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等免责文案,也不再做"重抽取结果对比与采用";重抽取直接覆盖人工已修改的最终值。
+4. **现行契约**:重抽取入口不向用户提示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等免责文案,也不做"重抽取结果对比与采用";重抽取直接覆盖人工已修改的最终值。
 
 第三项是产品边界修正,本 spec 一并对齐;后端行为和前端文案都要相应收敛。
 
@@ -47,13 +47,7 @@
 - **不显示任何关于"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"的免责文案**;重抽取的语义(不重跑 OCR / 复用 OCR 文本)体现在后端行为,不在 UI 解释。
 - **不做重抽取结果对比与采用 UI**;新结果直接覆盖审核页当前字段(见后端重抽取行为变更)。
 
-### 重抽取后端行为变更 (BE-MVP-04-05,契约修订)
-
-旧契约(`2026-05-29-batch-export-reextract-design.md`、`2026-05-29-backend-batch-export-reextract-p2-design.md`):
-
-- 重抽取只把新候选写入 `field_candidates.json` 与 `reextract_runs/{run_id}.json`,**不覆盖** `review_result.json` 中的人工最终值;前端需在对比采用页里决定是否采用。
-
-新契约(本 spec 取代):
+### 重抽取后端行为 (BE-MVP-04-05)
 
 - 重抽取直接把新候选覆盖到 `review_result.json["fields"]`,包括:
   - `final_value`、`auto_value`
@@ -74,9 +68,7 @@
 - 不动重抽取的 schema/prompt/规则选择逻辑(沿用任务 `document_type`)。
 - 不动重抽取的版本元数据契约(`run_id` / `schema_version` / `prompt_version` / `source` / `created_at` / `candidate_count`)。
 - 不实现重抽取结果对比、采用、保留 UI;不做逐字段 diff。
-- 不修改老的 spec/plan/契约文档中"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等已经存在的措辞;本 spec 是新行为的权威来源,旧文档中冲突的措辞视为已废弃,不再追溯修订。
 - 不实现新 schema 字段出现时的字段方案/schema 管理入口(那是后置能力)。
-- 不实现 `FE-MVP-04-06`(重抽取结果对比与采用);该任务项从 PRD 任务清单移除(见 PRD 任务清单的同步更新)。
 
 ## 后端设计
 
@@ -246,6 +238,6 @@
   - 任务管理页勾选 2 个 `review` 任务,点批量导出,zip 下载,摘要条出现;勾选 1 个 `failed` 任务时复选框禁用。
   - 审核页"重新抽取"按钮点击后,展示运行元数据条;渲染结果不含免责文案。
 - 文档:
-  - 本 spec 是新行为权威来源;`docs/PRD文档/PRD任务清单.md` 中 `BE-MVP-04-05`、`FE-MVP-04-05`、新增的 `BE-MVP-05-06` 状态、边界同步更新;`FE-MVP-04-06`(重抽取结果对比与采用)从清单移除。
-  - 旧 spec/plan(`2026-05-29-batch-export-reextract-design.md`、`2026-05-29-backend-batch-export-reextract-p2-design.md`)中"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等措辞视为已废弃,不再追溯修订;后续引用以本 spec 为准。
-  - 后端测试断言(尤其是 `test_reextract_uses_saved_document_text_and_records_versions`)更新为新契约。
+  - `docs/PRD文档/PRD任务清单.md` 中 `BE-MVP-04-05`、`FE-MVP-04-05` 和 `BE-MVP-05-06` 状态、边界同步为现行行为。
+  - `2026-05-29-batch-export-reextract-design.md`、`2026-05-29-backend-batch-export-reextract-p2-design.md` 与本文保持一致，不再保留相互冲突的重抽取契约。
+  - 后端测试断言(尤其是 `test_reextract_uses_saved_document_text_and_records_versions`)更新为现行契约。

@@ -1,5 +1,7 @@
 # 批量导出、重抽取与文书模板 P2 Implementation Plan
 
+> 归档说明：本计划包含患者中心落地前的手机端模板选择方案，仅用于追溯历史执行过程；当前记录类型契约以未归档 PRD、BDD/TDD 和 specs 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现任务级文书模板选择基础、手机端模板选择、按 `document_type` 选择 schema/prompt/抽取端口，并补齐批量 zip manifest、重抽取审计元数据和 `section_groups` OCR 风险提示。

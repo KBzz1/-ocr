@@ -976,3 +976,212 @@ def test_copd_extractor_appends_both_too_long_and_not_in_source_flags():
     assert "evidence_recovered_from_value" in flags
     assert "78次/分" in result["evidence"]
     assert result["evidence"] in result["source_text"]
+
+
+def test_copd_extractor_recovers_normalized_evidence_at_original_position():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "脉搏:99次/分",
+                        "evidence_phrase": "",
+                        "source_hint": "体格检查",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse"],
+        extraction_strategy="section_groups",
+        enable_verification=False,
+    )
+
+    text = (
+        "体格检查：神志清楚，精神可，查体配合，口唇无紫绀，双肺呼吸音粗，"
+        "未闻及明显干湿啰音，心律齐。\n  脉搏：99次/分，呼吸：20次/分，血压120/80mmHg。"
+    )
+    result = extractor.extract(text)[0]
+
+    assert "脉搏：99次/分" in result["evidence"]
+    assert result["evidence"] in result["source_text"]
+
+
+# —————————————————————————————— 对抗性复核测试 ——————————————————————————————
+
+
+def test_adversarial_verify_converts_issues_to_quality_flags():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "对抗性复核" in prompt:
+                return {
+                    "issues": [
+                        {
+                            "field_key": "pulse",
+                            "problem_type": "ocr_error",
+                            "description": "脉搏9次/分疑似OCR截断，同段心率99次/分",
+                            "severity": "high",
+                        },
+                        {
+                            "field_key": "bmi",
+                            "problem_type": "ocr_error",
+                            "description": "BHI疑为BMI的OCR错读",
+                            "severity": "medium",
+                        },
+                    ]
+                }
+            if "字段级复核器" in prompt:
+                return {
+                    "verifications": [
+                        {"field_key": "pulse", "verdict": "pass", "checks": {}, "comment": ""},
+                        {"field_key": "bmi", "verdict": "pass", "checks": {}, "comment": ""},
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "pulse",
+                        "original_value": "9次/分",
+                        "evidence_phrase": "脉搏：9次/分",
+                        "source_hint": "体格检查",
+                    },
+                    {
+                        "field_key": "bmi",
+                        "original_value": "24.2kg/m2",
+                        "evidence_phrase": "BHI:24.2kg/m2",
+                        "source_hint": "体格检查",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["pulse", "bmi"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+        enable_adversarial_verification=True,
+    )
+    results = extractor.extract("体格检查：脉搏：9次/分 心率99次/分。BHI:24.2kg/m2。")
+
+    pulse = next(r for r in results if r["field_key"] == "pulse")
+    bmi = next(r for r in results if r["field_key"] == "bmi")
+
+    # pulse 有 high severity 问题 → 应升级为 suspicious
+    assert pulse["verification_status"] == "suspicious"
+    assert any("adversarial_ocr_error" in flag["flag"] for flag in pulse["quality_flags"])
+
+    # bmi 有 medium severity 问题 → 应保留 flag 但状态不变
+    assert any("adversarial_ocr_error" in flag["flag"] for flag in bmi["quality_flags"])
+
+
+def test_adversarial_verify_no_issues_preserves_results():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "对抗性复核" in prompt:
+                return {"issues": []}
+            if "字段级复核器" in prompt:
+                return {
+                    "verifications": [
+                        {"field_key": "temperature", "verdict": "pass", "checks": {}, "comment": ""},
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "temperature",
+                        "original_value": "36.7℃",
+                        "evidence_phrase": "体温：36.7℃",
+                        "source_hint": "体格检查",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["temperature"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+        enable_adversarial_verification=True,
+    )
+    results = extractor.extract("体格检查：体温：36.7℃。")
+
+    assert results[0]["verification_status"] == "passed"
+
+
+def test_adversarial_verify_failure_does_not_block_pipeline():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "对抗性复核" in prompt:
+                raise ValueError("对抗性复核模拟失败")
+            if "字段级复核器" in prompt:
+                return {
+                    "verifications": [
+                        {"field_key": "temperature", "verdict": "pass", "checks": {}, "comment": ""},
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "temperature",
+                        "original_value": "36.7℃",
+                        "evidence_phrase": "体温：36.7℃",
+                        "source_hint": "体格检查",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["temperature"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+        enable_adversarial_verification=True,
+    )
+    # 不应抛异常，结果应正常返回
+    results = extractor.extract("体格检查：体温：36.7℃。")
+    assert results[0]["verification_status"] == "passed"
+
+
+def test_adversarial_verify_can_be_disabled():
+    from app.backend.services.copd_extraction.extractor import COPDFieldExtractor
+
+    class LlmClient:
+        def complete_json(self, prompt: str):
+            if "对抗性复核" in prompt:
+                raise AssertionError("对抗性复核不应被调用")
+            if "字段级复核器" in prompt:
+                return {
+                    "verifications": [
+                        {"field_key": "temperature", "verdict": "pass", "checks": {}, "comment": ""},
+                    ]
+                }
+            return {
+                "fields": [
+                    {
+                        "field_key": "temperature",
+                        "original_value": "36.7℃",
+                        "evidence_phrase": "体温：36.7℃",
+                        "source_hint": "体格检查",
+                    },
+                ]
+            }
+
+    extractor = COPDFieldExtractor(
+        llm_client=LlmClient(),
+        field_keys=["temperature"],
+        extraction_strategy="section_groups",
+        enable_verification=True,
+        enable_adversarial_verification=False,
+    )
+    results = extractor.extract("体格检查：体温：36.7℃。")
+    assert results[0]["verification_status"] == "passed"

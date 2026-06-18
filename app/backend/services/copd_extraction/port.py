@@ -26,6 +26,7 @@ class _LazyCOPDFieldPort:
         max_tokens: int = 4096,
         extraction_batch_size: int = 25,
         enable_verification: bool = False,
+        enable_adversarial_verification: bool = True,
         extraction_strategy: str = STRATEGY_SECTION_GROUPS,
     ):
         self._model_path = model_path
@@ -34,6 +35,7 @@ class _LazyCOPDFieldPort:
         self._max_tokens = max_tokens
         self._extraction_batch_size = extraction_batch_size
         self._enable_verification = enable_verification
+        self._enable_adversarial_verification = enable_adversarial_verification
         self._extraction_strategy = extraction_strategy
         self._port = None
         self._llm_client = None
@@ -59,6 +61,7 @@ class _LazyCOPDFieldPort:
             extraction_batch_size=self._extraction_batch_size,
             verification_batch_size=self._extraction_batch_size,
             enable_verification=self._enable_verification,
+            enable_adversarial_verification=self._enable_adversarial_verification,
             extraction_strategy=self._extraction_strategy,
         )
         self._llm_client = llm_client
@@ -82,4 +85,5 @@ def build_default_copd_field_port(config: dict, field_keys_provider):
         max_tokens=config.get("llm_max_tokens", 4096),
         extraction_batch_size=config.get("llm_extraction_batch_size", 25),
         enable_verification=config.get("llm_enable_verification", False),
+        enable_adversarial_verification=config.get("llm_enable_adversarial_verification", True),
     )

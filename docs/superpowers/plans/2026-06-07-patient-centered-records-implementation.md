@@ -89,7 +89,7 @@ BDD/TDD 同步写明：查询不存在或已删除患者、重复删除患者返
 | FE-PAT-01 患者中心页面 | 待开始 | `app/frontend/src/pages/patients/`、工作台新建任务弹窗 | 患者搜索、详情时间轴、字段摘要 |
 ```
 
-同时把 `FE-MVP-02-05 手机端文书模板选择` 标记为“需收敛”，注明本功能将移除手机端模板切换。
+同时把 `FE-MVP-02-05` 收敛为“手机端记录类型只读展示”，注明手机端模板切换已移除。
 
 在 `app/backend/CLAUDE.md` 增加 `routes/patient.py`、`patient_service.py`、`patient_query_service.py` 指针；在 `app/frontend/README.md` 增加患者管理和患者详情页面职责。
 

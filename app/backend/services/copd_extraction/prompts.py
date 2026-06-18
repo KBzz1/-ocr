@@ -100,21 +100,62 @@ OCR 原文：
 def build_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
     return f"""
 你是字段级复核器。
-问题：逐字段判断字段值是否能被提供的 OCR 事实支持。
+任务：逐字段判断字段值是否能被提供的 OCR 事实支持。
 事实：
 - 原始 OCR 上下文：{document_context or "未提供"}
 - 来源分组中的 source_text 是主要证据；原始 OCR 上下文只用于理解同一病历的局部语境。
 
 只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
-必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 low_ocr_quality。
+必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 ocr_quality_issue。
 药名、医学词和单位符号也必须检查 OCR 纠偏合理性，例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L。若字段值看起来依赖错读纠偏但未说明，输出 suspicious。
 同一字段附近出现前后矛盾数值时，例如脉搏：9次/分但同段另有心率99次/分，输出 suspicious，不得静默选值。
 体重下降/体重减轻字段若输出 0g、0kg、0克等数值，与字段含义明显矛盾；例如体重减轻0g 应输出 suspicious，并提示核对原文，不得主动改成其他数值。
 输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
-comment 不超过 20 个汉字，只写必要原因；通过项可以写 "一致"。
+comment 不超过 40 个汉字，只写必要原因；通过项可以写 "一致"。
 verdict 只能是 pass、suspicious、fail。
-reason_code 只能是 original_text_ambiguous、low_ocr_quality、extraction_error、unreliable_result、source_section_not_found、none。
-checks 必须是对象，且包含 source_text_supported、ocr_correction_reasonable、numeric_value_preserved、negation_preserved、section_assignment_reasonable。
+reason_code 只能是 ocr_quality_issue、extraction_mistake、evidence_insufficient、none。
+checks 必须是对象，且包含：
+- value_semantically_supported：字段值的语义是否被 OCR 事实支持（而非仅数值是否出现）
+- no_hallucination_or_inference：是否引入了 OCR 中没有的信息或做了医学推断
+- ocr_correction_justified：如有 OCR 纠偏，理由是否充分、原始 OCR 文本与修正后值的关系是否合理
+
+来源分组：
+{json.dumps(source_groups, ensure_ascii=False)}
+""".strip()
+
+
+def build_adversarial_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
+    """对抗性复核 prompt：要求 LLM 主动挑刺，直接输出问题列表。
+
+    与常规复核不同，对抗性复核不要求 LLM 判断「是否正确」，
+    而是要求 LLM 站在批评者角度**主动寻找可能存在的抽取问题**。
+    输出直接作为 quality_flags 附加到字段，不经规则层过滤。
+    """
+    return f"""
+你是字段抽取的对抗性复核器。你的任务是**主动发现抽取结果中可能存在的问题**，而非判断抽取是否正确。
+
+对每个字段，逐一审视以下风险：
+
+1. **数值截断/错读**：OCR 可能把多位数读成单数字（如 99→9、36.7→3.7），导致字段值异常。单数字脉搏/呼吸、极低体温等应特别关注。
+2. **OCR 标签混淆**：检验项目名可能被 OCR 错读（P62→PaO2、BHI→BMI、P02→PO2、嗜托溴铵→噻托溴铵）；单位符号可能错读（+10^9/L→×10^9/L）。
+3. **否定翻转风险**：evidence 中存在"无、否认、未见、可能、考虑、建议复查"等表述，但字段值被当作确定阳性抽取。
+4. **证据缺失/幻觉**：字段值是否在 evidence 中找不到对应文本？是否引入了 OCR 原文没有的信息？
+5. **数值矛盾**：同一字段的 evidence 中是否存在另一个与字段值不一致的数值（如脉搏 9 次/分但同段有心率 99 次/分）？
+6. **医学推断过度**：字段值是否更像是 LLM 根据医学常识推断出来的，而非直接从 OCR 原文中提取？
+7. **体重下降零值矛盾**：体重下降/减轻字段出现 0g、0kg、0 斤等反直觉数值。
+
+输出 JSON 对象，顶层键为 `issues`，`issues` 是数组。每项必须包含：
+- field_key：存在问题的字段 key
+- problem_type：ocr_error / value_not_found / negation_risk / numeric_conflict / hallucination / medical_inference / zero_weight_loss
+- description：不超过 60 个汉字的问题描述，须指明具体疑点
+- severity：high / medium / low
+
+**关键约束**：
+- 只输出你**有明确疑点**的字段。如果字段抽取看起来合理，不要强行编造问题。
+- 每个 issue 的 description 必须包含**具体的证据位置或数值**，不能泛泛而谈。
+- 如果没有发现任何问题，输出空的 issues 数组。
+
+原始 OCR 上下文：{document_context or "未提供"}
 
 来源分组：
 {json.dumps(source_groups, ensure_ascii=False)}

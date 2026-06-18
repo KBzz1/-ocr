@@ -8,7 +8,7 @@
 | `network.README.md` | 本地端口、局域网地址选择、二维码访问地址 |
 | `storage.README.md` | 上传、结果、导出、日志目录策略 |
 | `schema.README.md` | 当前 schema 版本、文书类型选择策略 |
-| `algorithm-modules.README.md` | 外部算法模块路径、启用状态、契约版本 |
+| `algorithm-modules.README.md` | 算法子系统路径、启用状态、契约版本 |
 | `export.README.md` | Excel、JSON 导出策略 |
 | `logging.README.md` | 本地日志级别、脱敏和轮转策略 |
 

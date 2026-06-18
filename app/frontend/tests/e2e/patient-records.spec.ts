@@ -154,16 +154,17 @@ test('patient records: create patient, create task, view detail, delete patient 
 
   // 3. 选择已有患者
   await page.getByRole('button', { name: `选择 ${patientId}` }).click();
+  await page.getByRole('button', { name: '下一步' }).click();
 
   // 4. 选择记录类型/日期
   await page.getByLabel('记录类型').selectOption('copd_admission_record');
   await page.getByLabel('记录日期').fill('2026-06-07');
 
   // 5. 提交
-  await page.getByRole('button', { name: '创建任务' }).click();
+  await page.getByRole('button', { name: '创建任务并显示二维码' }).click();
 
   // 6. 二维码出现
-  await expect(page.getByRole('dialog', { name: '任务上传二维码' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '手机扫码上传' })).toBeVisible();
 
   // 7. 导航到患者管理
   await page.goto('/patients');

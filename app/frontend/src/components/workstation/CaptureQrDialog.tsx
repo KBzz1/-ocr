@@ -99,7 +99,7 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
       >
         <header className="qr-dialog__header">
           <div>
-            <h2 id="qr-dialog-title">任务上传二维码</h2>
+            <h2 id="qr-dialog-title">手机扫码上传</h2>
           </div>
           <IconButton label="关闭弹窗" onClick={onClose} variant="soft">
             x
@@ -107,6 +107,20 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
         </header>
 
         <div className="qr-dialog__body">
+          <div className="qr-dialog__task-summary" aria-label="任务信息">
+            <div>
+              <span>患者</span>
+              <strong>{task?.patient?.name ?? '未命名患者'}</strong>
+            </div>
+            <div>
+              <span>记录类型</span>
+              <strong>{task?.document_type_label ?? task?.document_type ?? '入院记录'}</strong>
+            </div>
+            <div>
+              <span>任务</span>
+              <strong>{task?.display_name ?? task?.task_id ?? '-'}</strong>
+            </div>
+          </div>
           {qrSvgDataUrl ? (
             <div className="qr-code-shell">
               <img
@@ -119,9 +133,10 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
           ) : (
             <div className="qr-code-frame" aria-live="polite">二维码生成中</div>
           )}
-          <button className="secondary-action qr-dialog__regenerate" type="button" onClick={handleRegenerateQr}>
-            重新生成二维码
-          </button>
+          <div className="qr-dialog__upload-state" aria-live="polite">
+            <strong>等待手机上传图片</strong>
+            <span>已上传 {task?.uploadedPages ?? 0} 张</span>
+          </div>
         </div>
 
         <footer className="qr-dialog__footer">
@@ -143,9 +158,14 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
               {copyStatus ? <span role="status">{copyStatus}</span> : null}
             </div>
           ) : null}
-          <button className="link-action qr-dialog__help-toggle" type="button" onClick={() => setIsHelpOpen((value) => !value)}>
-            手机无法连接？
-          </button>
+          <div className="qr-dialog__footer-actions">
+            <button className="ghost-action qr-dialog__regenerate" type="button" onClick={handleRegenerateQr}>
+              重新生成二维码
+            </button>
+            <button className="link-action qr-dialog__help-toggle" type="button" onClick={() => setIsHelpOpen((value) => !value)}>
+              手机无法连接？
+            </button>
+          </div>
         </footer>
       </section>
     </div>

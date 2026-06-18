@@ -12,7 +12,7 @@
 | BE-TASK-005 | API | `GET /api/tasks/{taskId}` 返回任务、页面、处理摘要和审核状态 | 详情缺字段 |
 | BE-TASK-006 | 集成 | 任务失败时保存 `error_code`、`error_message`、`failed_at` | 失败原因丢失 |
 | BE-TASK-007 | API | 失败任务可 `POST /api/tasks/{taskId}/retry` 回到 `processing` | 重试接口缺失 |
-| BE-TASK-008 | 集成 | 外部 OCR/文档解析未配置或异常时任务进入 `failed` | 未配置被当作可审核任务 |
+| BE-TASK-008 | 集成 | 算法子系统未配置或异常时任务进入 `failed` | 未配置被当作可审核任务 |
 | BE-TASK-009 | 集成 | 慢阻肺字段结果整体不可用、全字段为空或契约非法时任务进入 `failed` | 无效结果进入审核 |
 | BE-TASK-010 | 集成 | 单字段可疑或复核失败不阻断任务进入 `review`，字段在审核页提示 | 单字段问题阻断整单或风险丢失 |
 | BE-TASK-011 | API | `review` 或 `done` 任务可重新处理回到 `processing` | 待审核或已完成任务无法重新处理 |

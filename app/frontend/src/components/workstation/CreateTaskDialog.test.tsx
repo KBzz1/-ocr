@@ -84,6 +84,7 @@ describe('CreateTaskDialog', () => {
       name: /选择.*P-A1B2C3D4/
     });
     await user.click(existingPatientButton);
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     const recordTypeSelect = within(dialog).getByLabelText('记录类型') as HTMLSelectElement;
     await user.selectOptions(recordTypeSelect, 'copd_admission_record');
@@ -94,7 +95,7 @@ describe('CreateTaskDialog', () => {
     await user.clear(within(dialog).getByLabelText('记录时间（可选）'));
     await user.type(within(dialog).getByLabelText('记录时间（可选）'), '09:30');
 
-    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
 
     await waitFor(() => {
       expect(handleSubmit).toHaveBeenCalledTimes(1);
@@ -147,7 +148,7 @@ describe('CreateTaskDialog', () => {
     expect(within(dialog).getByText('P-E5F6A7B8')).toBeTruthy();
     expect(createPatientCount).toBe(0);
 
-    await user.click(within(dialog).getByRole('button', { name: '仍然新建' }));
+    await user.click(within(dialog).getByRole('button', { name: '仍然新建患者' }));
 
     await waitFor(() => {
       expect(createPatientCount).toBe(1);
@@ -192,6 +193,7 @@ describe('CreateTaskDialog', () => {
       name: /选择.*P-A1B2C3D4/
     });
     await user.click(existingPatientButton);
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     const recordTypeSelect = within(dialog).getByLabelText('记录类型') as HTMLSelectElement;
     await user.selectOptions(recordTypeSelect, 'copd_admission_record');
@@ -199,10 +201,10 @@ describe('CreateTaskDialog', () => {
     await user.clear(within(dialog).getByLabelText('记录日期'));
     await user.type(within(dialog).getByLabelText('记录日期'), '2026-06-07');
 
-    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
 
     // 响应未返回前，弹窗内不应出现二维码相关内容
-    expect(screen.queryByRole('dialog', { name: '任务上传二维码' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '手机扫码上传' })).toBeNull();
     expect(screen.queryByRole('img', { name: '任务上传二维码' })).toBeNull();
     expect(within(dialog).queryByRole('img', { name: '任务上传二维码' })).toBeNull();
 

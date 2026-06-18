@@ -140,8 +140,8 @@ describe('MVP task list and retry', () => {
 
     const table = await screen.findByRole('table', { name: '任务列表' });
     const processingRow = within(table).getByText('3').closest('tr') as HTMLElement;
-    const statusCell = processingRow.querySelector('td.task-status-cell-td') as HTMLElement;
-    const actionsCell = processingRow.querySelector('td:last-child') as HTMLElement;
+    const statusCell = processingRow.querySelector('td.task-list-col--processing-status') as HTMLElement;
+    const actionsCell = processingRow.querySelector('td.task-list-col--actions') as HTMLElement;
 
     expect(statusCell.textContent).not.toContain('处理中');
     expect(statusCell.textContent).toContain('OCR 文档解析');
@@ -203,7 +203,7 @@ describe('MVP task list and retry', () => {
     const row = within(table).getByText('46').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: '查看二维码' }));
 
-    const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
+    const dialog = await screen.findByRole('dialog', { name: '手机扫码上传' });
     const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
     expect(qrImage.dataset.qrValue).toBe('http://192.168.1.5:8081/mobile/upload/46?token=token_046');
   });
@@ -378,21 +378,23 @@ describe('Task list patient/record binding and rebind', () => {
     window.history.pushState({}, '', '/tasks');
   });
 
-  it('shows a single 患者与记录 column with patient, record type, and record date', async () => {
+  it('shows patient and record details in four aligned columns', async () => {
     renderTaskList();
 
     const table = await screen.findByRole('table', { name: '任务列表' });
     const headerCells = within(table).getAllByRole('columnheader').map((cell) => cell.textContent?.trim() ?? '');
-    expect(headerCells).toContain('患者与记录');
+    expect(headerCells).toContain('患者姓名');
+    expect(headerCells).toContain('患者编号');
+    expect(headerCells).toContain('记录类型');
+    expect(headerCells).toContain('记录时间');
+    expect(headerCells).not.toContain('患者与记录');
 
     const reviewRow = within(table).getByText('2').closest('tr') as HTMLElement;
-    // 患者姓名 + 患者编号在同一单元格
-    expect(within(reviewRow).getByText('测试用例')).toBeTruthy();
-    expect(within(reviewRow).getByText('P-A1B2C3D4')).toBeTruthy();
-    // 记录类型
-    expect(within(reviewRow).getByText('入院记录')).toBeTruthy();
-    // 记录日期(无时间时只显示日期)
-    expect(within(reviewRow).getByText('2026-06-06')).toBeTruthy();
+    const reviewCells = within(reviewRow).getAllByRole('cell');
+    expect(reviewCells[2].textContent).toContain('测试用例');
+    expect(reviewCells[3].textContent).toContain('P-A1B2C3D4');
+    expect(reviewCells[4].textContent).toContain('入院记录');
+    expect(reviewCells[5].textContent).toContain('2026-06-06');
   });
 
   it('shows the record time after the date when present', async () => {

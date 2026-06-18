@@ -13,8 +13,8 @@
 | `TASK_PROCESSING_CANCELLED` | 409 | 用户取消本地处理（任务进入 `failed`） |
 | `INVALID_TASK_TRANSITION` | 400 | 非法任务状态流转 |
 | `ALGORITHM_MODULE_NOT_CONFIGURED` | — | OCR/结构化模块未配置（任务进入 `failed`） |
-| `ALGORITHM_MODULE_FAILED` | — | 本地算法模块异常（任务进入 `failed`） |
-| `ALGORITHM_CONTRACT_INVALID` | — | 本地算法模块返回结构不符合契约（任务进入 `failed`） |
+| `ALGORITHM_MODULE_FAILED` | — | 本地算法子系统异常（任务进入 `failed`） |
+| `ALGORITHM_CONTRACT_INVALID` | — | 本地算法子系统返回结构不符合契约（任务进入 `failed`） |
 | `REVIEW_VALIDATION_FAILED` | 400 | 审核保存或确认请求非法 |
 | `REEXTRACTION_VALIDATION_FAILED` | 400 | 重新抽取请求非法、任务状态不允许或缺少可用 OCR 文本 |
 | `REEXTRACTION_CANCELLED` | 409 | 用户取消重新抽取,后端在下一个 LLM 批次边界停止,review_result 不被覆盖 |

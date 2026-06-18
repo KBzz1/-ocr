@@ -6,8 +6,12 @@ import {
   getPatients,
   type PatientSummary
 } from '../../api/patients';
+import { createTask, type CreateTaskInput, type CreateTaskResult } from '../../api/tasks';
 import { buildPatientPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
+import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
+import { CreateTaskDialog } from '../../components/workstation/CreateTaskDialog';
+import type { TaskUploadSummary } from '../workstation/workstation.types';
 import './patients.css';
 
 function formatLatestRecord(value: string | null | undefined) {
@@ -20,6 +24,17 @@ function navigateToPatient(patientId: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+function toTaskUploadSummary(task: CreateTaskResult | null): TaskUploadSummary | null {
+  if (!task) return null;
+  return {
+    ...task,
+    id: task.task_id,
+    displayName: task.display_name ?? task.task_id,
+    uploadedPages: 0,
+    createdAtText: '刚刚'
+  };
+}
+
 export function PatientsPage() {
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
@@ -30,6 +45,9 @@ export function PatientsPage() {
   const [newName, setNewName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [taskDialogPatient, setTaskDialogPatient] = useState<{ patient_id: string; name: string } | null>(null);
+  const [isTaskCreating, setIsTaskCreating] = useState(false);
+  const [createdQrTask, setCreatedQrTask] = useState<CreateTaskResult | null>(null);
   // 跟踪最新查询序号,避免慢响应覆盖快响应
   const searchRequestId = useRef(0);
 
@@ -111,6 +129,28 @@ export function PatientsPage() {
     }
   }
 
+  function handleOpenTaskDialog(patient: PatientSummary) {
+    setTaskDialogPatient({ patient_id: patient.patient_id, name: patient.name });
+  }
+
+  function handleCloseTaskDialog() {
+    if (isTaskCreating) return;
+    setTaskDialogPatient(null);
+  }
+
+  async function handleSubmitTask(input: CreateTaskInput) {
+    if (isTaskCreating) return;
+    setIsTaskCreating(true);
+    try {
+      const result = await createTask(input);
+      setTaskDialogPatient(null);
+      setCreatedQrTask(result);
+      await loadPatients('search', submittedQuery);
+    } finally {
+      setIsTaskCreating(false);
+    }
+  }
+
   const statusText = loadError
     ? loadError
     : isSearching
@@ -123,6 +163,9 @@ export function PatientsPage() {
     <WorkstationLayout activeRouteId="patients" headerKicker="" headerTitle="">
       <main className="patients-page" aria-label="患者管理页">
         <header className="patients-page__header">
+          <div className="patients-page__title">
+            <h1>患者管理</h1>
+          </div>
           <form className="patients-search-bar" onSubmit={handleSearch} role="search" aria-label="搜索患者">
             <input
               type="search"
@@ -196,8 +239,8 @@ export function PatientsPage() {
                 <tr>
                   <th scope="col">患者姓名</th>
                   <th scope="col">患者编号</th>
-                  <th scope="col">未删除任务数</th>
                   <th scope="col">最近记录时间</th>
+                  <th scope="col">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -219,12 +262,30 @@ export function PatientsPage() {
                         >
                           {patient.name}
                         </button>
+                        <div className="patients-table__subtext">{patient.task_count} 个任务</div>
                       </td>
                       <td>
                         <span className="patients-table__id">{patient.patient_id}</span>
                       </td>
-                      <td>{patient.task_count}</td>
                       <td>{formatLatestRecord(patient.latest_record_at)}</td>
+                      <td>
+                        <div className="patients-table__actions">
+                          <button
+                            type="button"
+                            className="patients-table__detail-button"
+                            onClick={() => navigateToPatient(patient.patient_id)}
+                          >
+                            查看详情
+                          </button>
+                          <button
+                            type="button"
+                            className="patients-table__task-button"
+                            onClick={() => handleOpenTaskDialog(patient)}
+                          >
+                            新建任务
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -233,6 +294,18 @@ export function PatientsPage() {
           </div>
         </div>
       </main>
+      <CreateTaskDialog
+        isOpen={Boolean(taskDialogPatient)}
+        isSubmitting={isTaskCreating}
+        initialPatient={taskDialogPatient}
+        onClose={handleCloseTaskDialog}
+        onSubmit={handleSubmitTask}
+      />
+      <CaptureQrDialog
+        isOpen={Boolean(createdQrTask)}
+        task={toTaskUploadSummary(createdQrTask)}
+        onClose={() => setCreatedQrTask(null)}
+      />
     </WorkstationLayout>
   );
 }

@@ -36,8 +36,21 @@ function formatRecordDateLabel(recordDate?: string | null, recordTime?: string |
   return recordTime ? `${recordDate} ${recordTime}` : recordDate;
 }
 
+function formatTaskDisplayName(task: TaskSummary) {
+  const displayName = task.display_name ?? task.task_id;
+  return displayName.startsWith('任务') ? displayName : `任务 ${displayName}`;
+}
+
 function isReviewableStatus(status: TaskSummary['status']) {
   return status === 'review' || status === 'done';
+}
+
+function getRecordPrimaryAction(status: TaskSummary['status']) {
+  if (status === 'review') return '进入审核';
+  if (status === 'done') return '查看结果';
+  if (status === 'uploading') return '查看二维码';
+  if (status === 'failed') return '查看失败原因';
+  return '查看状态';
 }
 
 function toTaskUploadSummary(task: CreateTaskResult | null): TaskUploadSummary | null {
@@ -402,9 +415,12 @@ export function PatientDetailPage() {
                         <span className="patient-detail-page__record-date">
                           {formatRecordDateLabel(task.record_date, task.record_time)}
                         </span>
-                        <span className="patient-detail-page__record-id">任务 {task.display_name ?? task.task_id}</span>
+                        <span className="patient-detail-page__record-id">{formatTaskDisplayName(task)}</span>
                         <span className={`patient-detail-page__record-status patient-detail-page__record-status--${statusMeta.tone}`}>
                           {getTaskStatusLabel(task.status)}
+                        </span>
+                        <span className="patient-detail-page__record-action-text">
+                          {getRecordPrimaryAction(task.status)}
                         </span>
                       </button>
                       {isExpanded ? (

@@ -32,9 +32,9 @@
 
 .tasks-page__content {
   width: 100%;
-  max-width: 1680px;
+  max-width: 2200px;
   margin: 0 auto;
-  padding: 0 20px 28px;
+  padding: 0 8px 28px;
 }
 
 .tasks-page__status {
@@ -112,34 +112,95 @@
 }
 
 .task-list-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .task-list-table {
   width: 100%;
-  min-width: 980px;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .task-list-table th,
 .task-list-table td {
-  min-height: 52px;
-  padding: 12px 16px;
+  height: 64px;
+  box-sizing: border-box;
+  padding: 10px 6px;
   border-bottom: 1px solid #edf1f7;
-  text-align: left;
+  text-align: center;
   vertical-align: middle;
 }
 
-.task-status-cell-td {
+.task-list-col--select,
+.task-list-col--pages,
+.task-list-col--processing-status,
+.task-list-col--review-status {
   text-align: center;
+}
+
+.task-list-col--select {
+  width: 48px;
+}
+
+.task-list-col--task {
+  width: 72px;
+}
+
+.task-list-col--patient-name {
+  width: 88px;
+}
+
+.task-list-col--patient-id {
+  width: 92px;
+}
+
+.task-list-col--record-type {
+  width: 68px;
+}
+
+.task-list-col--record-time {
+  width: 98px;
+}
+
+.task-list-col--created-time {
+  width: 100px;
+}
+
+.task-list-col--record-time,
+.task-list-col--created-time {
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+}
+
+.task-list-col--pages {
+  width: 44px;
+  white-space: nowrap;
+}
+
+.task-list-col--processing-status {
+  width: 108px;
+}
+
+.task-list-col--review-status {
+  width: 64px;
+}
+
+.task-list-col--error {
+  width: 86px;
+}
+
+.task-list-col--actions {
+  width: 212px;
 }
 
 .task-list-table th {
   background: #f8fafc;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -153,7 +214,7 @@
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 0 10px;
+  padding: 0 7px;
   background: #f1f5f9;
   color: #475569;
   font-size: 12px;
@@ -182,14 +243,14 @@
 }
 
 .task-status-cell {
-  width: 160px;
+  width: 100%;
   display: grid;
   gap: 8px;
   justify-items: center;
 }
 
 .task-review-badge {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -207,11 +268,15 @@
 }
 
 .task-error-text {
+  overflow: hidden;
+  display: -webkit-box;
   color: #dc2626;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.45;
   word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .task-list-muted {
@@ -219,7 +284,7 @@
 }
 
 .task-processing-progress {
-  width: 150px;
+  width: 96px;
   display: grid;
   gap: 6px;
 }
@@ -408,18 +473,13 @@
   color: #0f172a;
 }
 
-.task-list-table__select-col {
-  width: 44px;
-  text-align: center;
-}
-
-.task-list-table__select-col input[type='checkbox'] {
+.task-list-col--select input[type='checkbox'] {
   width: 16px;
   height: 16px;
   cursor: pointer;
 }
 
-.task-list-table__select-col input[type='checkbox']:disabled {
+.task-list-col--select input[type='checkbox']:disabled {
   cursor: not-allowed;
 }
 
@@ -427,60 +487,59 @@
   background: #eff6ff;
 }
 
-/* Task 11: 患者与记录合并列 */
-.task-list-patient-cell {
-  min-width: 220px;
-  display: grid;
-  gap: 4px;
-}
-
-.task-list-patient-line {
+.task-list-patient-name-cell {
+  min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
+  justify-content: center;
+  gap: 6px;
 }
 
 .task-list-patient-name {
+  min-width: 0;
+  overflow: hidden;
   color: #0f172a;
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-list-patient-id {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   color: #475569;
   background: #f1f5f9;
   border-radius: 4px;
   padding: 1px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-list-patient-deleted {
   border-radius: 999px;
-  padding: 1px 8px;
+  padding: 1px 4px;
   background: #fef2f2;
   color: #b91c1c;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   white-space: nowrap;
 }
 
-.task-list-patient-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  color: #64748b;
-  font-size: 12px;
-}
-
 .task-list-patient-record-type {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
   border-radius: 999px;
   background: #eff6ff;
   color: #1d4ed8;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  padding: 1px 8px;
+  padding: 1px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-list-patient-record-time {
@@ -488,8 +547,33 @@
   font-weight: 700;
 }
 
+.task-list-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 54px) 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.task-list-actions .task-list-action {
+  width: 54px;
+  min-height: 30px;
+  padding: 0 3px;
+  font-size: 11px;
+}
+
+.task-list-actions .task-list-action--rebind {
+  grid-column: 3;
+}
+
+.task-list-actions .icon-button {
+  grid-column: 4;
+  width: 28px;
+  height: 30px;
+}
+
 .task-list-action--rebind {
-  width: 88px;
+  width: 54px;
   border-color: #cbd5e1;
   color: #1d4ed8;
   background: #ffffff;

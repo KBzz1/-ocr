@@ -19,6 +19,25 @@ FLAG_BLOOD_GAS_LABEL_NOT_WHITELISTED = "blood_gas_label_not_whitelisted"
 
 SEVERITY_WARNING = "warning"
 
+# —— 生理合理范围阈值（模块级常量，方便按科室/场景调整）——
+PHYSIO_RANGE_TEMPERATURE = (32.0, 43.0)       # ℃
+PHYSIO_RANGE_PULSE = (20, 240)                # 次/分
+PHYSIO_RANGE_RESPIRATION = (3, 80)            # 次/分（下限 3 覆盖严重呼吸抑制）
+PHYSIO_RANGE_BMI = (8.0, 80.0)                # kg/m²
+PHYSIO_RANGE_BLOOD_GAS_PH = (6.9, 7.8)
+PHYSIO_RANGE_BLOOD_GAS_PAO2 = (20.0, 700.0)   # mmHg
+PHYSIO_RANGE_BLOOD_GAS_PACO2 = (10.0, 150.0)  # mmHg
+PHYSIO_RANGE_BP_SYSTOLIC = (50, 260)           # mmHg
+PHYSIO_RANGE_BP_DIASTOLIC = (30, 160)          # mmHg
+
+# —— 数值矛盾检测的字段配置 ——
+# key: field_key, value: (evidence 中搜索矛盾数值的正则, 触发阈值: value_number < threshold)
+_NUMERIC_CONFLICT_CONFIG = {
+    "pulse": (r"(?:脉搏|心率)[:：]?\s*(\d{2,3})\s*次/分", 10),
+    "respiration": (r"(?:呼吸)[:：]?\s*(\d{1,2})\s*次/分", 10),
+    "temperature": (r"(?:体温)[:：]?\s*(\d{2,3}(?:\.\d)?)\s*[℃°C]", 10),
+}
+
 
 def _numbers(text: str) -> list[str]:
     """提取文本中的数字，保留单数字以覆盖 mMRC、pH 等字段。"""
@@ -39,6 +58,9 @@ def _has_flag(flags: list[dict], flag_name: str) -> bool:
     return any(flag.get("flag") == flag_name for flag in flags if isinstance(flag, dict))
 
 
+# —————————————————————————————— 文档级质量检查 ——————————————————————————————
+
+
 def document_quality_flags(text: str) -> list[dict]:
     """检测整份文档的质量问题（如重复拼接）。"""
     flags = []
@@ -50,6 +72,9 @@ def document_quality_flags(text: str) -> list[dict]:
             break
         seen.add(sentence)
     return flags
+
+
+# —————————————————————————————— 单字段检查函数 ——————————————————————————————
 
 
 def _has_suspicious_date(text: str) -> bool:
@@ -87,27 +112,48 @@ def _has_unit_symbol_ambiguity(field_key: str, value: str, evidence: str) -> boo
 
 
 def _has_numeric_conflict(field_key: str, value: str, evidence: str) -> bool:
-    if field_key != "pulse":
+    """检测同一字段附近是否存在矛盾数值。
+
+    对脉率/呼吸/体温等体征字段，当抽取值为单数字（<10，极可能为 OCR
+    截断）时，在 evidence 中搜索是否有另一个合理数值。
+    """
+    config = _NUMERIC_CONFLICT_CONFIG.get(field_key)
+    if config is None:
         return False
-    value_match = re.search(r"(?<!\d)(\d{1,3})(?!\d)", value)
+    pattern, threshold = config
+    value_match = re.search(r"(?<!\d)(\d{1,3}(?:\.\d)?)(?!\d)", value)
     if not value_match:
         return False
-    value_number = int(value_match.group(1))
-    if value_number >= 10:
+    try:
+        value_number = float(value_match.group(1))
+    except ValueError:
         return False
-    for match in re.finditer(r"(?:脉搏|心率)[:：]?\s*(\d{2,3})\s*次/分", evidence):
-        if int(match.group(1)) != value_number:
+    if value_number >= threshold:
+        return False
+    for match in re.finditer(pattern, evidence):
+        try:
+            evidence_number = float(match.group(1))
+        except ValueError:
+            continue
+        if evidence_number != value_number:
             return True
     return False
 
 
 def _has_counterintuitive_zero_weight_loss(field_key: str, value: str, evidence: str) -> bool:
+    """检测体重下降字段的零值矛盾。
+
+    当 evidence 明确提到体重下降/减轻但字段值为 0 时标记，
+    覆盖 OCR 可能的 O/0 混淆。
+    """
     if field_key != "weight_loss":
         return False
     text = f"{value} {evidence}"
-    if not re.search(r"(?:体重|体质量).{0,8}(?:下降|减轻|降低|减少)", text):
+    # 上下文窗口放宽到 15 字以容纳时间修饰语（如"近1月来逐渐"）；
+    # "消瘦"可独立作为体重下降的语义指示词，不强制要求"体重"前缀
+    if not re.search(r"(?:体重|体质量).{0,15}(?:下降|减轻|降低|减少|消瘦)|消瘦", text):
         return False
-    return bool(re.search(r"(?<!\d)0(?:\.\s*0+)?\s*(?:g|kg|克|千克|公斤)\b", text, flags=re.IGNORECASE))
+    return bool(re.search(r"(?<!\d)[0Oo](?:\.\s*[0Oo]+)?\s*(?:g|kg|克|千克|公斤|斤)\b", text, flags=re.IGNORECASE))
 
 
 def _first_number(value: str) -> float | None:
@@ -125,19 +171,19 @@ def _has_physiologic_range_risk(field_key: str, value: str) -> bool:
     if number is None:
         return False
     if field_key == "temperature":
-        return number < 32 or number > 43
+        return number < PHYSIO_RANGE_TEMPERATURE[0] or number > PHYSIO_RANGE_TEMPERATURE[1]
     if field_key == "pulse":
-        return number < 20 or number > 240
+        return number < PHYSIO_RANGE_PULSE[0] or number > PHYSIO_RANGE_PULSE[1]
     if field_key == "respiration":
-        return number < 5 or number > 80
+        return number < PHYSIO_RANGE_RESPIRATION[0] or number > PHYSIO_RANGE_RESPIRATION[1]
     if field_key == "bmi":
-        return number < 8 or number > 80
+        return number < PHYSIO_RANGE_BMI[0] or number > PHYSIO_RANGE_BMI[1]
     if field_key == "blood_gas_ph":
-        return number < 6.9 or number > 7.8
+        return number < PHYSIO_RANGE_BLOOD_GAS_PH[0] or number > PHYSIO_RANGE_BLOOD_GAS_PH[1]
     if field_key == "blood_gas_pao2":
-        return number < 20 or number > 700
+        return number < PHYSIO_RANGE_BLOOD_GAS_PAO2[0] or number > PHYSIO_RANGE_BLOOD_GAS_PAO2[1]
     if field_key == "blood_gas_paco2":
-        return number < 10 or number > 150
+        return number < PHYSIO_RANGE_BLOOD_GAS_PACO2[0] or number > PHYSIO_RANGE_BLOOD_GAS_PACO2[1]
     if field_key == "blood_pressure":
         return _has_blood_pressure_range_risk(value)
     return False
@@ -149,7 +195,15 @@ def _has_blood_pressure_range_risk(value: str) -> bool:
         return False
     systolic = int(match.group(1))
     diastolic = int(match.group(2))
-    return systolic < 50 or systolic > 260 or diastolic < 30 or diastolic > 160
+    return (
+        systolic < PHYSIO_RANGE_BP_SYSTOLIC[0]
+        or systolic > PHYSIO_RANGE_BP_SYSTOLIC[1]
+        or diastolic < PHYSIO_RANGE_BP_DIASTOLIC[0]
+        or diastolic > PHYSIO_RANGE_BP_DIASTOLIC[1]
+    )
+
+
+# —————————————————————————————— 血气标签检查 ——————————————————————————————
 
 
 def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str) -> bool:
@@ -181,6 +235,8 @@ def _has_blood_gas_label_not_whitelisted(field_key: str, value: str, evidence: s
     if not label:
         return False
     normalized = label.upper().replace("０", "0").replace("Ｏ", "O")
+    # P62 是 OCR 典型误读产物（P→P, a/O→6, O/2→2），加入白名单以避免双重标记；
+    # ocr_label_ambiguity 规则会独立捕获该模式并标记风险。
     whitelists = {
         "blood_gas_pao2": {"PO2", "PAO2", "P02", "P62"},
         "blood_gas_paco2": {"PCO2", "PACO2", "PC02", "PAC02"},
@@ -204,6 +260,9 @@ def _blood_gas_label_before_value(value: str, evidence: str) -> str:
     return ""
 
 
+# —————————————————————————————— 主入口 ——————————————————————————————
+
+
 def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
     """对字段列表施加薄规则核验，为可疑字段添加 quality_flags 并将
     verification_status 设为 "suspicious"。
@@ -213,62 +272,88 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
     - 不导致任务失败
     """
     checked = copy.deepcopy(fields)
+
+    # 文档级质量检查（对完整 OCR 文本执行一次，而非每个字段的 evidence 片段）
+    doc_flags = document_quality_flags(full_text) if full_text else []
+
     for item in checked:
         item.setdefault("quality_flags", [])
         value = item.get("original_value") or ""
         evidence = item.get("evidence") or ""
+        field_key = item.get("field_key", "")
 
+        # —— 数字值是否在 evidence 中出现 ——
+        value_has_numbers = False
         for number in _numbers(value):
+            value_has_numbers = True
             if not _number_in_evidence(number, evidence):
                 item["quality_flags"].append(
                     _flag(FLAG_VALUE_NOT_IN_EVIDENCE, "字段值中的数字未能在 evidence 中直接找到")
                 )
                 break
 
+        # —— 纯文本值（不含数字）是否在 evidence 中出现 ——
+        if not value_has_numbers and value and evidence:
+            if value not in evidence:
+                item["quality_flags"].append(
+                    _flag(FLAG_VALUE_NOT_IN_EVIDENCE, "字段值未在 evidence 中找到")
+                )
+
+        # —— 可疑日期 ——
         if _has_suspicious_date(value) or _has_suspicious_date(evidence):
             item["quality_flags"].append(
                 _flag(FLAG_SUSPICIOUS_DATE, "日期明显晚于当前日期或与上下文不一致")
             )
 
+        # —— 否定/不确定语气 ——
         if _has_local_negation_or_uncertainty(value, evidence) and value and value not in ("", "无", "未见", "否认"):
             item["quality_flags"].append(
                 _flag(FLAG_NEGATION_OR_UNCERTAINTY_RISK, "evidence 附近存在否定或不确定语气")
             )
 
-        if _has_blood_gas_label_ocr_ambiguity(item.get("field_key", ""), value, evidence) and not _has_flag(item["quality_flags"], FLAG_OCR_LABEL_AMBIGUITY):
+        # —— OCR 检验项目名疑似错读 ——
+        if _has_blood_gas_label_ocr_ambiguity(field_key, value, evidence) and not _has_flag(item["quality_flags"], FLAG_OCR_LABEL_AMBIGUITY):
             item["quality_flags"].append(
                 _flag(FLAG_OCR_LABEL_AMBIGUITY, "OCR 中检验项目名疑似错读，请核对原文")
             )
 
-        if _has_blood_gas_label_not_whitelisted(item.get("field_key", ""), value, evidence):
+        # —— 血气标签不在白名单 ——
+        if _has_blood_gas_label_not_whitelisted(field_key, value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_BLOOD_GAS_LABEL_NOT_WHITELISTED, "血气项目标签不在白名单内，请核对原文")
             )
 
-        if _has_unit_symbol_ambiguity(item.get("field_key", ""), value, evidence):
+        # —— 检验单位符号 OCR 错读 ——
+        if _has_unit_symbol_ambiguity(field_key, value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_UNIT_SYMBOL_AMBIGUITY, "检验单位符号疑似 OCR 错读，请核对原文")
             )
 
-        if _has_numeric_conflict(item.get("field_key", ""), value, evidence):
+        # —— 同一字段附近数值矛盾（已泛化至脉率/呼吸/体温） ——
+        if _has_numeric_conflict(field_key, value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_OCR_NUMERIC_CONFLICT, "同一字段附近存在不一致数值，请核对原文")
             )
 
-        if _has_counterintuitive_zero_weight_loss(item.get("field_key", ""), value, evidence):
+        # —— 体重下降零值矛盾（已增强正则覆盖） ——
+        if _has_counterintuitive_zero_weight_loss(field_key, value, evidence):
             item["quality_flags"].append(
                 _flag(FLAG_COUNTERINTUITIVE_ZERO_WEIGHT_LOSS, "体重下降/减轻为 0 与字段含义相矛盾，请核对原文")
             )
 
-        if _has_physiologic_range_risk(item.get("field_key", ""), value):
+        # —— 生理合理范围 ——
+        if _has_physiologic_range_risk(field_key, value):
             item["quality_flags"].append(
                 _flag(FLAG_PHYSIOLOGIC_RANGE_RISK, "字段数值超出生理合理范围，请核对原文")
             )
 
-        evidence_flags = document_quality_flags(evidence) if evidence else []
-        if evidence_flags:
-            item["quality_flags"].extend(evidence_flags)
+        # —— 文档级重复/拼接 flag 附加到所有字段 ——
+        if doc_flags:
+            for flag in doc_flags:
+                if not _has_flag(item["quality_flags"], flag["flag"]):
+                    item["quality_flags"].append(flag)
 
+        # —— 汇总：有 flag 则标记 suspicious ——
         if item["quality_flags"] and item.get("verification_status") != "failed":
             item["verification_status"] = "suspicious"
     return checked

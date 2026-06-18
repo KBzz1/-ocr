@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 收敛 PRD 阶段 2 三块改动:Excel 导出字段完整性修复 (BE-MVP-05-06)、任务管理页批量导出 UI (FE-MVP-03-04)、审核页 OCR 文本重抽取入口 (FE-MVP-04-05),并把重抽取后端行为从"不覆盖人工值"改为新契约"直接覆盖"。
+**Goal:** 收敛 PRD 阶段 2 三块改动:Excel 导出字段完整性修复 (BE-MVP-05-06)、任务管理页批量导出 UI (FE-MVP-03-04)、审核页 OCR 文本重抽取入口 (FE-MVP-04-05),并保持重抽取后端行为为"直接覆盖审核字段"。
 
 **Architecture:**
 - 后端 Excel 完整性:在 `ReviewService.get_or_init` 读取 review_result.json 后按当前 schema 补齐缺失字段并按 schema 顺序重排;在 `ExportService._build_export_model` 中也使用 schema 顺序构造导出字段视图,保证用户未先打开审核页时直接导出也能获得完整字段。把"空 final_value 占位字段"从 `_compute_blocking_fields` 的阻断列表中剔除。

@@ -57,7 +57,7 @@ Feature: 图片上传与文件管理
     Then 任务状态应变为 processing
     And 系统应触发后续 OCR、文档解析和字段抽取流程
 
-  Scenario: 上传阶段不调用算法模块
+  Scenario: 上传阶段不调用算法子系统
     Given 任务 T001 处于 uploading 状态
     When 手机端上传一张图片
     Then 系统仅保存原图和上传元数据

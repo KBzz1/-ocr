@@ -1,21 +1,21 @@
 # app/config/algorithm-modules
 
-外部算法模块配置预留目录。
+算法子系统配置预留目录。
 
 ## 范围
 
-- 图像处理模块位置。
-- OCR 和文档解析模块位置。
-- LLM 字段抽取模块位置。
-- 模块契约版本。
+- 图像处理子系统位置。
+- OCR 和文档解析子系统位置。
+- LLM 结构化字段抽取子系统位置。
+- 端口契约版本。
 
-当前不提交具体配置值。模块未配置时，任务处理必须失败并明确报错。
+当前不提交具体配置值。算法子系统未配置时，任务处理必须失败并明确报错。
 
 ## 本地 OCR 接入
 
 ### 服务化 OCR
 
-正式部署和本地启动均使用 `paddleocr-vlm-server` 常驻服务。离线镜像 tar 放在 `deploy/offline-images/paddleocr-vlm-server.tar`，任务生命周期仍由后端管理。
+当前正式部署和本地启动使用 `paddleocr-vlm-server` 常驻服务。离线镜像 tar 放在 `deploy/offline-images/paddleocr-vlm-server.tar`，任务生命周期仍由后端管理。后续可替换为新的本地 OCR/LLM 视觉算法子系统，但必须同步端口契约、部署配置和失败语义。
 
 服务化 OCR 当前验证组合：`paddlepaddle-gpu==3.2.1`、`paddleocr==3.5.0`、`paddlex==3.5.2`、`PaddleOCR-VL-1.6-0.9B`、官方 `paddleocr-genai-vllm-server` vLLM 镜像。服务常驻显存后，多个任务可并发提交多页图片，模型加载只发生一次；OCR 阶段和 LLM 字段抽取阶段在 8GB 显存下由 GPU 阶段队列串行执行，避免互相抢占导致 OOM。
 
@@ -51,9 +51,9 @@ algorithms:
 
 OCR 服务调用开始和结束时，事件日志记录 `ocr_vlm_started`、`ocr_vlm_finished`，包含服务 URL、页数、推理参数、耗时、输出大小和失败原因。
 
-## 本地 LLM 字段抽取
+## 本地 LLM/结构化字段抽取
 
-Windows Docker 离线部署必须使用 CUDA 版 `llama-cpp-python==0.3.22`。不要在 `requirements.docker.txt` 中安装默认 PyPI wheel；默认 wheel 可能是 CPU-only，表现为字段抽取阶段显存为空、后端 Python 进程高 CPU/RSS、结构化抽取极慢或失败。
+当前 llama.cpp 路径的 Windows Docker 离线部署必须使用 CUDA 版 `llama-cpp-python==0.3.22`。如果切换为 OpenAI-compatible vLLM 服务或其他算法包，需新增对应配置项并保留字段结果契约。不要在 `requirements.docker.txt` 中安装默认 PyPI wheel；默认 wheel 可能是 CPU-only，表现为字段抽取阶段显存为空、后端 Python 进程高 CPU/RSS、结构化抽取极慢或失败。
 
 Docker 镜像需基于 CUDA devel 镜像源码编译：
 

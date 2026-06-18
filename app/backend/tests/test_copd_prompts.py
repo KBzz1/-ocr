@@ -34,16 +34,16 @@ def test_verification_prompt_requires_structured_field_verdicts():
     )
 
     assert "verdict" in prompt
-    assert "source_text_supported" in prompt
-    assert "numeric_value_preserved" in prompt
-    assert "ocr_correction_reasonable" in prompt
-    assert "low_ocr_quality" in prompt
+    assert "value_semantically_supported" in prompt
+    assert "no_hallucination_or_inference" in prompt
+    assert "ocr_correction_justified" in prompt
+    assert "ocr_quality_issue" in prompt
     assert "P62" in prompt
     assert "药名" in prompt
     assert "单位符号" in prompt
     assert "同一字段" in prompt
     assert "reason_code" in prompt
-    assert prompt.count("问题：逐字段判断字段值是否能被提供的 OCR 事实支持。") == 1
+    assert prompt.count("任务：逐字段判断字段值是否能被提供的 OCR 事实支持。") == 1
     assert "事实：" in prompt
     assert "原始 OCR 上下文" in prompt
 

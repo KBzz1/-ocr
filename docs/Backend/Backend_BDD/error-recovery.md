@@ -31,10 +31,10 @@ Feature: 错误处理与可恢复性
     Then 系统应正常接收并保存
 
   Scenario: 任务处理失败可重新处理
-    Given 任务 T001 因算法模块异常而失败
-    When 算法模块恢复后重试任务
+    Given 任务 T001 因算法子系统异常而失败
+    When 算法子系统恢复后重试任务
     Then 任务应重新进入 processing 流程
-    And 应使用最新的算法模块版本
+    And 应使用最新的算法子系统版本
 
   Scenario: 服务无响应时的容错
     Given 后端服务在处理请求时崩溃重启

@@ -18,6 +18,8 @@ type DocumentTypeOption = {
   label: string;
 };
 
+type CreateTaskStep = 'patient' | 'record';
+
 const DOCUMENT_TYPE_OPTIONS: DocumentTypeOption[] = [
   { value: 'copd_admission_record', label: '入院记录' }
 ];
@@ -40,6 +42,7 @@ export function CreateTaskDialog({
   const [patientName, setPatientName] = useState('');
   const [searchResults, setSearchResults] = useState<PatientSummary[] | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<{ patient_id: string; name: string } | null>(initialPatient);
+  const [currentStep, setCurrentStep] = useState<CreateTaskStep>(initialPatient ? 'record' : 'patient');
   const [isSearchingPatient, setIsSearchingPatient] = useState(false);
   const [isCreatingPatient, setIsCreatingPatient] = useState(false);
   const [patientError, setPatientError] = useState<string | null>(null);
@@ -54,12 +57,14 @@ export function CreateTaskDialog({
       if (initialPatient) {
         setPatientName(initialPatient.name);
         setSelectedPatient({ patient_id: initialPatient.patient_id, name: initialPatient.name });
+        setCurrentStep('record');
         setSearchResults(null);
         setPatientError(null);
       } else {
         setPatientName('');
         setSearchResults(null);
         setSelectedPatient(null);
+        setCurrentStep('patient');
         setIsSearchingPatient(false);
         setIsCreatingPatient(false);
         setPatientError(null);
@@ -73,6 +78,7 @@ export function CreateTaskDialog({
       setPatientName('');
       setSearchResults(null);
       setSelectedPatient(null);
+      setCurrentStep('patient');
       setIsSearchingPatient(false);
       setIsCreatingPatient(false);
       setPatientError(null);
@@ -136,6 +142,7 @@ export function CreateTaskDialog({
           latest_record_at: null
         }
       ]);
+      setCurrentStep('record');
     } catch (error) {
       setPatientError(getApiErrorMessage(error, '新建患者失败，请重试'));
     } finally {
@@ -175,6 +182,8 @@ export function CreateTaskDialog({
   }
 
   const showAlternateCreate = exactNameMatches.length > 0 && !selectedPatient;
+  const showPatientEmpty = searchResults && searchResults.length === 0;
+  const showPatientResults = searchResults && searchResults.length > 0;
   const submitDisabled =
     isSubmitting ||
     isCreatingPatient ||
@@ -201,100 +210,121 @@ export function CreateTaskDialog({
         </header>
 
         <form className="create-task-form" onSubmit={handleSubmit}>
-          <fieldset className="create-task-fieldset">
-            <legend>患者归属</legend>
-            <label className="create-task-field">
-              <span>患者姓名</span>
-              <input
-                type="text"
-                value={patientName}
-                onChange={(event) => {
-                  setPatientName(event.currentTarget.value);
-                  setSelectedPatient(null);
-                  setSearchResults(null);
-                }}
-                placeholder="输入患者姓名"
-                autoComplete="off"
-              />
-            </label>
-            <div className="create-task-actions">
-              <button
-                type="button"
-                className="secondary-action"
-                disabled={isSearchingPatient || !patientName.trim()}
-                onClick={() => void handleSearchPatient()}
-              >
-                {isSearchingPatient ? '搜索中' : '搜索患者'}
-              </button>
-            </div>
+          <div className="create-task-steps" aria-label="创建任务步骤">
+            <span className={`create-task-step${currentStep === 'patient' ? ' is-active' : ''}`}>1 选择患者</span>
+            <span className={`create-task-step${currentStep === 'record' ? ' is-active' : ''}`}>2 记录信息</span>
+          </div>
 
-            {patientError ? (
-              <p className="inline-error" role="alert">
-                {patientError}
-              </p>
-            ) : null}
-
-            {searchResults && searchResults.length === 0 ? (
-              <div className="create-task-empty">
-                <p>未找到匹配的患者</p>
+          {currentStep === 'patient' ? (
+            <fieldset className="create-task-fieldset create-task-fieldset--plain">
+              <legend>选择患者</legend>
+              <div className="create-task-search-row">
+                <label className="create-task-field create-task-field--search">
+                  <span>患者姓名</span>
+                  <input
+                    type="text"
+                    value={patientName}
+                    onChange={(event) => {
+                      setPatientName(event.currentTarget.value);
+                      setSelectedPatient(null);
+                      setSearchResults(null);
+                    }}
+                    placeholder="输入患者姓名或编号"
+                    autoComplete="off"
+                  />
+                </label>
                 <button
                   type="button"
-                  className="secondary-action"
-                  disabled={isCreatingPatient}
-                  onClick={() => void handleCreatePatient()}
+                  className="primary-action create-task-search-button"
+                  disabled={isSearchingPatient || !patientName.trim()}
+                  aria-label="搜索患者"
+                  onClick={() => void handleSearchPatient()}
                 >
-                  {isCreatingPatient ? '正在新建' : '新建患者'}
+                  {isSearchingPatient ? '搜索中' : '搜索'}
                 </button>
               </div>
-            ) : null}
 
-            {searchResults && searchResults.length > 0 ? (
-              <ul className="create-task-patient-list" aria-label="患者搜索结果">
-                {searchResults.map((patient) => {
-                  const isSelected = selectedPatient?.patient_id === patient.patient_id;
-                  return (
-                    <li key={patient.patient_id} className="create-task-patient-row">
-                      <div className="create-task-patient-meta">
-                        <strong>{patient.patient_id}</strong>
-                        <span>{patient.name}</span>
-                        <span>{patient.task_count} 个任务 · {patient.latest_record_at ?? '暂无记录'}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className={isSelected ? 'primary-action' : 'secondary-action'}
-                        onClick={() => handleSelectExistingPatient(patient)}
+              {patientError ? (
+                <p className="inline-error" role="alert">
+                  {patientError}
+                </p>
+              ) : null}
+
+              {showPatientResults ? (
+                <ul className="create-task-patient-list" aria-label="患者搜索结果">
+                  {searchResults.map((patient) => {
+                    const isSelected = selectedPatient?.patient_id === patient.patient_id;
+                    return (
+                      <li
+                        key={patient.patient_id}
+                        className={`create-task-patient-row${isSelected ? ' is-selected' : ''}`}
                       >
-                        {isSelected ? '已选择' : `选择 ${patient.patient_id}`}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
+                        <div className="create-task-patient-meta">
+                          <strong>{patient.name}</strong>
+                          <span>{patient.patient_id}</span>
+                          <span>{patient.latest_record_at ?? '暂无记录'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className={isSelected ? 'primary-action' : 'secondary-action'}
+                          aria-label={`${isSelected ? '已选择' : '选择'} ${patient.patient_id}`}
+                          onClick={() => handleSelectExistingPatient(patient)}
+                        >
+                          {isSelected ? '已选择' : '选择'}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
 
-            {showAlternateCreate ? (
-              <div className="create-task-alternate">
-                <p>该姓名已存在相同患者，确认是否需要新建独立患者档案。</p>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  disabled={isCreatingPatient}
-                  onClick={() => void handleCreatePatient()}
-                >
-                  {isCreatingPatient ? '正在新建' : '仍然新建'}
-                </button>
-              </div>
-            ) : null}
+              {showAlternateCreate ? (
+                <div className="create-task-alternate">
+                  <p>已存在同名患者，请确认是否选择已有档案</p>
+                  <button
+                    type="button"
+                    className="ghost-action"
+                    disabled={isCreatingPatient}
+                    onClick={() => void handleCreatePatient()}
+                  >
+                    {isCreatingPatient ? '正在新建' : '仍然新建患者'}
+                  </button>
+                </div>
+              ) : null}
 
-            {selectedPatient ? (
-              <div className="create-task-selected" role="status">
-                <strong>{selectedPatient.name}</strong>
-              </div>
-            ) : null}
-          </fieldset>
-
-          <fieldset className="create-task-fieldset">
-            <legend>记录信息</legend>
+              {showPatientEmpty ? (
+                <div className="create-task-empty">
+                  <strong>未找到匹配患者</strong>
+                  <button
+                    type="button"
+                    className="primary-action"
+                    disabled={isCreatingPatient}
+                    onClick={() => void handleCreatePatient()}
+                  >
+                    {isCreatingPatient ? '正在新建' : '新建患者并继续'}
+                  </button>
+                </div>
+              ) : null}
+            </fieldset>
+          ) : (
+            <fieldset className="create-task-fieldset">
+              <legend>记录信息</legend>
+              {selectedPatient ? (
+                <div className="create-task-selected" role="status">
+                  <span>已选患者</span>
+                  <strong>{selectedPatient.name}</strong>
+                  <span>{selectedPatient.patient_id}</span>
+                  {initialPatient ? null : (
+                    <button
+                      type="button"
+                      className="link-action"
+                      onClick={() => setCurrentStep('patient')}
+                    >
+                      更换患者
+                    </button>
+                  )}
+                </div>
+              ) : null}
             <label className="create-task-field">
               <span>记录类型</span>
               <select
@@ -330,7 +360,8 @@ export function CreateTaskDialog({
               <span>{recordDate || '未填日期'}</span>
               <span>{recordTime || '无具体时间'}</span>
             </div>
-          </fieldset>
+            </fieldset>
+          )}
 
           {submitError ? (
             <p className="inline-error" role="alert">
@@ -342,9 +373,20 @@ export function CreateTaskDialog({
             <button type="button" className="ghost-action" onClick={onClose} disabled={isSubmitting}>
               取消
             </button>
-            <button type="submit" className="primary-action" disabled={submitDisabled}>
-              {isSubmitting ? '正在创建' : '创建任务'}
-            </button>
+            {currentStep === 'patient' ? (
+              <button
+                type="button"
+                className="primary-action"
+                disabled={!selectedPatient}
+                onClick={() => setCurrentStep('record')}
+              >
+                下一步
+              </button>
+            ) : (
+              <button type="submit" className="primary-action" disabled={submitDisabled}>
+                {isSubmitting ? '正在创建' : '创建任务并显示二维码'}
+              </button>
+            )}
           </footer>
         </form>
       </section>

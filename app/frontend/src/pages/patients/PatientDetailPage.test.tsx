@@ -444,7 +444,7 @@ describe('PatientDetailPage', () => {
     await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
 
     const dialog = await screen.findByRole('dialog', { name: '新建任务' });
-    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
 
     await waitFor(() =>
       expect(createBody).toMatchObject({
@@ -452,7 +452,7 @@ describe('PatientDetailPage', () => {
         document_type: 'copd_admission_record'
       })
     );
-    expect(await screen.findByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: '手机扫码上传' })).toBeTruthy();
   });
 
   it('locks the create task dialog while submit is pending', async () => {
@@ -489,7 +489,7 @@ describe('PatientDetailPage', () => {
     const header = await screen.findByLabelText('患者头部');
     await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
     const dialog = await screen.findByRole('dialog', { name: '新建任务' });
-    await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
 
     await waitFor(() => {
       const submitButton = within(dialog).getByRole('button', { name: '正在创建' }) as HTMLButtonElement;
@@ -502,7 +502,7 @@ describe('PatientDetailPage', () => {
     expect(screen.getByRole('dialog', { name: '新建任务' })).toBeTruthy();
 
     resolveCreate();
-    expect(await screen.findByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: '手机扫码上传' })).toBeTruthy();
   });
 });
 

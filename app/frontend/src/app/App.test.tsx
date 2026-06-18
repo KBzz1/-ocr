@@ -57,6 +57,7 @@ async function submitCreateTaskDialog(
     name: new RegExp(`选择.*${patientId}`)
   });
   await user.click(selectButton);
+  await user.click(within(dialog).getByRole('button', { name: '下一步' }));
   await user.selectOptions(
     within(dialog).getByLabelText('记录类型') as HTMLSelectElement,
     options.documentType ?? 'copd_admission_record'
@@ -70,7 +71,7 @@ async function submitCreateTaskDialog(
     await user.clear(within(dialog).getByLabelText('记录时间（可选）'));
     await user.type(within(dialog).getByLabelText('记录时间（可选）'), options.recordTime);
   }
-  await user.click(within(dialog).getByRole('button', { name: '创建任务' }));
+  await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
 }
 
 function mockReadyTaskReview() {
@@ -295,13 +296,14 @@ describe('Workstation data integration', () => {
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
     await submitCreateTaskDialog(user, { recordTime: '09:30' });
 
-    const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
+    const dialog = await screen.findByRole('dialog', { name: '手机扫码上传' });
     const qrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
     expect(qrImage.src).toMatch(/^data:image\/svg\+xml/);
     expect(qrImage.dataset.qrValue).toBe('http://127.0.0.1:8081/mobile/upload/1?token=token_001');
     expect(within(dialog).getByRole('button', { name: '重新生成二维码' })).toBeTruthy();
     expect(within(dialog).queryByText('任务已创建')).toBeNull();
-    expect(within(dialog).queryByText('1')).toBeNull();
+    expect(within(dialog).getByText('测试用例')).toBeTruthy();
+    expect(within(dialog).getByText('入院记录')).toBeTruthy();
     expect(within(dialog).queryByText('http://127.0.0.1:8081/mobile/upload/1?token=token_001')).toBeNull();
     expect(within(dialog).queryByText(/已上传 0 张图片/)).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '关闭' })).toBeNull();
@@ -341,7 +343,7 @@ describe('Workstation data integration', () => {
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
     await submitCreateTaskDialog(user);
 
-    const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
+    const dialog = await screen.findByRole('dialog', { name: '手机扫码上传' });
     const firstQrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
     const firstQrValue = firstQrImage.dataset.qrValue;
     await user.click(within(dialog).getByRole('button', { name: '重新生成二维码' }));
@@ -349,7 +351,7 @@ describe('Workstation data integration', () => {
     const regeneratedQrImage = (await within(dialog).findByRole('img', { name: '任务上传二维码' })) as HTMLImageElement;
 
     expect(createCount).toBe(1);
-    expect(screen.getByRole('dialog', { name: '任务上传二维码' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: '手机扫码上传' })).toBeTruthy();
     expect(firstQrValue).toBe('http://127.0.0.1:8081/mobile/upload/1?token=token_001');
     expect(regeneratedQrImage.dataset.qrValue).toBe(
       'http://127.0.0.1:8081/mobile/upload/1?token=token_001&qr_refresh=1'
@@ -365,7 +367,7 @@ describe('Workstation data integration', () => {
     await user.click(screen.getByRole('button', { name: /新建任务/ }));
     await submitCreateTaskDialog(user, { recordTime: '09:30' });
 
-    const dialog = await screen.findByRole('dialog', { name: '任务上传二维码' });
+    const dialog = await screen.findByRole('dialog', { name: '手机扫码上传' });
     await within(dialog).findByRole('img', { name: '任务上传二维码' });
     await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
 
@@ -388,6 +390,6 @@ describe('Workstation data integration', () => {
     await submitCreateTaskDialog(user);
 
     expect(await screen.findByText('创建任务失败，请重试')).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: '任务上传二维码' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '手机扫码上传' })).toBeNull();
   });
 });

@@ -74,7 +74,7 @@ def test_verification_prompt_keeps_comments_short():
 
     prompt = build_verification_prompt([{"field_key": "bmi", "original_value": "24.2"}])
 
-    assert "comment 不超过 20 个汉字" in prompt
+    assert "comment 不超过 40 个汉字" in prompt
 
 
 def test_llama_cpp_client_close_releases_underlying_llama():

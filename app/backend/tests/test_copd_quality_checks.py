@@ -43,12 +43,12 @@ def test_quality_check_flags_vital_sign_range_risks():
     fields = [
         _field("temperature", "31.0℃", "体温31.0℃"),
         _field("pulse", "280次/分", "脉搏280次/分"),
-        _field("respiration", "4次/分", "呼吸4次/分"),
+        _field("respiration", "2次/分", "呼吸2次/分"),
         _field("blood_pressure", "280/20mmHg", "血压280/20mmHg"),
         _field("bmi", "6kg/m2", "BMI 6kg/m2"),
     ]
 
-    result = apply_quality_checks(fields, "体格检查：体温31.0℃，脉搏280次/分，呼吸4次/分，血压280/20mmHg，BMI 6kg/m2")
+    result = apply_quality_checks(fields, "体格检查：体温31.0℃，脉搏280次/分，呼吸2次/分，血压280/20mmHg，BMI 6kg/m2")
 
     assert all(any(flag["flag"] == "physiologic_range_risk" for flag in item["quality_flags"]) for item in result)
 
@@ -147,11 +147,25 @@ def test_quality_check_negation_risk_only_uses_local_value_context():
     assert not any(flag["flag"] == "negation_or_uncertainty_risk" for flag in result[0]["quality_flags"])
 
 
-def test_quality_check_duplicate_stitching_only_marks_field_evidence():
+def test_quality_check_duplicate_stitching_applied_from_full_text():
+    """文档级重复检测应对 full_text 执行并将 flag 附加到所有字段。"""
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
     fields = [_field("temperature", "36.7℃", "体温：36.7℃ 脉搏：99次/分。")]
     full_text = "体温：36.7℃ 脉搏：99次/分。\n腹部软无压痛，四肢活动自如。腹部软无压痛，四肢活动自如。"
+
+    result = apply_quality_checks(fields, full_text)
+
+    # 修复后：文档级重复 flag 应被正确应用到字段
+    assert any(flag["flag"] == "possible_duplicate_or_stitching" for flag in result[0]["quality_flags"])
+
+
+def test_quality_check_no_duplicate_when_full_text_clean():
+    """无重复的文档不产生重复 flag。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("temperature", "36.7℃", "体温：36.7℃")]
+    full_text = "体温：36.7℃ 脉搏：99次/分。腹部软无压痛，四肢活动自如。"
 
     result = apply_quality_checks(fields, full_text)
 
@@ -186,3 +200,200 @@ def test_quality_check_flags_negation_risk():
     result = apply_quality_checks(fields, "否认咯血")
 
     assert result[0]["quality_flags"][0]["flag"] == "negation_or_uncertainty_risk"
+
+
+# —— 新增：文档级重复检测应用到字段 ——
+
+
+def test_document_quality_flags_applied_to_all_fields():
+    """full_text 文档级重复检测结果应附加到所有字段。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    full_text = "腹部软无压痛，四肢活动自如。腹部软无压痛，四肢活动自如。"
+    fields = [
+        _field("temperature", "36.7℃", "体温：36.7℃"),
+        _field("pulse", "99次/分", "脉搏：99次/分"),
+    ]
+
+    result = apply_quality_checks(fields, full_text)
+
+    for item in result:
+        assert any(
+            flag["flag"] == "possible_duplicate_or_stitching"
+            for flag in item["quality_flags"]
+        ), f"field {item['field_key']} should have duplicate flag"
+
+
+def test_document_quality_flags_not_duplicated():
+    """文档级 flag 不应在每个字段中重复添加。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    full_text = "腹部软无压痛，四肢活动自如。腹部软无压痛，四肢活动自如。"
+    fields = [_field("temperature", "36.7℃", "体温：36.7℃")]
+
+    result = apply_quality_checks(fields, full_text)
+
+    duplicate_count = sum(
+        1 for flag in result[0]["quality_flags"]
+        if flag["flag"] == "possible_duplicate_or_stitching"
+    )
+    assert duplicate_count == 1, "文档级 flag 不应重复出现"
+
+
+# —— 新增：纯文本值 evidence 检查 ——
+
+
+def test_value_not_in_evidence_for_pure_text():
+    """纯文本值（不含数字）未在 evidence 中出现应标记。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("comorbidities", "高血压", "否认高血压、糖尿病、冠心病")]
+
+    result = apply_quality_checks(fields, "否认高血压、糖尿病、冠心病")
+
+    # "高血压" 在 evidence 中能找到，不应标记
+    assert not any(
+        flag["flag"] == "value_not_in_evidence" for flag in result[0]["quality_flags"]
+    )
+
+
+def test_value_not_in_evidence_for_hallucinated_text():
+    """LLM 编造的纯文本值应被检测。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("comorbidities", "高血压", "否认糖尿病、冠心病")]
+
+    result = apply_quality_checks(fields, "否认糖尿病、冠心病")
+
+    # "高血压" 不在 evidence 中，应标记
+    assert any(
+        flag["flag"] == "value_not_in_evidence" for flag in result[0]["quality_flags"]
+    )
+
+
+# —— 新增：数值矛盾检查泛化 ——
+
+
+def test_numeric_conflict_for_respiration():
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("respiration", "2次/分", "呼吸：2次/分。呼吸21次/分。")]
+
+    result = apply_quality_checks(fields, "呼吸：2次/分。呼吸21次/分。")
+
+    assert any(
+        flag["flag"] == "ocr_numeric_conflict" for flag in result[0]["quality_flags"]
+    )
+
+
+def test_numeric_conflict_for_temperature():
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("temperature", "3.7℃", "体温：3.7℃。体温36.7℃。")]
+
+    result = apply_quality_checks(fields, "体温：3.7℃。体温36.7℃。")
+
+    assert any(
+        flag["flag"] == "ocr_numeric_conflict" for flag in result[0]["quality_flags"]
+    )
+
+
+def test_numeric_conflict_not_triggered_for_normal_value():
+    """正常数值不应触发矛盾检测。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("pulse", "99次/分", "脉搏：99次/分，心率99次/分")]
+
+    result = apply_quality_checks(fields, "脉搏：99次/分，心率99次/分")
+
+    assert not any(
+        flag["flag"] == "ocr_numeric_conflict" for flag in result[0]["quality_flags"]
+    )
+
+
+# —— 新增：体重下降零值增强覆盖 ——
+
+
+def test_counterintuitive_zero_weight_loss_with_jin():
+    """「斤」作为单位应被检测。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("weight_loss", "0斤", "现病史：体重下降0斤")]
+
+    result = apply_quality_checks(fields, "现病史：体重下降0斤")
+
+    assert any(
+        flag["flag"] == "counterintuitive_zero_weight_loss"
+        for flag in result[0]["quality_flags"]
+    )
+
+
+def test_counterintuitive_zero_weight_loss_with_letter_O():
+    """OCR 将 0 误读为大写字母 O 时应被检测。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("weight_loss", "Og", "现病史：体重减轻Og")]
+
+    result = apply_quality_checks(fields, "现病史：体重减轻Og")
+
+    assert any(
+        flag["flag"] == "counterintuitive_zero_weight_loss"
+        for flag in result[0]["quality_flags"]
+    )
+
+
+def test_counterintuitive_zero_weight_loss_with_xiaoshou():
+    """「消瘦」作为体重下降同义词应被检测。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [_field("weight_loss", "0kg", "近1月消瘦0kg")]
+
+    result = apply_quality_checks(fields, "近1月消瘦0kg")
+
+    assert any(
+        flag["flag"] == "counterintuitive_zero_weight_loss"
+        for flag in result[0]["quality_flags"]
+    )
+
+
+# —— 新增：生理范围边界值测试 ——
+
+
+def test_physiologic_range_respiration_lower_bound():
+    """呼吸频率下限 3：< 3 触发，≥ 3 不触发。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    # 边界值 3 不应触发
+    fields_ok = [_field("respiration", "3次/分", "呼吸：3次/分")]
+    result_ok = apply_quality_checks(fields_ok, "呼吸：3次/分")
+    assert not any(
+        flag["flag"] == "physiologic_range_risk"
+        for flag in result_ok[0]["quality_flags"]
+    ), "respiration=3 应在合理范围内"
+
+    # 低于下限应触发
+    fields_risk = [_field("respiration", "2次/分", "呼吸：2次/分")]
+    result_risk = apply_quality_checks(fields_risk, "呼吸：2次/分")
+    assert any(
+        flag["flag"] == "physiologic_range_risk"
+        for flag in result_risk[0]["quality_flags"]
+    ), "respiration=2 应触发范围风险"
+
+
+def test_physiologic_range_boundary_values():
+    """验证边界值本身不触发范围风险。"""
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    fields = [
+        _field("temperature", "32.0℃", "体温32.0℃"),
+        _field("pulse", "20次/分", "脉搏20次/分"),
+        _field("bmi", "8.0kg/m2", "BMI 8.0kg/m2"),
+    ]
+
+    result = apply_quality_checks(fields, "体温32.0℃，脉搏20次/分，BMI 8.0kg/m2")
+
+    for item in result:
+        assert not any(
+            flag["flag"] == "physiologic_range_risk"
+            for flag in item["quality_flags"]
+        ), f"{item['field_key']} 边界值不应触发范围风险"

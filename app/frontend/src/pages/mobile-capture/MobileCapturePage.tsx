@@ -194,7 +194,7 @@ export function MobileCapturePage({
         ) : null}
 
         <section className="capture-card" aria-label="上传入口">
-          <h2>请上传病历文书图片</h2>
+          <h2>请上传病历图片</h2>
           <p>页序按上传成功顺序确定，请保持图片清晰完整。</p>
           <div className="capture-card__count">
             <span>已上传</span>

@@ -2,13 +2,13 @@
 
 ## 背景
 
-`2026-05-29-batch-export-reextract-design.md` 已完成批量 JSON zip 导出和基于已保存 OCR 文本重抽取的后端框架，前端也已有对应 API client。下一阶段补齐批量导出审计、重抽取元数据、默认抽取策略风险提示，并为多文书类型抽取建立任务级模板选择基础：
+`2026-05-29-batch-export-reextract-design.md` 已完成批量 JSON zip 导出和基于已保存 OCR 文本重抽取的后端框架，前端也已有对应 API client。下一阶段补齐批量导出审计、重抽取元数据、默认抽取策略风险提示，并为多记录类型抽取建立任务级 `document_type` 基础：
 
 - 批量 zip 需要可审计的导出清单，便于离线验收和现场排障。
-- OCR 文本重抽取需要给前端返回足够的运行元数据，支持后续确认入口和结果对比。
+- OCR 文本重抽取需要给前端返回足够的运行元数据，支持审核页展示本次运行信息。
 - 当前默认 `section_groups` 抽取策略的 prompt 已有 OCR 风险提示，但相比字段批量 prompt 缺少部分高风险项，需要补齐，避免默认策略下对单位符号、表格错位、冒号/空格丢失、常见错别字、药名纠偏、矛盾数值等风险提示不足。
-- 系统后续会支持多种文书类型，例如慢阻肺/呼吸系统入院记录、病程记录等。每个任务只对应一种文书模板，字段抽取必须按任务的 `document_type` 选择 schema、prompt 和抽取规则。
-- 电脑端新建任务仍保持一键创建，不增加模板选择；手机端上传页负责选择当前任务模板，并把选择保存到后端。
+- 系统后续会支持多种记录类型，例如慢阻肺/呼吸系统入院记录、病程记录等。每个任务只对应一种记录类型，字段抽取必须按任务的 `document_type` 选择 schema、prompt 和抽取规则。
+- 患者中心落地后，电脑端新建任务弹窗负责选择患者、记录类型、记录日期和可选时间；手机端只负责上传图片并只读展示记录类型。
 
 本阶段不做同一任务内多文书混合拆分，也不做 OCR 自动判断文书类型。
 
@@ -16,13 +16,12 @@
 
 1. 批量 zip 根目录增加 `manifest.json`，记录导出摘要、成功任务清单和失败任务清单。
 2. 批量导出保持当前原子性：任一任务不可导出时整体失败，不生成部分成功 zip，不修改审核数据。
-3. 重抽取接口保持 `ocr_text_only` 语义，不重新跑 OCR，不重新处理图片，不覆盖人工最终值。
+3. 重抽取接口保持 `ocr_text_only` 语义，不重新跑 OCR，不重新处理图片；成功时直接覆盖审核字段并将字段状态重置为 `unreviewed`。
 4. `section_groups` prompt 补齐 OCR 风险提示和硬约束，与默认运行策略承担的风险相匹配。
 5. 为后续前端 UI 提供稳定字段：批量导出可下载 zip；重抽取可展示 `schema_version`、`prompt_version`、`source`、`run_id`、`candidate_count`。
 6. 每个任务持久化 `document_type`，任务处理和重抽取按 `document_type` 选择 schema、prompt 和抽取规则。
-7. 手机端上传页提供文书模板选择，选择结果写回当前任务；电脑端新建任务弹窗不提供模板选择。
-8. 新任务默认模板来自后端保存的 `last_document_type`；如果没有历史值，则默认 `copd_admission_record`。
-9. 模板在任务进入 `processing` 后锁定，避免处理中的 schema/prompt/rule 被切换。
+7. 电脑端新建任务必须提交 `patient_id`、`document_type`、`record_date` 和可选 `record_time`；手机端不允许修改记录类型。
+8. 任务进入 `processing` 后，患者、记录类型和记录时间修改必须受任务状态与重抽取并发保护约束。
 
 ## 非目标
 
@@ -30,12 +29,11 @@
 - 不引入独立 `exported` 状态。
 - 不做部分成功下载；本阶段 manifest 中的失败清单用于失败前校验报告和未来扩展，不改变整体失败语义。
 - 不做前端字段推断、OCR 文本解析或 schema 侧字段补造。
-- 不做重抽取结果逐字段采用；该能力后续单独设计。
+- 不做重抽取结果逐字段采用、保留或 diff UI。
 - 不扩展为通用医学规则引擎。
-- 不在电脑端新建任务弹窗增加模板选择。
 - 不从 OCR 文本、图片内容或文件名自动判断文书类型。
 - 不支持同一任务中混合多种文书模板分别抽取。
-- 本阶段只把文书类型作为任务级模板选择；病程记录等新模板的完整字段 schema、prompt 和规则可后续逐个接入。
+- 病程记录等新模板的完整字段 schema、prompt 和规则可后续逐个接入。
 
 ## 后端设计
 
@@ -48,15 +46,9 @@
 - `prompt_version`：本任务字段抽取使用的 prompt 版本。若当前 task 结构暂不记录，也必须在字段候选 metadata、重抽取 run 和导出 manifest 中可追溯。
 - `extraction_profile`：可选，表示后端选择的抽取 profile；第一版可与 `document_type` 同名。
 
-创建任务时，后端读取本地设置 `last_document_type` 作为默认 `document_type`。如果设置缺失或值不在可用模板列表中，默认使用 `copd_admission_record`。电脑端新建任务 API 不要求传入模板。
+创建任务时，后端必须接收并校验 `patient_id`、`document_type`、`record_date` 和可选 `record_time`。`document_type` 必须来自已注册 profile；任务保存 `document_type_label`、`schema_version`、`prompt_version` 和 `extraction_profile` 摘要。
 
-手机端选择模板成功后，后端更新：
-
-- 当前任务的 `document_type`。
-- 当前任务对应的 `schema_version` 预览值。
-- 本地设置 `last_document_type`，作为下一次新建任务默认模板。
-
-任务状态不是 `uploading` 时，后端拒绝修改 `document_type`，返回 `INVALID_TASK_TRANSITION` 或专用校验错误。已经上传图片但仍处于 `uploading` 时可以修改模板，因为尚未进入字段抽取。
+`uploading` 阶段允许通过任务元数据接口修改 `document_type`。任务进入 `processing` 后不允许修改患者、记录类型或记录时间。`review` / `done` 阶段修改 `document_type` 时，后端复用已保存 OCR 文本重新执行字段抽取，不重新跑 OCR；缺少成功 `document_result.json`、目标类型未注册或存在进行中的重抽取任务时拒绝修改。
 
 ### 文书模板 registry
 
@@ -74,13 +66,13 @@
 }
 ```
 
-第一版 registry 只必须注册当前已实现的 `copd_admission_record`。后续新增病程记录时，通过新增 profile、schema、prompt builder 和抽取器接入，不改任务生命周期主流程。手机端可用模板列表只能暴露已经完成注册且具备 schema/prompt/field port 的 profile；未接入抽取能力的模板不得出现在可选项中。
+第一版 registry 只必须注册当前已实现的 `copd_admission_record`。后续新增病程记录时，通过新增 profile、schema、prompt builder 和抽取器接入，不改任务生命周期主流程。电脑端可选记录类型只能暴露已经完成注册且具备 schema/prompt/field port 的 profile；未接入抽取能力的模板不得出现在可选项中。
 
 `SchemaService` 需要从“只返回当前 schema”扩展为按 `document_type` 取 schema：
 
 - `get_schema(document_type)`：返回指定文书类型 schema。
-- `get_available_document_types()`：返回手机端可展示的模板列表，包含 `document_type`、`label`、`schema_version`。
-- `get_default_document_type()`：返回 `last_document_type` 或兜底默认值。
+- `get_available_document_types()`：返回电脑端新建任务弹窗可展示的记录类型列表，包含 `document_type`、`label`、`schema_version`。
+- `get_default_document_type()`：返回后端兜底默认值，仅用于开发兼容；正式创建任务仍要求前端提交 `document_type`。
 
 字段抽取编排时，`ProcessingOrchestrator` 不再直接使用全局当前 schema，而是读取任务上的 `document_type`，通过 registry 选择 profile，并构造输入：
 
@@ -96,17 +88,17 @@
 
 字段抽取端口必须按 `document_type` 选择实现。当前 `copd_admission_record` 仍走现有 COPD extractor；其它未注册文书类型必须失败，任务进入 `failed`，错误原因不能被伪装成空字段成功。
 
-### 手机端模板选择 API
+### 手机端上传状态 API
 
-手机端上传页需要两个后端能力：
+手机端上传页需要一个只读后端能力：
 
-1. 获取可用模板列表和当前任务模板：
+1. 获取当前任务上传状态和记录类型摘要：
 
 ```http
 GET /api/mobile-upload/{task_id}?token=...
 ```
 
-响应在现有上传状态基础上增加：
+响应在现有上传状态基础上包含任务记录类型摘要：
 
 ```json
 {
@@ -114,53 +106,16 @@ GET /api/mobile-upload/{task_id}?token=...
   "status": "uploading",
   "document_type": "copd_admission_record",
   "document_type_label": "入院记录",
-  "available_document_types": [
-    {
-      "document_type": "copd_admission_record",
-      "label": "入院记录",
-      "schema_version": "copd_admission_record.v1"
-    },
-    {
-      "document_type": "progress_note",
-      "label": "病程记录",
-      "schema_version": "progress_note.v1"
-    }
-  ],
   "page_count": 0,
   "images": []
-}
-```
-
-2. 修改当前任务模板：
-
-```http
-PATCH /api/mobile-upload/{task_id}/document-type?token=...
-Content-Type: application/json
-
-{
-  "document_type": "progress_note"
-}
-```
-
-成功响应返回更新后的任务模板摘要：
-
-```json
-{
-  "task_id": "task_001",
-  "document_type": "progress_note",
-  "document_type_label": "病程记录",
-  "schema_version": "progress_note.v1"
 }
 ```
 
 约束：
 
 - 必须校验上传 token。
-- 只有 `uploading` 状态允许修改。
-- `document_type` 必须来自 registry。
-- registry 只返回具备完整 schema、prompt 和抽取端口的模板；未完成接入的模板不展示、不允许选择。
-- 修改成功后更新 `last_document_type`。
-- 手机端只传用户选择，不根据图片或 OCR 推断模板。
+- 手机端不提供修改记录类型的 API；`PATCH /api/mobile-upload/{task_id}/document-type` 返回 404。
+- 手机端只读展示 `document_type_label`，不根据图片、文件名或 OCR 推断模板。
 
 ### 批量导出 manifest
 
@@ -227,7 +182,7 @@ Content-Type: application/json
 - `prompt_version`
 - `candidate_count`
 
-本阶段不改变字段候选保存语义。服务继续写入：
+服务继续写入审计文件：
 
 - `results/{task_id}/field_candidates.json`
 - `results/{task_id}/reextract_runs/{run_id}.json`
@@ -235,6 +190,8 @@ Content-Type: application/json
 审计记录中应至少包含上述返回字段、`created_at` 和候选数量。不得保存完整模型输出到日志事件。
 
 重抽取必须使用任务当前 `document_type` 对应的 schema、prompt 和抽取规则。若任务缺少 `document_type`，按兼容策略视为 `copd_admission_record` 并回写任务记录；若 `document_type` 未注册，返回 `REEXTRACTION_VALIDATION_FAILED`，不得回退到 COPD prompt。
+
+重抽取成功后，新候选直接覆盖 `review_result.json["fields"]` 中对应 schema 字段，字段状态重置为 `unreviewed`，字段 `history` 追加 `reextract` 记录。任务为 `done` 时回退到 `review`。缺少 OCR 文本、候选为空、候选契约非法或字段端口失败时不修改审核结果。
 
 ### section_groups prompt OCR 风险提示
 
@@ -265,20 +222,19 @@ Content-Type: application/json
 - 任务页只允许选择 `review` 和 `done` 任务进行批量导出。
 - 非可导出任务不可选，不由前端重算可导出字段完整性。
 - 批量导出成功后下载 zip；失败时展示后端错误消息。
-- 审核页重抽取入口必须有确认提示：只复用已保存 OCR 文本，不重新识别图片，不覆盖人工最终值。
+- 审核页重抽取入口直接触发后端重抽取；界面不展示免责文案，不做结果对比与采用 UI。
 - 重抽取成功后展示 `schema_version`、`prompt_version`、`run_id`、`candidate_count`，并引导人工回到审核页确认。
 
 ### 手机端上传页
 
-手机端上传页增加文书模板选择控件：
+手机端上传页只读展示任务记录类型：
 
-- 展示当前任务模板。
-- 选项来自后端 `available_document_types`。
-- 上传完成前可切换模板；进入 `processing` 或完成上传后控件禁用。
-- 切换失败时展示后端错误；不自行生成或隐藏模板。
+- 展示当前任务的 `document_type_label`。
+- 不展示模板选择控件。
+- 不调用 `PATCH /api/mobile-upload/{task_id}/document-type`。
 - 上传图片和完成上传流程保持不变。
 
-电脑端工作台的新建任务弹窗不增加模板选择。它只展示二维码；任务默认模板由后端决定。
+电脑端工作台的新建任务弹窗负责选择患者、记录类型、记录日期和可选时间，提交后才展示二维码。
 
 ## 测试策略
 
@@ -307,10 +263,9 @@ Content-Type: application/json
    - 未注册 `document_type` 返回校验错误。
 
 6. `test_mobile_upload_routes.py`
-   - 上传状态响应包含当前 `document_type` 和可用模板列表。
-   - `PATCH /api/mobile-upload/{task_id}/document-type` 校验 token，允许 `uploading` 任务修改模板。
-   - 非 `uploading` 任务拒绝修改模板。
-   - 修改成功后更新后端 `last_document_type`。
+   - 上传状态响应包含当前 `document_type`、`document_type_label` 和 `schema_version`。
+   - `PATCH /api/mobile-upload/{task_id}/document-type` 返回 404。
+   - 手机端上传状态只读展示 `document_type_label`。
 
 7. `test_orchestrator.py` / `test_copd_field_port.py`
    - 字段抽取输入包含任务 `document_type`。
@@ -318,9 +273,9 @@ Content-Type: application/json
    - 未注册文书类型进入 `failed`，不回退到 COPD extractor。
 
 8. 前端手机端组件测试
-   - 手机上传页加载并展示模板选择。
-   - 切换模板调用后端接口并更新当前显示。
-   - 上传完成后模板选择禁用。
+   - 手机上传页加载并只读展示记录类型。
+   - 手机端不渲染模板选择控件。
+   - 手机端上传和完成上传流程保持不变。
 
 ## 验收标准
 
@@ -328,9 +283,8 @@ Content-Type: application/json
 - 批量导出遇到不可导出任务时整体失败，错误响应能定位失败任务和原因。
 - 成功批量导出只记录 `batch_zip` 导出摘要，不改变任务状态。
 - `section_groups` prompt 覆盖本 spec 的 OCR 风险提示和硬约束。
-- 重抽取仍不调用 OCR/图片处理端口，不覆盖人工审核结果，返回和审计版本元数据。
-- 新建任务默认使用后端 `last_document_type`，无历史值时使用 `copd_admission_record`。
-- 手机端上传页可选择任务模板，选择结果保存到任务 `document_type`，并更新下一任务默认模板。
-- 任务进入 `processing` 后模板锁定，不能再修改。
+- 重抽取仍不调用 OCR/图片处理端口；成功后直接覆盖审核字段并返回、审计版本元数据。
+- 新建任务由电脑端提交患者、记录类型、记录日期和可选时间。
+- 手机端上传页只读展示任务记录类型，不能修改 `document_type`。
+- 任务进入 `processing` 后记录类型锁定；`review` / `done` 修改记录类型必须复用已保存 OCR 文本重新抽取并受并发保护。
 - 字段抽取和重抽取按任务 `document_type` 选择 schema、prompt 和抽取规则；未注册文书类型不能静默回退。
-- 电脑端新建任务弹窗不出现模板选择控件。

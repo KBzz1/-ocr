@@ -160,15 +160,18 @@ export function TaskList({
           <table className="task-list-table" aria-label="任务列表">
             <thead>
               <tr>
-                <th className="task-list-table__select-col">批量导出</th>
-                <th>任务名称</th>
-                <th>患者与记录</th>
-                <th>创建时间</th>
-                <th>页数</th>
-                <th>处理状态</th>
-                <th>审核状态</th>
-                <th>失败原因</th>
-                <th>操作</th>
+                <th className="task-list-col--select">批量导出</th>
+                <th className="task-list-col--task">任务名称</th>
+                <th className="task-list-col--patient-name">患者姓名</th>
+                <th className="task-list-col--patient-id">患者编号</th>
+                <th className="task-list-col--record-type">记录类型</th>
+                <th className="task-list-col--record-time">记录时间</th>
+                <th className="task-list-col--created-time">创建时间</th>
+                <th className="task-list-col--pages">页数</th>
+                <th className="task-list-col--processing-status">处理状态</th>
+                <th className="task-list-col--review-status">审核状态</th>
+                <th className="task-list-col--error">失败原因</th>
+                <th className="task-list-col--actions">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +195,7 @@ export function TaskList({
 
                 return (
                   <tr key={task.task_id} className={isSelected ? 'task-list-row task-list-row--selected' : 'task-list-row'}>
-                    <td className="task-list-table__select-col">
+                    <td className="task-list-col--select">
                       <input
                         type="checkbox"
                         aria-label={checkboxLabel}
@@ -202,27 +205,31 @@ export function TaskList({
                         onChange={() => onToggleSelected(task.task_id)}
                       />
                     </td>
-                    <td className="task-list-table__id">{task.display_name ?? task.task_id}</td>
-                    <td className="task-list-patient-cell" data-testid={`task-list-patient-${task.task_id}`}>
-                      <div className="task-list-patient-line">
-                        <span className="task-list-patient-name">{patient?.name ?? '未指定患者'}</span>
-                        <span className="task-list-patient-id">{patient?.patient_id ?? '—'}</span>
+                    <td className="task-list-col--task task-list-table__id">{task.display_name ?? task.task_id}</td>
+                    <td className="task-list-col--patient-name" data-testid={`task-list-patient-${task.task_id}`}>
+                      <div className="task-list-patient-name-cell">
+                        <span className="task-list-patient-name" title={patient?.name ?? '未指定患者'}>
+                          {patient?.name ?? '未指定患者'}
+                        </span>
                         {patientDeleted ? (
                           <span className="task-list-patient-deleted" data-testid={`task-list-patient-deleted-${task.task_id}`}>
                             患者已删除
                           </span>
                         ) : null}
                       </div>
-                      <div className="task-list-patient-meta">
-                        <span className="task-list-patient-record-type">{getRecordTypeLabel(task)}</span>
-                        <span className="task-list-patient-record-time">
-                          {formatRecordDateLabel(task.record_date, task.record_time)}
-                        </span>
-                      </div>
                     </td>
-                    <td>{formatDateTime(task.created_at)}</td>
-                    <td>{task.page_count} 页</td>
-                    <td className="task-status-cell-td">
+                    <td className="task-list-col--patient-id">
+                      <span className="task-list-patient-id">{patient?.patient_id ?? '—'}</span>
+                    </td>
+                    <td className="task-list-col--record-type">
+                      <span className="task-list-patient-record-type">{getRecordTypeLabel(task)}</span>
+                    </td>
+                    <td className="task-list-col--record-time task-list-patient-record-time">
+                      {formatRecordDateLabel(task.record_date, task.record_time)}
+                    </td>
+                    <td className="task-list-col--created-time">{formatDateTime(task.created_at)}</td>
+                    <td className="task-list-col--pages">{task.page_count} 页</td>
+                    <td className="task-list-col--processing-status">
                       <div className="task-status-cell">
                         {task.status === 'processing' ? null : (
                           <span className={`task-status task-status--${status.tone}`}>
@@ -246,19 +253,19 @@ export function TaskList({
                         ) : null}
                       </div>
                     </td>
-                    <td>
+                    <td className="task-list-col--review-status">
                       <span className={`task-review-badge task-review-badge--${getReviewStatusKey(task)}`}>
                         {getReviewLabel(task)}
                       </span>
                     </td>
-                    <td>
+                    <td className="task-list-col--error">
                       {errorSummary ? (
                         <span className="task-error-text">{errorSummary}</span>
                       ) : (
                         <span className="task-list-muted">无</span>
                       )}
                     </td>
-                    <td>
+                    <td className="task-list-col--actions">
                       <div className="task-list-actions">
                         {task.status === 'uploading' ? (
                           <button

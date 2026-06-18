@@ -4,10 +4,13 @@ import gc
 import logging
 import re
 import site
+import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_LLM_TIMEOUT = 120.0  # 秒
 
 
 class LlmClient(ABC):
@@ -73,19 +76,44 @@ def _extract_first_json_object(text: str) -> str:
 
 
 class LlamaCppClient(LlmClient):
-    def __init__(self, llama, max_tokens: int = 1024):
+    def __init__(self, llama, max_tokens: int = 1024, timeout: float = DEFAULT_LLM_TIMEOUT):
         self._llama = llama
         self._max_tokens = max_tokens
+        self._timeout = timeout
 
     def complete_json(self, prompt: str):
         if self._llama is None:
             raise RuntimeError("LLM client is closed")
-        response = self._llama.create_chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=self._max_tokens,
-            response_format={"type": "json_object"},
-        )
+
+        result_container = {}
+        error_container = {}
+
+        def _call():
+            try:
+                result_container["response"] = self._llama.create_chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    max_tokens=self._max_tokens,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as exc:
+                error_container["error"] = exc
+
+        thread = threading.Thread(target=_call, daemon=True)
+        thread.start()
+        thread.join(timeout=self._timeout)
+
+        if thread.is_alive():
+            logger.error("LLM call timed out after %.1fs", self._timeout)
+            raise TimeoutError(f"LLM 调用超时（{self._timeout}s）")
+
+        if "error" in error_container:
+            raise error_container["error"]
+
+        response = result_container.get("response")
+        if response is None:
+            raise RuntimeError("LLM 调用未返回结果")
+
         choice = response["choices"][0]
         content = choice["message"]["content"]
         if content:
@@ -129,6 +157,7 @@ def build_llama_cpp_client(
     n_ctx: int = 8192,
     n_gpu_layers: int = -1,
     max_tokens: int = 1024,
+    timeout: float = DEFAULT_LLM_TIMEOUT,
 ):
     _preload_llama_runtime_libraries()
     from llama_cpp import Llama
@@ -136,4 +165,5 @@ def build_llama_cpp_client(
     return LlamaCppClient(
         Llama(model_path=model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers, verbose=False),
         max_tokens=max_tokens,
+        timeout=timeout,
     )

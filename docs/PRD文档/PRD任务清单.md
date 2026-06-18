@@ -9,7 +9,7 @@
 | `已完成` | 已有实现并通过对应测试 |
 | `需收敛` | 现有实现或文档来自旧设计，需要按 MVP 重构或删减 |
 | `待开始` | MVP 已定义，尚未进入实现 |
-| `阻塞` | 依赖外部算法模块、前置契约或上游任务 |
+| `阻塞` | 依赖算法子系统、前置契约或上游任务 |
 | `延后` | 方向可能调整，暂不作为近期主线推进 |
 
 任务项中 `[x]` 表示已完成，`[~]` 表示需收敛或进行中，`[ ]` 表示待开始。
@@ -22,9 +22,9 @@
 | BE-MVP-01 任务创建和二维码上传入口 | 已完成 | `app/backend/routes/task.py`、`app/backend/routes/mobile.py` | 创建 `uploading` 任务并生成手机上传 URL；不再创建采集会话 |
 | BE-MVP-02 图片上传和页序 | 已完成 | `app/backend/services/page_service.py` | 上传原图，页序按上传成功顺序确定；不做 quad、补拍替换、拖拽排序 |
 | BE-MVP-03 简化任务生命周期 | 已完成 | `app/backend/services/task_service.py` | 状态统一为 `uploading / processing / review / done / failed` |
-| BE-MVP-04 OCR/文档解析和慢阻肺专病抽取 | 需收敛 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析来自本地模块；慢阻肺专病字段抽取纳入主代码 |
-| BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态先保留 `unreviewed / confirmed / modified` |
-| BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值 |
+| BE-MVP-04 OCR/文档解析和结构化字段抽取 | 已完成 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析和 LLM 结构化提取按可替换算法子系统接入；主代码维护字段契约、质量核验和审核流转 |
+| BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态保留 `unreviewed / confirmed / modified`，自动抽取元数据作为审核辅助 |
+| BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值；空占位字段不阻断导出 |
 | BE-MVP-07 批量导出与 OCR 文本重抽取框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 先支持批量 JSON zip 和基于已保存 OCR 文本重新触发 LLM 字段抽取；不重新跑 OCR，不做汇总 Excel |
 | FE-MVP-01 工作台总览 | 已完成 | `app/frontend/src/pages/workstation/` | 新建任务、二维码、最近任务、状态统计 |
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
@@ -33,7 +33,7 @@
 | BE-PAT-01 患者档案与任务归属 | 已完成 | `app/backend/services/patient_service.py`、`app/backend/services/patient_query_service.py`、`app/backend/services/task_service.py` | 患者、记录时间、改绑、逻辑删除 |
 | FE-PAT-01 患者中心页面 | 已完成 | `app/frontend/src/pages/patients/`、`app/frontend/src/components/workstation/CreateTaskDialog.tsx` | 患者搜索、详情时间轴、字段摘要、改绑、删除 |
 | DEV-DATA-01 一次性测试数据整理 | 已完成 | `scripts/maintenance/prepare_patient_demo_data.py` | 把开发数据收敛到 1 个可见任务 + 1 个"测试用例"患者 |
-| FE-MVP-05 批量导出与重抽取入口 | 待开始 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 现有前端仅有 API client；后续补任务多选、批量 zip 下载和 OCR 文本重抽取确认入口 |
+| FE-MVP-05 批量导出与重抽取入口 | 已完成 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 任务多选批量 zip 下载和审核页 OCR 文本重抽取入口已落地；重抽取直接覆盖审核字段 |
 | REL-MVP-01 本地运行包 | 已完成 | `scripts/deploy/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 
 ## 后端任务
@@ -58,7 +58,7 @@
   - 范围：手机上传接口校验 `task_id` 和 `upload_token`。
   - 边界：MVP 只做轻量校验，不做会话过期。
 
-- [ ] **BE-MVP-01-03 上传状态查询**
+- [x] **BE-MVP-01-03 上传状态查询**
   - 范围：手机端可查询当前任务上传状态、已上传数量和图片列表。
   - 边界：非 `uploading` 任务只读展示，不允许继续上传。
 
@@ -94,11 +94,11 @@
   - 范围：保存 error_code、error_message、failed_at 和状态历史。
   - 边界：失败任务不得被前端伪装成可审核结果。
 
-### BE-MVP-04 OCR、文档解析和慢阻肺专病抽取
+### BE-MVP-04 OCR、文档解析和结构化字段抽取
 
 - [x] **BE-MVP-04-01 本地 OCR/文档解析端口**
-  - 范围：定义并接入本机 `paddleocr-vlm-server` 常驻服务，输出转换为文档解析结果。
-  - 边界：本仓库不实现 OCR、图像预处理、裁剪或透视矫正。
+  - 范围：定义并接入本地 OCR/文档解析算法子系统，输出转换为文档解析结果。
+  - 边界：算法实现可以迭代替换；主流程依赖端口输入输出、部署配置和失败语义。
 
 - [x] **BE-MVP-04-02 输入改为任务图片列表**
   - 范围：输入使用上传顺序的原图列表。
@@ -137,7 +137,7 @@
 
 - [x] **BE-COPD-01-03 OCR 文本分段**
   - 范围：基于规则将 OCR 全文切分为入院记录文书段落。
-  - 边界：不实现 OCR 本身；分段为专病抽取提供结构化输入。
+  - 边界：分段为专病抽取和审核字段契约提供结构化输入；如算法子系统直接返回结构化章节，需通过适配层保持字段契约兼容。
 
 - [x] **BE-COPD-01-04 LLM prompt harness**
   - 范围：构建慢阻肺专病字段抽取 prompt，支持字段级和组级抽取。
@@ -161,7 +161,7 @@
   - 范围：读取自动候选、保存人工最终值。
   - 边界：不覆盖自动抽取原值。
 
-- [~] **BE-MVP-05-02 字段状态和抽取元数据收敛**
+- [x] **BE-MVP-05-02 字段状态和抽取元数据收敛**
   - 范围：人工审核状态保留 `unreviewed / confirmed / modified`；自动抽取元数据展示未抽取、可疑、复核失败和质量风险。
   - 边界：复杂导出前质控流程后置。
 
@@ -179,7 +179,7 @@
   - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`。
   - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
 
-- [~] **BE-MVP-05-06 Excel 导出字段完整性修复**
+- [x] **BE-MVP-05-06 Excel 导出字段完整性修复**
   - 范围：排查当前 Excel 只能看到少数字段的问题，确保导出字段数量、字段顺序、sheet 分组和 JSON 导出模型一致。
   - 边界：review_result.json 在 `get_or_init` 时按当前 schema 补齐缺失字段(占位字段 final_value 为空,status=unreviewed),占位字段不阻断导出;修复单任务 Excel 后再考虑是否把 Excel 纳入批量 zip;不得在前端拼 Excel。
   - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
@@ -218,11 +218,8 @@
   - 范围：至少 1 张图片后可点击完成上传，提示回到电脑端。
   - 边界：不重复触发处理。
 
-- [x] **FE-MVP-02-05 手机端文书模板选择**
-  - 范围：上传页展示后端可用文书模板，允许 `uploading` 任务在完成上传前切换模板。
-  - 边界：电脑端新建任务弹窗不选择模板；前端不从 OCR 或图片推断模板。
-- [~] **FE-MVP-02-05 手机端文书模板选择 (需收敛)**
-  - 范围：随患者中心记录归档功能落地，电脑端在新建任务时已确定记录类型和记录时间，手机端不再展示或修改文书模板切换入口；`PATCH /api/mobile-upload/{task_id}/document-type` 路由随之下线。
+- [x] **FE-MVP-02-05 手机端记录类型只读展示**
+  - 范围：随患者中心记录归档功能落地，电脑端在新建任务时已确定记录类型和记录时间；手机端不再展示或修改文书模板切换入口；`PATCH /api/mobile-upload/{task_id}/document-type` 路由下线。
   - 边界：手机端只读展示 `document_type_label`；后端继续以 `document_type` / `document_type_label` 为唯一数据源，不新增同义的 `record_type` 字段。
 
 ### FE-MVP-03 任务管理
@@ -239,9 +236,9 @@
   - 范围：查看二维码、查看进度、进入审核、重新处理、导出、查看原因。
   - 边界：不提供修订采集或取消会话。
 
-- [~] **FE-MVP-03-04 批量导出多选入口**
+- [x] **FE-MVP-03-04 批量导出多选入口**
   - 范围：任务管理页支持选择多个 `review` / `done` 任务并调用批量 zip 下载 API。
-  - 边界：当前前端已具备 `exportTasksBatchZip(taskIds)` API client；本阶段补多选 UI、禁用态(非可导出任务不可勾选)、下载触发、失败提示和导出摘要条。
+  - 边界：多选 UI、禁用态(非可导出任务不可勾选)、下载触发、失败提示和导出摘要条已落地；批量 zip 仍为 JSON-only。
   - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 - [ ] **FE-MVP-03-05 字段方案管理入口占位**
@@ -266,9 +263,9 @@
   - 范围：审核页触发 JSON/Excel 导出。
   - 边界：不在前端拼 Excel。
 
-- [~] **FE-MVP-04-05 OCR 文本重抽取确认入口**
+- [x] **FE-MVP-04-05 OCR 文本重抽取入口**
   - 范围：审核页提供"重新抽取"入口，调用 `reextractTaskFromOcr(taskId)`，成功后展示 `schema_version`、`prompt_version`、`run_id` 和候选数量，并刷新审核页字段。
-  - 边界：当前前端已具备 API client；**新契约**:UI 不展示"不重新 OCR / 不重新处理图片 / 不覆盖人工最终值"等免责文案,后端重抽取直接覆盖审核页当前字段;不做重抽取结果对比与采用 UI。
+  - 边界：UI 不展示免责文案；后端重抽取直接覆盖审核页当前字段并将字段状态重置为 `unreviewed`；不做重抽取结果对比与采用 UI。
   - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 ## E2E 和发布任务
@@ -315,20 +312,17 @@
 
 ## 已规划的后续增强
 
-以下能力已经有后端框架或 API 基础，但完整产品化仍需继续排期：
+以下能力已有部分后端框架或方向约束，但完整产品化仍需重新排期：
 
-- 批量导出完整 UI：任务多选、批量 zip 下载、失败提示和导出摘要（FE-MVP-03-04 本阶段 spec 收敛）。
-- Excel 导出字段完整性修复：先修复单任务 Excel 只能看到少数字段的问题，再评估是否纳入批量 zip（BE-MVP-05-06 本阶段 spec 收敛）。
-- 基于 OCR 文本重新抽取完整 UI：在审核页增加入口、版本信息展示；本阶段按新契约直接覆盖人工最终值，不再做对比与采用。
 - 字段方案/schema/prompt 版本管理：后端受控维护字段 schema 和 prompt 版本，支持选择版本后基于已保存 OCR 文本重新抽取。
-- 重抽取结果采用策略：**已废弃**,新契约下重抽取直接覆盖人工最终值,不做逐字段采用/保留 UI。
+- 重抽取结果采用策略：不属于当前产品契约；重抽取直接覆盖审核字段，不做逐字段采用/保留 UI。
 
 ## 全局边界
 
 - 不接入 HIS/EMR，不写回病历系统。
 - 不调用云 API，不使用 CDN、遥测或运行时联网下载。
-- 不在本仓库实现 OCR、图像预处理、裁剪、透视矫正或自动边界识别。
-- 慢阻肺/呼吸系统入院记录专病字段抽取在主代码内实现，但不得扩展为通用医学规则引擎。
-- 外部模块缺失、异常、字段结果整体不可用或契约非法时，任务必须进入 `failed`；单字段可疑进入审核页。
+- OCR、图像处理、文档解析和 LLM 结构化提取按可替换算法子系统接入；主流程必须保持端口契约、部署配置、失败语义和隐私边界清晰。
+- 慢阻肺/呼吸系统入院记录字段契约、质量核验和审核流转在主代码内维护，但不得扩展为通用医学规则引擎。
+- 算法子系统缺失、异常、字段结果整体不可用或契约非法时，任务必须进入 `failed`；单字段可疑进入审核页。
 - 前端不得从 schema、OCR 文本或页面内容推断、补造结构化字段。
 - 真实运行数据不得提交到 `data/`、`exports/`、`logs/`。

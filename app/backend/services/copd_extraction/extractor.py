@@ -1,3 +1,5 @@
+import re
+
 from ...errors import AppError, ErrorCode
 from .field_result import _default_result, all_fields_empty, complete_field_results
 from .prompts import (
@@ -5,6 +7,7 @@ from .prompts import (
     build_section_group_extraction_prompt,
     build_source_hint_regeneration_prompt,
     build_verification_prompt,
+    build_adversarial_verification_prompt,
 )
 from .quality_checks import apply_quality_checks
 from .section_splitter import FULL_TEXT_KEY, split_sections
@@ -82,6 +85,7 @@ class COPDFieldExtractor:
         extraction_batch_size: int = 5,
         verification_batch_size: int = 5,
         enable_verification: bool = True,
+        enable_adversarial_verification: bool = True,
         extraction_strategy: str = "field_batches",
     ):
         self._llm_client = llm_client
@@ -89,6 +93,7 @@ class COPDFieldExtractor:
         self._extraction_batch_size = extraction_batch_size
         self._verification_batch_size = verification_batch_size
         self._enable_verification = enable_verification
+        self._enable_adversarial_verification = enable_adversarial_verification
         self._extraction_strategy = extraction_strategy
 
     def extract(self, text: str, cancellation_token=None) -> list[dict]:
@@ -108,7 +113,11 @@ class COPDFieldExtractor:
             return results
         _raise_if_cancelled(cancellation_token)
         verdicts = self._verify_source_groups(results, text, cancellation_token=cancellation_token)
-        return self._merge_verdicts(results, verdicts)
+        results = self._merge_verdicts(results, verdicts)
+        if self._enable_adversarial_verification:
+            _raise_if_cancelled(cancellation_token)
+            results = self._adversarial_verify(results, text, cancellation_token=cancellation_token)
+        return results
 
     def _merge_verdicts(self, results: list[dict], verdicts: list[dict]) -> list[dict]:
         verdict_by_key = {item.get("field_key"): item for item in verdicts if isinstance(item, dict)}
@@ -116,8 +125,18 @@ class COPDFieldExtractor:
             verdict = verdict_by_key.get(item["field_key"])
             if verdict:
                 value = verdict.get("verdict")
-                if value == "pass" and not item.get("quality_flags"):
-                    item["verification_status"] = "passed"
+                if value == "pass":
+                    if not item.get("quality_flags"):
+                        item["verification_status"] = "passed"
+                    else:
+                        # LLM 认为通过，但薄规则仍有标记 → 保留为 passed
+                        # 但追加区分性 flag 供前端重点展示
+                        item["verification_status"] = "passed"
+                        _append_quality_flag(
+                            item,
+                            LLM_PASSED_RULE_FLAGGED,
+                            {"comment": "LLM 复核通过，但薄规则仍存在标记，请人工确认"},
+                        )
                 elif value == "fail":
                     item["verification_status"] = "failed"
                     _append_quality_flag(item, "llm_review_failed", verdict)
@@ -235,14 +254,73 @@ class COPDFieldExtractor:
         for index in range(0, len(source_groups), batch_size):
             _raise_if_cancelled(cancellation_token)
             batch = source_groups[index:index + batch_size]
-            verification_payload = self._llm_client.complete_json(
-                build_verification_prompt(batch, document_context=document_context)
-            )
-            batch_verdicts = verification_payload.get("verifications") if isinstance(verification_payload, dict) else None
-            if not isinstance(batch_verdicts, list):
-                raise ValueError("LLM verification response must contain verifications list")
-            verdicts.extend(batch_verdicts)
+            try:
+                verification_payload = self._llm_client.complete_json(
+                    build_verification_prompt(batch, document_context=document_context)
+                )
+                batch_verdicts = verification_payload.get("verifications") if isinstance(verification_payload, dict) else None
+                if not isinstance(batch_verdicts, list):
+                    raise ValueError("LLM verification response must contain verifications list")
+                verdicts.extend(batch_verdicts)
+            except Exception as exc:
+                # 复核失败时优雅降级：将该批次所有字段标记为 suspicious，
+                # 而非让整个任务进入 failed
+                for group in batch:
+                    for field in group.get("fields", []):
+                        verdicts.append({
+                            "field_key": field.get("field_key"),
+                            "verdict": "suspicious",
+                            "reason_code": "none",
+                            "checks": {},
+                            "comment": f"LLM 复核失败: {type(exc).__name__}",
+                        })
         return verdicts
+
+    def _adversarial_verify(self, results: list[dict], document_text: str = "", cancellation_token=None) -> list[dict]:
+        """对抗性复核：要求 LLM 主动挑刺，直接输出问题列表。
+
+        与常规复核不同，对抗性复核以批评者视角审视抽取结果，
+        输出直接转为 quality_flags，不经规则层过滤。
+        """
+        source_groups = build_source_groups(results)
+        if not source_groups:
+            return results
+        document_context = _bounded_document_context(document_text)
+        # 对抗性复核一次处理所有 source_groups，让 LLM 有全局视角
+        try:
+            payload = self._llm_client.complete_json(
+                build_adversarial_verification_prompt(
+                    source_groups, document_context=document_context
+                )
+            )
+            issues = payload.get("issues") if isinstance(payload, dict) else None
+        except Exception:
+            # 对抗性复核失败不阻塞主流程
+            return results
+        if not isinstance(issues, list):
+            return results
+
+        # 将 issues 转换为 quality_flags
+        field_map = {item["field_key"]: item for item in results}
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            field_key = issue.get("field_key")
+            item = field_map.get(field_key)
+            if item is None:
+                continue
+            problem_type = issue.get("problem_type") or "adversarial_issue"
+            description = issue.get("description") or "对抗性复核发现问题"
+            severity = issue.get("severity") or "medium"
+
+            flag_name = f"adversarial_{problem_type}"
+            _append_quality_flag(item, flag_name, {"comment": description})
+
+            # 高严重度问题：若当前状态为 passed，升级为 suspicious
+            if severity == "high" and item.get("verification_status") == "passed":
+                item["verification_status"] = "suspicious"
+
+        return results
 
 
 SOURCE_SECTION_NOT_FOUND = "source_section_not_found"
@@ -250,7 +328,46 @@ EVIDENCE_MISSING_FALLBACK = "evidence_missing_fallback"
 EVIDENCE_NOT_IN_SOURCE_TEXT = "evidence_not_in_source_text"
 EVIDENCE_TOO_LONG = "evidence_too_long"
 EVIDENCE_RECOVERED_FROM_VALUE = "evidence_recovered_from_value"
+LLM_VERIFICATION_FAILED = "llm_verification_failed"
+LLM_PASSED_RULE_FLAGGED = "llm_passed_rule_flagged"
 MAX_EVIDENCE_PHRASE_CHARS = 50
+
+# —— 文本规范化：全角标点 → 半角，用于 evidence 模糊匹配 ——
+_FULLWIDTH_TO_HALFWIDTH = str.maketrans({
+    "，": ",", "。": ".", "！": "!", "？": "?",
+    "：": ":", "；": ";", "“": '"', "”": '"',
+    "（": "(", "）": ")", "【": "[", "】": "]",
+    "　": " ", "～": "~",
+})
+
+
+def _normalize_for_matching(text: str) -> str:
+    """规范化文本用于模糊匹配：全角→半角标点、去除所有空白。"""
+    if not text:
+        return text
+    result = text.translate(_FULLWIDTH_TO_HALFWIDTH)
+    result = re.sub(r"\s+", "", result)
+    return result
+
+
+def _find_normalized_match_start(needle: str, haystack: str) -> int:
+    """返回规范化匹配在原始 haystack 中的起始下标。"""
+    normalized_needle = _normalize_for_matching(needle)
+    if not normalized_needle:
+        return -1
+    normalized_chars: list[str] = []
+    original_indexes: list[int] = []
+    for index, char in enumerate(haystack):
+        translated = char.translate(_FULLWIDTH_TO_HALFWIDTH)
+        if not translated or re.match(r"\s+", translated):
+            continue
+        normalized_chars.append(translated)
+        original_indexes.append(index)
+    normalized_haystack = "".join(normalized_chars)
+    normalized_index = normalized_haystack.find(normalized_needle)
+    if normalized_index < 0 or normalized_index >= len(original_indexes):
+        return -1
+    return original_indexes[normalized_index]
 
 
 class FieldRegenerationContext:
@@ -320,8 +437,24 @@ def attach_source_text(results: list[dict], sections: dict[str, str]) -> list[di
 def _resolve_field_evidence(item: dict, source_text: str) -> None:
     raw_evidence = item.get("evidence")
     has_raw_evidence = isinstance(raw_evidence, str) and raw_evidence.strip()
+
+    # —— 始终保留原始 evidence 作为审核参考 ——
+    if has_raw_evidence:
+        item["_raw_evidence"] = raw_evidence
+
     raw_evidence_too_long = has_raw_evidence and len(raw_evidence) > MAX_EVIDENCE_PHRASE_CHARS
-    raw_evidence_not_in_source = has_raw_evidence and raw_evidence not in source_text
+
+    # —— 检查 evidence 是否在原文中出现 ——
+    # 短 evidence：规范化后做子串匹配，容忍全角/半角标点和空白差异
+    # 长 evidence：用原始文本匹配（仅用于标记，不用于恢复）
+    raw_evidence_not_in_source = False
+    if has_raw_evidence:
+        if raw_evidence_too_long:
+            raw_evidence_not_in_source = raw_evidence not in source_text
+        else:
+            norm_evidence = _normalize_for_matching(raw_evidence)
+            norm_source = _normalize_for_matching(source_text)
+            raw_evidence_not_in_source = norm_evidence not in norm_source
 
     if has_raw_evidence and not raw_evidence_too_long and not raw_evidence_not_in_source:
         item["evidence"] = raw_evidence
@@ -415,7 +548,14 @@ def _recover_evidence_from_value(
     value = original_value.strip()
     if len(value) > max_chars:
         return None
+
+    # 1) 精确匹配
     index = source_text.find(value)
+
+    # 2) 规范化后匹配（全角/半角标点、空白差异）
+    if index < 0:
+        index = _find_normalized_match_start(value, source_text)
+
     if index < 0:
         return None
     if value == source_text:

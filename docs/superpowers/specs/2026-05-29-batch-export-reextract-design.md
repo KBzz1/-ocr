@@ -22,7 +22,8 @@
 - 任务必须已有可用 OCR 文本，优先读取 `results/{task_id}/document_result.json`，缺失时可从持久化审核结果中的 OCR 字段兜底。
 - 重抽取复用现有字段抽取端口和 schema 校验，不调用图片处理或 OCR/文档解析端口。
 - 新候选结果写入 `results/{task_id}/field_candidates.json`，并写入 `results/{task_id}/reextract_runs/{run_id}.json` 审计记录。
-- 旧人工审核结果不被静默覆盖；若已有 `review_result.json`，重抽取只记录候选和元数据，任务回到 `review`。
+- 新候选直接覆盖 `results/{task_id}/review_result.json["fields"]` 中对应 schema 字段的审核值，字段状态重置为 `unreviewed`，并在字段 `history` 中追加 `reextract` 记录。
+- 任务为 `done` 时，重抽取后回到 `review`；失败路径不修改审核结果。
 
 ### 版本元数据
 
@@ -42,5 +43,4 @@
 
 - 批量导出沿用 `EXPORT_VALIDATION_FAILED` 和 `EXPORT_FAILED`。
 - 重抽取状态不允许或缺少 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`。
-- 字段抽取端口未配置、候选为空、候选契约非法时返回相同错误码；本入口不把任务推进到 `failed`，避免覆盖原任务状态。
-
+- 字段抽取端口未配置、候选为空、候选契约非法时返回相同错误码；本入口不把任务推进到 `failed`，避免覆盖原任务状态或破坏已有审核结果。
