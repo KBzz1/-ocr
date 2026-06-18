@@ -434,18 +434,18 @@ def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, mon
     assert review.status_code == 200
     fields = review.get_json()["data"]["review_result"]["fields"]
     field_by_key = {f["field_key"]: f for f in fields}
-    assert field_by_key["occupation"]["auto_value"] == "模拟外部算法返回的职业"
-    assert field_by_key["occupation"]["status"] == "unreviewed"
+    assert field_by_key["chief_complaint"]["auto_value"] == "模拟外部算法返回的主诉"
+    assert field_by_key["chief_complaint"]["status"] == "unreviewed"
 
     saved = client.put(
         f"/api/tasks/{created['task_id']}/review",
-        json={"fields": [{"field_key": "occupation", "value": "人工审核后的职业", "status": "modified"}]},
+        json={"fields": [{"field_key": "chief_complaint", "value": "人工审核后的主诉", "status": "modified"}]},
     )
     assert saved.status_code == 200
     saved_fields = saved.get_json()["data"]["review_result"]["fields"]
-    saved_field = next(f for f in saved_fields if f["field_key"] == "occupation")
-    assert saved_field["auto_value"] == "模拟外部算法返回的职业"
-    assert saved_field["final_value"] == "人工审核后的职业"
+    saved_field = next(f for f in saved_fields if f["field_key"] == "chief_complaint")
+    assert saved_field["auto_value"] == "模拟外部算法返回的主诉"
+    assert saved_field["final_value"] == "人工审核后的主诉"
 
     completed = client.post(f"/api/tasks/{created['task_id']}/complete")
     assert completed.status_code == 200
@@ -540,3 +540,51 @@ def test_e2e_logs_do_not_include_sensitive_payloads(tmp_path, monkeypatch):
     assert "\\xff\\xd8" not in log_text
     assert "110101" not in log_text
     assert "merged text" not in log_text
+
+
+def test_backend_default_profile_uses_admission_record_structured_schema(tmp_path, monkeypatch):
+    """默认 copd_admission_record profile 的 schema 版本必须是固定字段 schema。"""
+    from app.backend import create_backend_app
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  model_dir: "{tmp_path}/models"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+algorithms:
+  enable_copd_extractor: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
+    monkeypatch.setattr(
+        "app.backend.services.copd_extraction.port.build_default_copd_field_port",
+        lambda config, field_keys_provider: object(),
+    )
+
+    app = create_backend_app(str(config_dir))
+    registry = app.config["DOCUMENT_PROFILE_REGISTRY"]
+    profile = registry.get_profile("copd_admission_record")
+
+    assert profile.document_type == "copd_admission_record"
+    assert profile.label == "入院记录"
+    assert profile.schema_version == "admission_record_structured_fields.v1"

@@ -99,3 +99,72 @@ class TestSchemaAPI:
         assert error["code"] == "INTERNAL_SERVER_ERROR"
         assert str(tmp_path) not in error["message"]
         assert str(tmp_path) not in str(error["details"])
+
+
+def test_schema_api_returns_admission_record_structured_fields(tmp_path, monkeypatch):
+    """默认入院记录 schema 通过 schema API 返回固定章节顺序。"""
+    import os
+
+    from app.backend import create_backend_app
+    from app.backend.config import PROJECT_ROOT
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
+
+    app_instance = create_backend_app(config_dir=str(config_dir))
+    # 显式指向仓库固定字段 schema，避免依赖加载顺序
+    admission_schema_path = os.path.join(
+        PROJECT_ROOT, "app", "config", "schemas",
+        "admission_record_structured_fields.v1.yaml",
+    )
+    app_instance.config["SCHEMA_SERVICE"] = SchemaService(admission_schema_path)
+    app_instance.config["TESTING"] = True
+    client = app_instance.test_client()
+
+    resp = client.get("/api/schema/current")
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["version"] == "admission_record_structured_fields.v1"
+    group_labels = [g["group_label"] for g in data["field_groups"]]
+    assert group_labels == [
+        "主诉",
+        "现病史",
+        "既往史",
+        "个人史",
+        "家族史",
+        "体格检查",
+        "辅助检查",
+        "诊断",
+    ]
+    # 旧小字段不得出现
+    field_keys = [
+        f["field_key"] for g in data["field_groups"] for f in g["fields"]
+    ]
+    assert "copd_history_years" not in field_keys
+    assert "blood_gas_pao2" not in field_keys
+    assert "ct_features" not in field_keys

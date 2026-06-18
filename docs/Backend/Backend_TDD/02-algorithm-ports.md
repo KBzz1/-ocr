@@ -10,21 +10,41 @@ type DocumentParsingPort = {
 };
 
 type FieldExtractionPort = {
-  extract(input: { document_result: DocumentResult; schema: FieldSchema }): Promise<FieldResult[]>;
+  extract(input: {
+    document_result: DocumentResult;
+    schema: FieldSchema;
+    evidence_units: EvidenceUnit[];
+  }): Promise<FieldResult[]>;
 };
 ```
 
 当前 MVP 的算法输入来自任务图片列表，按上传成功顺序排列。默认不向算法端口传入采集会话、`quad_points`、裁剪图或透视矫正结果；如果新的算法子系统需要预处理输入或批处理目录，必须先更新本契约和对应测试。
 
-`FieldResult` 是按 schema 全量返回的字段结果。每个字段保留自动值、证据、抽取状态、字段级复核状态、质量风险标记和 OCR 纠偏审计信息；未抽到字段也应作为空值结果进入审核页。
+`FieldResult` 是按 schema 全量返回的字段结果。每个字段保留自动值、证据数组、抽取状态、字段级复核状态、医生可读的关注标记和 OCR 纠偏审计信息；未抽到字段也应作为空值结果进入审核页。
+
+## 入量记录结构化字段契约 (admission_record_structured_fields.v1)
+
+- 入院记录 schema 来自 `app/config/schemas/admission_record_structured_fields.v1.yaml`，按章节（主诉、现病史、既往史、个人史、家族史、体格检查、辅助检查、诊断）组织 61 个固定字段。
+- `DocumentProfile.document_type` 仍为 `copd_admission_record`（与既有任务/导出/审核入口兼容），profile.label 为 `入院记录`。
+- `schema_version` 字段为新固定字段 schema 版本号；算法侧 payload 仍可写 `document_type: "admission_record"`，仅作为信息字段，不用于任务路由。
+- 旧的 `copd_admission_record.v1.yaml` 小字段 schema 与自由二级 key 抽取路径不在新固定字段流程内使用；其物理清理在算法-清理任务内统一处理。
+
+## evidence_units → evidence_ids → evidence 回填链路
+
+- OCR 完成后，后端在文档解析结果基础上生成轻量 `evidence_units`：`{id, text, start_offset, end_offset, page_no?, section_key?}`，编号稳定于本次 OCR 文本（`u001` 起）。
+- 切分策略以换行/句号/分号/受控逗号回退为主：生命体征行、血气整组、诊断行或诊断块、治疗药物整段保持为一个 unit；不做 OCR 纠错、不做章节标题硬匹配、不做页序推断。
+- `evidence_units` 持久化在 `results/{task_id}/document_result.json`，与 `merged_text` 字符偏移一致。
+- 字段抽取 prompt 收到 `evidence_units` 后仅返回 `field_key / status / value / evidence_ids`；模型不自由生成 evidence 文本。
+- 后端在 `admission_contract` 中按 `evidence_ids` 把 unit 文本和 offset 回填到 `FieldResult.evidence[]`；未知 ID 或 `found` 字段缺证据不伪造高亮，置为 `verification_status=suspicious` 并由前端展示“缺少来源证据，请核对原文”。
+- 单字段可疑（`uncertain` / 证据缺失 / 证据无法定位 / OCR 疑似错读影响字段值）走审核页，标 `attention_required=true`；`not_found` 不默认标黄。
 
 ## 失败契约
 
 - `DocumentParsingPort` 未配置、异常或返回空页结果时，任务处理失败。
-- 结构化字段抽取未配置、异常、全字段为空、返回 schema 之外字段或返回契约非法字段时，任务处理失败。
+- 结构化字段抽取未配置、异常、JSON 无法解析、`fields` 不是列表、字段缺失、字段重复、出现 schema 外字段、或全字段为 `not_found` 且无有效文本支撑时，任务处理失败。
 - 单字段 evidence 可疑、OCR 疑似错误或复核失败时，字段进入审核页提示人工核验，不直接让整个任务失败。
-- 处理流程不得崩溃；不得在无原文证据时生成医学值。
-- 结构化字段抽取返回局部字段为空或不确定时，任务不失败而是进入 `review`，单字段风险由前端展示供人工核验。
+- 处理流程不得崩溃；不得在无原文证据时生成医学值。诊断字段（`diagnosis_preliminary` / `diagnosis_final`）只摘录原文，不得由模型补造、改写或推理。
+- 结构化字段抽取返回局部 `not_found` 或 `uncertain` 时，任务不失败而是进入 `review`，单字段风险由前端展示供人工核验。
 
 契约测试可以使用 fixture 或可注入 LLM 客户端模拟字段抽取结果。
 

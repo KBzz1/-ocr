@@ -84,9 +84,9 @@ class SimulatedProcessing:
                 "schema_version": (schema or {}).get("version"),
                 "candidates": [
                     {
-                        "field_key": "occupation",
-                        "field_name": "职业",
-                        "original_value": "模拟外部算法返回的职业",
+                        "field_key": "chief_complaint",
+                        "field_name": "主诉",
+                        "original_value": "模拟外部算法返回的主诉",
                         "evidence": "fixture evidence",
                         "page_no": 1,
                         "confidence": "medium",

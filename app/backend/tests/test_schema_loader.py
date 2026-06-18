@@ -184,22 +184,56 @@ class TestSchemaLoaderReject:
         assert exc_info.value.code == ErrorCode.INTERNAL_SERVER_ERROR.code
 
 
-def test_load_copd_admission_schema_from_repo():
+def test_load_admission_record_structured_schema_from_repo():
     from app.backend.config import PROJECT_ROOT
     from app.backend.services.schema_loader import load_schema
     import os
 
-    path = os.path.join(PROJECT_ROOT, "app", "config", "schemas", "copd_admission_record.v1.yaml")
+    path = os.path.join(
+        PROJECT_ROOT,
+        "app",
+        "config",
+        "schemas",
+        "admission_record_structured_fields.v1.yaml",
+    )
 
     schema = load_schema(path)
 
+    assert schema["version"] == "admission_record_structured_fields.v1"
     assert schema["document_type"] == "copd_admission_record"
     keys = [
         field["field_key"]
         for group in schema["field_groups"]
         for field in group["fields"]
     ]
-    assert "copd_history_years" in keys
-    assert "blood_gas_pao2" in keys
-    assert "ct_features" in keys
+    # 字段表全量字段，无重复
     assert len(keys) == len(set(keys))
+    assert len(keys) == 61
+    # 新固定字段必须存在
+    required_keys = [
+        "chief_complaint",
+        "hpi_urine_status",
+        "pmh_blood_product_history",
+        "pe_respiration_rate",
+        "pe_respiratory_exam",
+        "pe_cardiac_exam",
+        "aux_blood_gas_ph",
+        "aux_blood_gas_pco2",
+        "aux_blood_gas_po2",
+        "aux_blood_gas_na",
+        "aux_blood_gas_fio2",
+        "aux_blood_gas_oxygenation_index",
+        "diagnosis_preliminary",
+        "diagnosis_final",
+    ]
+    for key in required_keys:
+        assert key in keys, f"缺少固定字段: {key}"
+    # 旧小字段不得存在
+    legacy_keys = [
+        "copd_history_years",
+        "blood_gas_pao2",
+        "ct_features",
+        "positive_signs",
+    ]
+    for key in legacy_keys:
+        assert key not in keys, f"残留旧小字段: {key}"
