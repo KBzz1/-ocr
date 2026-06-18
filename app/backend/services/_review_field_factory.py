@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -35,6 +36,8 @@ def build_placeholder_field(
         "source_section": None,
         "extraction_status": "not_found",
         "verification_status": "not_checked",
+        "attention_required": False,
+        "attention_message": "",
         "quality_flags": [],
         "ocr_correction": None,
         "status": FieldStatus.UNREVIEWED.value,
@@ -55,22 +58,50 @@ def build_field_from_candidate(
     previous_history: list[dict] | None = None,
     previous_review_note: str | None = None,
 ) -> dict:
-    """根据抽取候选构造 review 字段,状态重置为 unreviewed,history 透传旧条目。"""
+    """根据抽取候选构造 review 字段,状态重置为 unreviewed,history 透传旧条目。
+
+    关键约束:
+    - ``evidence`` 保留为 ``list[dict]``(来自新 Qwen 端口回填的 evidence_units),不扁平化为字符串。
+    - ``attention_required`` / ``attention_message`` 从候选透传(not_found 时强制 False / "")。
+    - ``quality_flags`` 保留为内部审计用,不作为前端可见的 attention_message 来源。
+    """
     history = list(previous_history or [])
+    extraction_status = candidate.get("extraction_status", "extracted")
+    original_value = candidate.get("original_value", "")
+    # not_found 字段必须空值,final_value/auto_value 与 evidence 同步
+    if extraction_status == "not_found":
+        original_value = ""
+        evidence_value: list[dict] | None = []
+        attention_required = False
+        attention_message = ""
+    else:
+        raw_evidence = candidate.get("evidence")
+        if isinstance(raw_evidence, list):
+            evidence_value = [copy.deepcopy(item) for item in raw_evidence if isinstance(item, dict)]
+        elif raw_evidence is None:
+            evidence_value = None
+        else:
+            # 旧版本扁平化字符串:沿用原占位语义,不强行转 list
+            evidence_value = raw_evidence
+        attention_required = bool(candidate.get("attention_required", False))
+        attention_message = candidate.get("attention_message", "") or ""
+
     field = {
         "field_key": field_key,
         "field_name": field_name,
-        "auto_value": candidate.get("original_value", ""),
-        "final_value": candidate.get("original_value", ""),
-        "evidence": candidate.get("evidence"),
+        "auto_value": original_value,
+        "final_value": original_value,
+        "evidence": evidence_value,
         "page_no": candidate.get("page_no"),
         "confidence": candidate.get("confidence"),
         "source_hint": candidate.get("source_hint"),
         "source_text": candidate.get("source_text"),
         "source_group_id": candidate.get("source_group_id"),
         "source_section": candidate.get("source_section"),
-        "extraction_status": candidate.get("extraction_status", "extracted"),
+        "extraction_status": extraction_status,
         "verification_status": candidate.get("verification_status", "not_checked"),
+        "attention_required": attention_required,
+        "attention_message": attention_message,
         "quality_flags": list(candidate.get("quality_flags") or []),
         "ocr_correction": candidate.get("ocr_correction"),
         "status": FieldStatus.UNREVIEWED.value,

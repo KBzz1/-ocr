@@ -3,6 +3,10 @@ import pytest
 from app.backend.errors import AppError, ErrorCode
 from app.backend.services.review_service import ReviewService
 from app.backend.services.task_service import TaskService
+from app.backend.services._review_field_factory import (
+    build_field_from_candidate,
+    build_placeholder_field,
+)
 from app.backend.storage.json_store import JsonStore
 
 
@@ -284,3 +288,90 @@ def test_get_or_init_reorders_fields_to_schema_order(tmp_path):
     # 值保留
     assert find_field(review, "department")["final_value"] == "骨科"
     assert find_field(review, "patient_name")["final_value"] == "张三"
+
+
+# --- Task 6: 审核返回证据数组与核验提示 ---
+
+
+def test_review_field_preserves_evidence_array_and_attention_message():
+    """Task 6: candidate 携带 evidence 数组 + attention_required/attention_message 时,
+    review 字段保留 evidence 数组(不扁平化为字符串),并把 attention 元数据透传给前端。
+    """
+    candidate = {
+        "field_key": "chief_complaint",
+        "original_value": "咳嗽 5 天",
+        "evidence": [
+            {
+                "id": "u001",
+                "text": "主诉：反复咳嗽 5 天。",
+                "start_offset": 0,
+                "end_offset": 11,
+                "page_no": 1,
+            }
+        ],
+        "extraction_status": "extracted",
+        "verification_status": "suspicious",
+        "attention_required": True,
+        "attention_message": "缺少来源证据，请核对原文",
+        "quality_flags": ["evidence_missing"],
+    }
+
+    field = build_field_from_candidate(
+        "chief_complaint",
+        "主诉",
+        candidate,
+    )
+
+    # evidence 必须是 list[dict],不能扁平化为字符串
+    assert isinstance(field["evidence"], list)
+    assert field["evidence"] == [
+        {
+            "id": "u001",
+            "text": "主诉：反复咳嗽 5 天。",
+            "start_offset": 0,
+            "end_offset": 11,
+            "page_no": 1,
+        }
+    ]
+    # 核验提示必须透传,前端可见 attention_message 必须是中文可读文案
+    assert field["attention_required"] is True
+    assert field["attention_message"] == "缺少来源证据，请核对原文"
+    # 内部 quality_flags 仅留作审计
+    assert field["quality_flags"] == ["evidence_missing"]
+
+
+def test_not_found_review_field_is_not_attention():
+    """Task 6: not_found 候选 review 字段 attention_required=False,final_value/auto_value 空,
+    extraction_status=not_found。前端看到 not_found 字段不应该亮黄色感叹号。
+    """
+    placeholder = build_placeholder_field("pe_temperature", "体温")
+
+    # 占位字段本身就是 not_found 默认形态
+    assert placeholder["attention_required"] is False
+    assert placeholder["final_value"] == ""
+    assert placeholder["auto_value"] == ""
+    assert placeholder["extraction_status"] == "not_found"
+
+    # 显式 not_found 的候选也必须满足同样约束
+    not_found_candidate = {
+        "field_key": "pe_temperature",
+        "original_value": "",
+        "evidence": [],
+        "extraction_status": "not_found",
+        "verification_status": "not_checked",
+        "attention_required": False,
+        "attention_message": "",
+        "quality_flags": [],
+    }
+
+    field = build_field_from_candidate(
+        "pe_temperature",
+        "体温",
+        not_found_candidate,
+    )
+
+    assert field["attention_required"] is False
+    assert field["final_value"] == ""
+    assert field["auto_value"] == ""
+    assert field["extraction_status"] == "not_found"
+    assert field["attention_message"] == ""

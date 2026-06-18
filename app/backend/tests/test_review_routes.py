@@ -159,3 +159,74 @@ def test_failed_task_cannot_enter_review_flow(client, app):
 
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "INVALID_TASK_TRANSITION"
+
+
+# --- Task 6: 审核返回证据数组与核验提示 ---
+
+
+def test_review_route_returns_schema_ordered_admission_fields(client, app, review_task):
+    """Task 6: /api/tasks/{id}/review 返回的 review_result 必须包含 field_groups
+    (按 schema 顺序),且 fields 数量与 schema 一致。
+    """
+    schema_service = app.config["SCHEMA_SERVICE"]
+    schema = schema_service.get_current()
+
+    response = client.get(f"/api/tasks/{review_task['task_id']}/review")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    review_result = data["review_result"]
+
+    # field_groups 必须存在且按 schema 顺序产出
+    assert "field_groups" in review_result
+    field_groups = review_result["field_groups"]
+    assert isinstance(field_groups, list)
+    schema_field_keys = [
+        schema_field["field_key"]
+        for group in schema["field_groups"]
+        for schema_field in group["fields"]
+    ]
+    schema_groups_keys = [group["group_key"] for group in schema["field_groups"]]
+    assert [group["group_key"] for group in field_groups] == schema_groups_keys
+    # fields 数量与 schema 一致(默认 61 字段),按 schema 顺序
+    returned_field_keys = [f["field_key"] for f in review_result["fields"]]
+    assert len(returned_field_keys) == len(schema_field_keys)
+    assert returned_field_keys == schema_field_keys
+
+
+def test_review_route_does_not_expose_internal_attention_flag_names_as_messages(client, app, review_task):
+    """Task 6: review 路由返回的 attention_message 不能包含内部 flag 名
+    (source_section_not_found / evidence_missing_fallback / source_hint= 等),
+    只能给前端可读的中文提示。
+    """
+    # 在 field_candidates 里塞一个带 attention 的字段,触发 attention_message 写入
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    candidates = store.read(f"results/{review_task['task_id']}/field_candidates.json")
+    candidates["candidates"].append({
+        "field_key": "chief_complaint",
+        "original_value": "咳嗽",
+        "evidence": [
+            {"id": "u777", "text": "主诉：咳嗽 5 天。", "start_offset": 0, "end_offset": 9, "page_no": 1}
+        ],
+        "extraction_status": "extracted",
+        "verification_status": "suspicious",
+        "attention_required": True,
+        "attention_message": "缺少来源证据，请核对原文",
+        "quality_flags": ["evidence_missing_fallback"],
+    })
+    store.write(f"results/{review_task['task_id']}/field_candidates.json", candidates)
+
+    response = client.get(f"/api/tasks/{review_task['task_id']}/review")
+
+    assert response.status_code == 200
+    fields = response.get_json()["data"]["review_result"]["fields"]
+    # 收集所有前端可见的 attention_message 文本
+    messages = [f.get("attention_message", "") or "" for f in fields]
+    joined = "\n".join(messages)
+    # 内部 flag 名不应作为 attention_message 暴露
+    for forbidden in ("source_section_not_found", "evidence_missing_fallback", "source_hint="):
+        assert forbidden not in joined, f"attention_message 暴露内部 flag 名: {forbidden}"
+    # 内部 quality_flags 可以保留(审计需要),但前端只看到 attention_message
+    chief = next(f for f in fields if f["field_key"] == "chief_complaint")
+    assert chief["attention_required"] is True
+    assert chief["attention_message"] == "缺少来源证据，请核对原文"

@@ -67,10 +67,16 @@ class ExportService:
                 "group_key": f.get("group_key", "unknown"),
                 "group_label": f.get("group_label", "unknown"),
                 "final_value": f.get("final_value", ""),
+                "auto_value": f.get("auto_value", ""),
                 "status": f.get("status", FieldStatus.UNREVIEWED.value),
                 "empty_accepted": f.get("empty_accepted", False),
                 "evidence": f.get("evidence"),
                 "page_no": f.get("page_no"),
+                "extraction_status": f.get("extraction_status", "not_found"),
+                "verification_status": f.get("verification_status", "not_checked"),
+                "attention_required": bool(f.get("attention_required", False)),
+                "attention_message": f.get("attention_message", "") or "",
+                "quality_flags": list(f.get("quality_flags") or []),
                 "reviewed_at": f.get("reviewed_at"),
             })
 
@@ -341,6 +347,23 @@ class ExportService:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(model, f, ensure_ascii=False, indent=2)
 
+    @staticmethod
+    def _serialize_evidence_for_excel(evidence) -> str:
+        """Excel 单元格只能写字符串;evidence 数组序列化为 JSON 字符串以便审计可读。
+
+        - ``None`` / 空列表 / 空字符串 → ``""``
+        - ``list[dict]`` → ``json.dumps(..., ensure_ascii=False)``
+        - ``str``(旧扁平化形态)→ 原样返回
+        - 其它 → ``str(evidence)``
+        """
+        if evidence is None or evidence == "" or evidence == []:
+            return ""
+        if isinstance(evidence, list):
+            return json.dumps(evidence, ensure_ascii=False)
+        if isinstance(evidence, str):
+            return evidence
+        return str(evidence)
+
     # -- XLSX writer (standard-library only) --
 
     _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -524,13 +547,14 @@ class ExportService:
 
         for row_idx, field in enumerate(fields, start=2):
             lines.append(f'<row r="{row_idx}">')
+            evidence_value = cls._serialize_evidence_for_excel(field.get("evidence"))
             values = [
                 field.get("field_key", ""),
                 field.get("field_name", ""),
                 field.get("final_value", ""),
                 field.get("status", ""),
                 str(field.get("page_no") or ""),
-                field.get("evidence") or "",
+                evidence_value,
             ]
             for i, val in enumerate(values):
                 letter = cls._COL_LETTERS[i]

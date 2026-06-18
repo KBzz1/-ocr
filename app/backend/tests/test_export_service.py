@@ -124,7 +124,9 @@ def test_export_json_file_uses_final_value(tmp_path):
     with open(info["path"], encoding="utf-8") as f:
         content = json.load(f)
     assert content["fields"][0]["final_value"] == "张三"
-    assert "auto_value" not in content["fields"][0]
+    # Task 6: 导出携带 attention/quality 元数据供下游使用,但核心契约仍是 final_value
+    assert content["fields"][0]["attention_required"] is False
+    assert content["fields"][0]["attention_message"] == ""
     assert os.path.isabs(info["path"])
 
 
@@ -805,3 +807,157 @@ def test_export_json_rejects_deleted_task(tmp_path):
     with pytest.raises(AppError) as exc:
         export_service.export_json("task_001")
     assert exc.value.code == ErrorCode.TASK_NOT_FOUND.code
+
+
+# --- Task 6: 导出保留证据数组与 schema 顺序 ---
+
+
+def test_export_keeps_admission_schema_order_and_evidence_array(tmp_path):
+    """Task 6: 导出 model 字段顺序与 schema 一致;evidence 数组在 JSON / Excel 中保留;
+    not_found 字段在 final_value 为空时不会阻断导出。
+    """
+    store = JsonStore(str(tmp_path / "data"))
+    task_service = TaskService(store=store)
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        schema_provider=lambda: {
+            "version": "admission_record_structured_fields.v1",
+            "document_type": "copd_admission_record",
+            "field_groups": [
+                {
+                    "group_key": "chief_complaint",
+                    "group_label": "主诉",
+                    "fields": [{"field_key": "chief_complaint", "label": "主诉"}],
+                },
+                {
+                    "group_key": "physical_examination",
+                    "group_label": "体格检查",
+                    "fields": [
+                        {"field_key": "pe_temperature", "label": "体温"},
+                        {"field_key": "pe_pulse", "label": "脉搏"},
+                    ],
+                },
+            ],
+        },
+    )
+    write_task(store, status="done")
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "admission_record_structured_fields.v1",
+            "document_type": "copd_admission_record",
+            "fields": [
+                {
+                    "field_key": "chief_complaint",
+                    "field_name": "主诉",
+                    "auto_value": "咳嗽 5 天",
+                    "final_value": "咳嗽 5 天",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "extraction_status": "extracted",
+                    "verification_status": "passed",
+                    "evidence": [
+                        {
+                            "id": "u001",
+                            "text": "主诉：咳嗽 5 天。",
+                            "start_offset": 0,
+                            "end_offset": 8,
+                            "page_no": 1,
+                        }
+                    ],
+                    "page_no": 1,
+                    "attention_required": False,
+                    "attention_message": "",
+                    "quality_flags": [],
+                    "ocr_correction": None,
+                },
+                {
+                    "field_key": "pe_temperature",
+                    "field_name": "体温",
+                    "auto_value": "",
+                    "final_value": "",
+                    "status": FieldStatus.UNREVIEWED.value,
+                    "extraction_status": "not_found",
+                    "verification_status": "not_checked",
+                    "evidence": None,
+                    "page_no": None,
+                    "attention_required": False,
+                    "attention_message": "",
+                    "quality_flags": [],
+                    "ocr_correction": None,
+                },
+                {
+                    "field_key": "pe_pulse",
+                    "field_name": "脉搏",
+                    "auto_value": "78 次/分",
+                    "final_value": "78 次/分",
+                    "status": FieldStatus.CONFIRMED.value,
+                    "extraction_status": "extracted",
+                    "verification_status": "passed",
+                    "evidence": [
+                        {
+                            "id": "u010",
+                            "text": "脉搏 78 次/分",
+                            "start_offset": 200,
+                            "end_offset": 211,
+                            "page_no": 1,
+                        }
+                    ],
+                    "page_no": 1,
+                    "attention_required": False,
+                    "attention_message": "",
+                    "quality_flags": [],
+                    "ocr_correction": None,
+                },
+            ],
+        },
+    )
+
+    info = export_service.export_json("task_001")
+
+    with open(info["path"], encoding="utf-8") as f:
+        model = json.load(f)
+
+    # 字段顺序与 schema 一致(chief_complaint -> pe_temperature -> pe_pulse)
+    assert [f["field_key"] for f in model["fields"]] == [
+        "chief_complaint",
+        "pe_temperature",
+        "pe_pulse",
+    ]
+    chief = next(f for f in model["fields"] if f["field_key"] == "chief_complaint")
+    pulse = next(f for f in model["fields"] if f["field_key"] == "pe_pulse")
+    # evidence 数组保留(必须是 list[dict],不能扁平化)
+    assert chief["evidence"] == [
+        {
+            "id": "u001",
+            "text": "主诉：咳嗽 5 天。",
+            "start_offset": 0,
+            "end_offset": 8,
+            "page_no": 1,
+        }
+    ]
+    assert pulse["evidence"] == [
+        {
+            "id": "u010",
+            "text": "脉搏 78 次/分",
+            "start_offset": 200,
+            "end_offset": 211,
+            "page_no": 1,
+        }
+    ]
+    # not_found + 空 final_value 不阻断导出
+    temp = next(f for f in model["fields"] if f["field_key"] == "pe_temperature")
+    assert temp["extraction_status"] == "not_found"
+    assert temp["final_value"] == ""
+
+    # Excel: evidence 数组在 sheet1 中也以文本形式存在(可以序列化)
+    excel_info = export_service.export_excel("task_001")
+    with zipfile.ZipFile(excel_info["path"]) as archive:
+        sheet1_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    # schema 顺序: chief_complaint 在 pe_temperature 之前;pe_temperature 在 pe_pulse 之前
+    assert sheet1_xml.index("chief_complaint") < sheet1_xml.index("pe_temperature")
+    assert sheet1_xml.index("pe_temperature") < sheet1_xml.index("pe_pulse")
+    # evidence 文本至少一项出现在 sheet1(脉搏文本稳定)
+    assert "u010" in sheet1_xml
