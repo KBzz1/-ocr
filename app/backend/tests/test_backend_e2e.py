@@ -542,6 +542,344 @@ def test_e2e_logs_do_not_include_sensitive_payloads(tmp_path, monkeypatch):
     assert "merged text" not in log_text
 
 
+def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path, monkeypatch):
+    """Task 10 端到端回归: 入院记录 OCR 标题错字 + 页面乱序,审核页必须仍然能展示。
+
+    模拟场景:
+    - OCR 页面按系统保存顺序写入(不重排): page 1 = ## 品后诊断 + 最终诊断; page 2 = 主诉...
+    - Fake Qwen 字段端口返回 schema 全量 61 字段:
+      * chief_complaint found,evidence 指向 page 2
+      * diagnosis_final found,evidence 指向 page 1
+      * 血气 6 字段共享同一 evidence unit
+      * 大部分 pmh 字段 not_found
+    """
+    from app.backend.services.schema_loader import load_schema
+    from app.backend.services.task_service import TaskService
+    from app.backend.storage.json_store import JsonStore
+
+    schema = load_schema("app/config/schemas/admission_record_structured_fields.v1.yaml")
+    schema_field_groups = schema["field_groups"]
+
+    class AdmissionRecordFullProcessing:
+        """模拟 Qwen 固定字段全量 61 字段抽取 + OCR 标题错字 + 乱序保存。"""
+
+        # OCR 页面按系统保存顺序写入(刻意乱序: 诊断在前,主诉在后)
+        PAGE1_TEXT = "## 品后诊断\n慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭"
+        PAGE2_TEXT = (
+            "## 初步诊断：\n"
+            "主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。\n"
+            "血气分析:pH7.40、pCO236.00mmHg、PO276.00mmHg↓、Na+130.00mmol/L↓、FiO221.00、氧合指数:961"
+        )
+        # 与 PaddleOCRVLMServerDocumentPort 使用的页面分隔符保持一致
+        MERGED_TEXT = f"{PAGE1_TEXT}\n\n{PAGE2_TEXT}"
+
+        # 诊断原文 = OCR 页面 1 中的"最终诊断"片段(不静默改写)
+        SOURCE_DIAGNOSIS_FINAL = "慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭"
+        # 主诉原文 = OCR 页面 2 中的"主诉:..."片段
+        SOURCE_CHIEF_COMPLAINT = "主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。"
+        # 血气原文(整组保持在一个 evidence unit)
+        SOURCE_BLOOD_GAS = (
+            "血气分析:pH7.40、pCO236.00mmHg、PO276.00mmHg↓、Na+130.00mmol/L↓、FiO221.00、氧合指数:961"
+        )
+
+        def __init__(self, store: JsonStore):
+            self._store = store
+
+        def _build_candidates(self, task: dict) -> list[dict]:
+            """按 schema 全量 61 字段产出候选;found/not_found 严格匹配 task 描述。"""
+            images = task.get("images") or []
+            page_ids = [img["page_id"] for img in sorted(images, key=lambda i: i["page_no"])]
+
+            # evidence unit IDs 由 backend 自有 evidence_units 提供,
+            # 这里只引用已生成的 ID 字符串。Task 2 之前未持久化 evidence_units 的场景下,
+            # review 阶段通过 evidence 文本和 offset 定位;为了保持端到端测试自洽,
+            # 我们用与 evidence_units 一致的 ID 字符串,但 evidence 列表在 review 阶段
+            # 只看 page_no / text / start_offset / end_offset,不直接读 evidence_units。
+            chief_evidence = {
+                "id": "u_chief",
+                "text": self.SOURCE_CHIEF_COMPLAINT,
+                "start_offset": self.MERGED_TEXT.index(self.SOURCE_CHIEF_COMPLAINT),
+                "end_offset": self.MERGED_TEXT.index(self.SOURCE_CHIEF_COMPLAINT) + len(self.SOURCE_CHIEF_COMPLAINT),
+                "page_no": 2,
+                "page_id": page_ids[1] if len(page_ids) > 1 else page_ids[0],
+            }
+            diagnosis_evidence = {
+                "id": "u_diag",
+                "text": self.SOURCE_DIAGNOSIS_FINAL,
+                "start_offset": self.MERGED_TEXT.index(self.SOURCE_DIAGNOSIS_FINAL),
+                "end_offset": self.MERGED_TEXT.index(self.SOURCE_DIAGNOSIS_FINAL) + len(self.SOURCE_DIAGNOSIS_FINAL),
+                "page_no": 1,
+                "page_id": page_ids[0],
+            }
+            blood_gas_evidence = {
+                "id": "u_blood_gas",
+                "text": self.SOURCE_BLOOD_GAS,
+                "start_offset": self.MERGED_TEXT.index(self.SOURCE_BLOOD_GAS),
+                "end_offset": self.MERGED_TEXT.index(self.SOURCE_BLOOD_GAS) + len(self.SOURCE_BLOOD_GAS),
+                "page_no": 2,
+                "page_id": page_ids[1] if len(page_ids) > 1 else page_ids[0],
+            }
+
+            blood_gas_fields = {
+                "aux_blood_gas_ph",
+                "aux_blood_gas_pco2",
+                "aux_blood_gas_po2",
+                "aux_blood_gas_na",
+                "aux_blood_gas_fio2",
+                "aux_blood_gas_oxygenation_index",
+            }
+
+            # past_medical_history 里我们挑一个字段显式测 attention_required=False
+            # 其余保持 not_found
+            candidates: list[dict] = []
+            for group in schema_field_groups:
+                for schema_field in group["fields"]:
+                    fk = schema_field["field_key"]
+                    label = schema_field["label"]
+                    if fk == "chief_complaint":
+                        candidates.append({
+                            "field_key": fk,
+                            "field_name": label,
+                            "section_key": group["group_key"],
+                            "section_label": group["group_label"],
+                            "extraction_status": "extracted",
+                            "verification_status": "not_checked",
+                            "original_value": self.SOURCE_CHIEF_COMPLAINT,
+                            "evidence": [dict(chief_evidence)],
+                            "page_no": 2,
+                            "attention_required": False,
+                            "attention_message": "",
+                            "quality_flags": [],
+                            "source_section": group["group_label"],
+                            "source_hint": "主诉",
+                            "source_text": self.SOURCE_CHIEF_COMPLAINT,
+                            "source_group_id": group["group_key"],
+                            "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                        })
+                    elif fk == "diagnosis_final":
+                        candidates.append({
+                            "field_key": fk,
+                            "field_name": label,
+                            "section_key": group["group_key"],
+                            "section_label": group["group_label"],
+                            "extraction_status": "extracted",
+                            "verification_status": "not_checked",
+                            "original_value": self.SOURCE_DIAGNOSIS_FINAL,
+                            "evidence": [dict(diagnosis_evidence)],
+                            "page_no": 1,
+                            "attention_required": False,
+                            "attention_message": "",
+                            "quality_flags": [],
+                            "source_section": group["group_label"],
+                            "source_hint": "最终诊断",
+                            "source_text": self.SOURCE_DIAGNOSIS_FINAL,
+                            "source_group_id": group["group_key"],
+                            "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                        })
+                    elif fk in blood_gas_fields:
+                        # 6 个血气字段共享同一个 evidence unit(同 id / 同 text / 同 offset)
+                        candidates.append({
+                            "field_key": fk,
+                            "field_name": label,
+                            "section_key": group["group_key"],
+                            "section_label": group["group_label"],
+                            "extraction_status": "extracted",
+                            "verification_status": "not_checked",
+                            "original_value": "见血气分析",
+                            "evidence": [dict(blood_gas_evidence)],
+                            "page_no": 2,
+                            "attention_required": False,
+                            "attention_message": "",
+                            "quality_flags": [],
+                            "source_section": group["group_label"],
+                            "source_hint": "血气",
+                            "source_text": self.SOURCE_BLOOD_GAS,
+                            "source_group_id": group["group_key"],
+                            "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                        })
+                    else:
+                        # not_found 字段: attention_required 必须为 False(既往史等不默认黄色感叹号)
+                        candidates.append({
+                            "field_key": fk,
+                            "field_name": label,
+                            "section_key": group["group_key"],
+                            "section_label": group["group_label"],
+                            "extraction_status": "not_found",
+                            "verification_status": "not_checked",
+                            "original_value": "",
+                            "evidence": [],
+                            "page_no": None,
+                            "attention_required": False,
+                            "attention_message": "",
+                            "quality_flags": [],
+                            "source_section": None,
+                            "source_hint": None,
+                            "source_text": None,
+                            "source_group_id": None,
+                            "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+                        })
+            return candidates
+
+        def run(self, task: dict, task_service, schema: dict | None = None) -> dict:
+            task_id = task["task_id"]
+            images = sorted(task.get("images") or [], key=lambda i: i["page_no"])
+            # 故意按系统保存顺序写入 OCR(模拟医生上传顺序: 诊断页在前,主诉页在后)
+            pages = []
+            for image in images:
+                if image["page_no"] == 1:
+                    text = self.PAGE1_TEXT
+                elif image["page_no"] == 2:
+                    text = self.PAGE2_TEXT
+                else:
+                    text = ""
+                pages.append({
+                    "page_id": image["page_id"],
+                    "page_no": image["page_no"],
+                    "text": text,
+                    "status": "success",
+                })
+            evidence_units = [
+                {
+                    "id": "u_chief",
+                    "text": self.SOURCE_CHIEF_COMPLAINT,
+                    "start_offset": self.MERGED_TEXT.index(self.SOURCE_CHIEF_COMPLAINT),
+                    "end_offset": self.MERGED_TEXT.index(self.SOURCE_CHIEF_COMPLAINT) + len(self.SOURCE_CHIEF_COMPLAINT),
+                    "page_no": 2,
+                },
+                {
+                    "id": "u_diag",
+                    "text": self.SOURCE_DIAGNOSIS_FINAL,
+                    "start_offset": self.MERGED_TEXT.index(self.SOURCE_DIAGNOSIS_FINAL),
+                    "end_offset": self.MERGED_TEXT.index(self.SOURCE_DIAGNOSIS_FINAL) + len(self.SOURCE_DIAGNOSIS_FINAL),
+                    "page_no": 1,
+                },
+                {
+                    "id": "u_blood_gas",
+                    "text": self.SOURCE_BLOOD_GAS,
+                    "start_offset": self.MERGED_TEXT.index(self.SOURCE_BLOOD_GAS),
+                    "end_offset": self.MERGED_TEXT.index(self.SOURCE_BLOOD_GAS) + len(self.SOURCE_BLOOD_GAS),
+                    "page_no": 2,
+                },
+            ]
+            self._store.write(
+                f"results/{task_id}/document_result.json",
+                {
+                    "task_id": task_id,
+                    "stage": "document_parsing",
+                    "status": "success",
+                    "pages": pages,
+                    "merged_text": self.MERGED_TEXT,
+                    "evidence_units": evidence_units,
+                },
+            )
+            self._store.write(
+                f"results/{task_id}/field_candidates.json",
+                {
+                    "task_id": task_id,
+                    "stage": "field_extraction",
+                    "status": "success",
+                    "schema_version": (schema or {}).get("version"),
+                    "candidates": self._build_candidates(task),
+                },
+            )
+            return task_service.mark_ready(task_id)
+
+    client, app = make_client(tmp_path, monkeypatch)
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    task_service = TaskService(
+        store=store,
+        orchestrator=AdmissionRecordFullProcessing(store),
+        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
+        background_runner=lambda task_id, run: run(),
+        patient_service=app.config.get("PATIENT_SERVICE"),
+    )
+    app.config["TASK_SERVICE"] = task_service
+    from app.backend.services.review_service import ReviewService
+    app.config["REVIEW_SERVICE"] = ReviewService(
+        store=store,
+        task_service=task_service,
+        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
+    )
+
+    patient = client.post("/api/patients", json={"name": "OCR乱序"}).get_json()["data"]
+    created = client.post(
+        "/api/tasks",
+        json={
+            "patient_id": patient["patient_id"],
+            "document_type": "copd_admission_record",
+            "record_date": "2026-06-18",
+        },
+    ).get_json()["data"]
+
+    for index in range(2):
+        upload = upload_task_image(client, created, filename=f"page-{index + 1}.jpg")
+        assert upload.status_code == 201
+
+    finished = client.post(f"/api/mobile-upload/{created['task_id']}/finish?token={created['upload_token']}")
+    assert finished.status_code == 200
+    final = wait_for_task_status(client, created["task_id"], "review")
+    assert final["status"] == "review"
+
+    review = client.get(f"/api/tasks/{created['task_id']}/review")
+    assert review.status_code == 200
+    review_payload = review.get_json()["data"]["review_result"]
+
+    # 1. ocr_text 保留 OCR 原文(包括 ## 品后诊断 错字)
+    assert "## 品后诊断" in review_payload["ocr_text"]
+    assert "反复咳嗽、咳痰20年" in review_payload["ocr_text"]
+    assert review_payload["ocr_text"] == AdmissionRecordFullProcessing.MERGED_TEXT
+
+    # 2. 字段组按 schema 顺序:chief_complaint(主诉) 在 diagnosis(诊断) 之前
+    field_groups = review_payload.get("field_groups") or []
+    assert field_groups, "审核响应必须包含 schema field_groups"
+    group_order = [g["group_key"] for g in field_groups]
+    assert "chief_complaint" in group_order
+    assert "diagnosis" in group_order
+    assert group_order.index("chief_complaint") < group_order.index("diagnosis"), (
+        "主诉章节必须早于诊断章节,与 OCR 页面保存顺序无关"
+    )
+
+    fields_by_key = {f["field_key"]: f for f in review_payload["fields"]}
+    assert "chief_complaint" in fields_by_key
+    assert "diagnosis_final" in fields_by_key
+    assert "pmh_nephritis" in fields_by_key
+
+    # 3. diagnosis_final 值 = OCR 页面 1 中的最终诊断原文(逐字匹配,不静默改写)
+    assert fields_by_key["diagnosis_final"]["auto_value"] == AdmissionRecordFullProcessing.SOURCE_DIAGNOSIS_FINAL
+    assert fields_by_key["diagnosis_final"]["final_value"] == AdmissionRecordFullProcessing.SOURCE_DIAGNOSIS_FINAL
+    assert fields_by_key["diagnosis_final"]["status"] == "unreviewed"
+
+    # 4. pmh_nephritis not_found + attention_required=False
+    assert fields_by_key["pmh_nephritis"]["extraction_status"] == "not_found"
+    assert fields_by_key["pmh_nephritis"]["attention_required"] is False
+    assert fields_by_key["pmh_nephritis"]["auto_value"] == ""
+    assert fields_by_key["pmh_nephritis"]["final_value"] == ""
+
+    # 5. 血气 6 字段共享同一 evidence unit ID
+    blood_gas_keys = [
+        "aux_blood_gas_ph", "aux_blood_gas_pco2", "aux_blood_gas_po2",
+        "aux_blood_gas_na", "aux_blood_gas_fio2", "aux_blood_gas_oxygenation_index",
+    ]
+    blood_gas_ids = set()
+    for fk in blood_gas_keys:
+        f = fields_by_key[fk]
+        assert f["extraction_status"] == "extracted"
+        assert f["evidence"], f"{fk} 必须有 evidence"
+        assert len(f["evidence"]) == 1
+        blood_gas_ids.add(f["evidence"][0]["id"])
+    assert blood_gas_ids == {"u_blood_gas"}, (
+        f"6 个血气字段必须共享同一 evidence unit id,实际 {blood_gas_ids}"
+    )
+
+    # 6. chief_complaint evidence 指向 page 2, diagnosis_final evidence 指向 page 1
+    assert fields_by_key["chief_complaint"]["evidence"][0]["page_no"] == 2
+    assert fields_by_key["diagnosis_final"]["evidence"][0]["page_no"] == 1
+
+    # 7. 全量 61 字段已被补齐(由 _hydrate_missing_fields)
+    assert len(review_payload["fields"]) == 61
+
+
+# 测试内本地缓存 schema 字段表,避免每个候选构造都重读 yaml
 def test_backend_default_profile_uses_admission_record_structured_schema(tmp_path, monkeypatch):
     """默认 copd_admission_record profile 的 schema 版本必须是固定字段 schema。"""
     from app.backend import create_backend_app

@@ -1187,6 +1187,193 @@ describe('ReviewPage', () => {
     await userEvent.click(screen.getByTestId('review-field-card-final_diagnosis'));
     expect(screen.getByRole('img', { name: '第 2 页原图' })).toBeTruthy();
   });
+
+  it('renders_raw_ocr_and_schema_fields_for_typo_title_and_odd_page_order', async () => {
+    // Task 10: OCR 标题错字(## 品后诊断)+ 页面顺序错乱(诊断页在前,主诉页在后)
+    // 审核页必须:
+    // 1. OCR 面板展示 ## 品后诊断 原文(不静默改写)
+    // 2. 字段区按 schema 顺序: 主诉 在 诊断 之前
+    // 3. 点击 诊断 -> 最终诊断,高亮跳到 page 1 实际位置
+    // 4. UI 不出现内部 flag 名 / 调试提示
+    const mergedText =
+      '## 品后诊断\n慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭\n\n' +
+      '## 初步诊断：\n主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。';
+
+    const fieldGroups = [
+      {
+        group_key: 'chief_complaint',
+        group_label: '主诉',
+        fields: [{ field_key: 'chief_complaint', label: '主诉' }]
+      },
+      {
+        group_key: 'diagnosis',
+        group_label: '诊断',
+        fields: [
+          { field_key: 'diagnosis_preliminary', label: '初步诊断' },
+          { field_key: 'diagnosis_final', label: '最终诊断' }
+        ]
+      },
+      {
+        group_key: 'past_medical_history',
+        group_label: '既往史',
+        fields: [{ field_key: 'pmh_nephritis', label: '肾炎' }]
+      }
+    ];
+
+    server.use(
+      http.get('*/api/tasks/task_001', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            display_name: 'task_001',
+            status: 'review',
+            created_at: '2026-06-18T10:00:00+08:00',
+            updated_at: '2026-06-18T10:03:00+08:00',
+            page_count: 2,
+            processing_summary: {
+              stage: 'done',
+              status: 'completed',
+              label: '处理完成',
+              progress_percent: 100
+            },
+            review_summary: { confirmed_count: 0, total_count: 3 },
+            patient: { patient_id: 'P-A1B2C3D4', name: 'OCR错序', deleted: false },
+            document_type: 'copd_admission_record',
+            document_type_label: '入院记录',
+            record_date: '2026-06-18',
+            record_time: '09:30'
+          }
+        })
+      ),
+      http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: [] } })),
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: mergedText,
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '## 品后诊断\n慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭'
+                },
+                {
+                  page_id: 'page_002',
+                  page_no: 2,
+                  preview_url: '/api/tasks/task_001/images/page_002',
+                  parsed_text: '## 初步诊断：\n主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。'
+                }
+              ],
+              field_groups: fieldGroups,
+              fields: [
+                {
+                  field_key: 'chief_complaint',
+                  field_name: '主诉',
+                  label: '主诉',
+                  value: '主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。',
+                  status: 'unreviewed',
+                  attention_required: false,
+                  evidence: [
+                    {
+                      id: 'u_chief',
+                      page_id: 'page_002',
+                      page_no: 2,
+                      text: '主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。',
+                      start_offset: mergedText.indexOf('主诉：反复咳嗽、咳痰20年'),
+                      end_offset:
+                        mergedText.indexOf('主诉：反复咳嗽、咳痰20年') +
+                        '主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。'.length
+                    }
+                  ]
+                },
+                {
+                  field_key: 'diagnosis_final',
+                  field_name: '最终诊断',
+                  label: '最终诊断',
+                  value: '慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭',
+                  status: 'unreviewed',
+                  attention_required: false,
+                  evidence: [
+                    {
+                      id: 'u_diag',
+                      page_id: 'page_001',
+                      page_no: 1,
+                      text: '慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭',
+                      start_offset: mergedText.indexOf('慢性阻塞性肺疾病急性加重'),
+                      end_offset:
+                        mergedText.indexOf('慢性阻塞性肺疾病急性加重') +
+                        '慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭'.length
+                    }
+                  ]
+                },
+                {
+                  field_key: 'pmh_nephritis',
+                  field_name: '肾炎',
+                  label: '肾炎',
+                  value: '',
+                  status: 'unreviewed',
+                  extraction_status: 'not_found',
+                  attention_required: false,
+                  evidence: []
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    // 1. OCR 面板展示原文(## 品后诊断 错字保留,不被静默改写)
+    expect(await screen.findByText('OCR 合并文本')).toBeTruthy();
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('## 品后诊断');
+    expect(body).not.toContain('## 最后诊断');
+
+    // 2. 字段区按 schema 顺序:主诉 在 诊断 之前
+    const allCards = Array.from(document.querySelectorAll('[data-testid^="review-field-card-"]'));
+    const keysInDom = allCards.map(
+      (el) => (el as HTMLElement).getAttribute('data-testid') ?? ''
+    );
+    const chiefIdx = keysInDom.indexOf('review-field-card-chief_complaint');
+    const diagnosisIdx = keysInDom.indexOf('review-field-card-diagnosis_final');
+    expect(chiefIdx).toBeGreaterThanOrEqual(0);
+    expect(diagnosisIdx).toBeGreaterThan(chiefIdx);
+
+    // 3. 章节标题(主诉 / 诊断)在 DOM 中按 schema 顺序出现
+    const headers = Array.from(document.querySelectorAll('.field-card__header h3')).map(
+      (el) => (el as HTMLElement).textContent ?? ''
+    );
+    const chiefHeader = headers.indexOf('主诉');
+    const diagnosisHeader = headers.indexOf('诊断');
+    expect(chiefHeader).toBeGreaterThanOrEqual(0);
+    expect(diagnosisHeader).toBeGreaterThan(chiefHeader);
+
+    // 4. 点击 最终诊断 字段,OCR 高亮必须跳到 page 1 的"慢性阻塞性肺疾病急性加重"
+    await userEvent.click(screen.getByTestId('review-field-card-diagnosis_final'));
+    const mark = document.querySelector('mark');
+    expect(mark?.textContent).toBe('慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭');
+    // 当前页应该是第 1 页(诊断页是 page 1)
+    expect(screen.getByRole('img', { name: '第 1 页原图' })).toBeTruthy();
+
+    // 5. UI 不出现内部 flag / 调试提示
+    expect(body).not.toContain('evidence_missing_fallback');
+    expect(body).not.toContain('source_section_not_found');
+    expect(body).not.toContain('value_not_in_evidence');
+    expect(body).not.toContain('negation_or_uncertainty_risk');
+    expect(body).not.toContain('ocr_label_ambiguity');
+
+    // 6. pmh_nephritis 显示"未提及"(not_found 字段不默认黄色感叹号)
+    expect(screen.getByText('未提及')).toBeTruthy();
+    // 没有"重点核验:" aria-label
+    expect(screen.queryByLabelText(/^重点核验[:：]/)).toBeNull();
+  });
 });
 
 describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no warning text', () => {
