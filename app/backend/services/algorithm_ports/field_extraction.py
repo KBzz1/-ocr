@@ -48,17 +48,23 @@ def validate_field_candidates(candidates: list) -> None:
             if isinstance(evidence, list):
                 for idx, ev in enumerate(evidence):
                     if not isinstance(ev, dict):
+                        logger.error("field=%s evidence[%s] type=%s value=%s", fk, idx, type(ev).__name__, repr(ev))
                         raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}] 必须是字典")
                     ev_id = ev.get("id")
                     if not isinstance(ev_id, str) or not ev_id:
+                        logger.error("field=%s evidence[%s].id type=%s value=%s", fk, idx, type(ev_id).__name__, repr(ev_id))
                         raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].id 必须是非空字符串")
                     ev_text = ev.get("text")
                     if not isinstance(ev_text, str):
+                        logger.error("field=%s evidence[%s].text type=%s value=%s", fk, idx, type(ev_text).__name__, repr(ev_text))
                         raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].text 必须是字符串")
                     for offset_key in ("start_offset", "end_offset"):
-                        if not isinstance(ev.get(offset_key), int) or isinstance(ev.get(offset_key), bool):
+                        offset_value = ev.get(offset_key)
+                        if not isinstance(offset_value, int) or isinstance(offset_value, bool):
+                            logger.error("field=%s evidence[%s].%s type=%s value=%s", fk, idx, offset_key, type(offset_value).__name__, repr(offset_value))
                             raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].{offset_key} 必须是整数")
                     if "page_no" in ev and ev["page_no"] is not None and not isinstance(ev["page_no"], int):
+                        logger.error("field=%s evidence[%s].page_no type=%s value=%s", fk, idx, type(ev["page_no"]).__name__, repr(ev["page_no"]))
                         raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].page_no 必须是整数或缺失")
         attention_required = item.get("attention_required")
         if attention_required is not None and not isinstance(attention_required, bool):

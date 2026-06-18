@@ -10,13 +10,18 @@ Responsibilities:
    contract emitted by the Qwen model: full schema coverage, no
    unknown/duplicate field_keys, and a fixed status vocabulary. Anything
    that breaks the task-level contract raises ``ALGORITHM_CONTRACT_INVALID``
-   so the orchestrator can mark the task ``failed``.
+   so the orchestrator can mark the task ``failed``. The return value is a
+   schema-ordered list of the structurally-validated payload fields
+   (``status`` / ``value`` / ``evidence_ids``) — it does NOT refill
+   ``evidence`` arrays.
 
 2. ``map_qwen_fields_to_review_candidates(payload, schema, evidence_units)``
    — refill ``evidence`` arrays from the backend-owned evidence_units
    (never from the model's prose), translate the new ``status`` vocabulary
    into ``extraction_status`` / ``verification_status`` and surface
-   per-field attention flags without fabricating text or offsets.
+   per-field attention flags without fabricating text or offsets. This is
+   the function Task 5 will call to land Qwen output into the review
+   pipeline.
 
 Hard constraints (from the spec and project rules):
 
@@ -102,98 +107,23 @@ def _schema_field_keys(schema: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def validate_qwen_payload(
-    payload: dict,
-    schema: dict,
-    evidence_units: list[dict] | None = None,
-) -> list[dict]:
+def validate_qwen_payload(payload: dict, schema: dict) -> list[dict]:
     """Validate the Qwen structured-fields payload against the schema.
 
-    Returns a list of review-candidate dicts in **schema order** so the
-    downstream layer has a stable, complete ordering. The returned entries
-    carry the mapped ``extraction_status`` / ``evidence`` / attention fields
-    so callers can consume them directly. ``evidence`` is refilled from
-    ``evidence_units`` when provided; otherwise it is left empty.
+    Returns a list of the structurally-validated payload fields in
+    **schema order** so the downstream layer has a stable, complete
+    ordering. Each entry carries the raw ``status`` / ``value`` /
+    ``evidence_ids`` from the Qwen output but NOT the refilled
+    ``evidence`` array or attention metadata — that is the job of
+    :func:`map_qwen_fields_to_review_candidates`, which has the
+    ``evidence_units`` needed to perform highlight refilling.
 
     Raises ``AppError(ALGORITHM_CONTRACT_INVALID)`` for any structural
     violation (missing fields, duplicates, unknown keys, bad status, wrong
     types). All such failures are task-level failures.
     """
-    if not isinstance(payload, dict):
-        raise AppError(
-            ErrorCode.ALGORITHM_CONTRACT_INVALID,
-            message="Qwen 顶层 payload 必须是对象",
-        )
-
-    raw_fields = payload.get("fields")
-    if not isinstance(raw_fields, list):
-        raise AppError(
-            ErrorCode.ALGORITHM_CONTRACT_INVALID,
-            message="Qwen payload.fields 必须是数组",
-        )
-
-    allowed_keys = set(_schema_field_keys(schema))
-    seen: set[str] = set()
-    by_key: dict[str, dict] = {}
-
-    for index, entry in enumerate(raw_fields):
-        if not isinstance(entry, dict):
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen fields[{index}] 必须是字典",
-            )
-        field_key = entry.get("field_key")
-        if not isinstance(field_key, str) or not field_key:
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen fields[{index}].field_key 必须是非空字符串",
-            )
-        if field_key not in allowed_keys:
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen fields[{index}].field_key={field_key} 不在 schema 内",
-            )
-        if field_key in seen:
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen field_key={field_key} 重复",
-            )
-        seen.add(field_key)
-
-        status = entry.get("status")
-        if status not in VALID_QWEN_STATUSES:
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen field_key={field_key} status 非法：{status!r}",
-            )
-
-        value = entry.get("value", "")
-        if not isinstance(value, str):
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen field_key={field_key} value 必须是字符串",
-            )
-
-        evidence_ids = entry.get("evidence_ids", [])
-        if not isinstance(evidence_ids, list) or any(
-            not isinstance(eid, str) for eid in evidence_ids
-        ):
-            raise AppError(
-                ErrorCode.ALGORITHM_CONTRACT_INVALID,
-                message=f"Qwen field_key={field_key} evidence_ids 必须是字符串列表",
-            )
-
-        by_key[field_key] = dict(entry)
-
-    missing = [k for k in allowed_keys if k not in seen]
-    if missing:
-        raise AppError(
-            ErrorCode.ALGORITHM_CONTRACT_INVALID,
-            message=f"Qwen payload 缺少 schema 字段：{', '.join(missing)}",
-        )
-
-    # Map to review-candidate entries (evidence_units may be absent here).
-    return _build_candidates(by_key, schema, evidence_units=evidence_units)
+    by_key = _validate_and_index_by_key(payload, schema)
+    return [by_key[field_key] for field_key in _schema_field_keys(schema)]
 
 
 # ---------------------------------------------------------------------------
@@ -222,20 +152,41 @@ def map_qwen_fields_to_review_candidates(
     Per-field attention (suspicious evidence) is surfaced here but does NOT
     fail the task-level contract.
     """
+    by_key = _validate_and_index_by_key(payload, schema)
+    return _build_candidates(by_key, schema, evidence_units=evidence_units)
+
+
+# ---------------------------------------------------------------------------
+# Internal: shared structural validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_and_index_by_key(payload: dict, schema: dict) -> dict[str, dict]:
+    """Run the structural validation loop once and return ``{field_key: entry}``.
+
+    Centralizes the Qwen structural contract so :func:`validate_qwen_payload`
+    and :func:`map_qwen_fields_to_review_candidates` share a single source of
+    truth. All structural failures (non-list ``fields``, missing /
+    duplicate / unknown ``field_key``, bad status, wrong value /
+    evidence_ids types) raise ``AppError(ALGORITHM_CONTRACT_INVALID)``.
+    """
     if not isinstance(payload, dict):
         raise AppError(
             ErrorCode.ALGORITHM_CONTRACT_INVALID,
             message="Qwen 顶层 payload 必须是对象",
         )
+
     raw_fields = payload.get("fields")
     if not isinstance(raw_fields, list):
         raise AppError(
             ErrorCode.ALGORITHM_CONTRACT_INVALID,
             message="Qwen payload.fields 必须是数组",
         )
+
     allowed_keys = set(_schema_field_keys(schema))
     seen: set[str] = set()
     by_key: dict[str, dict] = {}
+
     for index, entry in enumerate(raw_fields):
         if not isinstance(entry, dict):
             raise AppError(
@@ -259,18 +210,21 @@ def map_qwen_fields_to_review_candidates(
                 message=f"Qwen field_key={field_key} 重复",
             )
         seen.add(field_key)
+
         status = entry.get("status")
         if status not in VALID_QWEN_STATUSES:
             raise AppError(
                 ErrorCode.ALGORITHM_CONTRACT_INVALID,
                 message=f"Qwen field_key={field_key} status 非法：{status!r}",
             )
+
         value = entry.get("value", "")
         if not isinstance(value, str):
             raise AppError(
                 ErrorCode.ALGORITHM_CONTRACT_INVALID,
                 message=f"Qwen field_key={field_key} value 必须是字符串",
             )
+
         evidence_ids = entry.get("evidence_ids", [])
         if not isinstance(evidence_ids, list) or any(
             not isinstance(eid, str) for eid in evidence_ids
@@ -279,18 +233,21 @@ def map_qwen_fields_to_review_candidates(
                 ErrorCode.ALGORITHM_CONTRACT_INVALID,
                 message=f"Qwen field_key={field_key} evidence_ids 必须是字符串列表",
             )
+
         by_key[field_key] = dict(entry)
+
     missing = [k for k in allowed_keys if k not in seen]
     if missing:
         raise AppError(
             ErrorCode.ALGORITHM_CONTRACT_INVALID,
             message=f"Qwen payload 缺少 schema 字段：{', '.join(missing)}",
         )
-    return _build_candidates(by_key, schema, evidence_units=evidence_units)
+
+    return by_key
 
 
 # ---------------------------------------------------------------------------
-# Evidence lookup helpers
+# Internal: evidence lookup helpers
 # ---------------------------------------------------------------------------
 
 
@@ -329,8 +286,8 @@ def _build_candidates(
     for field_key, _meta, _sk, _sl in _iter_schema_fields(schema):
         entry = by_key.get(field_key)
         if entry is None:
-            # Should not happen because validate_qwen_payload already enforced
-            # completeness; keep a defensive skip here.
+            # Should not happen because _validate_and_index_by_key already
+            # enforced completeness; keep a defensive skip here.
             continue
         section_key, section_label = section_lookup.get(field_key, ("", ""))
         field_label = field_label_lookup.get(field_key, field_key)
@@ -338,6 +295,8 @@ def _build_candidates(
         value = entry.get("value", "")
         evidence_ids = entry.get("evidence_ids", []) or []
 
+        # extraction_status comes from the status lookup alone; no per-status
+        # reassignment needed.
         extraction_status = _STATUS_TO_EXTRACTION[status]
 
         verification_status = "not_checked"
@@ -347,11 +306,7 @@ def _build_candidates(
         evidence: list[dict] = []
 
         if status == "not_found":
-            extraction_status = "not_found"
             value = ""
-            evidence = []
-            attention_required = False
-            attention_message = ""
         elif status == "uncertain":
             verification_status = "suspicious"
             attention_required = True
@@ -364,7 +319,6 @@ def _build_candidates(
                 attention_required = True
                 attention_message = _MSG_MISSING_EVIDENCE
                 quality_flags.append(_INTERNAL_FLAG_MISSING_EVIDENCE)
-                evidence = []
             else:
                 resolved = _resolve_evidence_ids(evidence_ids, evidence_index)
                 if len(resolved) != len(evidence_ids):
@@ -372,7 +326,6 @@ def _build_candidates(
                     attention_required = True
                     attention_message = _MSG_EVIDENCE_NOT_LOCATED
                     quality_flags.append(_INTERNAL_FLAG_EVIDENCE_NOT_FOUND)
-                    evidence = []
                 else:
                     evidence = resolved
 
@@ -421,3 +374,4 @@ def _resolve_evidence_ids(
             entry["page_no"] = unit["page_no"]
         resolved.append(entry)
     return resolved
+

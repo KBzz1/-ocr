@@ -181,30 +181,51 @@ def test_validate_qwen_payload_accepts_not_found_without_attention():
     schema = _schema()
     payload = _valid_payload()
 
-    normalized = validate_qwen_payload(payload, schema, evidence_units=_evidence_units())
-
+    # Structural validation: validate_qwen_payload is the structural gate
+    # and returns the schema-ordered payload fields verbatim. It does NOT
+    # refill evidence; that is map_qwen_fields_to_review_candidates' job.
+    normalized = validate_qwen_payload(payload, schema)
     not_found_entry = next(f for f in normalized if f["field_key"] == "pe_pulse")
     assert not_found_entry["status"] == "not_found"
-    assert not_found_entry["extraction_status"] == "not_found"
-    assert not_found_entry["original_value"] == ""
-    assert not_found_entry["evidence"] == []
-    assert not_found_entry["attention_required"] is False
-    assert not_found_entry["attention_message"] == ""
+    assert not_found_entry["value"] == ""
+    assert not_found_entry["evidence_ids"] == []
+
+    # The mapping step (Task 5's call site) translates status -> attention
+    # and refills evidence from the backend units.
+    candidates = map_qwen_fields_to_review_candidates(
+        payload, schema, _evidence_units()
+    )
+    not_found_candidate = next(c for c in candidates if c["field_key"] == "pe_pulse")
+    assert not_found_candidate["extraction_status"] == "not_found"
+    assert not_found_candidate["original_value"] == ""
+    assert not_found_candidate["evidence"] == []
+    assert not_found_candidate["attention_required"] is False
+    assert not_found_candidate["attention_message"] == ""
 
 
 def test_validate_qwen_payload_maps_found_with_evidence_array():
     schema = _schema()
     payload = _valid_payload()
 
-    normalized = validate_qwen_payload(payload, schema, evidence_units=_evidence_units())
-
+    # validate_qwen_payload returns the raw Qwen payload fields in schema
+    # order; it does not refill evidence.
+    normalized = validate_qwen_payload(payload, schema)
     found_entry = next(f for f in normalized if f["field_key"] == "chief_complaint")
     assert found_entry["status"] == "found"
-    assert found_entry["extraction_status"] == "extracted"
-    assert found_entry["original_value"] == "反复咳嗽、咳痰15年"
-    assert isinstance(found_entry["evidence"], list)
-    assert len(found_entry["evidence"]) == 1
-    evidence = found_entry["evidence"][0]
+    assert found_entry["value"] == "反复咳嗽、咳痰15年"
+    assert found_entry["evidence_ids"] == ["u001"]
+
+    # map_qwen_fields_to_review_candidates is the one that does the
+    # evidence refill and produces the reviewer-facing extraction_status.
+    candidates = map_qwen_fields_to_review_candidates(
+        payload, schema, _evidence_units()
+    )
+    found_candidate = next(c for c in candidates if c["field_key"] == "chief_complaint")
+    assert found_candidate["extraction_status"] == "extracted"
+    assert found_candidate["original_value"] == "反复咳嗽、咳痰15年"
+    assert isinstance(found_candidate["evidence"], list)
+    assert len(found_candidate["evidence"]) == 1
+    evidence = found_candidate["evidence"][0]
     assert evidence["id"] == "u001"
     assert evidence["text"] == "主诉：反复咳嗽、咳痰15年。"
     assert evidence["start_offset"] == 0
