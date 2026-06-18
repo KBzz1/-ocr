@@ -178,11 +178,11 @@ def _has_physiologic_range_risk(field_key: str, value: str) -> bool:
         return number < PHYSIO_RANGE_RESPIRATION[0] or number > PHYSIO_RANGE_RESPIRATION[1]
     if field_key == "bmi":
         return number < PHYSIO_RANGE_BMI[0] or number > PHYSIO_RANGE_BMI[1]
-    if field_key == "blood_gas_ph":
+    if field_key == "aux_blood_gas_ph":
         return number < PHYSIO_RANGE_BLOOD_GAS_PH[0] or number > PHYSIO_RANGE_BLOOD_GAS_PH[1]
-    if field_key == "blood_gas_pao2":
+    if field_key == "aux_blood_gas_po2":
         return number < PHYSIO_RANGE_BLOOD_GAS_PAO2[0] or number > PHYSIO_RANGE_BLOOD_GAS_PAO2[1]
-    if field_key == "blood_gas_paco2":
+    if field_key == "aux_blood_gas_pco2":
         return number < PHYSIO_RANGE_BLOOD_GAS_PACO2[0] or number > PHYSIO_RANGE_BLOOD_GAS_PACO2[1]
     if field_key == "blood_pressure":
         return _has_blood_pressure_range_risk(value)
@@ -211,16 +211,16 @@ def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str
 
     只做风险提示，不把标签改写为标准项目名。
     """
-    if field_key not in {"blood_gas_pao2", "blood_gas_paco2"}:
+    if field_key not in {"aux_blood_gas_po2", "aux_blood_gas_pco2"}:
         return False
 
     for _number, prefix in _extract_value_prefixes(value, evidence):
-        if field_key == "blood_gas_pao2":
+        if field_key == "aux_blood_gas_po2":
             if re.search(r"(?i)\bpa?o2\s*$", prefix):
                 continue
             if re.search(r"(?i)\bP[0-9O]{2}\s*$", prefix):
                 return True
-        if field_key == "blood_gas_paco2":
+        if field_key == "aux_blood_gas_pco2":
             if re.search(r"(?i)\bpa?co2\s*$", prefix):
                 continue
             if re.search(r"(?i)\bpa?c[0O]2\s*$", prefix):
@@ -229,7 +229,7 @@ def _has_blood_gas_label_ocr_ambiguity(field_key: str, value: str, evidence: str
 
 
 def _has_blood_gas_label_not_whitelisted(field_key: str, value: str, evidence: str) -> bool:
-    if field_key not in {"blood_gas_pao2", "blood_gas_paco2"}:
+    if field_key not in {"aux_blood_gas_po2", "aux_blood_gas_pco2"}:
         return False
     label = _blood_gas_label_before_value(value, evidence)
     if not label:
@@ -238,8 +238,8 @@ def _has_blood_gas_label_not_whitelisted(field_key: str, value: str, evidence: s
     # P62 是 OCR 典型误读产物（P→P, a/O→6, O/2→2），加入白名单以避免双重标记；
     # ocr_label_ambiguity 规则会独立捕获该模式并标记风险。
     whitelists = {
-        "blood_gas_pao2": {"PO2", "PAO2", "P02", "P62"},
-        "blood_gas_paco2": {"PCO2", "PACO2", "PC02", "PAC02"},
+        "aux_blood_gas_po2": {"PO2", "PAO2", "P02", "P62"},
+        "aux_blood_gas_pco2": {"PCO2", "PACO2", "PC02", "PAC02"},
     }
     return normalized not in whitelists[field_key]
 

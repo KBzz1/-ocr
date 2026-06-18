@@ -46,7 +46,7 @@ upload:
         "        type: string\n",
         encoding="utf-8",
     )
-    (schema_dir / "copd_admission_record.v1.yaml").write_text(
+    (schema_dir / "admission_record_structured_fields.v1.yaml").write_text(
         "version: \"1.0.0\"\n"
         "document_type: copd_admission_record\n"
         "field_groups:\n"

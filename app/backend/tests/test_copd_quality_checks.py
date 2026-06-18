@@ -18,7 +18,7 @@ def _field(field_key: str, value: str, evidence: str):
 def test_quality_check_flags_value_not_in_evidence():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
-    fields = [_field("blood_gas_pao2", "PO2 76.00mmHg", "P8276.00mmHg")]
+    fields = [_field("aux_blood_gas_po2", "PO2 76.00mmHg", "P8276.00mmHg")]
 
     result = apply_quality_checks(fields, "辅助检查: P8276.00mmHg")
 
@@ -29,7 +29,7 @@ def test_quality_check_flags_value_not_in_evidence():
 def test_quality_check_checks_single_digit_values_when_relevant():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
-    fields = [_field("dyspnea_grade_mMRC", "2", "mMRC 3级")]
+    fields = [_field("aux_blood_gas_po2", "2", "mMRC 3级")]
 
     result = apply_quality_checks(fields, "mMRC 3级")
 
@@ -57,9 +57,9 @@ def test_quality_check_flags_blood_gas_range_risks():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
     fields = [
-        _field("blood_gas_ph", "6.8", "pH 6.8"),
-        _field("blood_gas_pao2", "8mmHg", "PaO2 8mmHg"),
-        _field("blood_gas_paco2", "180mmHg", "PaCO2 180mmHg"),
+        _field("aux_blood_gas_ph", "6.8", "pH 6.8"),
+        _field("aux_blood_gas_po2", "8mmHg", "PaO2 8mmHg"),
+        _field("aux_blood_gas_pco2", "180mmHg", "PaCO2 180mmHg"),
     ]
 
     result = apply_quality_checks(fields, "血气分析：pH 6.8，PaO2 8mmHg，PaCO2 180mmHg")
@@ -70,7 +70,7 @@ def test_quality_check_flags_blood_gas_range_risks():
 def test_quality_check_flags_blood_gas_label_ocr_ambiguity_when_value_matches():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
-    fields = [_field("blood_gas_pao2", "76.00mmHg", "血气分析：P62 76.00mmHg↓")]
+    fields = [_field("aux_blood_gas_po2", "76.00mmHg", "血气分析：P62 76.00mmHg↓")]
 
     result = apply_quality_checks(fields, "血气分析：P62 76.00mmHg↓")
 
@@ -81,7 +81,7 @@ def test_quality_check_flags_blood_gas_label_ocr_ambiguity_when_value_matches():
 def test_quality_check_flags_blood_gas_label_not_whitelisted():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
-    fields = [_field("blood_gas_pao2", "8276.00mmHg", "血气分析：P8276.00mmHg↓")]
+    fields = [_field("aux_blood_gas_po2", "8276.00mmHg", "血气分析：P8276.00mmHg↓")]
 
     result = apply_quality_checks(fields, "血气分析：P8276.00mmHg↓")
 
@@ -93,8 +93,8 @@ def test_quality_check_accepts_standard_blood_gas_labels():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
     fields = [
-        _field("blood_gas_pao2", "76.00mmHg", "血气分析：PaO2 76.00mmHg"),
-        _field("blood_gas_paco2", "36.00mmHg", "血气分析：PCO2 36.00mmHg"),
+        _field("aux_blood_gas_po2", "76.00mmHg", "血气分析：PaO2 76.00mmHg"),
+        _field("aux_blood_gas_pco2", "36.00mmHg", "血气分析：PCO2 36.00mmHg"),
     ]
 
     result = apply_quality_checks(fields, "血气分析：PaO2 76.00mmHg，PCO2 36.00mmHg")
@@ -195,7 +195,7 @@ def test_quality_check_flags_future_date():
 def test_quality_check_flags_negation_risk():
     from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
 
-    fields = [_field("positive_signs", "咯血", "否认咯血")]
+    fields = [_field("pe_respiratory_exam", "咯血", "否认咯血")]
 
     result = apply_quality_checks(fields, "否认咯血")
 

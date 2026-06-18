@@ -305,27 +305,25 @@ def test_admission_prompt_enumerates_evidence_units_by_id():
 
 
 # ---------------------------------------------------------------------------
-# 旧 prompt 契约：仍存在的 builder 不得引入新字段体系冲突
+# prompt 模块版本契约（Task 11 收尾）
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_extraction_prompt_still_exports_copd_version():
-    """保留旧 COPD_EXTRACTION_PROMPT_VERSION 供 Task 5 / Task 11 切换；新 prompt 同时导出。"""
-    from app.backend.services.copd_extraction.prompts import (
-        COPD_EXTRACTION_PROMPT_VERSION,
-        build_admission_structured_fields_prompt,
-        ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
+def test_prompts_module_exposes_only_active_prompt_version_constants():
+    """活动路径只保留新 prompt 版本常量与新 builder；旧 builder 已被清理。"""
+    from app.backend.services.copd_extraction import prompts
+
+    # 新契约：固定字段 prompt 版本常量
+    assert hasattr(prompts, "ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION")
+    assert prompts.ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION == "admission_record_structured_fields_prompt.v1"
+
+    # 旧 builder 已被 Task 11 移除
+    forbidden_builders = (
+        "build_extraction_prompt",
+        "build_section_group_extraction_prompt",
+        "build_source_hint_regeneration_prompt",
     )
-
-    # 旧常量仍可被 __init__.py 引用。
-    assert isinstance(COPD_EXTRACTION_PROMPT_VERSION, str) and COPD_EXTRACTION_PROMPT_VERSION
-    # 新常量独立。
-    assert ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION != COPD_EXTRACTION_PROMPT_VERSION
-
-    # 旧的 build_extraction_prompt 仍在（Task 11 删除），但它的输出文本不应该出现新 prompt 的固定字段表。
-    from app.backend.services.copd_extraction.prompts import build_extraction_prompt
-
-    legacy = build_extraction_prompt({"主诉": "咳嗽15年"}, ["chief_complaint"])
-    # 新固定字段表不能从旧 builder 出现。
-    assert "固定字段表" not in legacy
-    assert "evidence_ids" not in legacy
+    for name in forbidden_builders:
+        assert not hasattr(prompts, name), (
+            f"prompts 不应再导出旧 builder {name}"
+        )
