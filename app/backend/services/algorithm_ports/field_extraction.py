@@ -41,9 +41,33 @@ def validate_field_candidates(candidates: list) -> None:
                 logger.error("field=%s confidence type=%s value=%s", fk, type(confidence).__name__, repr(confidence))
                 raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: confidence 必须是数字，实际为 {type(confidence).__name__}")
         if "evidence" in item and item["evidence"] is not None:
-            if not isinstance(item["evidence"], str):
-                logger.error("field=%s evidence type=%s value=%s", fk, type(item["evidence"]).__name__, repr(item["evidence"]))
-                raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence 必须是字符串或 None，实际为 {type(item['evidence']).__name__}")
+            evidence = item["evidence"]
+            if not isinstance(evidence, (str, list)):
+                logger.error("field=%s evidence type=%s value=%s", fk, type(evidence).__name__, repr(evidence))
+                raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence 必须是字符串、列表或 None，实际为 {type(evidence).__name__}")
+            if isinstance(evidence, list):
+                for idx, ev in enumerate(evidence):
+                    if not isinstance(ev, dict):
+                        raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}] 必须是字典")
+                    ev_id = ev.get("id")
+                    if not isinstance(ev_id, str) or not ev_id:
+                        raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].id 必须是非空字符串")
+                    ev_text = ev.get("text")
+                    if not isinstance(ev_text, str):
+                        raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].text 必须是字符串")
+                    for offset_key in ("start_offset", "end_offset"):
+                        if not isinstance(ev.get(offset_key), int) or isinstance(ev.get(offset_key), bool):
+                            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].{offset_key} 必须是整数")
+                    if "page_no" in ev and ev["page_no"] is not None and not isinstance(ev["page_no"], int):
+                        raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: evidence[{idx}].page_no 必须是整数或缺失")
+        attention_required = item.get("attention_required")
+        if attention_required is not None and not isinstance(attention_required, bool):
+            logger.error("field=%s attention_required type=%s value=%s", fk, type(attention_required).__name__, repr(attention_required))
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: attention_required 必须是布尔值或缺失，实际为 {type(attention_required).__name__}")
+        attention_message = item.get("attention_message")
+        if attention_message is not None and not isinstance(attention_message, str):
+            logger.error("field=%s attention_message type=%s value=%s", fk, type(attention_message).__name__, repr(attention_message))
+            raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: attention_message 必须是字符串或缺失，实际为 {type(attention_message).__name__}")
         extraction_status = item.get("extraction_status")
         if extraction_status not in EXTRACTION_STATUSES:
             logger.error("field=%s extraction_status=%s", fk, repr(extraction_status))

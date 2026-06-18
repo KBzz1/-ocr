@@ -93,6 +93,69 @@ def test_validate_field_result_rejects_invalid_status():
         validate_field_candidates([item])
 
 
+def test_validate_field_candidates_accepts_evidence_array_with_offsets():
+    """The Qwen admission contract refills evidence as a list of dicts with id/text/offset.
+
+    The port-level validator must accept that list shape so the Qwen path can
+    land evidence arrays without failing the contract.
+    """
+    item = _valid_field_result()
+    item["evidence"] = [
+        {
+            "id": "u001",
+            "text": "体温：36.7℃",
+            "start_offset": 10,
+            "end_offset": 18,
+            "page_no": 1,
+        },
+        {
+            "id": "u007",
+            "text": "脉搏：80次/分",
+            "start_offset": 30,
+            "end_offset": 40,
+        },
+    ]
+
+    validate_field_candidates([item])
+
+
+def test_validate_field_candidates_rejects_malformed_evidence_array_item():
+    item = _valid_field_result()
+    item["evidence"] = [
+        {
+            "id": "u001",
+            # missing required text/start_offset/end_offset
+            "page_no": 1,
+        }
+    ]
+
+    with pytest.raises(AppError):
+        validate_field_candidates([item])
+
+
+def test_validate_field_candidates_accepts_attention_metadata():
+    """Field-level attention flags must pass contract validation.
+
+    Suspicious fields should carry ``attention_required`` and
+    ``attention_message`` without being rejected as malformed.
+    """
+    item = _valid_field_result()
+    item["evidence"] = None
+    item["verification_status"] = "suspicious"
+    item["attention_required"] = True
+    item["attention_message"] = "缺少来源证据，请核对原文"
+
+    validate_field_candidates([item])
+
+
+def test_validate_field_candidates_rejects_non_boolean_attention_required():
+    item = _valid_field_result()
+    item["attention_required"] = "yes"
+
+    with pytest.raises(AppError):
+        validate_field_candidates([item])
+
+
 from app.backend.services.algorithm_ports.fixtures import FixtureFieldPort
 
 
