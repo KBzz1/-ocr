@@ -4,7 +4,7 @@ import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPaylo
 import { cancelReextractTask, completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
-import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
+import { ReviewSourcePanel, MAX_EVIDENCE_HIGHLIGHT_CHARS, type SourceMessage } from '../../components/review/ReviewSourcePanel';
 import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
 import { buildReviewPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
@@ -47,25 +47,49 @@ function stripOcrMarkup(text: string) {
     .trim();
 }
 
-function findLocatedEvidenceText(ocrText: string, evidenceText?: string) {
-  if (!evidenceText) return undefined;
-  const cleanedEvidence = stripOcrMarkup(evidenceText);
-  if (!cleanedEvidence) return undefined;
-  if (ocrText.includes(cleanedEvidence)) return cleanedEvidence;
+function findLocatedEvidenceText(
+  ocrText: string,
+  evidence: { text?: string; start_offset?: number; end_offset?: number } | undefined
+) {
+  if (!evidence) return undefined;
+  const cleanedEvidence = evidence.text ? stripOcrMarkup(evidence.text) : undefined;
+  if (!cleanedEvidence && (typeof evidence.start_offset !== 'number' || typeof evidence.end_offset !== 'number')) {
+    return undefined;
+  }
 
-  const candidates = Array.from(new Set([
-    ...cleanedEvidence.split(/\n+/),
-    ...cleanedEvidence.split(/[，,；;。！？!?]+/),
-    ...cleanedEvidence.split(/[、"'“”‘’（）()]+/)
-  ]
-    .map((line) => line.trim().replace(/^[\s"'“”‘’（）()]+|[\s"'“”‘’（）()]+$/g, ''))
-    .filter((line) => line.length >= 4)));
+  const candidates: Array<{ text: string; offset?: number }> = [];
+  if (typeof evidence.start_offset === 'number' && typeof evidence.end_offset === 'number' && evidence.end_offset > evidence.start_offset) {
+    const slice = ocrText.slice(evidence.start_offset, evidence.end_offset);
+    if (cleanedEvidence && slice === cleanedEvidence && slice.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
+      candidates.push({ text: slice, offset: evidence.start_offset });
+    }
+  }
+
+  if (cleanedEvidence) {
+    if (ocrText.includes(cleanedEvidence) && cleanedEvidence.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
+      candidates.push({ text: cleanedEvidence });
+    }
+    const rawSplitCandidates = [
+      ...cleanedEvidence.split(/\n+/),
+      ...cleanedEvidence.split(/[，,；;。！？!?]+/),
+      ...cleanedEvidence.split(/[、"'“”‘’（）()]+/)
+    ];
+    const splitCandidates = Array.from(new Set(
+      rawSplitCandidates
+        .map((line) => line.trim().replace(/^[\s"'“”‘’（）()]+|[\s"'“”‘’（）()]+$/g, ''))
+        .filter((line) => line.length >= 4 && line.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS)
+    ));
+    for (const line of splitCandidates) {
+      candidates.push({ text: line });
+    }
+  }
+
   const located = candidates
-    .map((line) => ({ line, index: ocrText.indexOf(line) }))
-    .filter((item) => item.index >= 0)
-    .sort((a, b) => a.index - b.index || b.line.length - a.line.length);
+    .map((item) => ({ item, index: typeof item.offset === 'number' ? item.offset : ocrText.indexOf(item.text) }))
+    .filter((entry) => entry.index >= 0)
+    .sort((a, b) => a.index - b.index || b.item.text.length - a.item.text.length);
 
-  return located[0]?.line;
+  return located[0]?.item.text;
 }
 
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {
@@ -495,17 +519,25 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const mergedOcrText = stripOcrMarkup(review?.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n'));
   const visibleOcrText = mergedOcrText;
   const selectedField = fields.find((field) => field.field_key === selectedFieldKey) ?? fields[0] ?? null;
-  const selectedEvidenceText = selectedField?.evidence?.find((item) => item.text)?.text;
-  const locatedEvidenceText = findLocatedEvidenceText(visibleOcrText, selectedEvidenceText);
+  const selectedEvidence = selectedField?.evidence?.find((item) => item.text || (typeof item.start_offset === 'number' && typeof item.end_offset === 'number'));
+  const selectedEvidenceText = selectedEvidence?.text;
+  const hasOffsetEvidence = Boolean(selectedEvidence && typeof selectedEvidence.start_offset === 'number' && typeof selectedEvidence.end_offset === 'number');
+  const cleanedEvidenceForGuard = selectedEvidenceText ? stripOcrMarkup(selectedEvidenceText) : undefined;
+  const evidenceExceedsHighlightLimit = Boolean(cleanedEvidenceForGuard && cleanedEvidenceForGuard.length > MAX_EVIDENCE_HIGHLIGHT_CHARS);
+  const locatedEvidenceText = evidenceExceedsHighlightLimit ? undefined : findLocatedEvidenceText(visibleOcrText, selectedEvidence);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
   const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const sourceMessage: SourceMessage | null = selectedField
-      ? selectedEvidenceText
-      ? locatedEvidenceText
-        ? { kind: 'located', text: '点击字段可定位原文', evidenceText: locatedEvidenceText }
-        : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
-      : { kind: 'unavailable', text: '当前字段未返回来源文本' }
+      ? evidenceExceedsHighlightLimit
+        ? { kind: 'too_long', text: '来源片段过长（>100 字），不进行高亮，请人工核验' }
+        : selectedEvidenceText || hasOffsetEvidence
+          ? locatedEvidenceText
+            ? { kind: 'located', text: '点击字段可定位原文', evidenceText: locatedEvidenceText }
+            : hasOffsetEvidence
+              ? { kind: 'unlocated', text: '来源片段未在 OCR 文本中定位，请核对' }
+              : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
+          : { kind: 'unavailable', text: '当前字段未返回来源文本' }
     : null;
   const ocrPanelStyle = ocrPanelHeight
     ? ({ '--review-ocr-panel-height': `${ocrPanelHeight}px` } as CSSProperties)

@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw';
 
 import { exportTaskExcel, exportTaskJson, exportTasksBatchZip } from './export';
 import { normalizeApiError } from './errors';
-import { getReviewResult, saveReviewField } from './review';
+import { getReview, getReviewResult, saveReviewField } from './review';
 import { buildTaskImageFormData, finishTaskUpload, uploadTaskImage } from './mobileUpload';
 import {
   createPatient,
@@ -516,6 +516,79 @@ describe('shared frontend contracts', () => {
       tasks_deleted: false
     });
     expect(requestUrl).toContain('delete_tasks=false');
+  });
+
+  it('normalizes_review_evidence_offsets_and_attention_metadata', async () => {
+    server.use(
+      http.get('*/api/tasks/task_evidence/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_evidence',
+            status: 'review',
+            review_result: {
+              ocr_text: '主诉：反复咳嗽15年。既往史：高血压5年。',
+              pages: [
+                { page_id: 'page_001', page_no: 1, parsed_text: '主诉：反复咳嗽15年。' },
+                { page_id: 'page_002', page_no: 2, parsed_text: '既往史：高血压5年。' }
+              ],
+              fields: [
+                {
+                  field_key: 'chief_complaint',
+                  label: '主诉',
+                  value: '反复咳嗽15年',
+                  status: 'unreviewed',
+                  attention_required: true,
+                  evidence: [
+                    {
+                      id: 'u001',
+                      page_id: 'page_001',
+                      page_no: 1,
+                      text: '反复咳嗽15年',
+                      start_offset: 3,
+                      end_offset: 10
+                    }
+                  ]
+                },
+                {
+                  field_key: 'pmh_hypertension',
+                  label: '高血压',
+                  value: '5年',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      id: 'u005',
+                      page_id: 'page_002',
+                      page_no: 2,
+                      text: '高血压5年',
+                      start_offset: 4,
+                      end_offset: 9
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    const payload = await getReview('task_evidence');
+    const chiefField = payload.review_result.fields.find((field) => field.field_key === 'chief_complaint');
+    const pmhField = payload.review_result.fields.find((field) => field.field_key === 'pmh_hypertension');
+    expect(chiefField?.evidence?.[0]).toMatchObject({
+      id: 'u001',
+      text: '反复咳嗽15年',
+      start_offset: 3,
+      end_offset: 10,
+      page_no: 1
+    });
+    expect((chiefField as { attention_required?: boolean } | undefined)?.attention_required).toBe(true);
+    expect(pmhField?.evidence?.[0]).toMatchObject({
+      id: 'u005',
+      start_offset: 4,
+      end_offset: 9
+    });
   });
 
   it('requests OCR-only reextraction and receives version metadata', async () => {

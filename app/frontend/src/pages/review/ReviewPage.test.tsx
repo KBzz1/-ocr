@@ -898,6 +898,185 @@ describe('ReviewPage', () => {
     const summary = await screen.findByLabelText('任务信息');
     expect(within(summary).getByText('患者已删除')).toBeTruthy();
   });
+
+  it('highlights_evidence_by_offset_without_correcting_raw_ocr', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '## 品后诊断\n慢性阻塞性肺疾病急性加重\n\n## 初步诊断：\n主诉：反复咳嗽、咳痰15年。',
+              pages: [
+                { page_id: 'page_001', page_no: 1, parsed_text: '## 品后诊断\n慢性阻塞性肺疾病急性加重' },
+                { page_id: 'page_002', page_no: 2, parsed_text: '## 初步诊断：\n主诉：反复咳嗽、咳痰15年。' }
+              ],
+              fields: [
+                {
+                  field_key: 'diagnosis_final',
+                  label: '最终诊断',
+                  value: '慢性阻塞性肺疾病急性加重',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      id: 'u007',
+                      page_id: 'page_001',
+                      page_no: 1,
+                      text: '慢性阻塞性肺疾病急性加重',
+                      start_offset: 7,
+                      end_offset: 19
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    await screen.findByText('点击字段可定位原文');
+    const mark = document.querySelector('mark');
+    expect(mark).toBeTruthy();
+    expect(mark?.textContent).toBe('慢性阻塞性肺疾病急性加重');
+    expect(document.body.textContent ?? '').toContain('## 品后诊断');
+    expect(document.body.textContent ?? '').not.toContain('## 最后诊断');
+  });
+
+  it('falls_back_to_evidence_text_when_offset_is_missing', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '姓名：张三\n既往史：高血压5年。',
+              pages: [],
+              fields: [
+                {
+                  field_key: 'patient_name',
+                  label: '姓名',
+                  value: '张三',
+                  status: 'unreviewed',
+                  evidence: [
+                    { id: 'u010', page_no: 1, text: '张三' }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    const mark = document.querySelector('mark');
+    expect(mark?.textContent).toBe('张三');
+  });
+
+  it('shows_unlocated_message_without_fabricating_highlight', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '体温：36.7℃ 脉搏：99次/分',
+              pages: [],
+              fields: [
+                {
+                  field_key: 'mystery_field',
+                  label: '神秘字段',
+                  value: '不在 OCR 里',
+                  status: 'unreviewed',
+                  evidence: [
+                    { id: 'u099', page_no: 1, text: '不存在的来源片段', start_offset: 0, end_offset: 5 }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('来源片段未在 OCR 文本中定位，请核对')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('不存在的来源片段');
+  });
+
+  it('uses_saved_page_order_for_ocr_panel', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '第一页保存内容\n\n第二页保存内容',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '第一页保存内容'
+                },
+                {
+                  page_id: 'page_002',
+                  page_no: 2,
+                  preview_url: '/api/tasks/task_001/images/page_002',
+                  parsed_text: '第二页保存内容'
+                }
+              ],
+              fields: [
+                {
+                  field_key: 'final_diagnosis',
+                  label: '最终诊断',
+                  value: '第二页保存内容',
+                  status: 'unreviewed',
+                  evidence: [
+                    {
+                      id: 'u201',
+                      page_id: 'page_002',
+                      page_no: 2,
+                      text: '第二页保存内容',
+                      start_offset: 9,
+                      end_offset: 16
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    await screen.findByText('点击字段可定位原文');
+    const mark = document.querySelector('mark');
+    expect(mark?.textContent).toBe('第二页保存内容');
+    const tablist = screen.getByRole('tablist', { name: '任务页码' });
+    const tabs = within(tablist).getAllByRole('button');
+    expect(tabs[0].textContent).toContain('1');
+    expect(tabs[1].textContent).toContain('2');
+    await userEvent.click(screen.getByTestId('review-field-card-final_diagnosis'));
+    expect(screen.getByRole('img', { name: '第 2 页原图' })).toBeTruthy();
+  });
 });
 
 describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no warning text', () => {

@@ -3,9 +3,12 @@ import type { TaskStatus } from './tasks';
 import type { FieldStatus } from '../styles/status';
 
 export interface ReviewEvidence {
+  id?: string;
   page_id?: string;
   page_no?: number;
   text?: string;
+  start_offset?: number;
+  end_offset?: number;
   bounding_box?: Array<{
     x: number;
     y: number;
@@ -24,6 +27,7 @@ export interface ReviewField {
   final_value?: string;
   extraction_status?: string;
   verification_status?: string;
+  attention_required?: boolean;
   quality_flags?: Array<{ flag: string; severity: string; message: string }>;
   ocr_correction?: {
     applied: boolean;
