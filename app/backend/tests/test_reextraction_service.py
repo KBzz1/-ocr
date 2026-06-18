@@ -291,6 +291,65 @@ def test_reextract_maps_invalid_candidate_contract_to_reextract_error(tmp_path):
     assert exc.value.details["reason"] == "invalid_candidate_contract"
 
 
+def test_reextract_passes_saved_evidence_units_to_field_port(tmp_path):
+    """saved document_result.json 已带 evidence_units 时,重抽取必须把它原样透传给 field port。"""
+    service, store, _task_service, port = make_service(tmp_path)
+    write_task(store, status="review")
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "success",
+            "merged_text": "主诉：反复咳嗽、咳痰15年。",
+            "pages": [{"page_id": "page_001", "page_no": 1, "text": "主诉：反复咳嗽、咳痰15年。"}],
+            "evidence_units": [
+                {
+                    "id": "u001",
+                    "text": "主诉：反复咳嗽、咳痰15年。",
+                    "start_offset": 0,
+                    "end_offset": 16,
+                    "page_no": 1,
+                }
+            ],
+        },
+    )
+
+    service.reextract("task_001")
+
+    forwarded = port.inputs[0]
+    units = forwarded.get("evidence_units")
+    assert isinstance(units, list) and units, "field port must receive saved evidence_units"
+    assert units[0]["id"] == "u001"
+    assert units[0]["text"] == "主诉：反复咳嗽、咳痰15年。"
+    assert forwarded["document_result"]["evidence_units"] == units
+
+
+def test_reextract_generates_evidence_units_when_legacy_document_result_lacks_them(tmp_path):
+    """legacy document_result.json 没有 evidence_units 字段时,重抽取必须从 OCR 原文重建并传给 field port。"""
+    service, store, _task_service, port = make_service(tmp_path)
+    write_task(store, status="review")
+    # Legacy-style document_result without evidence_units
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "success",
+            "merged_text": "主诉：反复咳嗽、咳痰15年。",
+            "pages": [{"page_id": "page_001", "page_no": 1, "text": "主诉：反复咳嗽、咳痰15年。"}],
+        },
+    )
+
+    service.reextract("task_001")
+
+    forwarded = port.inputs[0]
+    units = forwarded.get("evidence_units")
+    assert isinstance(units, list) and units, "field port must receive rebuilt evidence_units"
+    assert units[0]["id"] == "u001"
+    assert "主诉" in units[0]["text"]
+
+
 def test_reextract_uses_task_document_type_profile(tmp_path):
     class ProfileFieldPort(FakeFieldPort):
         pass

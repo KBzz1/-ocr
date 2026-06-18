@@ -2,6 +2,62 @@ from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestr
 from app.backend.storage.json_store import JsonStore
 
 
+def _admission_schema():
+    from app.backend.services.schema_loader import load_schema
+
+    return load_schema("app/config/schemas/admission_record_structured_fields.v1.yaml")
+
+
+def _build_full_qwen_candidates_with_statuses(statuses: dict[str, str]):
+    """Construct a full-schema 61-field review-candidate list with per-field status."""
+    schema = _admission_schema()
+    by_key_status = dict(statuses)
+    candidates = []
+    for group in schema["field_groups"]:
+        for field in group["fields"]:
+            fk = field["field_key"]
+            status = by_key_status.get(fk, "not_found")
+            if status == "found":
+                extraction_status = "extracted"
+                value = "found_value"
+                evidence_ids = ["u001"]
+                evidence = [{
+                    "id": "u001",
+                    "text": "found_value text",
+                    "start_offset": 0,
+                    "end_offset": 15,
+                }]
+                verification_status = "passed"
+            else:
+                extraction_status = "not_found"
+                value = ""
+                evidence_ids = []
+                evidence = []
+                verification_status = "not_checked"
+            candidates.append({
+                "field_key": fk,
+                "field_label": field["label"],
+                "section_key": group["group_key"],
+                "section_label": group["group_label"],
+                "status": status,
+                "value": value,
+                "evidence_ids": evidence_ids,
+                "original_value": value,
+                "extraction_status": extraction_status,
+                "verification_status": verification_status,
+                "evidence": evidence,
+                "attention_required": False,
+                "attention_message": "",
+                "quality_flags": [],
+                "source_section": None,
+                "source_hint": None,
+                "source_text": None,
+                "source_group_id": None,
+                "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
+            })
+    return candidates
+
+
 def test_build_image_inputs_uses_task_images_and_omits_quad(tmp_path):
     orchestrator = ProcessingOrchestrator(store=JsonStore(str(tmp_path)))
     task = {
@@ -420,3 +476,146 @@ def test_orchestrator_wraps_document_and_field_gpu_stages(tmp_path):
         ("task_001", "document_parsing"),
         ("task_001", "field_extraction"),
     ]
+
+
+def test_orchestrator_allows_many_not_found_fields_when_one_field_found(tmp_path):
+    """当 61 个字段中只有 1 个 found、其余 60 个 not_found 时,任务应正常进入 review。"""
+    from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
+
+    statuses = {"chief_complaint": "found"}
+    # All others default to not_found via _build_full_qwen_candidates_with_statuses
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        def parse(self, input):
+            return {
+                "pages": [
+                    {
+                        "page_id": "p1",
+                        "page_no": 1,
+                        "status": "success",
+                        "text": "主诉：反复咳嗽、咳痰15年。",
+                    }
+                ],
+                "merged_text": "主诉：反复咳嗽、咳痰15年。",
+            }
+
+    class QwenFieldPort:
+        def extract(self, input):
+            return _build_full_qwen_candidates_with_statuses(statuses)
+
+    class TaskService:
+        def __init__(self):
+            self.fail_args = None
+
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, task_id, code, message, **kwargs):
+            self.fail_args = {"task_id": task_id, "code": code, "message": message, **kwargs}
+            return {"task_id": task_id, "status": "failed", "error_code": code}
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    store = JsonStore(str(tmp_path))
+    field_port = QwenFieldPort()
+    (tmp_path / "p1.jpg").write_bytes(b"img")
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=DocPort(),
+        field_port=field_port,
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "document_type": "copd_admission_record",
+            "images": [{"page_id": "p1", "page_no": 1, "original_image_path": str(tmp_path / "p1.jpg")}],
+        },
+        TaskService(),
+        schema=_admission_schema(),
+    )
+
+    assert result["status"] == "review", "mixed (1 found + 60 not_found) must enter review"
+
+
+def test_orchestrator_rejects_all_not_found_field_results(tmp_path):
+    """当所有 61 个字段都是 not_found 时,任务应进入 failed,ALGORITHM_CONTRACT_INVALID。"""
+    from app.backend.errors import ErrorCode
+    from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
+
+    statuses = {fk: "not_found" for fk in (
+        "chief_complaint", "pe_temperature", "aux_blood_gas_ph", "diagnosis_preliminary"
+    )}
+    # All fields not_found
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        def parse(self, input):
+            return {
+                "pages": [{"page_id": "p1", "page_no": 1, "status": "success", "text": "正文"}],
+                "merged_text": "正文",
+            }
+
+    class QwenFieldPort:
+        def extract(self, input):
+            return _build_full_qwen_candidates_with_statuses({})  # all not_found
+
+    class TaskService:
+        def __init__(self):
+            self.fail_args = None
+
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            raise AssertionError("must not enter review when every field is not_found")
+
+        def mark_failed(self, task_id, code, message, **kwargs):
+            self.fail_args = {"task_id": task_id, "code": code, "message": message, **kwargs}
+            return {"task_id": task_id, "status": "failed", "error_code": code}
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    store = JsonStore(str(tmp_path))
+    field_port = QwenFieldPort()
+    (tmp_path / "p1.jpg").write_bytes(b"img")
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=DocPort(),
+        field_port=field_port,
+    )
+
+    task_service = TaskService()
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "document_type": "copd_admission_record",
+            "images": [{"page_id": "p1", "page_no": 1, "original_image_path": str(tmp_path / "p1.jpg")}],
+        },
+        task_service,
+        schema=_admission_schema(),
+    )
+
+    assert task_service.fail_args is not None, "task must be marked failed"
+    assert task_service.fail_args["code"] == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+    assert result["status"] == "failed"

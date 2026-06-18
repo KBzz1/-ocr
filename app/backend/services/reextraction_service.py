@@ -12,6 +12,7 @@ from ._review_field_factory import (
     build_review_summary,
 )
 from .algorithm_ports.field_extraction import all_fields_empty, validate_field_candidates
+from .algorithm_ports.evidence_units import build_evidence_units
 from .algorithm_ports.results import AlgorithmResultStore
 
 
@@ -86,10 +87,13 @@ class ReextractionService:
                 details={"reason": "schema_missing_or_invalid"},
             )
 
+        evidence_units = self._load_evidence_units_for_reextract(document_result)
+
         candidates = field_port.extract(
             {
                 "task_id": task_id,
                 "document_result": document_result,
+                "evidence_units": evidence_units,
                 "schema": schema,
                 "source": "ocr_text_only",
                 "document_type": task.get("document_type") or "copd_admission_record",
@@ -163,6 +167,19 @@ class ReextractionService:
             "candidate_count": len(candidates),
             **metadata,
         }
+
+    def _load_evidence_units_for_reextract(self, document_result: dict) -> list[dict]:
+        """Return evidence units to feed the field port.
+
+        Re-extraction prefers the units persisted alongside the successful
+        ``document_result.json`` (so OCR highlights stay byte-stable). When
+        the saved result predates Task 2 (legacy), rebuild units from the
+        raw OCR pages and merged text.
+        """
+        saved = document_result.get("evidence_units") if isinstance(document_result, dict) else None
+        if isinstance(saved, list) and saved:
+            return saved
+        return build_evidence_units(document_result or {})
 
     def _load_ocr_document_result(self, task_id: str) -> dict:
         result_store = AlgorithmResultStore(self._store)
