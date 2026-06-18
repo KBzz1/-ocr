@@ -662,7 +662,12 @@ describe('ReviewPage', () => {
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows instant evidence-missing and OCR ambiguity risk indicators', async () => {
+  it('does not surface legacy quality_flag names or OCR corrections as doctor-facing attention', async () => {
+    // Task 8 spec: 黄色感叹号只来自 attention_required/attention_message;
+    // 旧版从 quality_flags.flag 字符串派生黄色提示的逻辑已移除。
+    // 这里给后端塞一个"看起来可疑"的 quality_flags 列表,
+    // 但字段没有 attention_required,断言这些内部 flag 名/OCR 纠错信息
+    // 都不出现在医生可见 UI 上。
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -733,19 +738,25 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    const riskFlag = await screen.findByLabelText('重点核验：未找到证据；最开始提取片段：24.2kg/m2');
-    expect(riskFlag).toBeTruthy();
-    expect(riskFlag.getAttribute('data-tooltip')).toBe('未找到证据；最开始提取片段：24.2kg/m2');
-    expect(riskFlag.getAttribute('title')).toBeNull();
-    expect(await screen.findByLabelText('重点核验：OCR 中检验项目名疑似错读，请核对原文')).toBeTruthy();
-    expect(await screen.findByLabelText('重点核验：同一字段附近存在不一致数值，请核对原文')).toBeTruthy();
-    expect(await screen.findByLabelText('重点核验：检验单位符号需核对')).toBeTruthy();
-    expect(screen.queryByText('需核验')).toBeNull();
-    expect(screen.queryByText('需重点核验')).toBeNull();
-    expect(screen.queryByText('字段值中的数字未能在 evidence 中直接找到')).toBeNull();
-    expect(screen.queryByText(/OCR.*BHI.*BMI/)).toBeNull();
-    expect(screen.queryByLabelText(/否定或不确定语气/)).toBeNull();
-    expect(screen.queryByLabelText(/高相似重复片段/)).toBeNull();
+    // 等字段区渲染出来
+    await screen.findByLabelText('BMI');
+
+    // 没有任何 attention_required,不应出现"重点核验:"aria-label
+    expect(screen.queryByLabelText(/^重点核验[:：]/)).toBeNull();
+
+    // 内部 flag 名 / 旧版 OCR 纠错信息绝不进入医生可见 UI
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('value_not_in_evidence');
+    expect(body).not.toContain('negation_or_uncertainty_risk');
+    expect(body).not.toContain('possible_duplicate_or_stitching');
+    expect(body).not.toContain('ocr_label_ambiguity');
+    expect(body).not.toContain('ocr_numeric_conflict');
+    expect(body).not.toContain('unit_symbol_ambiguity');
+    expect(body).not.toContain('evidence_missing_fallback');
+    expect(body).not.toContain('source_section_not_found');
+    expect(body).not.toContain('source_hint=');
+    // OCR 原文保留:不允许前端把 BHI 静默改写成 BMI
+    expect(body).toContain('BHI');
   });
 
   it('shows a message when task completion validation fails', async () => {
