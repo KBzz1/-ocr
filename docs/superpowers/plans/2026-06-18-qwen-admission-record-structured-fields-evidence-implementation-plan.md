@@ -38,9 +38,9 @@ Non-blocking issues to handle in implementation:
 | Path | Role | Change |
 | --- | --- | --- |
 | `app/config/schemas/admission_record_structured_fields.v1.yaml` | New committed schema generated from `data/temp/结构化字段(2).md` and the spec field table | Create |
-| `app/config/schemas/copd_admission_record.v1.yaml` | Legacy small-field schema that must not remain as active context | Delete after new schema is active |
+| `app/config/schemas/copd_admission_record.v1.yaml` | Legacy small-field schema; remove active references in Task 1 and delete in Task 11 | Delete in Task 11 |
 | `app/backend/__init__.py` | Load the new active schema and prompt version while preserving `copd_admission_record` profile routing | Modify |
-| `app/backend/services/schema_loader.py` | Continue loading existing `field_groups`; no new parser format required | No change expected |
+| `app/backend/services/schema_loader.py` | Existing schema loader remains the reference for `field_groups`; no new parser format is introduced | Reference |
 | `app/backend/services/algorithm_ports/evidence_units.py` | Build lightweight text evidence units with offsets and optional page numbers | Create |
 | `app/backend/services/algorithm_ports/results.py` | Persist `evidence_units` with `document_result.json` and return them on OCR retry | Modify |
 | `app/backend/services/algorithm_ports/orchestrator.py` | Generate evidence units after OCR, pass them to field extraction, validate complete results | Modify |
@@ -48,8 +48,8 @@ Non-blocking issues to handle in implementation:
 | `app/backend/services/copd_extraction/prompts.py` | Replace old free-key prompt builders with the fixed-field admission-record prompt | Modify |
 | `app/backend/services/copd_extraction/admission_contract.py` | Validate Qwen raw output and map statuses/evidence to review candidates | Create |
 | `app/backend/services/copd_extraction/port.py` | Wire default extractor to the new fixed-field prompt/adapter path and remove legacy section-group entrypoints from active use | Modify |
-| `app/backend/services/copd_extraction/extractor.py` | Legacy section-group/field-batch extractor implementation | Delete or shrink to fixed-field adapter support only after replacement |
-| `app/backend/services/copd_extraction/section_splitter.py` | Legacy title-based section splitter that must not drive fixed-field evidence定位 | Delete if no remaining caller |
+| `app/backend/services/copd_extraction/extractor.py` | Legacy section-group/field-batch extractor implementation; replace active path with fixed-field adapter and clean remnants in Task 11 | Modify |
+| `app/backend/services/copd_extraction/section_splitter.py` | Legacy title-based section splitter that must not drive fixed-field evidence定位 | Delete in Task 11 |
 | `app/backend/services/reextraction_service.py` | Reuse saved OCR text and evidence units for OCR-only re-extraction | Modify |
 | `app/backend/services/_review_field_factory.py` | Preserve evidence arrays and derive `attention_required` / `attention_message` | Modify |
 | `app/backend/services/review_service.py` | Return schema groups, raw OCR pages, evidence arrays, and attention metadata | Modify |
@@ -74,7 +74,6 @@ Non-blocking issues to handle in implementation:
 
 **Files:**
 - Create: `app/config/schemas/admission_record_structured_fields.v1.yaml`
-- Delete: `app/config/schemas/copd_admission_record.v1.yaml`
 - Modify: `app/backend/__init__.py`
 - Modify: `docs/Backend/Backend_TDD/02-algorithm-ports.md`
 - Modify: `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`
@@ -119,7 +118,7 @@ Create `app/config/schemas/admission_record_structured_fields.v1.yaml` using the
 
 Modify `app/backend/__init__.py` so `SchemaService` loads the new schema file. Keep `DocumentProfile.document_type="copd_admission_record"` and label `入院记录`.
 
-Delete `app/config/schemas/copd_admission_record.v1.yaml` after all active references switch to the new schema file. Do not keep it as a fallback because it can silently reintroduce the old small-field context.
+Remove active references to `app/config/schemas/copd_admission_record.v1.yaml` after switching to the new schema file. Do not keep it as a fallback because it can silently reintroduce the old small-field context. The physical deletion is deferred to Task 11 after processing, re-extraction, review, export, and frontend tests are all moved to the new schema.
 
 Update `docs/Backend/Backend_TDD/02-algorithm-ports.md` and `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md` to describe the new fixed-field schema, `found/not_found/uncertain` algorithm statuses, and backend mapping to existing review metadata.
 
@@ -136,7 +135,7 @@ Expected: PASS; schema has 61 fields, old small keys are absent, app default sch
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/config/schemas/admission_record_structured_fields.v1.yaml app/config/schemas/copd_admission_record.v1.yaml app/backend/__init__.py app/backend/tests/test_schema_loader.py app/backend/tests/test_schema_api.py app/backend/tests/test_backend_e2e.py docs/Backend/Backend_TDD/02-algorithm-ports.md docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md
+git add app/config/schemas/admission_record_structured_fields.v1.yaml app/backend/__init__.py app/backend/tests/test_schema_loader.py app/backend/tests/test_schema_api.py app/backend/tests/test_backend_e2e.py docs/Backend/Backend_TDD/02-algorithm-ports.md docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md
 git commit -m "feat: 接入入院记录固定字段 schema"
 ```
 
@@ -871,7 +870,8 @@ Create `app/backend/tests/test_legacy_cleanup.py`:
 - `test_legacy_small_field_schema_file_removed`
   - Asserts `app/config/schemas/copd_admission_record.v1.yaml` does not exist.
 - `test_active_code_no_longer_mentions_old_small_field_keys`
-  - Scans active backend/config files, excluding `docs/`, `tests/fixtures/`, and `docs/superpowers/archive/`.
+  - Scans `app/backend/services/copd_extraction`, `app/backend/services/algorithm_ports`, `app/backend/__init__.py`, and `app/config`.
+  - Excludes `app/backend/tests/test_legacy_cleanup.py`.
   - Fails if it finds old small-field keys: `copd_history_years`, `blood_gas_pao2`, `blood_gas_paco2`, `ct_features`, `positive_signs`, `maintenance_therapy`, `dyspnea_grade_mMRC`.
 - `test_active_prompt_module_no_longer_exports_legacy_free_key_builders`
   - Imports `app.backend.services.copd_extraction.prompts`.
@@ -900,7 +900,7 @@ Clean up the old path after Tasks 1-10 pass:
 - Remove legacy field-batch and section-group strategy constants from active extraction code.
 - Delete `app/backend/services/copd_extraction/section_splitter.py`; the fixed-field extraction path must use schema order plus evidence units, not title-based section recovery.
 - Rewrite or delete old tests that assert old small-field behavior. Keep tests only if they now verify the fixed schema, fixed prompt, evidence IDs, or no-regression cleanup behavior.
-- Run `rg -n "copd_history_years|blood_gas_pao2|blood_gas_paco2|ct_features|positive_signs|maintenance_therapy|dyspnea_grade_mMRC|source_hint|evidence_phrase|STRATEGY_SECTION_GROUPS|SECTION_GROUPS" app/backend app/config` and remove active-code matches unless a match is in `test_legacy_cleanup.py` itself.
+- Run `rg -n "copd_history_years|blood_gas_pao2|blood_gas_paco2|ct_features|positive_signs|maintenance_therapy|dyspnea_grade_mMRC|source_hint|evidence_phrase|STRATEGY_SECTION_GROUPS|SECTION_GROUPS" app/backend/services/copd_extraction app/backend/services/algorithm_ports app/backend/__init__.py app/config` and remove active extraction/config matches unless a match is in `test_legacy_cleanup.py` itself.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -947,25 +947,3 @@ git diff --check -- app/config/schemas/admission_record_structured_fields.v1.yam
 Expected: no whitespace errors.
 
 ---
-
-## Execution Handoff Prompt
-
-```text
-请在 `/home/kbzz1/manzufei_ocr` 中执行：
-
-Spec: `docs/superpowers/specs/2026-06-18-qwen-admission-record-structured-fields-evidence-design.md`
-Plan: `docs/superpowers/plans/2026-06-18-qwen-admission-record-structured-fields-evidence-implementation-plan.md`
-
-要求：
-- 先读取 `AGENTS.md` / `CLAUDE.md` / `docs/AGENTS.md` / `app/backend/CLAUDE.md` / `app/frontend/CLAUDE.md`，进入端口或 COPD 抽取目录时再读取对应 `CLAUDE.md`。
-- 使用 Superpowers：`superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。
-- 严格按 plan task-by-task 执行；每个任务先写失败测试，再运行确认失败，再做最小实现，再跑测试通过。
-- 每个任务完成后单独 commit，commit message 使用中文。
-- 不要修改与计划无关的文件；不要回滚、删除或清理当前工作区已有改动。
-- 不要提交 `data/`、`exports/`、`logs/` 中的真实运行数据、模型权重、运行缓存、本机私有路径或密钥。
-- 不要为当前小样本写 OCR 标题纠错、页面重排或字符串替换规则。
-- 执行新固定字段路径时同步清理旧版 `copd_admission_record.v1.yaml` 小字段 schema、旧 free-key prompt、旧 section-group 抽取入口和旧测试断言；不要保留会污染上下文的并行旧路径。
-- 最后运行 plan 的 Final Verification 命令，并报告通过项和无法运行项及原因。
-
-开始执行前，先复述你将执行的 Task 1 和验证命令。
-```
