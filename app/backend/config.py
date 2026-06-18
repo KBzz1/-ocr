@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
     "local_ocr_max_pixels": 501760,
     "local_ocr_vlm_server_url": "http://paddleocr-vlm-server:8080/v1",
     "local_ocr_vlm_timeout_seconds": 240,
+    "local_ocr_temperature": 0.0,
     "gpu_stage_queue_enabled": True,
 }
 
@@ -117,6 +118,8 @@ def _flatten_config(raw: dict) -> dict:
         flattened["local_ocr_vlm_server_url"] = algorithms_config["local_ocr_vlm_server_url"]
     if "local_ocr_vlm_timeout_seconds" in algorithms_config:
         flattened["local_ocr_vlm_timeout_seconds"] = algorithms_config["local_ocr_vlm_timeout_seconds"]
+    if "local_ocr_temperature" in algorithms_config:
+        flattened["local_ocr_temperature"] = algorithms_config["local_ocr_temperature"]
     if "gpu_stage_queue_enabled" in algorithms_config:
         flattened["gpu_stage_queue_enabled"] = algorithms_config["gpu_stage_queue_enabled"]
 
@@ -199,6 +202,16 @@ def _validate_config(config: dict):
     vlm_timeout = config.get("local_ocr_vlm_timeout_seconds")
     if not isinstance(vlm_timeout, int) or vlm_timeout <= 0:
         raise ValueError(f"local_ocr_vlm_timeout_seconds 必须为正整数，当前值: {vlm_timeout}")
+
+    local_ocr_temperature = config.get("local_ocr_temperature")
+    if (
+        not isinstance(local_ocr_temperature, (int, float))
+        or isinstance(local_ocr_temperature, bool)
+        or not (0 <= local_ocr_temperature <= 2)
+    ):
+        raise ValueError(
+            f"local_ocr_temperature 必须是 [0, 2] 区间内的数字，当前值: {local_ocr_temperature}"
+        )
 
     if not isinstance(config.get("gpu_stage_queue_enabled"), bool):
         raise ValueError(f"gpu_stage_queue_enabled 必须为布尔值，当前值: {config.get('gpu_stage_queue_enabled')}")

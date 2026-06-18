@@ -15,6 +15,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
         max_new_tokens: int = 1024,
         max_pixels: int | None = 501760,
         timeout_seconds: int = 240,
+        temperature: float = 0.0,
         event_logger: Callable[..., None] | None = None,
     ):
         self._server_url = server_url.rstrip("/")
@@ -22,6 +23,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
         self._max_new_tokens = max_new_tokens
         self._max_pixels = max_pixels
         self._timeout_seconds = timeout_seconds
+        self._temperature = temperature
         self._event_logger = event_logger
         self._pipeline = None
 
@@ -46,6 +48,7 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
             server_url=self._server_url,
             max_new_tokens=self._max_new_tokens,
             max_pixels=self._max_pixels,
+            temperature=self._temperature,
             input_files=[_input_file_diagnostic(page) for page in pages],
         )
 
@@ -113,7 +116,10 @@ class PaddleOCRVLMServerDocumentPort(DocumentParsingPort):
         return self._pipeline
 
     def _predict_page(self, pipeline, image_path: str) -> str:
-        predict_kwargs = {"max_new_tokens": self._max_new_tokens}
+        predict_kwargs = {
+            "max_new_tokens": self._max_new_tokens,
+            "temperature": self._temperature,
+        }
         if self._max_pixels is not None:
             predict_kwargs["max_pixels"] = self._max_pixels
 

@@ -375,3 +375,52 @@ algorithms:
 
     with pytest.raises(ValueError, match="local_ocr_vlm_timeout_seconds"):
         load_config(str(config_dir))
+
+
+def test_local_ocr_temperature_defaults_to_zero(tmp_path):
+    """OCR 调用必须默认走 temperature=0.0 以保证同一原图可复现。"""
+    from app.backend.config import load_config
+
+    config = load_config(str(tmp_path / "nonexistent"))
+
+    assert config["local_ocr_temperature"] == 0.0
+
+
+def test_local_ocr_temperature_must_be_number_between_zero_and_two(tmp_path):
+    """OCR temperature 必须为 [0, 2] 区间内的数字。"""
+    from app.backend.config import load_config
+
+    for invalid_value in ("hot", -0.1, 2.5):
+        config_dir = tmp_path / f"config_{invalid_value}"
+        config_dir.mkdir()
+        (config_dir / "default.yaml").write_text(
+            f"""
+algorithms:
+  local_ocr_temperature: {invalid_value}
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="local_ocr_temperature"):
+            load_config(str(config_dir))
+
+
+def test_vlm_backend_config_does_not_default_to_30000_context():
+    """8GB 显卡下 max_model_len 必须 <= 8192，且绝不能默认 30000。"""
+    import os
+
+    yaml_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "config",
+        "vlm_backend_config.yaml",
+    )
+
+    import yaml
+
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    max_model_len = raw.get("max_model_len")
+    assert isinstance(max_model_len, int), f"vlm_backend_config.yaml max_model_len 必须为整数，当前: {max_model_len!r}"
+    assert max_model_len <= 8192, f"max_model_len 超过 8GB 显卡安全上限: {max_model_len}"
+    assert max_model_len != 30000, "max_model_len 不得默认 30000，会撑爆 8GB 显卡 KV cache"

@@ -37,7 +37,14 @@ algorithms:
   local_ocr_vlm_timeout_seconds: 240
   local_ocr_max_new_tokens: 1024
   local_ocr_max_pixels: 501760
+  local_ocr_temperature: 0.0  # 默认 0，保证同原图可复现；合法区间 [0, 2]
 ```
+
+### Qwen/OCR 配置安全固化（必须满足）
+
+1. **OCR temperature 默认 0.0**：`local_ocr_temperature` 默认 0.0 以保证同一原图多次 OCR 结果可复现，方便人工核验同一病历。区间 `[0, 2]`，越界时后端启动直接 `ValueError` 拒绝。
+2. **8GB 显卡安全的 `max_model_len`**：`app/config/vlm_backend_config.yaml` 的 `max_model_len` 必须 `<= 8192` 且不得默认 `30000`。`30000` 在 RTX 4060 (8GB) 上会把 KV cache 撑爆，导致 OCR 极慢甚至卡死。修改前必须先在脱敏样本上重新跑一遍。
+3. **批处理不得搬运工作站原图**：当外部批处理算法包要求独立工作目录时，必须把原图复制到批处理工作区；工作站原图路径保持不变，OCR/批处理结束后原图仍存在于原位置，不允许 move / delete。
 
 ### PaddleOCR-VL 集成结论
 

@@ -68,8 +68,8 @@ def test_vlm_server_port_parses_pages_in_order(tmp_path):
     assert all(page["status"] == "success" for page in result["pages"])
     assert all(page["source"] == "paddleocr_vl_vllm_server" for page in result["pages"])
     assert pipeline.calls == [
-        {"input": str(image1), "max_new_tokens": 1024, "max_pixels": 501760},
-        {"input": str(image2), "max_new_tokens": 1024, "max_pixels": 501760},
+        {"input": str(image1), "max_new_tokens": 1024, "max_pixels": 501760, "temperature": 0.0},
+        {"input": str(image2), "max_new_tokens": 1024, "max_pixels": 501760, "temperature": 0.0},
     ]
 
 
@@ -228,3 +228,21 @@ def test_vlm_server_port_fast_pipeline_still_passes(tmp_path):
 
     assert result["merged_text"] == "第一页\n\n第二页"
     assert all(page["status"] == "success" for page in result["pages"])
+
+
+def test_vlm_server_port_passes_temperature_zero(tmp_path):
+    """OCR 端口默认必须把 temperature=0.0 传给 pipeline.predict，保证可复现。"""
+    image = tmp_path / "page.jpg"
+    image.write_bytes(b"1")
+    pipeline = FakePipeline(["正文"])
+    port = PaddleOCRVLMServerDocumentPort(
+        server_url="http://paddleocr-vlm-server:8080/v1",
+        pipeline_factory=lambda server_url: pipeline,
+    )
+
+    port.parse(
+        {"task_id": "task-001", "pages": [{"page_id": "p1", "page_no": 1, "processed_path": str(image)}]}
+    )
+
+    assert pipeline.calls, "应至少调用一次 pipeline.predict"
+    assert pipeline.calls[0]["temperature"] == 0.0

@@ -166,6 +166,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
             max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
             max_pixels=config.get("local_ocr_max_pixels"),
             timeout_seconds=config["local_ocr_vlm_timeout_seconds"],
+            temperature=config.get("local_ocr_temperature", 0.0),
             event_logger=event_log.safe_write,
         )
 

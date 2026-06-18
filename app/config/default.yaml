@@ -28,6 +28,9 @@ algorithms:
   local_ocr_max_pixels: 501760
   local_ocr_vlm_server_url: "http://paddleocr-vlm-server:8080/v1"
   local_ocr_vlm_timeout_seconds: 240
+  # OCR 推理默认 temperature=0.0：保证同一原图多次调用结果一致，方便人工核验
+  # 同一原图重跑。区间 [0, 2]，超出范围后端启动会校验失败。
+  local_ocr_temperature: 0.0
   gpu_stage_queue_enabled: true
   enable_copd_extractor: false
   llm_model_path: "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"
