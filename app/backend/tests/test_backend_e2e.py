@@ -453,7 +453,7 @@ def test_mvp_success_flow_create_upload_process_review_done_export(tmp_path, mon
 
     exported_json = client.get(f"/api/tasks/{created['task_id']}/export/json")
     assert exported_json.status_code == 200
-    assert "人工审核后的职业" in exported_json.get_data(as_text=True)
+    assert "人工审核后的主诉" in exported_json.get_data(as_text=True)
 
     exported_excel = client.get(f"/api/tasks/{created['task_id']}/export/excel")
     assert exported_excel.status_code == 200
