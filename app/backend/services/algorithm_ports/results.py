@@ -21,6 +21,7 @@ class AlgorithmResultStore:
         pages: list[dict],
         merged_text: str,
         has_failure: bool = False,
+        evidence_units: list[dict] | None = None,
     ) -> None:
         self._store.write(f"results/{task_id}/document_result.json", {
             "task_id": task_id,
@@ -28,6 +29,7 @@ class AlgorithmResultStore:
             "status": "partial_failure" if has_failure else "success",
             "pages": pages,
             "merged_text": merged_text,
+            "evidence_units": list(evidence_units) if evidence_units else [],
         })
 
     def read_success_document_result(self, task_id: str) -> dict | None:
@@ -37,7 +39,14 @@ class AlgorithmResultStore:
         pages = result.get("pages")
         if not isinstance(pages, list) or not pages:
             return None
-        return {"pages": pages, "merged_text": result.get("merged_text", "")}
+        evidence_units = result.get("evidence_units")
+        if not isinstance(evidence_units, list):
+            evidence_units = []
+        return {
+            "pages": pages,
+            "merged_text": result.get("merged_text", ""),
+            "evidence_units": evidence_units,
+        }
 
     def write_field_candidates(self, task_id: str, candidates: list[dict]) -> None:
         self._store.write(f"results/{task_id}/field_candidates.json", {

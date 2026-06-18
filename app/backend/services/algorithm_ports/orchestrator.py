@@ -4,6 +4,7 @@ from ...errors import ErrorCode
 from ...routes import _safe_event
 from ...storage.json_store import JsonStore
 from .field_extraction import all_fields_empty, validate_field_candidates
+from .evidence_units import build_evidence_units
 from .results import AlgorithmResultStore
 
 logger = logging.getLogger(__name__)
@@ -149,12 +150,17 @@ class ProcessingOrchestrator:
             )
 
         has_failure = any(p.get("status") == "failed" for p in pages)
+        evidence_units = build_evidence_units(doc_result)
         self._result_store.write_document_result(
             task_id,
             pages,
             doc_result.get("merged_text", ""),
             has_failure=has_failure,
+            evidence_units=evidence_units,
         )
+        # Make the same units available for downstream code that consumes
+        # ``doc_result`` directly (e.g. retry paths that re-read the store).
+        doc_result["evidence_units"] = evidence_units
 
         if has_failure:
             return task_service.mark_failed(
@@ -188,6 +194,7 @@ class ProcessingOrchestrator:
             "task_id": task_id,
             "document_type": task.get("document_type"),
             "document_result": doc_result,
+            "evidence_units": evidence_units,
             "schema": schema,
             "prompt_version": task.get("prompt_version"),
         }
