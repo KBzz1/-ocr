@@ -26,7 +26,7 @@
   - `system.py` — 健康检查、离线自检
 - `services/`：业务服务
   - `algorithm_ports/` — 图像、OCR、文档解析、结构化字段抽取算法子系统的端口、适配器、orchestrator、PaddleOCR VLM server 客户端
-  - `copd_extraction/` — 慢阻肺专病字段抽取核心：extractor、port、prompts、llm_client、section_splitter、quality_checks、field_result
+  - `copd_extraction/` — 慢阻肺专病字段抽取核心：extractor、port、prompts、admission_contract、llm_client、quality_checks、field_result
   - `task_service.py` — 任务状态机主逻辑
   - `patient_service.py` — 患者档案创建、改名、逻辑删除
   - `patient_query_service.py` — 患者详情聚合与任务时间轴

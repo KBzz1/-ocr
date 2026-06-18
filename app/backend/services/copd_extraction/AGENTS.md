@@ -27,10 +27,10 @@
 
 ## 模块职责（指针，不复制代码）
 
-- `extractor.py`：抽取主流程入口；策略选择（`field_batches` / `section_groups`）、证据匹配与恢复、失败降级、常规复核 + 对抗性复核编排、输出全量字段结果。
-- `port.py`：与 `services/algorithm_ports/` 的端口契约边界（消费 OCR/文档解析结果）；通过 `enable_verification` / `enable_adversarial_verification` 控制复核层级。
-- `section_splitter.py`：规则分段；将原文切到 schema 使用的 `source_section`（主诉、现病史、既往史、个人史、体格检查、辅助检查等）。
-- `prompts.py`：抽取、常规复核、对抗性复核和 source hint 重生 prompt 模板；prompt 改动视为契约变更。
+- `extractor.py`：固定字段抽取流程的轻量辅助（如取消令牌检查）；旧版 `field_batches` / `section_groups` 策略与对抗性复核编排已随固定字段 Qwen 路径清理。
+- `port.py`：与 `services/algorithm_ports/` 的端口契约边界（消费 OCR/文档解析结果与 evidence_units）；固定字段 Qwen 抽取端口 `COPDAdmissionQwenFieldPort` 在此组装 prompt、校验契约、回填证据。
+- `prompts.py`：固定字段入院记录结构化抽取 prompt（`build_admission_structured_fields_prompt`）；prompt 改动视为契约变更。
+- `admission_contract.py`：校验 Qwen 输出契约（`validate_qwen_payload`）并把 `evidence_ids` 回填为带 offset 的 evidence 数组（`map_qwen_fields_to_review_candidates`）。
 - `llm_client.py`：LLM 客户端抽象，含超时保护；调用方注入，实现可替换。
 - `field_result.py`：字段结果结构、`_default_result`、补齐全量字段、空值判定。
 - `quality_checks.py`：薄规则质量核验，产出 `quality_flags`；不静默改写原文；生理阈值模块级常量化。
