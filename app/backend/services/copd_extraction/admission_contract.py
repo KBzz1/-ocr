@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 VALID_QWEN_STATUSES = {"found", "not_found", "uncertain"}
+VALID_TOP_LEVEL_KEYS = {"schema_version", "document_type", "fields"}
 
 # Mapping from the new Qwen status to the legacy extraction_status used by the
 # review-candidate layer.
@@ -174,6 +175,27 @@ def _validate_and_index_by_key(payload: dict, schema: dict) -> dict[str, dict]:
         raise AppError(
             ErrorCode.ALGORITHM_CONTRACT_INVALID,
             message="Qwen 顶层 payload 必须是对象",
+        )
+
+    extra_keys = set(payload) - VALID_TOP_LEVEL_KEYS
+    if extra_keys:
+        raise AppError(
+            ErrorCode.ALGORITHM_CONTRACT_INVALID,
+            message=f"Qwen payload 包含非法顶层键：{', '.join(sorted(extra_keys))}",
+        )
+
+    schema_version = schema.get("version")
+    if payload.get("schema_version") != schema_version:
+        raise AppError(
+            ErrorCode.ALGORITHM_CONTRACT_INVALID,
+            message="Qwen payload.schema_version 与 schema 不一致",
+        )
+
+    document_type = schema.get("document_type")
+    if payload.get("document_type") != document_type:
+        raise AppError(
+            ErrorCode.ALGORITHM_CONTRACT_INVALID,
+            message="Qwen payload.document_type 与 schema 不一致",
         )
 
     raw_fields = payload.get("fields")
@@ -381,4 +403,3 @@ def _resolve_evidence_ids(
             entry["page_no"] = unit["page_no"]
         resolved.append(entry)
     return resolved
-

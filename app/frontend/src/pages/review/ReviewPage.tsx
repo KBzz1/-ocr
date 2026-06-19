@@ -89,7 +89,8 @@ function findLocatedEvidenceText(
     .filter((entry) => entry.index >= 0)
     .sort((a, b) => a.index - b.index || b.item.text.length - a.item.text.length);
 
-  return located[0]?.item.text;
+  const first = located[0];
+  return first ? { text: first.item.text, startIndex: first.index } : undefined;
 }
 
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {
@@ -516,7 +517,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       })
     : reviewPages;
   const selectedPage = pages.find((page) => page.page_id === selectedPageId) ?? pages[0] ?? null;
-  const mergedOcrText = stripOcrMarkup(review?.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n'));
+  const mergedOcrText = review?.ocr_text ?? pages.map((page) => page.parsed_text ?? '').filter(Boolean).join('\n');
   const visibleOcrText = mergedOcrText;
   const selectedField = fields.find((field) => field.field_key === selectedFieldKey) ?? fields[0] ?? null;
   const selectedEvidence = selectedField?.evidence?.find((item) => item.text || (typeof item.start_offset === 'number' && typeof item.end_offset === 'number'));
@@ -524,7 +525,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const hasOffsetEvidence = Boolean(selectedEvidence && typeof selectedEvidence.start_offset === 'number' && typeof selectedEvidence.end_offset === 'number');
   const cleanedEvidenceForGuard = selectedEvidenceText ? stripOcrMarkup(selectedEvidenceText) : undefined;
   const evidenceExceedsHighlightLimit = Boolean(cleanedEvidenceForGuard && cleanedEvidenceForGuard.length > MAX_EVIDENCE_HIGHLIGHT_CHARS);
-  const locatedEvidenceText = evidenceExceedsHighlightLimit ? undefined : findLocatedEvidenceText(visibleOcrText, selectedEvidence);
+  const locatedEvidence = evidenceExceedsHighlightLimit ? undefined : findLocatedEvidenceText(visibleOcrText, selectedEvidence);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
   const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
@@ -532,8 +533,13 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       ? evidenceExceedsHighlightLimit
         ? { kind: 'too_long', text: '来源片段过长（>100 字），不进行高亮，请人工核验' }
         : selectedEvidenceText || hasOffsetEvidence
-          ? locatedEvidenceText
-            ? { kind: 'located', text: '点击字段可定位原文', evidenceText: locatedEvidenceText }
+          ? locatedEvidence
+            ? {
+                kind: 'located',
+                text: '点击字段可定位原文',
+                evidenceText: locatedEvidence.text,
+                startIndex: locatedEvidence.startIndex,
+              }
             : hasOffsetEvidence
               ? { kind: 'unlocated', text: '来源片段未在 OCR 文本中定位，请核对' }
               : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }

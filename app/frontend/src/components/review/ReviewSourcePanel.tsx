@@ -6,6 +6,7 @@ export type SourceMessage = {
   kind: 'located' | 'missing' | 'unavailable' | 'too_long' | 'unlocated';
   text: string;
   evidenceText?: string;
+  startIndex?: number;
 };
 
 export type EvidenceLocation = {
@@ -35,10 +36,19 @@ function resolveSourceMessage(sourceMessage: SourceMessage | null): SourceMessag
   };
 }
 
-function renderTextWithHighlight(text: string, evidenceText: string | undefined, markRef: RefObject<HTMLElement>) {
+function renderTextWithHighlight(
+  text: string,
+  evidenceText: string | undefined,
+  startIndex: number | undefined,
+  markRef: RefObject<HTMLElement>,
+) {
   if (!evidenceText) return text;
   if (evidenceText.length > MAX_EVIDENCE_HIGHLIGHT_CHARS) return text;
-  const index = text.indexOf(evidenceText);
+  const offsetMatches =
+    typeof startIndex === 'number' &&
+    startIndex >= 0 &&
+    text.slice(startIndex, startIndex + evidenceText.length) === evidenceText;
+  const index = offsetMatches ? startIndex : text.indexOf(evidenceText);
   if (index < 0) return text;
 
   return (
@@ -64,8 +74,8 @@ export function locateEvidence(
     const slice = rawText.slice(start, end);
     if (slice && slice === rawText.substring(start, end)) {
       const highlight = slice.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS ? slice : slice.slice(0, MAX_EVIDENCE_HIGHLIGHT_CHARS);
-      if (rawText.indexOf(highlight) >= 0) {
-        return { rawText, highlightText: highlight, startIndex: rawText.indexOf(highlight) };
+      if (rawText.slice(start, start + highlight.length) === highlight) {
+        return { rawText, highlightText: highlight, startIndex: start };
       }
     }
   }
@@ -93,7 +103,14 @@ export function ReviewSourcePanel({ text, sourceMessage }: ReviewSourcePanelProp
   return (
     <div className="review-source">
       {effectiveSourceMessage ? <p className={`review-source__message review-source__message--${effectiveSourceMessage.kind}`}>{effectiveSourceMessage.text}</p> : null}
-      <pre aria-label="合并 OCR 文本">{renderTextWithHighlight(text, effectiveSourceMessage?.evidenceText, markRef)}</pre>
+      <pre aria-label="合并 OCR 文本">
+        {renderTextWithHighlight(
+          text,
+          effectiveSourceMessage?.evidenceText,
+          effectiveSourceMessage?.startIndex,
+          markRef,
+        )}
+      </pre>
     </div>
   );
 }

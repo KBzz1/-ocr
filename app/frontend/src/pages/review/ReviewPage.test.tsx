@@ -156,6 +156,59 @@ function mockReviewRoutes() {
 }
 
 describe('ReviewPage', () => {
+  it('renders raw OCR text without stripping tags entities or blank lines', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            display_name: 'task_001',
+            status: 'review',
+            created_at: '2026-05-19T10:00:00+08:00',
+            page_count: 1,
+            processing_summary: { stage: 'done', status: 'completed', label: '处理完成', progress_percent: 100 },
+            review_summary: { confirmed_count: 0, total_count: 1 },
+          },
+        }),
+      ),
+      http.get('*/api/tasks', () => HttpResponse.json({ success: true, data: { tasks: [] } })),
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '<div>## 品后诊断&nbsp;</div>\n\n\n慢阻肺 &amp; 感染  ',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  parsed_text: '<div>## 品后诊断&nbsp;</div>\n\n\n慢阻肺 &amp; 感染  ',
+                },
+              ],
+              fields: [
+                {
+                  field_key: 'diagnosis_final',
+                  label: '最终诊断',
+                  value: '慢阻肺',
+                  status: 'unreviewed',
+                  evidence: [],
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    const ocrBox = await screen.findByLabelText('合并 OCR 文本');
+    expect(ocrBox.textContent).toBe('<div>## 品后诊断&nbsp;</div>\n\n\n慢阻肺 &amp; 感染  ');
+  });
+
   it('renders_schema_order_even_when_ocr_page_order_is_odd', async () => {
     server.use(
       http.get('*/api/tasks/task_001', () =>
@@ -298,7 +351,7 @@ describe('ReviewPage', () => {
     expect(screen.getByText('未保存修改')).toBeTruthy();
   });
 
-  it('shows cleaned merged OCR text by default in the review workspace', async () => {
+  it('shows raw merged OCR text by default in the review workspace', async () => {
     mockReviewRoutes();
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
@@ -340,9 +393,9 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText('字段校对');
-    expect(screen.getByText(/第一页文本/)).toBeTruthy();
-    expect(screen.getByText(/第二页文本/)).toBeTruthy();
-    expect(screen.queryByText(/text-align/)).toBeNull();
+    const ocrBox = screen.getByLabelText('合并 OCR 文本');
+    expect(ocrBox.textContent).toBe('<div style="text-align: center;">第一页文本</div><br><div>第二页文本</div>');
+    expect(ocrBox.textContent).toContain('text-align');
     expect(screen.queryByRole('button', { name: '当前页' })).toBeNull();
   });
 

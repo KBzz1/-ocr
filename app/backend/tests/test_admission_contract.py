@@ -177,6 +177,36 @@ def test_validate_qwen_payload_rejects_duplicate_field():
     assert exc_info.value.code == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
 
 
+def test_validate_qwen_payload_rejects_wrong_schema_version():
+    schema = _schema()
+    payload = _valid_payload()
+    payload["schema_version"] = "wrong.v1"
+
+    with pytest.raises(AppError) as exc_info:
+        validate_qwen_payload(payload, schema)
+    assert exc_info.value.code == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+
+
+def test_validate_qwen_payload_rejects_wrong_document_type():
+    schema = _schema()
+    payload = _valid_payload()
+    payload["document_type"] = "progress_note"
+
+    with pytest.raises(AppError) as exc_info:
+        validate_qwen_payload(payload, schema)
+    assert exc_info.value.code == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+
+
+def test_validate_qwen_payload_rejects_extra_top_level_key():
+    schema = _schema()
+    payload = _valid_payload()
+    payload["legacy_source_hint"] = "旧字段"
+
+    with pytest.raises(AppError) as exc_info:
+        validate_qwen_payload(payload, schema)
+    assert exc_info.value.code == ErrorCode.ALGORITHM_CONTRACT_INVALID.code
+
+
 def test_validate_qwen_payload_accepts_not_found_without_attention():
     schema = _schema()
     payload = _valid_payload()
