@@ -14,6 +14,9 @@ def _default_result(field_key: str) -> dict:
         "field_key": field_key,
         "original_value": "",
         "evidence": None,
+        # source_hint / source_text / source_group_id 是旧版抽取元数据,
+        # 新版 Qwen 固定字段契约(admission_contract)不再由算法输出;
+        # 此处仅保留默认占位供审核候选层向后兼容,不构成 Qwen 契约。
         "source_hint": None,
         "source_text": None,
         "source_group_id": None,

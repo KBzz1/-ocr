@@ -292,6 +292,33 @@ def test_unknown_evidence_id_becomes_attention_not_fake_highlight():
     assert "evidence_id_not_found" in temperature["quality_flags"]
 
 
+def test_found_with_evidence_unit_missing_offsets_becomes_attention_not_fake_offset():
+    """spec: 证据无法定位时不伪造高亮。evidence_unit 缺 start_offset/end_offset
+    时该 unit 视为不可定位(跳过),长度不匹配触发 unlocated 提示,
+    而不是默认 offset=0 让前端高亮到 merged_text 开头。
+    """
+    schema = _schema()
+    payload = _valid_payload()
+    # 单元有 id 和 text 但缺 offset(异常但可能出现的遗留/损坏单元)
+    units_missing_offsets = [
+        {
+            "id": "u001",
+            "text": "主诉：反复咳嗽、咳痰15年。",
+            "page_no": 1,
+            # 故意不提供 start_offset / end_offset
+        }
+    ]
+
+    candidates = map_qwen_fields_to_review_candidates(
+        payload, schema, units_missing_offsets
+    )
+    found = next(c for c in candidates if c["field_key"] == "chief_complaint")
+    assert found["attention_required"] is True
+    assert found["attention_message"] == "来源片段未在 OCR 文本中定位，请核对"
+    # 不得回填出带 offset 的伪造 evidence。
+    assert found["evidence"] == []
+
+
 def test_diagnosis_output_is_not_rewritten_by_adapter():
     schema = _schema()
     payload = _valid_payload()

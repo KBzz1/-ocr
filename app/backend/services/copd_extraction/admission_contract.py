@@ -364,11 +364,18 @@ def _resolve_evidence_ids(
         unit = index.get(eid)
         if not isinstance(unit, dict):
             continue
+        # spec: 证据无法定位时不伪造高亮。缺 offset 的 unit 视为不可定位,
+        # 直接跳过——调用方通过长度不匹配检测并触发 unlocated 提示,
+        # 而不是默认 offset=0 让前端高亮到文本开头。
+        start_offset = unit.get("start_offset")
+        end_offset = unit.get("end_offset")
+        if not isinstance(start_offset, int) or not isinstance(end_offset, int):
+            continue
         entry: dict = {
             "id": unit.get("id", eid),
             "text": unit.get("text", ""),
-            "start_offset": unit.get("start_offset", 0),
-            "end_offset": unit.get("end_offset", 0),
+            "start_offset": start_offset,
+            "end_offset": end_offset,
         }
         if "page_no" in unit and unit["page_no"] is not None:
             entry["page_no"] = unit["page_no"]

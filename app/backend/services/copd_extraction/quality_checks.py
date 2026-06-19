@@ -1,4 +1,11 @@
-"""薄规则质量核验 —— 只输出 quality_flags，不自动纠错、不抽取字段、不导致任务失败。"""
+"""薄规则质量核验 —— 只输出 quality_flags，不自动纠错、不抽取字段、不导致任务失败。
+
+当前状态：固定字段 Qwen 抽取路径（admission_contract）自行生成内部 quality_flags，
+不再调用本模块的 apply_quality_checks；本模块仅由 test_copd_quality_checks.py
+直接单测覆盖。保留为可复用的薄规则库，供后续质控层按需接入；删除旧版
+COPDFieldExtractor 后它已不在活动处理路径上。spec 允许旧版 quality_flags 中有
+价值的能力保留为医生可读 risk，不要求随 Qwen 契约一起删除。
+"""
 
 import copy
 import re

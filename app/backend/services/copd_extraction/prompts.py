@@ -1,10 +1,5 @@
 import json
 
-# 兼容别名：旧版 COPD_EXTRACTION_PROMPT_VERSION 由 app/backend/__init__.py
-# 引用以构造 DocumentProfile.prompt_version；活动路径已切到
-# ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION，这里保留旧常量避免 __init__.py
-# 报错。删除 __init__.py 的旧引用后即可同步删除本常量。
-COPD_EXTRACTION_PROMPT_VERSION = "copd_extraction_prompt.v1"
 ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION = "admission_record_structured_fields_prompt.v1"
 
 _OCR_RISK_WARNINGS = (

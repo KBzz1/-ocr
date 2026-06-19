@@ -175,7 +175,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         from .services.copd_extraction.port import build_default_copd_field_port
         field_port = build_default_copd_field_port(config, schema_service.get_field_order)
 
-    from .services.copd_extraction.prompts import COPD_EXTRACTION_PROMPT_VERSION
+    from .services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
     from .services.document_profiles import DocumentProfile, DocumentProfileRegistry
 
     document_profile_registry = DocumentProfileRegistry(
@@ -185,7 +185,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
                 document_type="copd_admission_record",
                 label="入院记录",
                 schema=schema_service.get_current(),
-                prompt_version=COPD_EXTRACTION_PROMPT_VERSION,
+                prompt_version=ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
                 field_port=field_port,
                 quality_rule_profile="copd_admission_record",
             )
@@ -269,7 +269,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         schema_provider=schema_service.get_current,
     )
 
-    from .services.copd_extraction.prompts import COPD_EXTRACTION_PROMPT_VERSION
+    from .services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
     from .services.reextract_jobs import ReextractJobRegistry
     from .services.reextraction_service import ReextractionService
 
@@ -282,7 +282,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         field_port=field_port,
         schema_provider=schema_service.get_current,
         schema_validator=schema_service.build_validator(),
-        prompt_version_provider=lambda: COPD_EXTRACTION_PROMPT_VERSION,
+        prompt_version_provider=lambda: ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
         document_profiles=document_profile_registry,
     )
 

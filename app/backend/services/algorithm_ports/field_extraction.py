@@ -90,6 +90,9 @@ def validate_field_candidates(candidates: list) -> None:
         if source_section is not None and not isinstance(source_section, str):
             logger.error("field=%s source_section type=%s value=%s", fk, type(source_section).__name__, repr(source_section))
             raise AppError(ErrorCode.ALGORITHM_CONTRACT_INVALID, message=f"field_key={fk}: source_section 必须是字符串或 None，实际为 {type(source_section).__name__}")
+        # source_hint / source_text / source_group_id 是旧版抽取元数据,
+        # 新版 Qwen 固定字段契约(admission_contract)不再由算法输出它们;
+        # 这里仅作审核候选层透传的类型守卫,保留向后兼容,不构成 Qwen 契约。
         source_hint = item.get("source_hint")
         if source_hint is not None and not isinstance(source_hint, str):
             logger.error("field=%s source_hint type=%s value=%s", fk, type(source_hint).__name__, repr(source_hint))
