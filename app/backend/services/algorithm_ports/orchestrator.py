@@ -162,6 +162,13 @@ class ProcessingOrchestrator:
                     return doc_validation_failed
                 pages = doc_result["pages"]
                 has_failure = any(p.get("status") == "failed" for p in pages)
+                if not _has_successful_ocr_text(doc_result):
+                    return task_service.mark_failed(
+                        task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                        "所有页面 OCR 文本为空",
+                        stage="document_parsing",
+                        details={"stage": "document_parsing", "reason": "all_pages_empty"},
+                    )
                 evidence_units = build_evidence_units(doc_result)
                 self._result_store.write_document_result(
                     task_id,
@@ -171,13 +178,6 @@ class ProcessingOrchestrator:
                     evidence_units=evidence_units,
                 )
                 doc_result["evidence_units"] = evidence_units
-                if has_failure:
-                    return task_service.mark_failed(
-                        task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
-                        "部分页面解析失败",
-                        stage="document_parsing",
-                        details={"stage": "document_parsing", "reason": "partial_page_failed"},
-                    )
                 # 字段抽取在同一 GPU 阶段内继续执行：保持连续持有
                 self._stage_started(task_service, task_id, "field_extraction", len(pages))
                 field_result = self._run_field_extraction_in_stage(
@@ -449,3 +449,14 @@ class _NoopContext:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+def _has_successful_ocr_text(doc_result: dict) -> bool:
+    merged_text = doc_result.get("merged_text")
+    if isinstance(merged_text, str) and merged_text.strip():
+        return True
+    pages = doc_result.get("pages") or []
+    for page in pages:
+        if page.get("status") == "success" and isinstance(page.get("text"), str) and page["text"].strip():
+            return True
+    return False

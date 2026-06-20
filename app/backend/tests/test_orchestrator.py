@@ -213,6 +213,79 @@ def test_orchestrator_reuses_successful_document_result_on_retry(tmp_path):
     assert field_port.seen_text == "主诉：咳嗽"
 
 
+def test_orchestrator_reuses_partial_document_result_with_success_text_on_retry(tmp_path):
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
+    store = JsonStore(str(tmp_path))
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "partial_failure",
+            "pages": [
+                {"page_id": "page_001", "page_no": 1, "status": "failed", "text": ""},
+                {"page_id": "page_002", "page_no": 2, "status": "success", "text": "主诉：咳嗽"},
+            ],
+            "merged_text": "主诉：咳嗽",
+        },
+    )
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        called = False
+
+        def parse(self, input):
+            self.called = True
+            raise AssertionError("document parser should not rerun for reusable partial OCR")
+
+    class FieldPort:
+        def __init__(self):
+            self.seen_text = None
+
+        def extract(self, input):
+            self.seen_text = input["document_result"]["merged_text"]
+            return _build_full_qwen_candidates_with_statuses({"chief_complaint": "found"})
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+    doc_port = DocPort()
+    field_port = FieldPort()
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=doc_port,
+        field_port=field_port,
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "images": [{"page_id": "page_001", "page_no": 1, "original_image_path": str(source)}],
+        },
+        TaskService(),
+        schema={"fields": [{"field_key": "chief_complaint"}]},
+    )
+
+    assert result["status"] == "review"
+    assert doc_port.called is False
+    assert field_port.seen_text == "主诉：咳嗽"
+
+
 def test_orchestrator_uses_document_type_specific_field_port(tmp_path):
     class PassingImagePort:
         def process(self, input):
@@ -402,6 +475,78 @@ def test_orchestrator_passes_evidence_units_to_field_port_and_persists_them(tmp_
     assert isinstance(persisted_units, list) and persisted_units
     # same IDs must round-trip between the port input and the persisted store
     assert {u["id"] for u in persisted_units} == {u["id"] for u in evidence_units}
+
+
+def test_orchestrator_continues_field_extraction_when_some_ocr_pages_failed(tmp_path):
+    """部分 OCR 页为空时保留 failed 页记录，但只要有成功页就继续进入审核。"""
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        def parse(self, input):
+            return {
+                "pages": [
+                    {"page_id": "p1", "page_no": 1, "status": "failed", "text": ""},
+                    {"page_id": "p2", "page_no": 2, "status": "success", "text": "主诉：咳嗽"},
+                ],
+                "merged_text": "主诉：咳嗽",
+            }
+
+    class FieldPort:
+        def __init__(self):
+            self.inputs = []
+
+        def extract(self, input):
+            self.inputs.append(input)
+            return _build_full_qwen_candidates_with_statuses({"chief_complaint": "found"})
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("partial OCR page failures should not fail the task")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    source1 = tmp_path / "p1.jpg"
+    source2 = tmp_path / "p2.jpg"
+    source1.write_text("image1", encoding="utf-8")
+    source2.write_text("image2", encoding="utf-8")
+    store = JsonStore(str(tmp_path))
+    field_port = FieldPort()
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=DocPort(),
+        field_port=field_port,
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "images": [
+                {"page_id": "p1", "page_no": 1, "original_image_path": str(source1)},
+                {"page_id": "p2", "page_no": 2, "original_image_path": str(source2)},
+            ],
+        },
+        TaskService(),
+        schema={"fields": [{"field_key": "chief_complaint"}]},
+    )
+
+    assert result["status"] == "review"
+    assert field_port.inputs, "field extraction should run with the successful OCR text"
+    assert field_port.inputs[0]["document_result"]["merged_text"] == "主诉：咳嗽"
+    persisted = store.read("results/task_001/document_result.json")
+    assert [page["status"] for page in persisted["pages"]] == ["failed", "success"]
 
 
 def test_orchestrator_holds_single_gpu_stage_across_ocr_and_field_extraction(tmp_path):

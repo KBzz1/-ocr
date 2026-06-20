@@ -34,17 +34,22 @@ class AlgorithmResultStore:
 
     def read_success_document_result(self, task_id: str) -> dict | None:
         result = self._store.read(f"results/{task_id}/document_result.json")
-        if not isinstance(result, dict) or result.get("status") != "success":
+        if not isinstance(result, dict) or result.get("status") not in {"success", "partial_failure"}:
             return None
         pages = result.get("pages")
         if not isinstance(pages, list) or not pages:
+            return None
+        merged_text = result.get("merged_text", "")
+        if result.get("status") == "partial_failure" and not (
+            isinstance(merged_text, str) and merged_text.strip()
+        ):
             return None
         evidence_units = result.get("evidence_units")
         if not isinstance(evidence_units, list):
             evidence_units = []
         return {
             "pages": pages,
-            "merged_text": result.get("merged_text", ""),
+            "merged_text": merged_text,
             "evidence_units": evidence_units,
         }
 
