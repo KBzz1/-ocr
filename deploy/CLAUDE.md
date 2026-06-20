@@ -7,13 +7,13 @@
 ## 子目录职责
 
 - `windows/`：Windows 离线部署包的用户可见层。最终用户在目标电脑运行 `00_import_image.bat`（导入镜像）、`01_start.bat`（启动）、`02_stop.bat`（停止）、`03_logs.bat`（看日志）。`README_DEPLOY.txt` 是给最终用户看的，**不要**把它跟本目录 agent 文件合并或改造为面向用户的入口。
-- `offline-images/`：正式离线 Docker 镜像 tar 缓存。固定 digest 的 `paddleocr-vlm-server.tar` 同时被本地启动和离线打包复用。**只放**正式离线部署资源；不放临时验证脚本、样本图片、OCR 输出、运行日志。
+- `offline-images/`：正式离线 Docker 镜像 tar 缓存。固定 digest 的 `qwen-vllm-server.tar` 与 `manzufei-ocr.tar` 同时被本地启动和离线打包复用。**只放**正式离线部署资源；不放临时验证脚本、样本图片、OCR 输出、运行日志。
 
 ## 打包与镜像约束
 
 - 离线包必须**不包含** AGENTS.md、CLAUDE.md、`.git`、开发文档、tests、frontend 源码、`node_modules`、运行时缓存数据；详见 `deploy/windows/README_DEPLOY.txt:33-34`。
-- 正式镜像必须**固定 digest**：`paddleocr-vlm-server` 离线 tar 锚定 `sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621`（见 `docs/部署/GPU-Docker部署.md:27`）。不要在没改 PRD/共享契约前随便换 PaddleOCR / LLM 镜像版本。
-- 镜像构建必须把 `llama-cpp-python==0.3.22` 编译为 CUDA wheel 且 `llama_cpp/lib` 含 `libggml-cuda.so`；CPU-only wheel 在宿主机上会触发 AVX-512 `Illegal instruction`。详细根因和构建参数见 `docs/部署/GPU-Docker部署.md:29-35`。
+- 正式镜像必须**固定 digest**：`qwen-vllm-server`（基于 `vllm/vllm-openai` 加载 `Qwen3.5-4B-AWQ-4bit`）与 `manzufei-ocr` 镜像的离线 tar 必须由 QA 在交付前锚定到具体 digest 并通过 `OFFLINE_IMAGE_DIR` 路径使用；不要在没改 PRD/共享契约前随便换 Qwen vLLM 镜像版本。
+- 默认后端镜像不再为 `llama.cpp/GGUF` 编译 CUDA wheel，也不依赖 `paddleocr` / `paddlex` 容器；OCR 与固定字段抽取都由本地 `qwen-vision-vllm-server` 统一提供。
 - 现场不压缩 zip 的覆盖同步只能改 `images/manzufei-ocr.tar`、`docker-compose.yml`、`app/config/local.yaml` 和 Windows 启停脚本；同步后必须按 `02_stop.bat` → `00_import_image.bat` → `01_start.bat` 顺序走一遍，避免 Docker Desktop 加载旧容器（见 `docs/部署/GPU-Docker部署.md:47`）。
 - `data/`、`exports/`、`logs/` 是运行产物位置，`models/` 是模型权重目录，**不要**在打包脚本里硬编码本机路径或把它们打进镜像。
 - 验收环境与 GPU 行为不一致时，优先比较 `logs/backend-events.jsonl`、服务 URL、容器内 Python 包版本、镜像创建时间、实际挂载的部署目录，不要直接假设是参数问题（见 `docs/部署/GPU-Docker部署.md:45`）。

@@ -140,3 +140,48 @@ def test_legacy_section_splitter_module_removed():
     assert not splitter_path.exists(), (
         f"旧 section_splitter.py 仍存在: {splitter_path}；Task 11 要求删除。"
     )
+
+
+def test_default_runtime_docs_do_not_claim_paddleocr_or_llamacpp_are_required():
+    """默认运行时文档必须不再把 PaddleOCR VLM 离线 tar digest 或 llama.cpp CUDA 编译列为默认要求。"""
+    paths = [
+        REPO_ROOT / "docs" / "部署" / "GPU-Docker部署.md",
+        REPO_ROOT / "docs" / "Backend" / "Backend_TDD" / "02-algorithm-ports.md",
+        REPO_ROOT / "deploy" / "CLAUDE.md",
+        REPO_ROOT / "deploy" / "AGENTS.md",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
+    assert "paddleocr-vlm-server.tar" not in combined
+    assert "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621" not in combined
+    assert "必须把 `llama-cpp-python==0.3.22` 编译为 CUDA wheel" not in combined
+
+
+def test_dockerfile_does_not_compile_llama_cpp_for_default_runtime():
+    """默认后端镜像不再为 llama.cpp/GGUF 编译 CUDA wheel。"""
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "llama-cpp-python==0.3.22" not in dockerfile
+    assert "GGML_CUDA=on" not in dockerfile
+    # paddlepaddle-gpu 也不再是默认运行依赖
+    assert "paddlepaddle-gpu" not in dockerfile
+    # 默认镜像不再为 PaddleOCR/PaddleX 拉取
+    requirements = (REPO_ROOT / "requirements.docker.txt").read_text(encoding="utf-8")
+    assert "paddleocr==" not in requirements
+    assert "paddlex[ocr]==" not in requirements
+
+
+def test_no_active_default_code_path_imports_paddleocr_vlm_server_port():
+    """默认装配路径不再 import `PaddleOCRVLMServerDocumentPort` 作为 OCR 端口。"""
+    init_text = (REPO_ROOT / "app" / "backend" / "__init__.py").read_text(encoding="utf-8")
+    assert "PaddleOCRVLMServerDocumentPort" not in init_text
+    # 默认 OCR 端口必须是 Qwen Vision vLLM
+    assert "QwenVisionVLLMDocumentPort" in init_text
+
+
+def test_no_active_default_code_path_calls_build_llama_cpp_client():
+    """默认装配路径不再调用 `build_llama_cpp_client` 冷启动本地 GGUF。"""
+    init_text = (REPO_ROOT / "app" / "backend" / "__init__.py").read_text(encoding="utf-8")
+    port_text = (
+        REPO_ROOT / "app" / "backend" / "services" / "copd_extraction" / "port.py"
+    ).read_text(encoding="utf-8")
+    assert "build_llama_cpp_client" not in init_text
+    assert "build_llama_cpp_client" not in port_text

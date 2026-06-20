@@ -416,31 +416,6 @@ def test_docker_start_bat_uses_ascii_and_crlf_for_cmd_compatibility():
     assert b"\n" not in content.replace(b"\r\n", b"")
 
 
-def test_docker_requirements_include_paddlex_ocr_extra_for_paddleocr_vl():
-    """PaddleOCR-VL pipeline requires the paddlex[ocr] extra, not only ocr-core."""
-    content = open("requirements.docker.txt", encoding="utf-8").read()
-
-    assert "paddlex[ocr]==3.5.2" in content
-
-
-def test_docker_build_compiles_llama_cpp_with_cuda():
-    """LLM extraction must offload to GPU in the Windows Docker package."""
-    dockerfile = open("Dockerfile", encoding="utf-8").read()
-    compose_content = open("docker-compose.yml", encoding="utf-8").read()
-    requirements = open("requirements.docker.txt", encoding="utf-8").read()
-    start_content = open("deploy/windows/01_start.bat", encoding="ascii").read()
-
-    assert "llama-cpp-python" not in requirements
-    assert "FROM nvidia/cuda:12.6.3-devel-ubuntu24.04" in dockerfile
-    assert "python3-dev" in dockerfile
-    assert "GGML_CUDA=on" in dockerfile
-    assert "CMAKE_CUDA_ARCHITECTURES=89" in dockerfile
-    assert "rpath-link,/usr/local/cuda/compat" in dockerfile
-    assert "--no-binary llama-cpp-python llama-cpp-python==0.3.22" in dockerfile
-    assert "gpus: all" in compose_content
-    assert "libggml" in start_content
-
-
 def test_run_bat_uses_ascii_output_to_avoid_cmd_codepage_mojibake():
     """Docker Windows start script 不依赖中文输出，避免 CMD 代码页不匹配时乱码成错误命令。"""
     content = open("deploy/windows/01_start.bat", encoding="utf-8").read()
@@ -534,14 +509,17 @@ def test_wsl_stop_script_stops_backend_and_frontend_pids():
     assert "cmd.exe" not in content
 
 
-def test_docker_requirements_match_vlm_server_client_combo():
-    """requirements.docker.txt 锁定 paddleocr 3.5.0 + paddlex[ocr] 3.5.2，匹配 vllm-server 客户端契约。"""
+def test_docker_requirements_match_qwen_vllm_client_combo():
+    """requirements.docker.txt 锁定 openai SDK + Flask + PyYAML，作为后端 Qwen vLLM 客户端契约。"""
     content = open("requirements.docker.txt", encoding="utf-8").read()
 
     lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
-    assert "paddleocr==3.5.0" in lines
-    assert "paddlex[ocr]==3.5.2" in lines
-    # 不应在 docker 镜像里编译 llama-cpp-python（C++ 编译属于本机 LLM 路径）
+    assert "Flask==3.1.3" in lines
+    assert "PyYAML==6.0.2" in lines
+    assert "openai>=1.0,<2.0" in lines
+    # 不应在 docker 镜像里出现旧 PaddleOCR/paddlex 或编译 llama-cpp-python
+    assert "paddleocr" not in content
+    assert "paddlex" not in content
     assert "llama-cpp-python" not in content
 
 
