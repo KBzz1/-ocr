@@ -55,6 +55,115 @@ class TestSanitizeLogPayload:
 
 
 class TestLocalEventLog:
+    def test_writes_qwen_vllm_ocr_events_without_text_or_base64(self, tmp_path):
+        """`backend=qwen_vision_vllm` 的 ocr_vlm_started/finished 事件必须仅含诊断字段，不含 OCR 文本或 base64。"""
+        log = LocalEventLog(str(tmp_path))
+        log.write(
+            "ocr_vlm_started",
+            task_id="task-001",
+            backend="qwen_vision_vllm",
+            server_url="http://qwen-vision-vllm-server:8000/v1",
+            model="Qwen3.5-4B-AWQ-4bit",
+            page_count=3,
+            timeout_seconds=240,
+            temperature=0.0,
+            max_tokens=4096,
+            top_p=1.0,
+            input_files=[
+                {"page_id": "p1", "page_no": 1, "filename": "p1.jpg", "bytes": 1024, "exists": True},
+            ],
+        )
+        log.write(
+            "ocr_vlm_finished",
+            task_id="task-001",
+            backend="qwen_vision_vllm",
+            elapsed_ms=1234,
+            exit_code=0,
+            output_exists=True,
+            output_bytes=2048,
+            failed_page_count=0,
+        )
+
+        records = read_jsonl(log.current_path)
+        started, finished = records[0], records[1]
+        assert started["backend"] == "qwen_vision_vllm"
+        assert started["server_url"] == "http://qwen-vision-vllm-server:8000/v1"
+        assert started["model"] == "Qwen3.5-4B-AWQ-4bit"
+        assert started["page_count"] == 3
+        assert started["timeout_seconds"] == 240
+        assert started["temperature"] == 0.0
+        assert started["max_tokens"] == 4096
+        assert started["top_p"] == 1.0
+        # 隐私：不得包含 OCR 文本或图片 base64
+        assert "ocr_text" not in started
+        assert "merged_text" not in started
+        assert "image_base64" not in started
+        assert finished["failed_page_count"] == 0
+        assert "elapsed_ms" in finished
+
+    def test_writes_qwen_vllm_extraction_events_without_prompt_or_output(self, tmp_path):
+        """新增 llm_extraction_started/finished 事件仅含诊断字段，不含 prompt 或模型输出。"""
+        log = LocalEventLog(str(tmp_path))
+        log.write(
+            "llm_extraction_started",
+            task_id="task-001",
+            backend="qwen_vision_vllm",
+            server_url="http://qwen-vision-vllm-server:8000/v1",
+            model="Qwen3.5-4B-AWQ-4bit",
+            schema_version="admission_record_structured_fields.v1",
+            field_count=61,
+            evidence_unit_count=12,
+            timeout_seconds=360,
+            temperature=0.0,
+            max_tokens=8192,
+        )
+        log.write(
+            "llm_extraction_finished",
+            task_id="task-001",
+            backend="qwen_vision_vllm",
+            schema_version="admission_record_structured_fields.v1",
+            field_count=61,
+            elapsed_ms=5678,
+            exit_code=0,
+        )
+
+        records = read_jsonl(log.current_path)
+        started, finished = records[0], records[1]
+        assert started["backend"] == "qwen_vision_vllm"
+        assert started["schema_version"] == "admission_record_structured_fields.v1"
+        assert started["field_count"] == 61
+        assert started["evidence_unit_count"] == 12
+        for forbidden in ("prompt", "model_output", "evidence", "image_base64", "patient_name"):
+            assert forbidden not in started
+            assert forbidden not in finished
+        assert finished["elapsed_ms"] == 5678
+        assert finished["exit_code"] == 0
+
+    def test_qwen_ocr_event_drops_disallowed_keys_via_allowlist(self, tmp_path):
+        """allowlist 是权威：尝试传入敏感键不会写盘。"""
+        log = LocalEventLog(str(tmp_path))
+        log.write(
+            "ocr_vlm_started",
+            task_id="task-001",
+            backend="qwen_vision_vllm",
+            server_url="http://qwen-vision-vllm-server:8000/v1",
+            model="Qwen3.5-4B-AWQ-4bit",
+            page_count=1,
+            timeout_seconds=240,
+            temperature=0.0,
+            max_tokens=4096,
+            top_p=1.0,
+            input_files=[],
+            ocr_text="完整OCR文本",
+            image_base64="data:image/jpeg;base64," + "A" * 100,
+            patient_name="张三",
+        )
+
+        record = read_jsonl(log.current_path)[0]
+        assert "ocr_text" not in record
+        assert "image_base64" not in record
+        assert "patient_name" not in record
+
     def test_writes_single_json_line_with_required_fields(self, tmp_path):
         log = LocalEventLog(str(tmp_path))
 
