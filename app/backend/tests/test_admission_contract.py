@@ -263,6 +263,25 @@ def test_validate_qwen_payload_maps_found_with_evidence_array():
     assert evidence["page_no"] == 1
 
 
+def test_map_qwen_fields_returns_review_candidate_contract_shape():
+    from app.backend.services.algorithm_ports.field_extraction import (
+        validate_field_candidates,
+    )
+
+    candidates = map_qwen_fields_to_review_candidates(
+        _valid_payload(), _schema(), _evidence_units()
+    )
+
+    chief_complaint = next(c for c in candidates if c["field_key"] == "chief_complaint")
+    assert chief_complaint["ocr_correction"] == {
+        "applied": False,
+        "raw": "",
+        "normalized": "",
+        "reason": "",
+    }
+    validate_field_candidates(candidates)
+
+
 # ---------------------------------------------------------------------------
 # map_qwen_fields_to_review_candidates: per-field attention rules
 # ---------------------------------------------------------------------------

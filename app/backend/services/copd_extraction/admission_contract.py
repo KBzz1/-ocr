@@ -366,6 +366,12 @@ def _build_candidates(
             "attention_required": attention_required,
             "attention_message": attention_message,
             "quality_flags": quality_flags,
+            "ocr_correction": {
+                "applied": False,
+                "raw": "",
+                "normalized": "",
+                "reason": "",
+            },
         })
 
     return candidates
