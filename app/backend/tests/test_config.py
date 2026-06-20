@@ -424,3 +424,59 @@ def test_vlm_backend_config_does_not_default_to_30000_context():
     assert isinstance(max_model_len, int), f"vlm_backend_config.yaml max_model_len 必须为整数，当前: {max_model_len!r}"
     assert max_model_len <= 8192, f"max_model_len 超过 8GB 显卡安全上限: {max_model_len}"
     assert max_model_len != 30000, "max_model_len 不得默认 30000，会撑爆 8GB 显卡 KV cache"
+
+
+def test_load_config_supports_shared_qwen_vllm_settings(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        """
+algorithms:
+  enable_local_ocr: true
+  enable_copd_extractor: true
+  qwen_vllm_server_url: http://qwen-vision-vllm-server:8000/v1
+  qwen_vllm_model_name: Qwen3.5-4B-AWQ-4bit
+  qwen_vllm_model_dir: ./models/llm/Qwen3.5-4B-AWQ-4bit
+  qwen_vllm_max_model_len: 16384
+  qwen_vllm_gpu_memory_utilization: 0.85
+  qwen_vllm_max_num_seqs: 1
+  qwen_ocr_temperature: 0.0
+  qwen_ocr_max_tokens: 4096
+  qwen_ocr_timeout_seconds: 240
+  qwen_extraction_temperature: 0.0
+  qwen_extraction_max_tokens: 8192
+  qwen_extraction_timeout_seconds: 360
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_dir))
+
+    assert config["qwen_vllm_server_url"] == "http://qwen-vision-vllm-server:8000/v1"
+    assert config["qwen_vllm_model_name"] == "Qwen3.5-4B-AWQ-4bit"
+    assert config["qwen_vllm_model_dir"].endswith("models/llm/Qwen3.5-4B-AWQ-4bit")
+    assert config["qwen_vllm_max_model_len"] == 16384
+    assert config["qwen_vllm_gpu_memory_utilization"] == 0.85
+    assert config["qwen_vllm_max_num_seqs"] == 1
+    assert config["qwen_ocr_temperature"] == 0.0
+    assert config["qwen_ocr_max_tokens"] == 4096
+    assert config["qwen_ocr_timeout_seconds"] == 240
+    assert config["qwen_extraction_temperature"] == 0.0
+    assert config["qwen_extraction_max_tokens"] == 8192
+    assert config["qwen_extraction_timeout_seconds"] == 360
+
+
+def test_qwen_vllm_max_model_len_rejects_30000_for_8gb_default(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        "algorithms:\n  qwen_vllm_max_model_len: 30000\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="qwen_vllm_max_model_len"):
+        load_config(str(config_dir))

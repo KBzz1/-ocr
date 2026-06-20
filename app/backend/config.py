@@ -40,6 +40,18 @@ DEFAULT_CONFIG = {
     "local_ocr_vlm_server_url": "http://paddleocr-vlm-server:8080/v1",
     "local_ocr_vlm_timeout_seconds": 240,
     "local_ocr_temperature": 0.0,
+    "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+    "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+    "qwen_vllm_model_dir": "./models/llm/Qwen3.5-4B-AWQ-4bit",
+    "qwen_vllm_max_model_len": 16384,
+    "qwen_vllm_gpu_memory_utilization": 0.85,
+    "qwen_vllm_max_num_seqs": 1,
+    "qwen_ocr_temperature": 0.0,
+    "qwen_ocr_max_tokens": 4096,
+    "qwen_ocr_timeout_seconds": 240,
+    "qwen_extraction_temperature": 0.0,
+    "qwen_extraction_max_tokens": 8192,
+    "qwen_extraction_timeout_seconds": 360,
     "gpu_stage_queue_enabled": True,
 }
 
@@ -120,6 +132,30 @@ def _flatten_config(raw: dict) -> dict:
         flattened["local_ocr_vlm_timeout_seconds"] = algorithms_config["local_ocr_vlm_timeout_seconds"]
     if "local_ocr_temperature" in algorithms_config:
         flattened["local_ocr_temperature"] = algorithms_config["local_ocr_temperature"]
+    if "qwen_vllm_server_url" in algorithms_config:
+        flattened["qwen_vllm_server_url"] = algorithms_config["qwen_vllm_server_url"]
+    if "qwen_vllm_model_name" in algorithms_config:
+        flattened["qwen_vllm_model_name"] = algorithms_config["qwen_vllm_model_name"]
+    if "qwen_vllm_model_dir" in algorithms_config:
+        flattened["qwen_vllm_model_dir"] = algorithms_config["qwen_vllm_model_dir"]
+    if "qwen_vllm_max_model_len" in algorithms_config:
+        flattened["qwen_vllm_max_model_len"] = algorithms_config["qwen_vllm_max_model_len"]
+    if "qwen_vllm_gpu_memory_utilization" in algorithms_config:
+        flattened["qwen_vllm_gpu_memory_utilization"] = algorithms_config["qwen_vllm_gpu_memory_utilization"]
+    if "qwen_vllm_max_num_seqs" in algorithms_config:
+        flattened["qwen_vllm_max_num_seqs"] = algorithms_config["qwen_vllm_max_num_seqs"]
+    if "qwen_ocr_temperature" in algorithms_config:
+        flattened["qwen_ocr_temperature"] = algorithms_config["qwen_ocr_temperature"]
+    if "qwen_ocr_max_tokens" in algorithms_config:
+        flattened["qwen_ocr_max_tokens"] = algorithms_config["qwen_ocr_max_tokens"]
+    if "qwen_ocr_timeout_seconds" in algorithms_config:
+        flattened["qwen_ocr_timeout_seconds"] = algorithms_config["qwen_ocr_timeout_seconds"]
+    if "qwen_extraction_temperature" in algorithms_config:
+        flattened["qwen_extraction_temperature"] = algorithms_config["qwen_extraction_temperature"]
+    if "qwen_extraction_max_tokens" in algorithms_config:
+        flattened["qwen_extraction_max_tokens"] = algorithms_config["qwen_extraction_max_tokens"]
+    if "qwen_extraction_timeout_seconds" in algorithms_config:
+        flattened["qwen_extraction_timeout_seconds"] = algorithms_config["qwen_extraction_timeout_seconds"]
     if "gpu_stage_queue_enabled" in algorithms_config:
         flattened["gpu_stage_queue_enabled"] = algorithms_config["gpu_stage_queue_enabled"]
 
@@ -136,6 +172,7 @@ def _normalize_paths(config: dict) -> dict:
         "export_dir",
         "static_dir",
         "llm_model_path",
+        "qwen_vllm_model_dir",
     ):
         path = config.get(key)
         if path and not os.path.isabs(path):
@@ -226,6 +263,95 @@ def _validate_config(config: dict):
         raise ValueError(f"llm_extraction_batch_size 必须为正整数，当前值: {extraction_batch_size}")
     if not isinstance(config.get("llm_enable_verification"), bool):
         raise ValueError(f"llm_enable_verification 必须为布尔值，当前值: {config.get('llm_enable_verification')}")
+
+    # --- Qwen Vision vLLM 共享配置（OCR + 固定字段抽取共用） ---
+    qwen_vllm_server_url = config.get("qwen_vllm_server_url")
+    parsed_qwen_vllm_server_url = (
+        urlparse(qwen_vllm_server_url) if isinstance(qwen_vllm_server_url, str) else None
+    )
+    if (
+        not isinstance(qwen_vllm_server_url, str)
+        or parsed_qwen_vllm_server_url is None
+        or parsed_qwen_vllm_server_url.scheme not in {"http", "https"}
+        or not parsed_qwen_vllm_server_url.hostname
+        or any(char.isspace() for char in qwen_vllm_server_url)
+    ):
+        raise ValueError(
+            f"qwen_vllm_server_url 必须是 http(s) URL，当前值: {qwen_vllm_server_url}"
+        )
+
+    qwen_vllm_model_name = config.get("qwen_vllm_model_name")
+    if not isinstance(qwen_vllm_model_name, str) or not qwen_vllm_model_name.strip():
+        raise ValueError(
+            f"qwen_vllm_model_name 必须为非空字符串，当前值: {qwen_vllm_model_name}"
+        )
+
+    qwen_vllm_model_dir = config.get("qwen_vllm_model_dir")
+    if not isinstance(qwen_vllm_model_dir, str) or not qwen_vllm_model_dir.strip():
+        raise ValueError(
+            f"qwen_vllm_model_dir 必须为非空字符串，当前值: {qwen_vllm_model_dir}"
+        )
+
+    qwen_vllm_max_model_len = config.get("qwen_vllm_max_model_len")
+    if (
+        not isinstance(qwen_vllm_max_model_len, int)
+        or isinstance(qwen_vllm_max_model_len, bool)
+        or qwen_vllm_max_model_len <= 0
+    ):
+        raise ValueError(
+            f"qwen_vllm_max_model_len 必须为正整数，当前值: {qwen_vllm_max_model_len}"
+        )
+    if qwen_vllm_max_model_len >= 30000:
+        raise ValueError(
+            f"qwen_vllm_max_model_len 不得默认 30000，会撑爆 8GB 显卡 KV cache，当前值: {qwen_vllm_max_model_len}"
+        )
+
+    qwen_vllm_gpu_memory_utilization = config.get("qwen_vllm_gpu_memory_utilization")
+    if (
+        not isinstance(qwen_vllm_gpu_memory_utilization, (int, float))
+        or isinstance(qwen_vllm_gpu_memory_utilization, bool)
+        or not (0 < qwen_vllm_gpu_memory_utilization <= 0.95)
+    ):
+        raise ValueError(
+            f"qwen_vllm_gpu_memory_utilization 必须在 (0, 0.95] 区间内，当前值: {qwen_vllm_gpu_memory_utilization}"
+        )
+
+    qwen_vllm_max_num_seqs = config.get("qwen_vllm_max_num_seqs")
+    if (
+        not isinstance(qwen_vllm_max_num_seqs, int)
+        or isinstance(qwen_vllm_max_num_seqs, bool)
+        or qwen_vllm_max_num_seqs <= 0
+    ):
+        raise ValueError(
+            f"qwen_vllm_max_num_seqs 必须为正整数，当前值: {qwen_vllm_max_num_seqs}"
+        )
+
+    for temperature_key in ("qwen_ocr_temperature", "qwen_extraction_temperature"):
+        temperature_value = config.get(temperature_key)
+        if (
+            not isinstance(temperature_value, (int, float))
+            or isinstance(temperature_value, bool)
+            or not (0 <= temperature_value <= 2)
+        ):
+            raise ValueError(
+                f"{temperature_key} 必须是 [0, 2] 区间内的数字，当前值: {temperature_value}"
+            )
+
+    for positive_int_key in (
+        "qwen_ocr_max_tokens",
+        "qwen_ocr_timeout_seconds",
+        "qwen_extraction_max_tokens",
+        "qwen_extraction_timeout_seconds",
+    ):
+        value = config.get(positive_int_key)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+        ):
+            raise ValueError(
+                f"{positive_int_key} 必须为正整数，当前值: {value}"
+            )
 
 
 def load_config(config_dir: str | None = None) -> dict:

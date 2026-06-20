@@ -633,3 +633,9 @@ def test_archive_logs_script_moves_runtime_logs_to_local_archive():
     assert "backend-events.jsonl" in content
     assert "backend.pid" in content
     assert "frontend.pid" in content
+
+
+def test_python_requirements_include_openai_sdk_for_local_vllm():
+    """默认 OCR + 固定字段抽取都通过 OpenAI Python SDK 调本地 vLLM，requirements 必须显式声明。"""
+    assert "openai" in Path("requirements.txt").read_text(encoding="utf-8")
+    assert "openai" in Path("requirements.docker.txt").read_text(encoding="utf-8")

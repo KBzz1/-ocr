@@ -31,6 +31,20 @@ algorithms:
   # OCR 推理默认 temperature=0.0：保证同一原图多次调用结果一致，方便人工核验
   # 同一原图重跑。区间 [0, 2]，超出范围后端启动会校验失败。
   local_ocr_temperature: 0.0
+  # Qwen Vision vLLM 共享配置（OCR + 固定字段抽取）
+  # 一个本地 vLLM 服务同时承担 OCR 和固定字段抽取；后端走 OpenAI Python SDK。
+  qwen_vllm_server_url: "http://qwen-vision-vllm-server:8000/v1"
+  qwen_vllm_model_name: "Qwen3.5-4B-AWQ-4bit"
+  qwen_vllm_model_dir: "./models/llm/Qwen3.5-4B-AWQ-4bit"
+  qwen_vllm_max_model_len: 16384
+  qwen_vllm_gpu_memory_utilization: 0.85
+  qwen_vllm_max_num_seqs: 1
+  qwen_ocr_temperature: 0.0
+  qwen_ocr_max_tokens: 4096
+  qwen_ocr_timeout_seconds: 240
+  qwen_extraction_temperature: 0.0
+  qwen_extraction_max_tokens: 8192
+  qwen_extraction_timeout_seconds: 360
   gpu_stage_queue_enabled: true
   enable_copd_extractor: false
   llm_model_path: "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"
