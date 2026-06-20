@@ -12,7 +12,7 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
         def __init__(self):
             self.prompts: list[str] = []
 
-        def complete_json(self, prompt: str):
+        def complete_json(self, prompt: str, **kwargs):
             self.prompts.append(prompt)
             captured_prompts.append(prompt)
             # Return a full schema payload with one found + many not_found fields
@@ -57,7 +57,11 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
 
     port = build_default_copd_field_port(
         config={
-            "llm_model_path": "/tmp/model.gguf",
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
             "llm_client_factory": lambda *a, **k: fake_client,
         },
         field_keys_provider=provider,
@@ -122,3 +126,91 @@ def current_schema_field_keys():
         for group in schema.get("field_groups", [])
         for field in group.get("fields", [])
     ]
+
+
+def test_default_copd_field_port_builds_qwen_vllm_json_client():
+    """默认固定字段抽取路径必须使用 Qwen vLLM OpenAI 客户端，不再冷启动 llama.cpp/GGUF。"""
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+    from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+
+    captured = {}
+
+    class FakeQwenVLLMClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+        },
+        field_keys_provider=lambda: list(current_schema_field_keys()),
+    )
+    # 注入 fake Qwen vLLM client，触发懒构建
+    port._qwen_vllm_client = FakeQwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+    )
+    port._build_port()
+    assert isinstance(port._llm_client, OpenAICompatibleJsonClient)
+    assert captured["base_url"] == "http://qwen-vision-vllm-server:8000/v1"
+    assert captured["model"] == "Qwen3.5-4B-AWQ-4bit"
+
+
+def test_default_copd_field_port_does_not_require_llm_model_path():
+    """默认路径不再依赖 `llm_model_path` 加载本地 GGUF。"""
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+
+    class FakeQwenVLLMClient:
+        def __init__(self, **kwargs):
+            pass
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+        },
+        field_keys_provider=lambda: [],
+    )
+    port._qwen_vllm_client = FakeQwenVLLMClient()
+    port._build_port()
+    assert port is not None
+
+
+def test_default_copd_field_port_does_not_invoke_llama_cpp_builder(monkeypatch):
+    """默认路径不得调用 build_llama_cpp_client。"""
+    from app.backend.services.copd_extraction import llm_client as llm_module
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+
+    invoked = {"count": 0}
+
+    def fake_builder(*args, **kwargs):
+        invoked["count"] += 1
+        return None
+
+    monkeypatch.setattr(llm_module, "build_llama_cpp_client", fake_builder)
+
+    class FakeQwenVLLMClient:
+        def __init__(self, **kwargs):
+            pass
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+        },
+        field_keys_provider=lambda: [],
+    )
+    port._qwen_vllm_client = FakeQwenVLLMClient()
+    port._build_port()
+
+    assert invoked["count"] == 0, "默认路径不应触发 build_llama_cpp_client"

@@ -1,5 +1,6 @@
 import threading
 
+from ..algorithm_ports.qwen_vllm_client import QwenVLLMClient
 from .admission_contract import (
     map_qwen_fields_to_review_candidates,
     validate_qwen_payload,
@@ -56,22 +57,29 @@ class COPDAdmissionQwenFieldPort:
 class _LazyCOPDAdmissionQwenFieldPort:
     """Lazy wrapper around :class:`COPDAdmissionQwenFieldPort`.
 
-    Defer model loading until the first request. ``llm_client_factory`` allows
-    tests to inject a fake client; when absent, defaults to the offline
-    llama-cpp client built from ``llm_model_path``.
+    默认延迟构造 OpenAI-compatible Qwen vLLM 客户端，避免在 import 阶段
+    锁定模型。``llm_client_factory`` 允许测试注入 fake 客户端；显式传入
+    ``qwen_vllm_client`` 时可跳过内部默认构造（保持 `test_copd_field_port`
+    现有 fixture 兼容）。
     """
 
     def __init__(
         self,
-        model_path: str,
-        n_ctx: int = 8192,
-        max_tokens: int = 4096,
+        qwen_vllm_server_url: str,
+        qwen_vllm_model_name: str,
+        max_tokens: int = 8192,
+        temperature: float = 0.0,
+        timeout_seconds: int = 360,
         llm_client_factory=None,
+        qwen_vllm_client=None,
     ):
-        self._model_path = model_path
-        self._n_ctx = n_ctx
+        self._qwen_vllm_server_url = qwen_vllm_server_url
+        self._qwen_vllm_model_name = qwen_vllm_model_name
         self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._timeout_seconds = timeout_seconds
         self._llm_client_factory = llm_client_factory
+        self._qwen_vllm_client = qwen_vllm_client
         self._port = None
         self._llm_client = None
         self._lock = threading.Lock()
@@ -84,19 +92,27 @@ class _LazyCOPDAdmissionQwenFieldPort:
 
     def _build_port(self) -> None:
         if self._llm_client_factory is not None:
-            llm_client = self._llm_client_factory(
-                self._model_path,
-                n_ctx=self._n_ctx,
+            qwen_client = self._llm_client_factory(
+                base_url=self._qwen_vllm_server_url,
+                model=self._qwen_vllm_model_name,
                 max_tokens=self._max_tokens,
+                temperature=self._temperature,
+                timeout_seconds=self._timeout_seconds,
             )
         else:
-            from .llm_client import build_llama_cpp_client
-
-            llm_client = build_llama_cpp_client(
-                self._model_path,
-                n_ctx=self._n_ctx,
-                max_tokens=self._max_tokens,
+            qwen_client = self._qwen_vllm_client or QwenVLLMClient(
+                base_url=self._qwen_vllm_server_url,
+                model=self._qwen_vllm_model_name,
+                api_key="not-needed",
+                timeout_seconds=float(self._timeout_seconds),
             )
+        from .llm_client import OpenAICompatibleJsonClient
+
+        llm_client = OpenAICompatibleJsonClient(
+            qwen_client,
+            max_tokens=self._max_tokens,
+            temperature=self._temperature,
+        )
         self._llm_client = llm_client
         self._port = COPDAdmissionQwenFieldPort(llm_client)
 
@@ -112,12 +128,15 @@ class _LazyCOPDAdmissionQwenFieldPort:
 def build_default_copd_field_port(config: dict, field_keys_provider):
     """Build the default field port for the active admission-record path.
 
-    Uses the fixed-field Qwen contract (Tasks 3-4).
+    Uses the fixed-field Qwen contract and the shared ``qwen-vision-vllm-server``
+    service; no local llama.cpp/GGUF model is loaded.
     """
     factory = config.get("llm_client_factory")
     return _LazyCOPDAdmissionQwenFieldPort(
-        config["llm_model_path"],
-        n_ctx=config.get("llm_context_tokens", 8192),
-        max_tokens=config.get("llm_max_tokens", 4096),
+        config["qwen_vllm_server_url"],
+        config["qwen_vllm_model_name"],
+        max_tokens=int(config.get("qwen_extraction_max_tokens", 8192)),
+        temperature=float(config.get("qwen_extraction_temperature", 0.0)),
+        timeout_seconds=int(config.get("qwen_extraction_timeout_seconds", 360)),
         llm_client_factory=factory,
     )
