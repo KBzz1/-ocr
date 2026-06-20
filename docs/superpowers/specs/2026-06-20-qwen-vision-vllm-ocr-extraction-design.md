@@ -8,10 +8,15 @@
 
 本设计定义首版 Qwen Vision vLLM 服务化接入：同一个 vLLM 服务同时提供 OCR 和固定字段结构化抽取。结构化字段体系、字段全量返回、诊断约束、`not_found` 语义和证据回填仍以 `docs/superpowers/specs/2026-06-18-qwen-admission-record-structured-fields-evidence-design.md` 为准。
 
+实施基线应采用 2026-06-18 固定字段证据实现分支，而不是从 `master` 重新实现固定字段契约。当前已存在的基线分支为 `worktree-qwen-admission-structured-fields`；本 spec 的后续 plan 应以该分支作为起点创建执行 worktree，完成并验收后再合并回主线。
+
 ## 已确认决策
 
 - 使用 Qwen Vision vLLM 服务替换当前 PaddleOCR VLM 服务和默认 llama.cpp 结构化抽取路径，作为工作站默认 OCR + LLM 固定字段抽取算法子系统。
 - 同一个 `qwen-vision-vllm-server` 常驻加载 `Qwen3.5-4B-AWQ-4bit`，OCR 阶段发送图片消息，结构化阶段发送文本 prompt。
+- Qwen3.5-4B-AWQ-4bit 模型目录放在 `models/llm/Qwen3.5-4B-AWQ-4bit/`，部署时以只读挂载方式提供给 vLLM 容器。
+- 后端调用 vLLM 使用桌面 qwen 同款 OpenAI Python SDK，连接本地 OpenAI-compatible API；只迁移 SDK 调用方式，不迁移桌面批处理业务流程。
+- 同一任务处理时，GPU 阶段队列从 OCR 开始连续持有到固定字段抽取完成，再释放，避免 OCR 与抽取之间被其他任务插队造成额外等待。
 - 首版迁移模型服务、OCR 端口和固定字段抽取端口，不迁移桌面 qwen 的批处理业务流程。
 - 工作站业务流保持不变：医生上传图片，后端创建任务，OCR 生成文本，结构化抽取固定字段，医生审核，导出。
 - OCR 输出允许过滤页眉、页脚、页码、打印时间、医院页眉页脚、医生签名、手签等非病历正文干扰。
@@ -30,6 +35,8 @@
 
 - 定义 Qwen Vision vLLM 服务的部署形态和默认参数。
 - 定义同一 vLLM 服务如何承担 OCR 和固定字段结构化抽取。
+- 定义实施基线必须基于 2026-06-18 固定字段证据分支。
+- 定义模型目录、OpenAI SDK 客户端和连续 GPU 队列策略。
 - 定义后端 OCR 端口如何调用 OpenAI-compatible Vision Chat API。
 - 定义后端固定字段抽取端口如何调用 OpenAI-compatible text Chat API。
 - 定义 OCR prompt 的允许过滤范围和禁止行为。
@@ -46,6 +53,19 @@
 - HIS/EMR 接入、病历写回、诊断建议或医学推理。
 - 真实模型权重、运行缓存、镜像 tar 的提交。
 
+## 分支与集成策略
+
+当前设计文档所在分支只承载本次 Qwen vLLM 迁移 spec。实施时应以 `worktree-qwen-admission-structured-fields` 为代码基线，因为该分支已经实现 2026-06-18 固定字段证据契约的主要代码路径。
+
+推荐流程：
+
+- 从 `worktree-qwen-admission-structured-fields` 新建实施分支或实施 worktree。
+- 在该分支上接入 Qwen Vision vLLM OCR 与固定字段抽取。
+- 实施完成后先在分支内完成测试和人工验收。
+- 用户认可后，再将固定字段证据实现和 Qwen vLLM 迁移一起合并回主代码。
+
+不要从 `master` 重新实现固定字段契约，也不要把本 spec 分支直接当作最终实施基线，除非先把 2026-06-18 固定字段实现合入该分支。
+
 ## 桌面 qwen 迁移边界
 
 ### 迁移
@@ -53,6 +73,7 @@
 - `vllm/vllm-openai` 提供 OpenAI-compatible API 的服务形态。
 - 同一个 vLLM 服务先处理图片 OCR，再处理固定字段 text-only JSON 抽取。
 - 模型目录只读挂载，vLLM cache 单独挂载。
+- 桌面 qwen 的 OpenAI SDK 客户端调用方式。
 - GPU 资源声明、`ipc: host`、`/v1/models` 健康检查。
 - `Qwen3.5-4B-AWQ-4bit` 作为 8GB 显存优先验证模型。
 - `--enable-chunked-prefill`、`--enable-prefix-caching`、`--dtype auto`、`--trust-remote-code`。
@@ -121,7 +142,7 @@ API：
 8GB 显存默认参数：
 
 ```text
---model /workspace/model/Qwen3.5-4B-AWQ-4bit
+--model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit
 --max-model-len 16384
 --gpu-memory-utilization 0.85
 --max-num-seqs 1
@@ -138,12 +159,13 @@ API：
 - `max_num_seqs` 首版默认 1，确保同一个常驻模型服务串行处理 OCR 和结构化请求。
 - 不使用 `MAX_MODEL_LEN=30000` 作为 8GB 默认。
 - 正式离线部署不得依赖浮动 `latest` 镜像；需使用固定镜像来源或经过验证的离线 tar。
-- 模型目录只读挂载；vLLM cache 单独挂载；cache 不进入仓库和离线包源码目录。
+- 模型目录为宿主机 `models/llm/Qwen3.5-4B-AWQ-4bit/`，容器内只读挂载到 `/workspace/model/llm/Qwen3.5-4B-AWQ-4bit/`。
+- vLLM cache 单独挂载；cache 不进入仓库和离线包源码目录。
 - OCR 与固定字段抽取共享同一模型实例，后端不得在默认路径中另起 llama.cpp 模型。
 
 ## OCR 调用契约
 
-后端端口按页调用 vLLM。请求使用 OpenAI-compatible Chat Completions：
+后端端口按页调用 vLLM。调用方式采用 OpenAI Python SDK，`base_url` 指向本地 vLLM `/v1` 地址，`api_key` 使用离线占位值。请求使用 OpenAI-compatible Chat Completions：
 
 ```json
 {
@@ -215,7 +237,7 @@ OCR prompt 必须表达以下规则：
 
 ## 固定字段抽取调用契约
 
-后端在 OCR 完成后，从 OCR 模型输出文本生成 `evidence_units`，再向同一个 vLLM 服务发送 text-only Chat Completions 请求。请求必须按 2026-06-18 固定字段证据 spec 组织 prompt：
+后端在 OCR 完成后，从 OCR 模型输出文本生成 `evidence_units`，再通过同一个 OpenAI SDK client 向同一个 vLLM 服务发送 text-only Chat Completions 请求。请求必须按 2026-06-18 固定字段证据 spec 组织 prompt：
 
 ```json
 {
@@ -272,24 +294,23 @@ OCR 过滤后，证据高亮基准是 OCR 模型输出文本，不是图片像�
 
 ## GPU 阶段队列
 
-8GB 显存下继续保留 GPU 阶段队列，但默认路径只有一个常驻 Qwen Vision vLLM 模型。队列目标从“避免两个模型同时抢显存”调整为“避免同一小显存 vLLM 服务并发处理多任务长请求”：
+8GB 显存下继续保留 GPU 阶段队列，但默认路径只有一个常驻 Qwen Vision vLLM 模型。队列目标从“避免两个模型同时抢显存”调整为“避免同一小显存 vLLM 服务并发处理多任务长请求，并保证同一任务 OCR 到固定字段抽取不中途插队”：
 
 ```text
 task processing
-  -> acquire gpu stage: ocr
+  -> acquire gpu stage: qwen_ocr_and_extraction
   -> qwen vision OCR
-  -> release gpu stage
   -> persist document_result.json
-  -> acquire gpu stage: llm
   -> same qwen vision vLLM fixed-field extraction
-  -> release gpu stage
   -> persist review result
+  -> release gpu stage
 ```
 
 规则：
 
 - OCR 阶段和结构化抽取阶段仍按任务串行进入 vLLM，避免 8GB 显存下长请求并发。
-- 同一任务 OCR 完成后不卸载模型；结构化抽取复用已经常驻的 vLLM 服务，减少冷启动延迟。
+- 同一任务从 OCR 到固定字段抽取连续持有 GPU 阶段队列；中间不允许其他任务插队。
+- 同一任务 OCR 完成后不卸载模型；结构化抽取复用已经常驻的 vLLM 服务，减少冷启动和队列等待延迟。
 - 队列释放必须放在异常路径，避免永久锁死。
 - OCR 成功后必须先写入 `document_result.json`。
 - 后续结构化抽取失败时，重试应复用合法 `document_result.json`，只重跑结构化抽取。
@@ -363,6 +384,7 @@ task processing
 
 需要同步调整：
 
+- 实施分支：从 `worktree-qwen-admission-structured-fields` 创建新的执行 worktree 或在其后续分支上实施，避免从 `master` 重做固定字段契约。
 - `docker-compose.yml`：默认 OCR + 固定字段抽取模型服务替换为 `qwen-vision-vllm-server`。
 - `scripts/dev/run.sh`：启动并等待 Qwen Vision vLLM 服务健康。
 - `scripts/dev/stop.sh`：停止 Qwen Vision vLLM 服务以释放 GPU。
@@ -370,10 +392,11 @@ task processing
 - `deploy/windows/01_start.bat`：启动新服务，检查 `/v1/models`，记录诊断信息。
 - `deploy/windows/02_stop.bat` / `03_logs.bat`：服务名和日志路径同步更新。
 - `scripts/deploy/package_offline_docker_bundle.sh`：打包新 vLLM 服务镜像 tar，不再默认打包 PaddleOCR VLM tar。
-- `app/config/local.docker.yaml`：配置新 shared Qwen vLLM backend、vLLM URL、模型名、OCR temperature、抽取 temperature、timeout、max tokens。
+- `app/config/local.docker.yaml`：配置新 shared Qwen vLLM backend、vLLM URL、模型名、宿主模型目录、OCR temperature、抽取 temperature、timeout、max tokens。
 - `app/backend/config.py`：加载和校验新配置项。
 - `app/backend/services/algorithm_ports/`：新增或替换 OCR 端口适配器，保持 `DocumentParsingPort` 输出契约。
 - `app/backend/services/copd_extraction/` 或新的固定字段抽取模块：把默认抽取客户端切到同一个 vLLM OpenAI-compatible 服务。
+- `requirements.txt` / `requirements.docker.txt`：加入或保留 `openai` SDK 作为后端 vLLM 客户端依赖；不得引入联网云 API 依赖或真实 API key 配置。
 - `requirements.docker.txt` / `Dockerfile`：如果默认结构化抽取不再使用 llama.cpp，部署镜像不得继续为了默认路径编译 CUDA 版 `llama-cpp-python`；如保留兼容依赖，必须证明它不会成为默认冷启动路径。
 - `docs/部署/GPU-Docker部署.md`、`docs/Backend/Backend_TDD/02-algorithm-ports.md`、`deploy/CLAUDE.md`、`deploy/AGENTS.md`：删除 PaddleOCR VLM digest 是唯一正式 OCR 服务的旧说法，改为 Qwen Vision vLLM 契约。
 
@@ -402,6 +425,7 @@ task processing
 
 - 默认 OCR backend 指向 `qwen_vision_vllm`。
 - 默认固定字段抽取 backend 指向同一个 `qwen_vision_vllm` 服务。
+- 模型目录默认落在 `models/llm/Qwen3.5-4B-AWQ-4bit/`，配置不得写入本机私有绝对路径。
 - OCR temperature 默认 `0.0`。
 - 固定字段抽取 temperature 默认 `0.0`。
 - 8GB 默认 `max_model_len` 不允许为 `30000`。
@@ -409,6 +433,7 @@ task processing
 
 端口测试：
 
+- 后端 vLLM client 使用 OpenAI SDK，并将 `base_url` 指向本地 vLLM 服务。
 - 将图片编码为正确 MIME 的 base64 data URL。
 - 调用 Chat Completions 时传入 `temperature=0.0`、`top_p=1.0`、`max_tokens`。
 - 支持关闭 thinking 的 `extra_body`；不支持时不破坏调用。
@@ -430,7 +455,8 @@ task processing
 - 后端启用本地 OCR 后使用 Qwen Vision vLLM `DocumentParsingPort`。
 - 后端启用固定字段抽取后使用同一个 Qwen Vision vLLM 服务，不加载默认 llama.cpp/GGUF 模型。
 - OCR 成功、结构化失败后的重试复用 `document_result.json`。
-- GPU 阶段队列仍保证 OCR 与结构化抽取串行。
+- 同一任务连续持有 GPU 阶段队列完成 OCR 和结构化抽取，中间不允许其他任务插队。
+- 重试已有合法 `document_result.json` 时，只持有队列执行结构化抽取，不重跑 OCR。
 
 脚本与部署测试：
 
@@ -445,11 +471,13 @@ task processing
 
 - 工作站默认 OCR 路径不再依赖 PaddleOCR VLM 容器。
 - 工作站默认固定字段抽取路径不再冷启动独立 llama.cpp/GGUF 模型。
+- Qwen 模型目录使用 `models/llm/Qwen3.5-4B-AWQ-4bit/` 挂载，不提交模型权重。
+- 后端通过 OpenAI SDK 调用本地 vLLM OpenAI-compatible API，不接入云 API。
 - Qwen Vision vLLM 服务健康后，任务能完成 OCR、生成合法 `DocumentResult`、完成固定字段抽取并进入审核页。
 - OCR 文本允许过滤非正文干扰，但不纠错、不补全、不重排、不写样本特化替换。
 - 固定字段证据链路继续按 2026-06-18 spec 执行。
 - `not_found` 不默认触发黄色感叹号。
-- 任务失败语义、日志隐私和 GPU 阶段队列与现有工作站契约一致。
+- 任务失败语义、日志隐私和 GPU 阶段队列与现有工作站契约一致；同一任务 OCR 和固定字段抽取连续持有队列。
 - 同一任务 OCR 与固定字段抽取复用同一个常驻 Qwen Vision vLLM 服务，避免两个模型分别冷启动。
 - 不提交真实患者数据、模型权重、运行缓存、日志、本机私有路径或密钥。
 
