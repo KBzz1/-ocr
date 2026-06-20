@@ -11,39 +11,41 @@ services:
       - ./logs:/app/logs
       - ./models:/app/models
       - ./app/config/local.yaml:/app/app/config/local.yaml:ro
+      - ./vllm_cache:/root/.cache/vllm
     environment:
       MANZUFEI_BACKEND_DEBUG: "0"
       MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"
     depends_on:
-      paddleocr-vlm-server:
+      qwen-vision-vllm-server:
         condition: service_healthy
     gpus: all
 
-  paddleocr-vlm-server:
-    # 默认 --model_name 走 PaddleOCR-VL-1.5-0.9B：verified 镜像里的 paddlex 3.5.0 尚未注册 1.6。
-    # 1.5 与 1.6 共享 PaddleOCRVLForConditionalGeneration 架构，1.5 的配置能加载 1.6 权重。
-    # --model_dir 始终指向 1.6 模型目录，确保实际跑的是 1.6 权重。
-    image: paddleocr-vlm-server:verified-digest-1cee5e7e
-    container_name: paddleocr-vlm-server
+  qwen-vision-vllm-server:
+    # 同一个本地 Qwen 视觉 vLLM 服务同时承担 OCR 与固定字段 JSON 抽取，
+    # 后端通过 OpenAI Python SDK 调本服务的 /v1。
+    image: qwen-vllm-openai:verified
+    container_name: qwen-vision-vllm-server
     restart: unless-stopped
-    labels:
-      x-verified-source-image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621
     command: >
-      paddleocr genai_server
-      --model_name ${OCR_VLM_MODEL_NAME:-PaddleOCR-VL-1.5-0.9B}
-      --model_dir ${OCR_VLM_MODEL_DIR:-/workspace/model/PaddleOCR-VL-1.6}
+      vllm serve
+      --model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit
+      --max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}
+      --gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}
+      --max-num-seqs ${QWEN_VLLM_MAX_NUM_SEQS:-1}
+      --enable-chunked-prefill
+      --enable-prefix-caching
+      --dtype auto
       --host 0.0.0.0
-      --port 8080
-      --backend vllm
-      --backend_config /workspace/vlm_backend_config.yaml
+      --port 8000
+      --trust-remote-code
     volumes:
-      - ./models/ppstructure:/workspace/model
-      - ./app/config/vlm_backend_config.yaml:/workspace/vlm_backend_config.yaml:ro
+      - ./models/llm:/workspace/model/llm:ro
+      - ./vllm_cache:/root/.cache/vllm
     ports:
-      - "127.0.0.1:8082:8080"
+      - "127.0.0.1:8082:8000"
     gpus: all
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/models || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/v1/models || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 20

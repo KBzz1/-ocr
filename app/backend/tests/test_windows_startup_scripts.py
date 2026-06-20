@@ -471,42 +471,56 @@ def test_wsl_run_script_restarts_existing_backend_before_starting_backend():
     assert "Backend is already running" not in content
 
 
-def test_wsl_run_script_uses_vlm_server():
-    """run.sh 本地启动必须走 OCR 常驻服务。"""
+def test_docker_compose_defines_qwen_vision_vllm_server():
+    """docker-compose 必须定义 qwen-vision-vllm-server，使用 vllm OpenAI 镜像并挂载本地 LLM 模型目录。"""
+    compose_content = open("docker-compose.yml", encoding="utf-8").read()
+
+    assert "qwen-vision-vllm-server:" in compose_content
+    assert "qwen-vllm-openai:verified" in compose_content
+    assert "vllm serve" in compose_content
+    assert "--model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit" in compose_content
+    assert "--max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}" in compose_content
+    assert "--gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}" in compose_content
+    assert "--max-num-seqs ${QWEN_VLLM_MAX_NUM_SEQS:-1}" in compose_content
+    assert "--enable-chunked-prefill" in compose_content
+    assert "--enable-prefix-caching" in compose_content
+    assert "--dtype auto" in compose_content
+    assert "--trust-remote-code" in compose_content
+    assert "127.0.0.1:8082:8000" in compose_content
+    assert "models/llm:/workspace/model/llm:ro" in compose_content
+    assert "curl -sf http://localhost:8000/v1/models" in compose_content
+    assert "gpus: all" in compose_content
+    assert "paddleocr-vlm-server" not in compose_content
+    # 旧 PaddleOCR 默认 digest 不得再作为正式默认服务出现
+    assert "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621" not in compose_content
+
+
+def test_wsl_run_script_starts_qwen_vllm_server():
+    """run.sh 本地启动必须走 Qwen vLLM 常驻服务，模型目录指向 Qwen3.5-4B-AWQ-4bit。"""
     content = open("scripts/dev/run.sh").read()
 
-    assert "paddleocr-vlm-server" in content
-    assert "$ROOT_DIR/deploy/offline-images" in content
-    assert "paddleocr-vlm-server.tar" in content
-    legacy_temp_dir = "temp/" + "paddlepaddle"
-    assert legacy_temp_dir not in content
-    assert "OCR_VLM_SERVER_SOURCE_IMAGE" in content
-    assert "OCR_VLM_SERVER_LOCAL_TAG" in content
-    assert "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621" in content
-    assert "docker image inspect" in content
-    assert "docker load -i" in content
-    assert "vlm-server.tar" in content
-    assert "docker pull" in content
-    assert "docker tag" in content
-    assert "PaddleOCR-VL-1.6" in content
-    assert "OCR_VLM_MODEL_NAME" in content
-    assert "docker compose up -d paddleocr-vlm-server" in content
+    assert "qwen-vision-vllm-server" in content
+    assert "qwen-vllm-server.tar" in content
+    assert "QWEN_VLLM_MODEL_DIR" in content
+    assert "models/llm/Qwen3.5-4B-AWQ-4bit" in content
+    assert "qwen_vllm_server_url" in content
     assert "http://127.0.0.1:8082/v1" in content
-    assert "vlm_server" in content
+    assert "docker compose up -d qwen-vision-vllm-server" in content
+    assert "v1/models" in content
+    # 旧 PaddleOCR 默认路径不再作为 run.sh 默认
+    assert "paddleocr-vlm-server" not in content
+    assert "paddleocr-vlm-server.tar" not in content
+    assert "PaddleOCR-VL-1.6" not in content
+    assert "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621" not in content
 
 
-def test_wsl_run_script_uses_only_vlm_server_and_v1_6_model_dir():
-    """run.sh 只允许启动 OCR 常驻服务并指向 PaddleOCR-VL-1.6 模型目录。"""
-    content = open("scripts/dev/run.sh").read()
+def test_wsl_stop_script_stops_qwen_vllm_server_to_release_gpu_memory():
+    """stop.sh 必须停止本地 Qwen vLLM 常驻服务，避免停止后显存仍被占满。"""
+    content = open("scripts/dev/stop.sh").read()
 
-    legacy_script = "paddleocr_vl_" + "batch_runner.py"
-    assert legacy_script not in content
-    # 唯一应该出现的 PaddleOCR-VL-1.6 模型目录是 models/ppstructure/PaddleOCR-VL-1.6
-    # 1.5 名字仅作为 verified 镜像里 paddlex 3.5.0 已注册 registry 名字使用（架构兼容 1.6）
-    assert "OCR_VLM_MODEL_DIR=" in content
-    assert "OCR_VLM_MODEL_DIR=\"$ROOT_DIR/models/ppstructure/PaddleOCR-VL-1.6\"" in content, (
-        "run.sh 的 OCR_VLM_MODEL_DIR 必须只指向 1.6 目录"
-    )
+    assert "qwen-vision-vllm-server" in content
+    assert "docker compose stop qwen-vision-vllm-server" in content
+    assert "paddleocr-vlm-server" not in content
 
 
 def test_wsl_stop_script_stops_backend_and_frontend_pids():
@@ -520,38 +534,6 @@ def test_wsl_stop_script_stops_backend_and_frontend_pids():
     assert "cmd.exe" not in content
 
 
-def test_wsl_stop_script_stops_vlm_server_to_release_gpu_memory():
-    """stop.sh 必须停止本地 OCR 常驻服务，避免停止后显存仍被占满。"""
-    content = open("scripts/dev/stop.sh").read()
-
-    assert "paddleocr-vlm-server" in content
-    assert "docker compose stop paddleocr-vlm-server" in content
-    legacy_script = "paddleocr_vl_" + "batch_runner.py"
-    assert legacy_script not in content
-    assert "pkill" not in content
-
-
-def test_docker_compose_defines_paddleocr_vlm_server():
-    """docker-compose 必须定义 PaddleOCR-VL 常驻 genai_server，端口 8080，挂载本地模型目录。"""
-    compose_content = open("docker-compose.yml", encoding="utf-8").read()
-
-    assert "paddleocr-vlm-server:" in compose_content
-    assert "paddleocr-genai-vllm-server" in compose_content
-    assert "paddleocr genai_server" in compose_content
-    assert "--model_name ${OCR_VLM_MODEL_NAME:-PaddleOCR-VL-1.5-0.9B}" in compose_content
-    assert "--model_dir ${OCR_VLM_MODEL_DIR:-/workspace/model/PaddleOCR-VL-1.6}" in compose_content
-    assert "--port 8080" in compose_content
-    assert "--backend vllm" in compose_content
-    assert "vlm_backend_config.yaml" in compose_content
-    assert "gpus: all" in compose_content
-    assert "127.0.0.1:8082:8080" in compose_content
-    assert "models/ppstructure:/workspace/model" in compose_content
-    assert "curl -sf http://localhost:8080/v1/models" in compose_content
-    # 主后端必须等 vlm-server 健康后再启动
-    assert "condition: service_healthy" in compose_content
-    assert "depends_on:" in compose_content
-
-
 def test_docker_requirements_match_vlm_server_client_combo():
     """requirements.docker.txt 锁定 paddleocr 3.5.0 + paddlex[ocr] 3.5.2，匹配 vllm-server 客户端契约。"""
     content = open("requirements.docker.txt", encoding="utf-8").read()
@@ -561,20 +543,6 @@ def test_docker_requirements_match_vlm_server_client_combo():
     assert "paddlex[ocr]==3.5.2" in lines
     # 不应在 docker 镜像里编译 llama-cpp-python（C++ 编译属于本机 LLM 路径）
     assert "llama-cpp-python" not in content
-
-
-def test_docker_compose_pins_paddleocr_vlm_server_away_from_latest():
-    content = Path("docker-compose.yml").read_text(encoding="utf-8")
-
-    digest = "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
-    local_tag = "paddleocr-vlm-server:verified-digest-1cee5e7e"
-
-    # compose 不能继续使用 latest 浮动 tag
-    assert "latest-nvidia-gpu" not in content
-    # 完整 digest 必须出现
-    assert digest in content
-    # 本地固定 tag 必须出现
-    assert local_tag in content
 
 
 def test_offline_bundle_script_defines_vlm_server_image_and_tag():

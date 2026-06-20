@@ -50,8 +50,8 @@ stop_pid_file() {
 stop_pid_file "$FRONTEND_PID_FILE" "Frontend"
 stop_pid_file "$BACKEND_PID_FILE" "Backend"
 
-echo "Stopping OCR VLM server..."
+echo "Stopping Qwen vLLM server..."
 (
   cd "$ROOT_DIR"
-  docker compose stop paddleocr-vlm-server >/dev/null 2>&1 || true
+  docker compose stop qwen-vision-vllm-server >/dev/null 2>&1 || true
 )
