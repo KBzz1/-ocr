@@ -36,21 +36,21 @@ if errorlevel 1 (
 call :log "Image loaded successfully."
 docker images manzufei-ocr >> "%LOG_FILE%" 2>&1
 
-if not exist "images\paddleocr-vlm-server.tar" (
-  call :log "ERROR: Missing image file: images\paddleocr-vlm-server.tar"
+if not exist "images\qwen-vllm-server.tar" (
+  call :log "ERROR: Missing image file: images\qwen-vllm-server.tar"
   pause
   exit /b 1
 )
-call :log "Loading paddleocr-vlm-server image. This can take several minutes..."
-docker load -i "images\paddleocr-vlm-server.tar" >> "%LOG_FILE%" 2>&1
+call :log "Loading qwen-vllm-server image. This can take several minutes..."
+docker load -i "images\qwen-vllm-server.tar" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-  call :log "ERROR: Failed to load paddleocr-vlm-server image."
+  call :log "ERROR: Failed to load qwen-vllm-server image."
   call :log "Send this log file for troubleshooting: %LOG_FILE%"
   pause
   exit /b 1
 )
-call :log "paddleocr-vlm-server image loaded successfully."
-docker images paddleocr-vlm-server >> "%LOG_FILE%" 2>&1
+call :log "qwen-vllm-server image loaded successfully."
+docker images qwen-vllm-openai >> "%LOG_FILE%" 2>&1
 
 call :log "Send this log file if later startup fails: %LOG_FILE%"
 pause

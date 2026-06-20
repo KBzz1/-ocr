@@ -61,6 +61,8 @@ if errorlevel 1 (
 call :log "Container start command completed."
 docker compose ps >> "%LOG_FILE%" 2>&1
 
+call :wait_for_qwen_vllm
+
 set "HEALTH_URL=http://127.0.0.1:8081/api/system/status"
 set "WORKSTATION_URL=http://127.0.0.1:8081/"
 set "WAITED=0"
@@ -129,6 +131,28 @@ exit /b 0
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ip = $env:HOST_LAN_IP.Trim(); if ($ip -notmatch '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') { exit 1 }; $parts = $ip.Split('.') | ForEach-Object { [int]$_ }; if (($parts | Where-Object { $_ -lt 0 -or $_ -gt 255 }).Count -gt 0) { exit 1 }; exit 0" >nul 2>nul
 exit /b %ERRORLEVEL%
 
+:wait_for_qwen_vllm
+set "QWEN_HEALTH_URL=http://127.0.0.1:8082/v1/models"
+set "QWEN_WAITED=0"
+set "QWEN_MAX_WAIT=240"
+:qwen_wait
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%QWEN_HEALTH_URL%' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>nul
+if !ERRORLEVEL! EQU 0 (
+  call :log "Qwen vLLM server health check passed: %QWEN_HEALTH_URL%"
+  exit /b 0
+)
+call :log "Waiting for Qwen vLLM server: %QWEN_HEALTH_URL% (!QWEN_WAITED!/!QWEN_MAX_WAIT! seconds)"
+timeout /t 2 /nobreak >nul
+set /a QWEN_WAITED+=2
+if !QWEN_WAITED! LSS !QWEN_MAX_WAIT! goto qwen_wait
+call :log "ERROR: Qwen vLLM server startup timed out."
+call :collect_failure_diagnostics
+echo Qwen vLLM server startup timed out. Showing recent logs:
+docker compose logs --tail 80 qwen-vision-vllm-server
+call :log "Send this whole folder for troubleshooting: deploy_debug_logs"
+pause
+exit /b 1
+
 :log
 echo [%date% %time%] %~1
 >> "%LOG_FILE%" echo [%date% %time%] %~1
@@ -158,16 +182,17 @@ call :section "Runtime diagnostics"
 docker compose ps >> "%LOG_FILE%" 2>&1
 docker inspect manzufei-ocr >> "%LOG_FILE%" 2>&1
 docker exec manzufei-ocr python -c "import sys; print(sys.version)" >> "%LOG_FILE%" 2>&1
-docker exec manzufei-ocr python -c "import paddle; print('paddle', paddle.__version__); print('cuda', paddle.version.cuda()); print('compiled_cuda', paddle.device.is_compiled_with_cuda()); print('device_count', paddle.device.cuda.device_count())" >> "%LOG_FILE%" 2>&1
-docker exec manzufei-ocr python -c "import glob, os, llama_cpp; libdir=os.path.join(os.path.dirname(llama_cpp.__file__),'lib'); print('llama_cpp', getattr(llama_cpp,'__version__',None)); print('llama_libs', sorted(os.path.basename(p) for p in glob.glob(os.path.join(libdir,'libggml*'))))" >> "%LOG_FILE%" 2>&1
-docker compose logs --tail 120 >> "%LOG_FILE%" 2>&1
+docker exec manzufei-ocr python -c "import openai; print('openai', openai.__version__)" >> "%LOG_FILE%" 2>&1
+docker exec manzufei-ocr nvidia-smi >> "%LOG_FILE%" 2>&1
+docker compose logs --tail 120 qwen-vision-vllm-server >> "%LOG_FILE%" 2>&1
+docker compose logs --tail 120 manzufei-ocr >> "%LOG_FILE%" 2>&1
 exit /b 0
 
 :collect_failure_diagnostics
 call :section "Failure diagnostics"
 docker compose ps >> "%LOG_FILE%" 2>&1
 docker inspect manzufei-ocr >> "%LOG_FILE%" 2>&1
-docker compose logs --tail 300 >> "%LOG_FILE%" 2>&1
-docker exec manzufei-ocr python -c "import paddle; print('paddle', paddle.__version__); print('cuda', paddle.version.cuda()); print('compiled_cuda', paddle.device.is_compiled_with_cuda()); print('device_count', paddle.device.cuda.device_count())" >> "%LOG_FILE%" 2>&1
-docker exec manzufei-ocr python -c "import glob, os, llama_cpp; libdir=os.path.join(os.path.dirname(llama_cpp.__file__),'lib'); print('llama_cpp', getattr(llama_cpp,'__version__',None)); print('llama_libs', sorted(os.path.basename(p) for p in glob.glob(os.path.join(libdir,'libggml*'))))" >> "%LOG_FILE%" 2>&1
+docker compose logs --tail 300 qwen-vision-vllm-server >> "%LOG_FILE%" 2>&1
+docker compose logs --tail 300 manzufei-ocr >> "%LOG_FILE%" 2>&1
+docker exec manzufei-ocr nvidia-smi >> "%LOG_FILE%" 2>&1
 exit /b 0

@@ -8,6 +8,12 @@ BUNDLE_DIR="${BUNDLE_DIR:-$ROOT_DIR/output/$BUNDLE_NAME}"
 ARCHIVE_PATH="${ARCHIVE_PATH:-$ROOT_DIR/output/$BUNDLE_NAME.zip}"
 OFFLINE_IMAGE_DIR="${OFFLINE_IMAGE_DIR:-$ROOT_DIR/deploy/offline-images}"
 
+# 同一个本地 Qwen vLLM 镜像同时承担 OCR 与固定字段抽取。
+# 镜像来源必须由 QA 在交付前锚定到具体 digest 后再写入；此处只声明命名空间。
+QWEN_VLLM_SERVER_IMAGE="${QWEN_VLLM_SERVER_IMAGE:-qwen-vllm-openai:verified}"
+QWEN_VLLM_SERVER_LOCAL_TAG="${QWEN_VLLM_SERVER_LOCAL_TAG:-qwen-vllm-openai:verified}"
+QWEN_VLLM_SERVER_TAR="${QWEN_VLLM_SERVER_TAR:-$OFFLINE_IMAGE_DIR/qwen-vllm-server.tar}"
+
 cd "$ROOT_DIR"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -29,16 +35,10 @@ echo "Building frontend dist..."
 echo "Building Docker image: $IMAGE_NAME"
 docker build -t "$IMAGE_NAME" "$ROOT_DIR"
 
-OCR_VLM_SERVER_IMAGE="${OCR_VLM_SERVER_IMAGE:-ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621}"
-OCR_VLM_SERVER_LOCAL_TAG="${OCR_VLM_SERVER_LOCAL_TAG:-paddleocr-vlm-server:verified-digest-1cee5e7e}"
-OCR_VLM_SERVER_TAR="${OCR_VLM_SERVER_TAR:-$OFFLINE_IMAGE_DIR/paddleocr-vlm-server.tar}"
-
-if [ -f "$OCR_VLM_SERVER_TAR" ]; then
-  echo "Using offline OCR VLM server image tar: $OCR_VLM_SERVER_TAR"
-else
-  echo "Pulling vlm-server source image: $OCR_VLM_SERVER_IMAGE"
-  docker pull "$OCR_VLM_SERVER_IMAGE"
-  docker tag "$OCR_VLM_SERVER_IMAGE" "$OCR_VLM_SERVER_LOCAL_TAG"
+if [ ! -f "$QWEN_VLLM_SERVER_TAR" ]; then
+  echo "ERROR: Missing offline Qwen vLLM image tar: $QWEN_VLLM_SERVER_TAR"
+  echo "Place the verified vllm/vllm-openai image tar under deploy/offline-images/ before packaging."
+  exit 1
 fi
 
 echo "Creating offline bundle: $BUNDLE_DIR"
@@ -50,12 +50,8 @@ mkdir -p "$BUNDLE_DIR/images" \
   "$BUNDLE_DIR/logs"
 
 docker save "$IMAGE_NAME" -o "$BUNDLE_DIR/images/manzufei-ocr.tar"
-echo "Saving paddleocr-vlm-server tar..."
-if [ -f "$OCR_VLM_SERVER_TAR" ]; then
-  cp "$OCR_VLM_SERVER_TAR" "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
-else
-  docker save "$OCR_VLM_SERVER_LOCAL_TAG" -o "$BUNDLE_DIR/images/paddleocr-vlm-server.tar"
-fi
+echo "Copying Qwen vLLM server tar..."
+cp "$QWEN_VLLM_SERVER_TAR" "$BUNDLE_DIR/images/qwen-vllm-server.tar"
 cp "$ROOT_DIR/docker-compose.yml" "$BUNDLE_DIR/docker-compose.yml"
 cp "$ROOT_DIR/app/config/local.docker.yaml" "$BUNDLE_DIR/app/config/local.yaml"
 cp "$ROOT_DIR/deploy/windows/00_import_image.bat" "$BUNDLE_DIR/00_import_image.bat"

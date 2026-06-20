@@ -545,48 +545,59 @@ def test_docker_requirements_match_vlm_server_client_combo():
     assert "llama-cpp-python" not in content
 
 
-def test_offline_bundle_script_defines_vlm_server_image_and_tag():
+def test_offline_bundle_script_defines_qwen_vllm_image_and_tar():
+    """打包脚本必须使用 Qwen vLLM 镜像变量；不再默认打包 paddleocr-vlm-server.tar。"""
     content = Path("scripts/deploy/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
 
-    digest = "sha256:1cee5e7e26e666bcd80d2a9741c450438bf507268cbfb14e0e0d33b8d5259621"
-    local_tag = "paddleocr-vlm-server:verified-digest-1cee5e7e"
-
-    # 必须显式声明两个变量
-    assert "OCR_VLM_SERVER_IMAGE=" in content
-    assert "OCR_VLM_SERVER_LOCAL_TAG=" in content
-    # 完整 digest 必须出现在 OCR_VLM_SERVER_IMAGE 默认值中
-    assert digest in content
-    # 本地 tag 字符串必须出现
-    assert local_tag in content
+    assert "QWEN_VLLM_SERVER_IMAGE=" in content
+    assert "QWEN_VLLM_SERVER_LOCAL_TAG=" in content
+    assert "qwen-vllm-server.tar" in content
+    assert "paddleocr-vlm-server.tar" not in content
     assert "$ROOT_DIR/deploy/offline-images" in content
-    assert "paddleocr-vlm-server.tar" in content
     assert "OFFLINE_IMAGE_DIR" in content
-    # 无本地正式 tar 时才按 pull → tag → save 三步走
-    assert "docker pull" in content
-    assert "docker tag" in content
-    assert "docker save" in content
+    # 不应在没有本地 tar 时走 docker pull 浮动镜像路径
+    assert "docker pull" not in content
 
 
-def test_offline_bundle_script_saves_vlm_server_tar():
+def test_offline_bundle_script_saves_qwen_vllm_server_tar():
+    """打包脚本必须保存 qwen-vllm-server.tar。"""
     content = Path("scripts/deploy/package_offline_docker_bundle.sh").read_text(encoding="utf-8")
 
     assert 'dirname "${BASH_SOURCE[0]}")/../..' in content
-
-    # tar 路径必须出现且基于 LOCAL_TAG
-    assert "paddleocr-vlm-server.tar" in content
-    # 必须使用 LOCAL_TAG 变量进行 save（不允许硬编码 digest 或远程镜像名）
-    assert "${OCR_VLM_SERVER_LOCAL_TAG" in content or "$OCR_VLM_SERVER_LOCAL_TAG" in content
+    assert "qwen-vllm-server.tar" in content
 
 
-def test_windows_import_script_loads_vlm_server_tar():
+def test_windows_import_script_loads_qwen_vllm_server_tar():
+    """Windows 导入脚本必须加载 Qwen vLLM 镜像 tar，不再加载 paddleocr-vlm-server。"""
     content = Path("deploy/windows/00_import_image.bat").read_text(encoding="utf-8")
 
-    # 必须加载 vlm-server tar
-    assert "paddleocr-vlm-server.tar" in content
-    # 必须包含两次 docker load 调用（一次后端、一次 vlm-server）
+    assert "qwen-vllm-server.tar" in content
     assert content.count("docker load -i") >= 2
-    # 加载后必须验证本地 image 出现
-    assert "docker images paddleocr-vlm-server" in content
+    assert "docker images qwen-vllm-openai" in content
+    assert "paddleocr-vlm-server" not in content
+
+
+def test_windows_start_script_checks_qwen_vllm_models_endpoint():
+    """Windows 启动脚本必须检查 Qwen vLLM /v1/models 端点。"""
+    content = Path("deploy/windows/01_start.bat").read_text(encoding="utf-8")
+
+    assert "8082/v1/models" in content
+    assert "qwen-vision-vllm-server" in content
+    # 不再依赖 llama-cpp 的 libggml CUDA 自检作为运行时检查
+    assert "libggml-cuda" not in content
+    # 启动路径仍需要 models\llm 目录
+    assert "models\\llm" in content
+
+
+def test_windows_stop_script_stops_qwen_vllm_server():
+    """Windows 停止脚本必须停掉 Qwen vLLM 服务（已通过 docker compose down 全停）。"""
+    content = Path("deploy/windows/02_stop.bat").read_text(encoding="utf-8")
+    assert "docker compose down" in content
+
+
+def test_windows_logs_script_includes_qwen_vllm_logs():
+    content = Path("deploy/windows/03_logs.bat").read_text(encoding="utf-8")
+    assert "docker compose logs" in content
 
 
 def test_runtime_directory_removed_from_docker_only_architecture():
