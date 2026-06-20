@@ -68,9 +68,9 @@ algorithms:
     assert orchestrator._field_port is not None
 
 
-def test_backend_configures_vlm_server_ocr_port(tmp_path, monkeypatch):
+def test_backend_configures_qwen_vision_vllm_ocr_port(tmp_path, monkeypatch):
     from app.backend import create_backend_app
-    from app.backend.services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
+    from app.backend.services.algorithm_ports.qwen_vision_vllm import QwenVisionVLLMDocumentPort
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -98,7 +98,8 @@ paths:
   storage_dir: "{data_dir}"
 algorithms:
   enable_local_ocr: true
-  local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
+  qwen_vllm_server_url: http://qwen-vision-vllm-server:8000/v1
+  qwen_vllm_model_name: Qwen3.5-4B-AWQ-4bit
   gpu_stage_queue_enabled: true
 """,
         encoding="utf-8",
@@ -109,7 +110,7 @@ algorithms:
     orchestrator = app.config["TASK_SERVICE"]._orchestrator
 
     assert orchestrator._image_port is not None
-    assert isinstance(orchestrator._doc_port, PaddleOCRVLMServerDocumentPort)
+    assert isinstance(orchestrator._doc_port, QwenVisionVLLMDocumentPort)
     assert orchestrator._gpu_stage_queue is not None
 
 

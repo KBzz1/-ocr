@@ -15,12 +15,14 @@
 
 - `document_parsing.py`：外部文档版面解析端口。
 - `field_extraction.py`：外部结构化字段抽取端口的抽象集合。
-- `paddleocr_vlm_server.py`：PaddleOCR VLM 常驻服务客户端端口。
+- `qwen_vllm_client.py`：Qwen Vision vLLM 共享 OpenAI-compatible 客户端（OCR + 固定字段抽取共用）。
+- `qwen_vision_vllm.py`：Qwen Vision vLLM 常驻服务的 `DocumentParsingPort` 实现；当前默认 OCR 端口。
+- `paddleocr_vlm_server.py`：旧 PaddleOCR VLM 常驻服务客户端端口，**不再作为默认 OCR 路径**，仅作历史参考。
 - `orchestrator.py`：端口编排与失败聚合。
 - `results.py`：端口返回结果的契约类型。
 - `fixtures.py`：测试用端口适配器集合，供单元测试替换真实外部模块。
 
-当前 MVP 默认任务原图列表直接进入 OCR/文档解析端口。若新的算法子系统需要图像预处理、批处理目录或服务化输入，先改 PRD、Shared 契约和后端 BDD/TDD，再新增适配层。
+当前 MVP 默认 OCR 路径走 `QwenVisionVLLMDocumentPort` → `QwenVLLMClient` → 本地 `qwen-vision-vllm-server` 的 `/v1/chat/completions`。PaddleOCR VLM 端口与 PaddleOCR 服务仅作为历史代码保留，不被任何默认配置装配到主流程。若新增图像预处理、批处理目录或服务化输入，先改 PRD、Shared 契约和后端 BDD/TDD，再新增适配层。
 
 ## 端口设计原则
 

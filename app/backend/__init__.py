@@ -158,15 +158,23 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
     doc_port = None
     if config.get("enable_local_ocr"):
         from .services.algorithm_ports.image_processing import OriginalImagePassthroughPort
-        from .services.algorithm_ports.paddleocr_vlm_server import PaddleOCRVLMServerDocumentPort
+        from .services.algorithm_ports.qwen_vision_vllm import QwenVisionVLLMDocumentPort
+        from .services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
 
+        qwen_vllm_client = QwenVLLMClient(
+            base_url=config["qwen_vllm_server_url"],
+            model=config["qwen_vllm_model_name"],
+            api_key="not-needed",
+            timeout_seconds=float(config.get("qwen_ocr_timeout_seconds", 240)),
+        )
         image_port = OriginalImagePassthroughPort()
-        doc_port = PaddleOCRVLMServerDocumentPort(
-            server_url=config["local_ocr_vlm_server_url"],
-            max_new_tokens=config.get("local_ocr_max_new_tokens", 1024),
-            max_pixels=config.get("local_ocr_max_pixels"),
-            timeout_seconds=config["local_ocr_vlm_timeout_seconds"],
-            temperature=config.get("local_ocr_temperature", 0.0),
+        doc_port = QwenVisionVLLMDocumentPort(
+            client=qwen_vllm_client,
+            model=config["qwen_vllm_model_name"],
+            server_url=config["qwen_vllm_server_url"],
+            max_tokens=int(config.get("qwen_ocr_max_tokens", 4096)),
+            temperature=float(config.get("qwen_ocr_temperature", 0.0)),
+            timeout_seconds=int(config.get("qwen_ocr_timeout_seconds", 240)),
             event_logger=event_log.safe_write,
         )
 
