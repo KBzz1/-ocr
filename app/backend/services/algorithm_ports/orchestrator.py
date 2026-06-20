@@ -98,7 +98,7 @@ class ProcessingOrchestrator:
              for p, img in zip(processed_pages, image_inputs)],
         )
 
-        # -- document parsing --
+        # -- document parsing + field extraction (single GPU stage when no cached OCR) --
         if self._is_cancelled(task_service, task_id):
             return task_service.get_task(task_id)
         if self._doc_port is None:
@@ -109,29 +109,155 @@ class ProcessingOrchestrator:
                 details={"stage": "document_parsing", "reason": "module_not_configured"},
             )
 
-        doc_result = self._result_store.read_success_document_result(task_id)
-        if doc_result is None:
-            doc_input = {
-                "task_id": task_id,
-                "image_paths": [p["processed_path"] for p in processed_pages],
-                "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
-                            "source_image_path": p["original_path"],
-                            "processed_path": p["processed_path"]} for p in processed_pages],
-                "is_cancelled": lambda: self._is_cancelled(task_service, task_id),
-            }
-            try:
-                self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
-                with self._gpu_stage(task_id, "document_parsing"):
-                    doc_result = self._doc_port.parse(doc_input)
-            except Exception as exc:
+        cached_doc_result = self._result_store.read_success_document_result(task_id)
+        if cached_doc_result is not None:
+            # 重试已有合法 OCR 结果：只持有 field_extraction 阶段。
+            doc_result = cached_doc_result
+            if not isinstance(doc_result, dict) or "pages" not in doc_result or not isinstance(doc_result["pages"], list):
                 return task_service.mark_failed(
-                    task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
-                    "文档解析模块异常",
+                    task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                    "缓存的文档解析模块返回结构非法",
                     stage="document_parsing",
-                    details={**self._exception_details(exc), "stage": "document_parsing", "reason": "module_exception"},
+                    details={"stage": "document_parsing", "reason": "invalid_document_result"},
                 )
-            self._stage_finished(task_id, "document_parsing", len(processed_pages), "success")
+            pages = doc_result["pages"]
+            if not pages:
+                return task_service.mark_failed(
+                    task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                    "缓存的文档解析结果为空",
+                    stage="document_parsing",
+                    details={"stage": "document_parsing", "reason": "empty_pages"},
+                )
+            evidence_units = doc_result.get("evidence_units")
+            if not isinstance(evidence_units, list):
+                evidence_units = build_evidence_units(doc_result)
+            return self._run_field_extraction(
+                task, task_service, schema, doc_result, evidence_units, pages,
+            )
 
+        # OCR + 字段抽取连续持有 `qwen_ocr_and_extraction` GPU 阶段。
+        # 在同一上下文里完成 OCR、document_result 持久化、evidence_units 生成
+        # 与字段抽取，确保 8GB 显存下其他任务不能在这两个模型调用之间插队。
+        doc_input = {
+            "task_id": task_id,
+            "image_paths": [p["processed_path"] for p in processed_pages],
+            "pages": [{"page_id": p["page_id"], "page_no": p["page_no"],
+                        "source_image_path": p["original_path"],
+                        "processed_path": p["processed_path"]} for p in processed_pages],
+            "is_cancelled": lambda: self._is_cancelled(task_service, task_id),
+        }
+        # 在 GPU 阶段进入前先做轻量校验（schema/field_port 缺失/取消）
+        early_exit = self._pre_check_field_stage(task, task_service, schema)
+        if early_exit is not None:
+            return early_exit
+
+        try:
+            self._stage_started(task_service, task_id, "document_parsing", len(processed_pages))
+            with self._gpu_stage(task_id, "qwen_ocr_and_extraction"):
+                doc_result = self._doc_port.parse(doc_input)
+                doc_validation_failed = self._validate_doc_result_or_fail(
+                    task_id, doc_result, task_service,
+                )
+                if doc_validation_failed is not None:
+                    return doc_validation_failed
+                pages = doc_result["pages"]
+                has_failure = any(p.get("status") == "failed" for p in pages)
+                evidence_units = build_evidence_units(doc_result)
+                self._result_store.write_document_result(
+                    task_id,
+                    pages,
+                    doc_result.get("merged_text", ""),
+                    has_failure=has_failure,
+                    evidence_units=evidence_units,
+                )
+                doc_result["evidence_units"] = evidence_units
+                if has_failure:
+                    return task_service.mark_failed(
+                        task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                        "部分页面解析失败",
+                        stage="document_parsing",
+                        details={"stage": "document_parsing", "reason": "partial_page_failed"},
+                    )
+                # 字段抽取在同一 GPU 阶段内继续执行：保持连续持有
+                self._stage_started(task_service, task_id, "field_extraction", len(pages))
+                field_result = self._run_field_extraction_in_stage(
+                    task, task_service, schema, doc_result, evidence_units, pages,
+                )
+                if isinstance(field_result, dict) and field_result.get("status") == "failed":
+                    return field_result
+            self._stage_finished(task_id, "document_parsing", len(processed_pages), "success")
+            self._stage_finished(task_id, "field_extraction", len(pages), "success")
+        except Exception as exc:
+            return task_service.mark_failed(
+                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "文档解析模块异常",
+                stage="document_parsing",
+                details={**self._exception_details(exc), "stage": "document_parsing", "reason": "module_exception"},
+            )
+
+        return field_result
+
+    def _pre_check_field_stage(self, task, task_service, schema):
+        task_id = task["task_id"]
+        if self._is_cancelled(task_service, task_id):
+            return task_service.get_task(task_id)
+        field_port = self._resolve_field_port(task.get("document_type"))
+        if field_port is None:
+            return task_service.mark_failed(
+                task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "字段抽取模块未配置",
+                stage="field_extraction",
+                details={"stage": "field_extraction", "reason": "module_not_configured"},
+            )
+        if not isinstance(schema, dict):
+            return task_service.mark_failed(
+                task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
+                "schema 缺失或非法",
+                stage="field_extraction",
+                details={"stage": "field_extraction", "reason": "schema_missing_or_invalid"},
+            )
+        return None
+
+    def _run_field_extraction_in_stage(
+        self,
+        task: dict,
+        task_service,
+        schema: dict | None,
+        doc_result: dict,
+        evidence_units: list,
+        pages: list,
+    ) -> dict:
+        task_id = task["task_id"]
+        field_port = self._resolve_field_port(task.get("document_type"))
+        if field_port is None:
+            return task_service.mark_failed(
+                task_id, ErrorCode.ALGORITHM_MODULE_NOT_CONFIGURED.code,
+                "字段抽取模块未配置",
+                stage="field_extraction",
+                details={"stage": "field_extraction", "reason": "module_not_configured"},
+            )
+        field_input = {
+            "task_id": task_id,
+            "document_type": task.get("document_type"),
+            "document_result": doc_result,
+            "evidence_units": evidence_units,
+            "schema": schema,
+            "prompt_version": task.get("prompt_version"),
+        }
+        try:
+            candidates = field_port.extract(field_input)
+        except Exception as exc:
+            return task_service.mark_failed(
+                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
+                "字段抽取模块异常",
+                stage="field_extraction",
+                details={**self._exception_details(exc), "stage": "field_extraction", "reason": "module_exception"},
+            )
+        return self._finalize_field_extraction(
+            task, task_service, schema, candidates,
+        )
+
+    def _validate_doc_result_or_fail(self, task_id, doc_result, task_service):
         if not isinstance(doc_result, dict) or "pages" not in doc_result or not isinstance(doc_result["pages"], list):
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
@@ -139,38 +265,25 @@ class ProcessingOrchestrator:
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "invalid_document_result"},
             )
-
-        pages = doc_result["pages"]
-        if not pages:
+        if not doc_result["pages"]:
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,
                 "文档解析结果为空",
                 stage="document_parsing",
                 details={"stage": "document_parsing", "reason": "empty_pages"},
             )
+        return None
 
-        has_failure = any(p.get("status") == "failed" for p in pages)
-        evidence_units = build_evidence_units(doc_result)
-        self._result_store.write_document_result(
-            task_id,
-            pages,
-            doc_result.get("merged_text", ""),
-            has_failure=has_failure,
-            evidence_units=evidence_units,
-        )
-        # Make the same units available for downstream code that consumes
-        # ``doc_result`` directly (e.g. retry paths that re-read the store).
-        doc_result["evidence_units"] = evidence_units
-
-        if has_failure:
-            return task_service.mark_failed(
-                task_id, ErrorCode.ALGORITHM_MODULE_FAILED.code,
-                "部分页面解析失败",
-                stage="document_parsing",
-                details={"stage": "document_parsing", "reason": "partial_page_failed"},
-            )
-
-        # -- field extraction --
+    def _run_field_extraction(
+        self,
+        task: dict,
+        task_service,
+        schema: dict | None,
+        doc_result: dict,
+        evidence_units: list,
+        pages: list,
+    ) -> dict:
+        task_id = task["task_id"]
         if self._is_cancelled(task_service, task_id):
             return task_service.get_task(task_id)
         field_port = self._resolve_field_port(task.get("document_type"))
@@ -211,6 +324,16 @@ class ProcessingOrchestrator:
             )
         self._stage_finished(task_id, "field_extraction", len(pages), "success")
 
+        return self._finalize_field_extraction(task, task_service, schema, candidates)
+
+    def _finalize_field_extraction(
+        self,
+        task: dict,
+        task_service,
+        schema: dict | None,
+        candidates,
+    ) -> dict:
+        task_id = task["task_id"]
         if not isinstance(candidates, list):
             return task_service.mark_failed(
                 task_id, ErrorCode.ALGORITHM_CONTRACT_INVALID.code,

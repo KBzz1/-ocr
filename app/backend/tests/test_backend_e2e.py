@@ -367,19 +367,18 @@ algorithms:
         t.join(timeout=15)
         assert not t.is_alive(), f"线程 {t.name} 卡死，说明 run_processing_background 仍有全局互斥"
 
-    # 等待两个 orchestrator 线程真正完成（document_parsing + field_extraction 共 4 次 stage）
+    # 等待两个 orchestrator 线程真正完成（qwen_ocr_and_extraction 共 2 次 stage）
     for tid, ev in done_events.items():
         assert ev.wait(timeout=15), f"{tid} orchestrator 线程未在 15s 内完成"
 
-    # 4 次 stage 调用：2 task × (document_parsing + field_extraction)
-    assert len(entries) == 4, f"应 4 次 stage 调用，实际 {len(entries)}: {entries}"
+    # 2 次 stage 调用：2 task × qwen_ocr_and_extraction（OCR + 抽取连续持有同一阶段）
+    assert len(entries) == 2, f"应 2 次 stage 调用，实际 {len(entries)}: {entries}"
 
-    # 两个 task 都经历过 document_parsing 和 field_extraction
+    # 两个 task 都经历过 qwen_ocr_and_extraction
     task_ids_in_order = [e["task_id"] for e in entries]
     stages_in_order = [e["stage"] for e in entries]
     assert "task-A" in task_ids_in_order and "task-B" in task_ids_in_order
-    assert stages_in_order.count("document_parsing") == 2
-    assert stages_in_order.count("field_extraction") == 2
+    assert stages_in_order.count("qwen_ocr_and_extraction") == 2
 
     # 关键验证：GPU 阶段不重叠（每个 stage 的 [enter, exit] 区间不能与其他 stage 的区间相交）。
     # 真实 GpuStageQueue 的锁保证实际执行不重叠；这里加 5ms 宽容是为了过滤：

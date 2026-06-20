@@ -404,9 +404,29 @@ def test_orchestrator_passes_evidence_units_to_field_port_and_persists_them(tmp_
     assert {u["id"] for u in persisted_units} == {u["id"] for u in evidence_units}
 
 
-def test_orchestrator_wraps_document_and_field_gpu_stages(tmp_path):
+def test_orchestrator_holds_single_gpu_stage_across_ocr_and_field_extraction(tmp_path):
+    """OCR 与固定字段抽取必须连续持有同一 `qwen_ocr_and_extraction` 阶段，
+    避免 8GB 显存下两个任务之间被插队。"""
     from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
     from app.backend.storage.json_store import JsonStore
+
+    events = []
+
+    class RecordingContext:
+        def __init__(self, stage):
+            self.stage = stage
+
+        def __enter__(self):
+            events.append(f"enter:{self.stage}")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append(f"exit:{self.stage}")
+            return False
+
+    class RecordingQueue:
+        def stage(self, task_id, stage):
+            return RecordingContext(stage)
 
     class ImagePort:
         def process(self, input):
@@ -414,27 +434,16 @@ def test_orchestrator_wraps_document_and_field_gpu_stages(tmp_path):
 
     class DocPort:
         def parse(self, input):
+            events.append("doc_inside_stage")
             return {
-                "pages": [{"page_id": "p1", "page_no": 1, "status": "success", "text": "正文"}],
-                "merged_text": "正文",
+                "pages": [{"page_id": "p1", "page_no": 1, "status": "success", "text": "主诉：咳嗽"}],
+                "merged_text": "主诉：咳嗽",
             }
 
     class FieldPort:
         def extract(self, input):
-            return [{
-                "field_key": "chief_complaint",
-                "original_value": "咳嗽",
-                "evidence": "主诉：咳嗽",
-                "confidence": 0.8,
-                "extraction_status": "extracted",
-                "verification_status": "not_checked",
-                "quality_flags": [],
-                "source_section": "主诉",
-                "source_hint": "主诉",
-                "source_text": "主诉：咳嗽",
-                "source_group_id": "主诉",
-                "ocr_correction": {"applied": False, "raw": "", "normalized": "", "reason": ""},
-            }]
+            events.append("field_inside_stage")
+            return _build_full_qwen_candidates_with_statuses({"chief_complaint": "found"})
 
     class TaskService:
         def mark_processing_stage(self, task_id, stage, status, page_count=None):
@@ -452,30 +461,126 @@ def test_orchestrator_wraps_document_and_field_gpu_stages(tmp_path):
         def get_task(self, task_id):
             return {"task_id": task_id, "status": "processing"}
 
-    store = JsonStore(str(tmp_path / "data"))
-    queue = RecordingGpuQueue()
-    (tmp_path / "p1.jpg").write_bytes(b"img")
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
     orchestrator = ProcessingOrchestrator(
-        store=store,
+        store=JsonStore(str(tmp_path)),
         image_port=ImagePort(),
         doc_port=DocPort(),
         field_port=FieldPort(),
-        gpu_stage_queue=queue,
+        gpu_stage_queue=RecordingQueue(),
     )
 
-    orchestrator.run(
+    result = orchestrator.run(
         {
             "task_id": "task_001",
-            "images": [{"page_id": "p1", "page_no": 1, "original_image_path": str(tmp_path / "p1.jpg")}],
+            "document_type": "copd_admission_record",
+            "images": [{"page_id": "page_001", "page_no": 1, "original_image_path": str(source)}],
         },
         TaskService(),
-        schema={"fields": [{"field_key": "chief_complaint"}]},
+        schema=_admission_schema(),
     )
 
-    assert queue.stages == [
-        ("task_001", "document_parsing"),
-        ("task_001", "field_extraction"),
+    assert result["status"] == "review"
+    assert events == [
+        "enter:qwen_ocr_and_extraction",
+        "doc_inside_stage",
+        "field_inside_stage",
+        "exit:qwen_ocr_and_extraction",
     ]
+
+
+def test_orchestrator_with_cached_document_result_only_holds_field_stage(tmp_path):
+    """已有合法 `document_result.json` 时，重试只持有 field_extraction 阶段，不再重跑 OCR。"""
+    from app.backend.services.algorithm_ports.orchestrator import ProcessingOrchestrator
+    from app.backend.storage.json_store import JsonStore
+
+    store = JsonStore(str(tmp_path))
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "success",
+            "pages": [{"page_id": "page_001", "page_no": 1, "status": "success", "text": "主诉：咳嗽"}],
+            "merged_text": "主诉：咳嗽",
+        },
+    )
+
+    stages_entered = []
+
+    class RecordingContext:
+        def __init__(self, stage):
+            self.stage = stage
+
+        def __enter__(self):
+            stages_entered.append(self.stage)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class RecordingQueue:
+        def stage(self, task_id, stage):
+            return RecordingContext(stage)
+
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
+    class DocPort:
+        called = False
+
+        def parse(self, input):
+            self.called = True
+            raise AssertionError("document parser should not run when document_result.json is valid")
+
+    class FieldPort:
+        def extract(self, input):
+            return _build_full_qwen_candidates_with_statuses({"chief_complaint": "found"})
+
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "processing"}
+
+    doc_port = DocPort()
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
+    orchestrator = ProcessingOrchestrator(
+        store=store,
+        image_port=ImagePort(),
+        doc_port=doc_port,
+        field_port=FieldPort(),
+        gpu_stage_queue=RecordingQueue(),
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "document_type": "copd_admission_record",
+            "images": [{"page_id": "page_001", "page_no": 1, "original_image_path": str(source)}],
+        },
+        TaskService(),
+        schema=_admission_schema(),
+    )
+
+    assert result["status"] == "review"
+    assert doc_port.called is False
+    # 仅进入 field_extraction 阶段，不进入 qwen_ocr_and_extraction
+    assert "field_extraction" in stages_entered
+    assert "qwen_ocr_and_extraction" not in stages_entered
 
 
 def test_orchestrator_allows_many_not_found_fields_when_one_field_found(tmp_path):
