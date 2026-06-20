@@ -31,6 +31,23 @@ Issues the implementation must handle:
 
 Before Task 1, create or choose a clean execution worktree from `worktree-qwen-admission-structured-fields`.
 
+First inspect the current 6-18 worktree because it may contain uncommitted contract fixes that are not present on the branch tip:
+
+```bash
+git -C /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields status --short
+git -C /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields diff -- app/backend/services/copd_extraction/admission_contract.py app/backend/tests/test_admission_contract.py app/backend/services/copd_extraction/llm_client.py
+```
+
+Expected: if the dirty files are only `admission_contract.py`, `test_admission_contract.py`, and `llm_client.py`, preserve the `ocr_correction` contract diff from the first two files and do not carry the temporary `DEFAULT_LLM_TIMEOUT = 360.0` edit as baseline code.
+
+If the `ocr_correction` contract diff is still dirty, save just that diff before creating the execution worktree:
+
+```bash
+git -C /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields diff -- app/backend/services/copd_extraction/admission_contract.py app/backend/tests/test_admission_contract.py > /tmp/qwen-admission-ocr-correction.patch
+```
+
+Expected: `/tmp/qwen-admission-ocr-correction.patch` contains only `ocr_correction` review-candidate contract changes and the matching regression test. It must not contain the `llm_client.py` timeout change.
+
 Recommended command from the repository root if no such clean execution worktree exists:
 
 ```bash
@@ -39,14 +56,33 @@ git worktree add /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-
 
 Expected: worktree created at `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime`.
 
-If `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields` still has dirty files, inspect them first:
+If branch `qwen-admission-vllm-runtime` already exists but the worktree path does not, do not delete the branch. Attach a worktree to the existing branch:
 
 ```bash
-git status --short
-git diff -- app/backend/services/copd_extraction/admission_contract.py app/backend/tests/test_admission_contract.py app/backend/services/copd_extraction/llm_client.py
+git worktree add /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime qwen-admission-vllm-runtime
 ```
 
-Expected: do not lose the `ocr_correction` fix. Do not carry a hard-coded `DEFAULT_LLM_TIMEOUT = 360.0` as the final product behavior unless Task 4 converts timeout into config.
+Expected: existing branch is checked out at the execution worktree path.
+
+If `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime` already exists, inspect it before doing any work:
+
+```bash
+git -C /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime status --short
+```
+
+Expected: clean worktree. If it is dirty, stop and report the dirty paths before applying this plan.
+
+If `/tmp/qwen-admission-ocr-correction.patch` is non-empty, apply and commit it in the execution worktree before Task 1:
+
+```bash
+cd /home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime
+git apply /tmp/qwen-admission-ocr-correction.patch
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_admission_contract.py::test_map_qwen_fields_returns_review_candidate_contract_shape -q
+git add app/backend/services/copd_extraction/admission_contract.py app/backend/tests/test_admission_contract.py
+git commit -m "保留OCR纠错审核契约"
+```
+
+Expected: the regression test passes and the preflight commit contains only `admission_contract.py` and `test_admission_contract.py`. If the patch is empty, skip this preflight commit.
 
 ## File Structure
 
@@ -86,6 +122,7 @@ Expected: do not lose the `ocr_correction` fix. Do not carry a hard-coded `DEFAU
 - Modify: `requirements.txt`
 - Modify: `requirements.docker.txt`
 - Test: `app/backend/tests/test_config.py`
+- Test: `app/backend/tests/test_windows_startup_scripts.py`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -216,6 +253,13 @@ git commit -m "新增共享Qwen vLLM配置"
 Create `app/backend/tests/test_qwen_vllm_client.py` with local fake OpenAI client objects:
 
 ```python
+from types import SimpleNamespace
+
+import pytest
+
+from app.backend.services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
+
+
 class FakeCompletions:
     def __init__(self, content):
         self.content = content
@@ -436,7 +480,23 @@ git commit -m "接入Qwen视觉OCR端口"
 Update `app/backend/tests/test_copd_llm_client.py` with OpenAI-compatible tests:
 
 ```python
+class FakeQwenVLLMClient:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def complete_json(self, prompt, max_tokens, temperature):
+        self.calls.append({
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        })
+        return self.result
+
+
 def test_openai_compatible_json_client_uses_qwen_vllm_client():
+    from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+
     fake_qwen = FakeQwenVLLMClient({"schema_version": "admission_record_structured_fields.v1", "fields": []})
     client = OpenAICompatibleJsonClient(fake_qwen, max_tokens=8192, temperature=0.0)
 
@@ -539,6 +599,10 @@ def test_orchestrator_holds_single_gpu_stage_across_ocr_and_field_extraction(tmp
         def stage(self, task_id, stage):
             return RecordingContext(events, stage)
 
+    class ImagePort:
+        def process(self, input):
+            return {"processed_path": input["original_path"]}
+
     class DocPort:
         def parse(self, input):
             events.append("doc_inside_stage")
@@ -549,9 +613,45 @@ def test_orchestrator_holds_single_gpu_stage_across_ocr_and_field_extraction(tmp
             events.append("field_inside_stage")
             return _build_full_qwen_candidates_with_statuses({"chief_complaint": "found"})
 
-    # Run orchestrator with image/doc/field fakes.
-    # Expected event order:
-    # ["enter:qwen_ocr_and_extraction", "doc_inside_stage", "field_inside_stage", "exit:qwen_ocr_and_extraction"]
+    class TaskService:
+        def mark_processing_stage(self, task_id, stage, status, page_count=None):
+            return {}
+
+        def mark_ready(self, task_id):
+            return {"task_id": task_id, "status": "review"}
+
+        def mark_failed(self, *args, **kwargs):
+            raise AssertionError("should not fail")
+
+        def is_processing_cancelled(self, task_id):
+            return False
+
+    source = tmp_path / "page.jpg"
+    source.write_text("image", encoding="utf-8")
+    orchestrator = ProcessingOrchestrator(
+        store=JsonStore(str(tmp_path)),
+        image_port=ImagePort(),
+        doc_port=DocPort(),
+        field_port=FieldPort(),
+        gpu_stage_queue=RecordingQueue(),
+    )
+
+    result = orchestrator.run(
+        {
+            "task_id": "task_001",
+            "images": [{"page_id": "page_001", "page_no": 1, "original_image_path": str(source)}],
+        },
+        TaskService(),
+        schema={"fields": [{"field_key": "chief_complaint"}]},
+    )
+
+    assert result["status"] == "review"
+    assert events == [
+        "enter:qwen_ocr_and_extraction",
+        "doc_inside_stage",
+        "field_inside_stage",
+        "exit:qwen_ocr_and_extraction",
+    ]
 ```
 
 Add `test_orchestrator_with_cached_document_result_only_holds_field_stage`:
@@ -772,7 +872,7 @@ Add/replace tests:
 Run:
 
 ```bash
-conda run -n manzufei_ocr python -m pytest app/backend/tests/test_windows_startup_scripts.py::test_offline_bundle_script_defines_qwen_vllm_image_and_tar app/backend/tests/test_windows_startup_scripts.py::test_windows_import_script_loads_qwen_vllm_server_tar app/backend/tests/test_windows_startup_scripts.py::test_windows_start_script_checks_qwen_vllm_models_endpoint app/backend/tests/test_windows_stop_script_stops_qwen_vllm_server -q
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_windows_startup_scripts.py::test_offline_bundle_script_defines_qwen_vllm_image_and_tar app/backend/tests/test_windows_startup_scripts.py::test_windows_import_script_loads_qwen_vllm_server_tar app/backend/tests/test_windows_startup_scripts.py::test_windows_start_script_checks_qwen_vllm_models_endpoint app/backend/tests/test_windows_startup_scripts.py::test_windows_stop_script_stops_qwen_vllm_server -q
 ```
 
 Expected: FAIL because offline scripts still import and check PaddleOCR VLM.
@@ -835,7 +935,7 @@ git commit -m "更新离线包Qwen vLLM脚本"
 
 - [ ] **Step 1: Write the failing test**
 
-Add or update cleanup tests:
+Add or update these cleanup tests in `app/backend/tests/test_legacy_cleanup.py`:
 
 ```python
 def test_default_runtime_docs_do_not_claim_paddleocr_or_llamacpp_are_required():
@@ -872,7 +972,7 @@ Update `app/backend/tests/test_legacy_cleanup.py` so it asserts:
 Run:
 
 ```bash
-conda run -n manzufei_ocr python -m pytest app/backend/tests/test_legacy_cleanup.py app/backend/tests/test_windows_startup_scripts.py::test_default_runtime_docs_do_not_claim_paddleocr_or_llamacpp_are_required app/backend/tests/test_windows_startup_scripts.py::test_dockerfile_does_not_compile_llama_cpp_for_default_runtime -q
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_legacy_cleanup.py::test_default_runtime_docs_do_not_claim_paddleocr_or_llamacpp_are_required app/backend/tests/test_legacy_cleanup.py::test_dockerfile_does_not_compile_llama_cpp_for_default_runtime -q
 ```
 
 Expected: FAIL because docs and Dockerfile still describe PaddleOCR VLM and llama.cpp as default requirements.
@@ -1007,7 +1107,7 @@ Expected:
 ## Execution Handoff Prompt
 
 ```text
-请在一个基于 `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields` 的新执行 worktree 中执行：
+请在 `/home/kbzz1/manzufei_ocr` 中执行 Qwen Vision vLLM OCR + 固定字段抽取迁移。不要在 `master` 直接实现。
 
 Spec: `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-vision-vllm-ocr/docs/superpowers/specs/2026-06-20-qwen-vision-vllm-ocr-extraction-design.md`
 Plan: `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-vision-vllm-ocr/docs/superpowers/plans/2026-06-20-qwen-vision-vllm-ocr-extraction-implementation-plan.md`
@@ -1015,6 +1115,9 @@ Plan: `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-vision-vllm-ocr/docs/supe
 要求：
 - 先读取 `AGENTS.md` / `CLAUDE.md` / `docs/AGENTS.md` / `app/backend/CLAUDE.md`，进入 `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/`、`deploy/`、`scripts/` 时再读取对应 `CLAUDE.md` / `AGENTS.md`。
 - 使用 Superpowers：`superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。
+- 执行基线是 `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-structured-fields`，执行 worktree 使用 `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-admission-vllm-runtime`，分支使用 `qwen-admission-vllm-runtime`。
+- 开始 Task 1 前先执行 plan 的 `Execution Baseline`：检查 6-18 worktree dirty diff；保留 `admission_contract.py` 和 `test_admission_contract.py` 里的 `ocr_correction` 契约修正；不要把 `llm_client.py` 的临时 `DEFAULT_LLM_TIMEOUT = 360.0` 作为基线代码带入。
+- 如果执行 worktree 已存在但不干净，先停止并报告 dirty 路径，不要覆盖或清理用户改动。
 - 严格按 plan task-by-task 执行；每个任务先写失败测试，再运行确认失败，再做最小实现，再跑测试通过。
 - 每个任务完成后单独 commit，commit message 使用中文。
 - 不要修改与计划无关的文件；不要回滚、删除或清理当前工作区已有改动。
@@ -1026,5 +1129,5 @@ Plan: `/home/kbzz1/manzufei_ocr/.claude/worktrees/qwen-vision-vllm-ocr/docs/supe
 - 默认路径不能继续冷启动独立 llama.cpp/GGUF 模型，不能继续使用 PaddleOCR VLM 容器作为默认 OCR 服务。
 - 最后运行 plan 的 Final Verification 命令，并报告通过项和无法运行项及原因。
 
-开始执行前，先复述你将执行的 Task 1 和验证命令。
+开始执行前，先复述你将执行的 Execution Baseline、Task 1、涉及文件、验证命令和 expected result。
 ```
