@@ -31,7 +31,7 @@
 - `port.py`：与 `services/algorithm_ports/` 的端口契约边界（消费 OCR/文档解析结果与 evidence_units）；固定字段 Qwen 抽取端口 `COPDAdmissionQwenFieldPort` 在此组装 prompt、校验契约、回填证据。
 - `prompts.py`：固定字段入院记录结构化抽取 prompt（`build_admission_structured_fields_prompt`）；prompt 改动视为契约变更。
 - `admission_contract.py`：校验 Qwen 输出契约（`validate_qwen_payload`）并把 `evidence_ids` 回填为带 offset 的 evidence 数组（`map_qwen_fields_to_review_candidates`）。
-- `llm_client.py`：LLM 客户端抽象与 JSON 解析辅助；`OpenAICompatibleJsonClient` 包装 `services/algorithm_ports/qwen_vllm_client.QwenVLLMClient`，`LlamaCppClient` 与 `build_llama_cpp_client` 仅作为历史兼容保留，**不**接入默认 admission record 路由。
+- `llm_client.py`：LLM 客户端抽象；`OpenAICompatibleJsonClient` 包装 `services/algorithm_ports/qwen_vllm_client.QwenVLLMClient`，默认 admission record 路由不再保留本地 GGUF 客户端。
 - `field_result.py`：字段结果结构、`_default_result`、补齐全量字段、空值判定兼容层。
 - `quality_checks.py`：薄规则质量核验，产出 `quality_flags`；不静默改写原文；生理阈值模块级常量化。
 - `__init__.py`：对外只导出 extractor 与必要类型，不暴露内部 prompt 模板和分段细节。

@@ -29,17 +29,7 @@ DEFAULT_CONFIG = {
     "log_max_bytes": 10 * 1024 * 1024,
     "log_backup_count": 5,
     "enable_copd_extractor": False,
-    "llm_model_path": "./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
-    "llm_context_tokens": 8192,
-    "llm_max_tokens": 1024,
-    "llm_extraction_batch_size": 25,
-    "llm_enable_verification": True,
     "enable_local_ocr": False,
-    "local_ocr_max_new_tokens": 1024,
-    "local_ocr_max_pixels": 501760,
-    "local_ocr_vlm_server_url": "http://paddleocr-vlm-server:8080/v1",
-    "local_ocr_vlm_timeout_seconds": 240,
-    "local_ocr_temperature": 0.0,
     "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
     "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
     "qwen_vllm_model_dir": "./models/llm/Qwen3.5-4B-AWQ-4bit",
@@ -110,28 +100,8 @@ def _flatten_config(raw: dict) -> dict:
     algorithms_config = raw.get("algorithms", {})
     if "enable_copd_extractor" in algorithms_config:
         flattened["enable_copd_extractor"] = algorithms_config["enable_copd_extractor"]
-    if "llm_model_path" in algorithms_config:
-        flattened["llm_model_path"] = algorithms_config["llm_model_path"]
-    if "llm_context_tokens" in algorithms_config:
-        flattened["llm_context_tokens"] = algorithms_config["llm_context_tokens"]
-    if "llm_max_tokens" in algorithms_config:
-        flattened["llm_max_tokens"] = algorithms_config["llm_max_tokens"]
-    if "llm_extraction_batch_size" in algorithms_config:
-        flattened["llm_extraction_batch_size"] = algorithms_config["llm_extraction_batch_size"]
-    if "llm_enable_verification" in algorithms_config:
-        flattened["llm_enable_verification"] = algorithms_config["llm_enable_verification"]
     if "enable_local_ocr" in algorithms_config:
         flattened["enable_local_ocr"] = algorithms_config["enable_local_ocr"]
-    if "local_ocr_max_new_tokens" in algorithms_config:
-        flattened["local_ocr_max_new_tokens"] = algorithms_config["local_ocr_max_new_tokens"]
-    if "local_ocr_max_pixels" in algorithms_config:
-        flattened["local_ocr_max_pixels"] = algorithms_config["local_ocr_max_pixels"]
-    if "local_ocr_vlm_server_url" in algorithms_config:
-        flattened["local_ocr_vlm_server_url"] = algorithms_config["local_ocr_vlm_server_url"]
-    if "local_ocr_vlm_timeout_seconds" in algorithms_config:
-        flattened["local_ocr_vlm_timeout_seconds"] = algorithms_config["local_ocr_vlm_timeout_seconds"]
-    if "local_ocr_temperature" in algorithms_config:
-        flattened["local_ocr_temperature"] = algorithms_config["local_ocr_temperature"]
     if "qwen_vllm_server_url" in algorithms_config:
         flattened["qwen_vllm_server_url"] = algorithms_config["qwen_vllm_server_url"]
     if "qwen_vllm_model_name" in algorithms_config:
@@ -171,7 +141,6 @@ def _normalize_paths(config: dict) -> dict:
         "storage_dir",
         "export_dir",
         "static_dir",
-        "llm_model_path",
         "qwen_vllm_model_dir",
     ):
         path = config.get(key)
@@ -225,44 +194,8 @@ def _validate_config(config: dict):
     if not isinstance(log_backup_count, int) or log_backup_count < 0:
         raise ValueError(f"log_backup_count 必须为非负整数，当前值: {log_backup_count}")
 
-    vlm_server_url = config.get("local_ocr_vlm_server_url")
-    parsed_vlm_server_url = urlparse(vlm_server_url) if isinstance(vlm_server_url, str) else None
-    if (
-        not isinstance(vlm_server_url, str)
-        or parsed_vlm_server_url is None
-        or parsed_vlm_server_url.scheme not in {"http", "https"}
-        or not parsed_vlm_server_url.hostname
-        or any(char.isspace() for char in vlm_server_url)
-    ):
-        raise ValueError(f"local_ocr_vlm_server_url 必须是 http(s) URL，当前值: {vlm_server_url}")
-
-    vlm_timeout = config.get("local_ocr_vlm_timeout_seconds")
-    if not isinstance(vlm_timeout, int) or vlm_timeout <= 0:
-        raise ValueError(f"local_ocr_vlm_timeout_seconds 必须为正整数，当前值: {vlm_timeout}")
-
-    local_ocr_temperature = config.get("local_ocr_temperature")
-    if (
-        not isinstance(local_ocr_temperature, (int, float))
-        or isinstance(local_ocr_temperature, bool)
-        or not (0 <= local_ocr_temperature <= 2)
-    ):
-        raise ValueError(
-            f"local_ocr_temperature 必须是 [0, 2] 区间内的数字，当前值: {local_ocr_temperature}"
-        )
-
     if not isinstance(config.get("gpu_stage_queue_enabled"), bool):
         raise ValueError(f"gpu_stage_queue_enabled 必须为布尔值，当前值: {config.get('gpu_stage_queue_enabled')}")
-
-    for key in ("local_ocr_max_new_tokens", "local_ocr_max_pixels"):
-        value = config.get(key)
-        if value is not None and (not isinstance(value, int) or value <= 0):
-            raise ValueError(f"{key} 必须为空或正整数，当前值: {value}")
-
-    extraction_batch_size = config.get("llm_extraction_batch_size")
-    if not isinstance(extraction_batch_size, int) or extraction_batch_size <= 0:
-        raise ValueError(f"llm_extraction_batch_size 必须为正整数，当前值: {extraction_batch_size}")
-    if not isinstance(config.get("llm_enable_verification"), bool):
-        raise ValueError(f"llm_enable_verification 必须为布尔值，当前值: {config.get('llm_enable_verification')}")
 
     # --- Qwen Vision vLLM 共享配置（OCR + 固定字段抽取共用） ---
     qwen_vllm_server_url = config.get("qwen_vllm_server_url")

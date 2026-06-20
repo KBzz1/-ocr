@@ -13,7 +13,7 @@
 
 - 离线包必须**不包含** AGENTS.md、CLAUDE.md、`.git`、开发文档、tests、frontend 源码、`node_modules`、运行时缓存数据；详见 `deploy/windows/README_DEPLOY.txt:33-34`。
 - 正式镜像必须**固定 digest**：`qwen-vllm-server`（基于 `vllm/vllm-openai` 加载 `Qwen3.5-4B-AWQ-4bit`）与 `manzufei-ocr` 镜像的离线 tar 必须由 QA 在交付前锚定到具体 digest 并通过 `OFFLINE_IMAGE_DIR` 路径使用；不要在没改 PRD/共享契约前随便换 Qwen vLLM 镜像版本。
-- 默认后端镜像不再为 `llama.cpp/GGUF` 编译 CUDA wheel，也不依赖 `paddleocr` / `paddlex` 容器；OCR 与固定字段抽取都由本地 `qwen-vision-vllm-server` 统一提供。
+- 默认后端镜像不再为旧本地 GGUF 抽取路径编译 CUDA wheel，也不依赖旧 OCR 容器；OCR 与固定字段抽取都由本地 `qwen-vision-vllm-server` 统一提供。
 - 现场不压缩 zip 的覆盖同步只能改 `images/manzufei-ocr.tar`、`docker-compose.yml`、`app/config/local.yaml` 和 Windows 启停脚本；同步后必须按 `02_stop.bat` → `00_import_image.bat` → `01_start.bat` 顺序走一遍，避免 Docker Desktop 加载旧容器（见 `docs/部署/GPU-Docker部署.md:47`）。
 - `data/`、`exports/`、`logs/` 是运行产物位置，`models/` 是模型权重目录，**不要**在打包脚本里硬编码本机路径或把它们打进镜像。
 - 验收环境与 GPU 行为不一致时，优先比较 `logs/backend-events.jsonl`、服务 URL、容器内 Python 包版本、镜像创建时间、实际挂载的部署目录，不要直接假设是参数问题（见 `docs/部署/GPU-Docker部署.md:45`）。

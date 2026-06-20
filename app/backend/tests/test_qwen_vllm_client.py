@@ -128,6 +128,48 @@ def test_qwen_vllm_client_sends_text_json_request_with_response_format():
     assert call["messages"] == [{"role": "user", "content": "fixed field prompt"}]
 
 
+def test_qwen_vllm_client_accepts_fenced_json_with_trailing_commas():
+    fake = FakeOpenAIClient(content="""
+下面是结果：
+```json
+{
+  "fields": [
+    {
+      "field_key": "chief_complaint",
+    },
+  ],
+}
+```
+""")
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+
+    assert client.complete_json("prompt", max_tokens=8192, temperature=0.0) == {
+        "fields": [{"field_key": "chief_complaint"}]
+    }
+
+
+def test_qwen_vllm_client_does_not_modify_string_literals_when_removing_trailing_commas():
+    fake = FakeOpenAIClient(
+        content='{"note":"保留原文 ,} 片段","fields":[{"field_key":"chief_complaint",},]}'
+    )
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+
+    assert client.complete_json("prompt", max_tokens=8192, temperature=0.0) == {
+        "note": "保留原文 ,} 片段",
+        "fields": [{"field_key": "chief_complaint"}],
+    }
+
+
 def test_qwen_vllm_client_strips_think_blocks_from_text(tmp_path):
     image = _make_image(tmp_path)
     fake = FakeOpenAIClient(content="<think>chain-of-thought</think>主诉：咳嗽")

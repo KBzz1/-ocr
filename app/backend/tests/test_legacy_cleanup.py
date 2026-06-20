@@ -185,3 +185,76 @@ def test_no_active_default_code_path_calls_build_llama_cpp_client():
     ).read_text(encoding="utf-8")
     assert "build_llama_cpp_client" not in init_text
     assert "build_llama_cpp_client" not in port_text
+
+
+def test_active_config_templates_do_not_expose_legacy_paddle_or_llama_settings():
+    """当前默认配置不应再暴露旧 Paddle OCR 或 llama.cpp/GGUF 参数。"""
+    from app.backend.config import DEFAULT_CONFIG
+
+    legacy_keys = {
+        "llm_model_path",
+        "llm_context_tokens",
+        "llm_max_tokens",
+        "llm_extraction_batch_size",
+        "llm_enable_verification",
+        "local_ocr_max_new_tokens",
+        "local_ocr_max_pixels",
+        "local_ocr_vlm_server_url",
+        "local_ocr_vlm_timeout_seconds",
+        "local_ocr_temperature",
+    }
+    assert legacy_keys.isdisjoint(DEFAULT_CONFIG.keys())
+
+    config_paths = [
+        REPO_ROOT / "app" / "config" / "default.yaml",
+        REPO_ROOT / "app" / "config" / "local.docker.yaml",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in config_paths)
+    for legacy_key in legacy_keys:
+        assert legacy_key not in combined
+    assert "qwen_vllm_server_url" in combined
+    assert "qwen_ocr_temperature" in combined
+    assert "qwen_extraction_max_tokens" in combined
+
+
+def test_current_runtime_docs_do_not_describe_paddle_or_llamacpp_defaults():
+    """当前契约文档和 agent 文档不能继续把旧运行时写成默认路径。"""
+    paths = [
+        REPO_ROOT / "app" / "config" / "algorithm-modules.README.md",
+        REPO_ROOT / "deploy" / "offline-images" / "README.md",
+        REPO_ROOT / "docs" / "部署" / "离线验收记录.md",
+        REPO_ROOT / "app" / "backend" / "CLAUDE.md",
+        REPO_ROOT / "app" / "backend" / "services" / "algorithm_ports" / "evidence_units.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    forbidden = (
+        "paddleocr-vlm-server",
+        "PaddleOCRVLMServerDocumentPort",
+        "paddleocr==",
+        "paddlex",
+        "llama-cpp-python",
+        "llama_cpp",
+        "qwen2.5-7b-instruct-gguf",
+        "llm_model_path",
+        "local_ocr_vlm_server_url",
+    )
+    for text in forbidden:
+        assert text not in combined
+
+
+def test_legacy_paddleocr_and_llama_client_code_removed_from_active_backend():
+    """旧默认运行时代码不再留在活动 backend 目录中。"""
+    assert not (
+        REPO_ROOT
+        / "app"
+        / "backend"
+        / "services"
+        / "algorithm_ports"
+        / "paddleocr_vlm_server.py"
+    ).exists()
+    assert not (REPO_ROOT / "app" / "backend" / "tests" / "test_paddleocr_vlm_server_port.py").exists()
+
+    from app.backend.services.copd_extraction import llm_client
+
+    assert not hasattr(llm_client, "LlamaCppClient")
+    assert not hasattr(llm_client, "build_llama_cpp_client")

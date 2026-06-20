@@ -1,14 +1,13 @@
 """Per-task reextract job registry used for in-flight cancellation.
 
-The reextract endpoint runs the LLM synchronously inside the Flask request
-thread. The frontend aborts the HTTP fetch on 取消, but the LLM call itself
-has no native cancellation hook in llama-cpp-python's high-level API, so the
-GPU keeps running for the duration of the in-flight completion. To cut
-that tail off at the next section-group boundary we keep a small
-per-task threading.Event that the reextract service checks between LLM
-calls. A second HTTP endpoint (POST /api/tasks/<id>/cancel-reextract)
-flips the event from the request that handled 取消, so the user-visible
-"GPU keeps running" window shrinks from minutes to ~one LLM call.
+The reextract endpoint can run model-backed work synchronously inside the
+Flask request thread. The frontend aborts the HTTP fetch on 取消, but an
+in-flight model call may not stop immediately, so the GPU can keep running
+until the current call returns. A small per-task threading.Event lets the
+reextract service stop at the next safe boundary. A second HTTP endpoint
+(POST /api/tasks/<id>/cancel-reextract) flips the event from the request that
+handled 取消, so the user-visible "GPU keeps running" window shrinks from
+minutes to roughly one model call.
 """
 
 from threading import Event, Lock

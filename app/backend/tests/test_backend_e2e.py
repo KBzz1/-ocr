@@ -570,7 +570,7 @@ def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path,
             "主诉：反复咳嗽、咳痰20年，喘累2年，加重10余天。\n"
             "血气分析:pH7.40、pCO236.00mmHg、PO276.00mmHg↓、Na+130.00mmol/L↓、FiO221.00、氧合指数:961"
         )
-        # 与 PaddleOCRVLMServerDocumentPort 使用的页面分隔符保持一致
+        # 与当前 OCR 端口使用的页面分隔符保持一致
         MERGED_TEXT = f"{PAGE1_TEXT}\n\n{PAGE2_TEXT}"
 
         # 诊断原文 = OCR 页面 1 中的"最终诊断"片段(不静默改写)

@@ -183,34 +183,9 @@ def test_default_copd_field_port_does_not_require_llm_model_path():
     assert port is not None
 
 
-def test_default_copd_field_port_does_not_invoke_llama_cpp_builder(monkeypatch):
-    """默认路径不得调用 build_llama_cpp_client。"""
+def test_default_copd_field_port_module_has_no_llama_cpp_builder():
+    """默认路径不再保留 build_llama_cpp_client。"""
     from app.backend.services.copd_extraction import llm_client as llm_module
-    from app.backend.services.copd_extraction.port import build_default_copd_field_port
 
-    invoked = {"count": 0}
-
-    def fake_builder(*args, **kwargs):
-        invoked["count"] += 1
-        return None
-
-    monkeypatch.setattr(llm_module, "build_llama_cpp_client", fake_builder)
-
-    class FakeQwenVLLMClient:
-        def __init__(self, **kwargs):
-            pass
-
-    port = build_default_copd_field_port(
-        config={
-            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
-            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
-            "qwen_extraction_max_tokens": 8192,
-            "qwen_extraction_temperature": 0.0,
-            "qwen_extraction_timeout_seconds": 360,
-        },
-        field_keys_provider=lambda: [],
-    )
-    port._qwen_vllm_client = FakeQwenVLLMClient()
-    port._build_port()
-
-    assert invoked["count"] == 0, "默认路径不应触发 build_llama_cpp_client"
+    assert not hasattr(llm_module, "build_llama_cpp_client")
+    assert not hasattr(llm_module, "LlamaCppClient")

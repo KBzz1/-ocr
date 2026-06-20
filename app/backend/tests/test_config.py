@@ -223,10 +223,9 @@ def test_static_dir_default_normalized(tmp_path):
     assert "static_dir" in config
     assert os.path.isabs(config["static_dir"])
     assert config["static_dir"].endswith(os.path.join("app", "frontend", "dist"))
-    assert config["llm_enable_verification"] is True
 
 
-def test_load_config_supports_copd_extractor_settings(tmp_path):
+def test_load_config_supports_copd_extractor_flag(tmp_path):
     from app.backend.config import load_config
 
     config_dir = tmp_path / "config"
@@ -235,11 +234,6 @@ def test_load_config_supports_copd_extractor_settings(tmp_path):
         """
 algorithms:
   enable_copd_extractor: true
-  llm_model_path: ./models/llm/qwen2.5-7b-instruct-gguf/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf
-  llm_context_tokens: 8192
-  llm_max_tokens: 4096
-  llm_extraction_batch_size: 25
-  llm_enable_verification: false
 """,
         encoding="utf-8",
     )
@@ -247,14 +241,9 @@ algorithms:
     config = load_config(str(config_dir))
 
     assert config["enable_copd_extractor"] is True
-    assert config["llm_model_path"].endswith("qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf")
-    assert config["llm_context_tokens"] == 8192
-    assert config["llm_max_tokens"] == 4096
-    assert config["llm_extraction_batch_size"] == 25
-    assert config["llm_enable_verification"] is False
 
 
-def test_load_config_supports_vlm_server_ocr_settings(tmp_path):
+def test_load_config_supports_qwen_ocr_settings(tmp_path):
     from app.backend.config import load_config
 
     config_dir = tmp_path / "config"
@@ -263,10 +252,10 @@ def test_load_config_supports_vlm_server_ocr_settings(tmp_path):
         """
 algorithms:
   enable_local_ocr: true
-  local_ocr_vlm_server_url: http://paddleocr-vlm-server:8080/v1
-  local_ocr_vlm_timeout_seconds: 240
-  local_ocr_max_new_tokens: 1024
-  local_ocr_max_pixels: 200000
+  qwen_vllm_server_url: http://qwen-vision-vllm-server:8000/v1
+  qwen_ocr_temperature: 0.0
+  qwen_ocr_max_tokens: 4096
+  qwen_ocr_timeout_seconds: 240
 """,
         encoding="utf-8",
     )
@@ -274,10 +263,10 @@ algorithms:
     config = load_config(str(config_dir))
 
     assert config["enable_local_ocr"] is True
-    assert config["local_ocr_vlm_server_url"] == "http://paddleocr-vlm-server:8080/v1"
-    assert config["local_ocr_vlm_timeout_seconds"] == 240
-    assert config["local_ocr_max_new_tokens"] == 1024
-    assert config["local_ocr_max_pixels"] == 200000
+    assert config["qwen_vllm_server_url"] == "http://qwen-vision-vllm-server:8000/v1"
+    assert config["qwen_ocr_temperature"] == 0.0
+    assert config["qwen_ocr_max_tokens"] == 4096
+    assert config["qwen_ocr_timeout_seconds"] == 240
 
 
 def test_load_config_supports_public_base_url_from_environment(tmp_path, monkeypatch):
@@ -305,40 +294,6 @@ def test_public_base_url_rejects_blank_host_from_environment(tmp_path, monkeypat
         load_config(str(config_dir))
 
 
-def test_local_ocr_generation_limits_must_be_positive_when_set(tmp_path):
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  local_ocr_max_new_tokens: -1
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="local_ocr_max_new_tokens"):
-        load_config(str(config_dir))
-
-
-def test_llm_extraction_batch_size_must_be_positive(tmp_path):
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  llm_extraction_batch_size: 0
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="llm_extraction_batch_size"):
-        load_config(str(config_dir))
-
-
 def test_static_dir_overridable_via_local_yaml(tmp_path):
     """paths.static_dir 可通过 local.yaml 覆盖。"""
     import yaml
@@ -357,52 +312,6 @@ def test_static_dir_overridable_via_local_yaml(tmp_path):
 
     assert os.path.isabs(config["static_dir"])
     assert config["static_dir"].endswith("custom_dist")
-
-
-def test_local_ocr_vlm_timeout_must_be_positive(tmp_path):
-    import pytest
-    from app.backend.config import load_config
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "default.yaml").write_text(
-        """
-algorithms:
-  local_ocr_vlm_timeout_seconds: 0
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="local_ocr_vlm_timeout_seconds"):
-        load_config(str(config_dir))
-
-
-def test_local_ocr_temperature_defaults_to_zero(tmp_path):
-    """OCR 调用必须默认走 temperature=0.0 以保证同一原图可复现。"""
-    from app.backend.config import load_config
-
-    config = load_config(str(tmp_path / "nonexistent"))
-
-    assert config["local_ocr_temperature"] == 0.0
-
-
-def test_local_ocr_temperature_must_be_number_between_zero_and_two(tmp_path):
-    """OCR temperature 必须为 [0, 2] 区间内的数字。"""
-    from app.backend.config import load_config
-
-    for invalid_value in ("hot", -0.1, 2.5):
-        config_dir = tmp_path / f"config_{invalid_value}"
-        config_dir.mkdir()
-        (config_dir / "default.yaml").write_text(
-            f"""
-algorithms:
-  local_ocr_temperature: {invalid_value}
-""",
-            encoding="utf-8",
-        )
-
-        with pytest.raises(ValueError, match="local_ocr_temperature"):
-            load_config(str(config_dir))
 
 
 def test_vlm_backend_config_does_not_default_to_30000_context():

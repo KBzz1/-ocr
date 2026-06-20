@@ -198,7 +198,7 @@ class TestLocalEventLog:
             backend="vlm_server",
             page_count=2,
             timeout_seconds=30,
-            server_url="http://paddleocr-vlm-server:8080/v1",
+            server_url="http://qwen-vision-vllm-server:8000/v1",
             merged_text="完整 OCR 文本不应进入日志",
         )
         log.write(

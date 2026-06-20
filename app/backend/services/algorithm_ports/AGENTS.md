@@ -17,18 +17,17 @@
 - `field_extraction.py`：外部结构化字段抽取端口的抽象集合。
 - `qwen_vllm_client.py`：Qwen Vision vLLM 共享 OpenAI-compatible 客户端（OCR + 固定字段抽取共用）。
 - `qwen_vision_vllm.py`：Qwen Vision vLLM 常驻服务的 `DocumentParsingPort` 实现；当前默认 OCR 端口。
-- `paddleocr_vlm_server.py`：旧 PaddleOCR VLM 常驻服务客户端端口，**不再作为默认 OCR 路径**，仅作历史参考。
 - `orchestrator.py`：端口编排与失败聚合。
 - `results.py`：端口返回结果的契约类型。
 - `fixtures.py`：测试用端口适配器集合，供单元测试替换真实外部模块。
 
-当前 MVP 默认 OCR 路径走 `QwenVisionVLLMDocumentPort` → `QwenVLLMClient` → 本地 `qwen-vision-vllm-server` 的 `/v1/chat/completions`。PaddleOCR VLM 端口与 PaddleOCR 服务仅作为历史代码保留，不被任何默认配置装配到主流程。若新增图像预处理、批处理目录或服务化输入，先改 PRD、Shared 契约和后端 BDD/TDD，再新增适配层。
+当前 MVP 默认 OCR 路径走 `QwenVisionVLLMDocumentPort` → `QwenVLLMClient` → 本地 `qwen-vision-vllm-server` 的 `/v1/chat/completions`。若新增图像预处理、批处理目录或服务化输入，先改 PRD、Shared 契约和后端 BDD/TDD，再新增适配层。
 
 ## 端口设计原则
 
 - 每个外部模块一个端口文件，端口签名（输入/输出契约）保持稳定；契约变更需先同步 `docs/Backend/Backend_TDD/02-algorithm-ports.md` 与 `07-algorithm-failure-contracts.md`。
-- 端口实现通过依赖注入或工厂接入；测试用 `fixtures.py` 里的适配器替换真实算法子系统，单元测试不依赖 PaddleOCR/LLM/网络。
-- 失败类型至少分清：模块缺失、起不来（Docker/PaddleOCR service 不可达）、超时、结果为空、结果契约非法。详见 `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`。
+- 端口实现通过依赖注入或工厂接入；测试用 `fixtures.py` 里的适配器替换真实算法子系统，单元测试不依赖真实模型服务或网络。
+- 失败类型至少分清：模块缺失、外部算法服务不可达、超时、结果为空、结果契约非法。详见 `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md`。
 - 端口层不替失败结果生成兜底字段，只能向上抛契约化的失败信号；重试策略属于 `orchestrator` 与任务层。
 
 ## COPD 字段抽取端口
@@ -39,7 +38,7 @@
 ## 测试约定
 
 - 每个端口必须有单元测试覆盖：模块缺失、起不来、超时、结果为空、结果契约非法 5 类失败路径，外加至少一条正常路径。
-- 测试 fixture 走 `fixtures.py`；不允许在测试里直接 import 或 stub 真实 PaddleOCR/LLM/网络。
+- 测试 fixture 走 `fixtures.py`；不允许在测试里直接 import 或 stub 真实模型服务/网络。
 - 任务级失败契约（端口层 → 任务状态机）以 `app/backend/tests/test_api_contracts.py` 与 `docs/Backend/Backend_TDD/07-algorithm-failure-contracts.md` 为准。
 
 ## 不在本目录做的事

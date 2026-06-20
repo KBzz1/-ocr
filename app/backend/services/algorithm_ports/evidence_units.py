@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import re
 
-# Same separator used by ``PaddleOCRVLMServerDocumentPort`` to join per-page
-# text into ``merged_text``. Tests and downstream consumers depend on this
-# exact string so do not change without coordinating with the OCR port.
+# Same separator used by the active OCR port to join per-page text into
+# ``merged_text``. Tests and downstream consumers depend on this exact string
+# so do not change without coordinating with the OCR port.
 PAGE_SEPARATOR = "\n\n"
 
 # Characters that always end a unit.

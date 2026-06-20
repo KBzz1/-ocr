@@ -159,10 +159,11 @@ class QwenVLLMClient:
         content = self._extract_text(response)
         if not content:
             raise RuntimeError("Qwen vLLM 返回为空")
+        normalized = _normalize_json_response(content)
         try:
-            parsed = json.loads(content)
+            parsed = json.loads(normalized)
         except json.JSONDecodeError as exc:
-            tail = content[-200:] if len(content) > 200 else content
+            tail = normalized[-200:] if len(normalized) > 200 else normalized
             logger.error(
                 "Qwen vLLM JSON 解析失败 model=%s tail=%s",
                 self._model, tail,
@@ -183,3 +184,76 @@ class QwenVLLMClient:
             )
             raise RuntimeError(f"Qwen vLLM 响应结构非法: {exc}") from exc
         return strip_think_blocks(content)
+
+
+def _normalize_json_response(content: str) -> str:
+    text = content.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    else:
+        text = _extract_first_json_object(text)
+    return _strip_trailing_commas_outside_strings(text)
+
+
+def _strip_trailing_commas_outside_strings(text: str) -> str:
+    chars: list[str] = []
+    in_string = False
+    escape = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if escape:
+            chars.append(char)
+            escape = False
+            index += 1
+            continue
+        if char == "\\" and in_string:
+            chars.append(char)
+            escape = True
+            index += 1
+            continue
+        if char == '"':
+            chars.append(char)
+            in_string = not in_string
+            index += 1
+            continue
+        if char == "," and not in_string:
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+        chars.append(char)
+        index += 1
+    return "".join(chars)
+
+
+def _extract_first_json_object(text: str) -> str:
+    start = text.find("{")
+    if start < 0:
+        return text
+
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(text[start:], start=start):
+        if escape:
+            escape = False
+            continue
+        if char == "\\" and in_string:
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    return text[start:]

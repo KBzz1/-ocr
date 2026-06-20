@@ -29,7 +29,8 @@ upload:
   min_quad_area_ratio: 0.01
 algorithms:
   enable_copd_extractor: true
-  llm_model_path: "{tmp_path}/fake-model.gguf"
+  qwen_vllm_server_url: "http://qwen-vision-vllm-server:8000/v1"
+  qwen_vllm_model_name: "Qwen3.5-4B-AWQ-4bit"
 """,
         encoding="utf-8",
     )
