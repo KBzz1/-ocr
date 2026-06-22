@@ -10,6 +10,8 @@ import logging
 import re
 from pathlib import Path
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 _IMAGE_MIME_BY_EXT = {
@@ -80,6 +82,7 @@ class QwenVLLMClient:
                 base_url=base_url,
                 api_key=api_key,
                 timeout=timeout_seconds,
+                http_client=httpx.Client(trust_env=False),
             )
         else:
             self._client = openai_client

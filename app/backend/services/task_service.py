@@ -454,6 +454,7 @@ class TaskService:
         return public
 
     def process(self, task_id: str, schema: dict | None = None) -> dict:
+        self._archive_review_result(task_id, self._now())
         task = self._start_processing(task_id, "触发任务处理")
         return self._dispatch_orchestrator(task, schema=schema)
 
@@ -464,6 +465,7 @@ class TaskService:
                 ErrorCode.INVALID_TASK_TRANSITION,
                 details={"current": task["status"], "target": TaskStatus.PROCESSING.value},
             )
+        self._archive_review_result(task_id, self._now())
         task = self._start_processing(task_id, "失败任务重试")
         return self._dispatch_orchestrator(task, schema=schema)
 
@@ -600,6 +602,12 @@ class TaskService:
             task["review_summary"] = review_summary
         self._write_task(task)
         return task
+
+    def update_review_summary(self, task_id: str, review_summary: dict) -> None:
+        task = self._read_task(task_id)
+        task["review_summary"] = review_summary
+        task["updated_at"] = self._now()
+        self._write_task(task)
 
     def reopen_review(self, task_id: str) -> dict:
         task = self._read_task(task_id)

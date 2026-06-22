@@ -138,6 +138,19 @@ def test_first_read_initializes_review_result_from_candidates(tmp_path):
     review = review_service.get_or_init("task_001")
 
     assert [field["field_key"] for field in review["fields"]] == ["patient_name", "department"]
+
+
+def test_get_or_init_updates_task_review_summary_from_review_fields(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
+
+    review = review_service.get_or_init("task_001")
+
+    task = store.read("tasks/task_001.json")
+    assert task["review_summary"] == review["summary"]
+    assert task["review_summary"]["total_count"] == 2
+    assert task["review_summary"]["not_found_count"] == 0
     assert find_field(review, "patient_name")["status"] == "unreviewed"
     assert review["summary"]["unreviewed_count"] == 2
     assert review["summary"]["suspicious_count"] == 0

@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import time
 
 import pytest
@@ -115,6 +116,12 @@ def test_startup_event_logged(app):
     names = [item["event"] for item in events(app)]
     assert "system_started" in names
     assert "algorithm_module_not_configured" in names
+
+
+def test_third_party_http_debug_loggers_are_suppressed(app):
+    """OpenAI/httpx/httpcore DEBUG 日志可能包含 prompt、OCR 文本或请求体。"""
+    for logger_name in ("openai", "httpx", "httpcore"):
+        assert logging.getLogger(logger_name).getEffectiveLevel() >= logging.WARNING
 
 
 def test_task_upload_finish_events_logged(client, app):

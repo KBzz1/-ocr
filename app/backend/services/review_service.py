@@ -101,6 +101,12 @@ class ReviewService:
             review["field_groups"] = schema["field_groups"]
         return review
 
+    def _sync_task_review_summary(self, task_id: str, review: dict) -> None:
+        summary = review.get("summary")
+        sync = getattr(self._task_service, "update_review_summary", None)
+        if isinstance(summary, dict) and callable(sync):
+            sync(task_id, summary)
+
     def get_or_init(self, task_id: str, task: dict | None = None) -> dict:
         if task is None:
             task = self._task_service.get_task(task_id)
@@ -111,6 +117,7 @@ class ReviewService:
             # BE-MVP-05-06: 按当前 schema 补齐缺失字段并重排
             schema_for_hydrate = self._schema_provider() if self._schema_provider else {}
             self._hydrate_missing_fields(existing, schema_for_hydrate)
+            self._sync_task_review_summary(task_id, existing)
             return self._enrich_with_schema(self._enrich_with_ocr(existing, task_id))
 
         wrapper = self._store.read(f"results/{task_id}/field_candidates.json")
@@ -134,6 +141,7 @@ class ReviewService:
         self._store.write(f"results/{task_id}/review_result.json", review)
         # BE-MVP-05-06: candidates 路径也要按 schema 补齐缺失字段并重排
         self._hydrate_missing_fields(review, schema)
+        self._sync_task_review_summary(task_id, review)
         return self._enrich_with_schema(self._enrich_with_ocr(review, task_id))
 
     def _build_fields(self, candidates: list[dict], schema: dict) -> list[dict]:

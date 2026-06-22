@@ -5,7 +5,9 @@ import pytest
 
 from app.backend import create_backend_app
 from app.backend.errors import AppError, ErrorCode
+from app.backend.services.review_service import ReviewService
 from app.backend.services.reextract_jobs import ReextractJobRegistry
+from app.backend.services.task_service import TaskService
 from app.backend.storage.json_store import JsonStore
 
 
@@ -223,6 +225,84 @@ def test_process_task_without_algorithm_returns_failed_payload(client, app):
         "processing",
         "failed",
     ]
+
+
+def test_process_task_discards_stale_review_result_before_rebuilding_from_new_candidates(client, app):
+    store = JsonStore(app.config["BACKEND_CONFIG"]["storage_dir"])
+    write_task(app, status="review", document_type="copd_admission_record", schema_version="1.0.0")
+    store.write(
+        "results/1/review_result.json",
+        {
+            "task_id": "1",
+            "schema_version": "1.0.0",
+            "document_type": "copd_admission_record",
+            "fields": [
+                {
+                    "field_key": "chief_complaint",
+                    "field_name": "主诉",
+                    "auto_value": "",
+                    "final_value": "",
+                    "extraction_status": "not_found",
+                    "status": "unreviewed",
+                }
+            ],
+            "summary": {"total_count": 1, "not_found_count": 1},
+        },
+    )
+
+    class NewCandidatesOrchestrator:
+        def run(self, task, task_service, schema=None):
+            store.write(
+                "results/1/field_candidates.json",
+                {
+                    "task_id": "1",
+                    "stage": "field_extraction",
+                    "status": "success",
+                    "candidates": [
+                        {
+                            "field_key": "chief_complaint",
+                            "original_value": "新抽取主诉",
+                            "evidence": [
+                                {
+                                    "id": "u001",
+                                    "text": "主诉：新抽取主诉",
+                                    "start_offset": 0,
+                                    "end_offset": 8,
+                                    "page_no": 1,
+                                }
+                            ],
+                            "confidence": 0.9,
+                            "extraction_status": "extracted",
+                            "verification_status": "not_checked",
+                        }
+                    ],
+                },
+            )
+            return task_service.mark_ready(task["task_id"])
+
+    task_service = TaskService(
+        store=store,
+        orchestrator=NewCandidatesOrchestrator(),
+        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
+        background_runner=lambda task_id, run: run(),
+        patient_service=app.config.get("PATIENT_SERVICE"),
+    )
+    app.config["TASK_SERVICE"] = task_service
+    app.config["REVIEW_SERVICE"] = ReviewService(
+        store=store,
+        task_service=task_service,
+        schema_provider=app.config["SCHEMA_SERVICE"].get_current,
+    )
+
+    response = client.post("/api/tasks/1/process")
+    assert response.status_code == 200
+    final = wait_for_task_status(client, "1", "review")
+    assert final["status"] == "review"
+
+    review = client.get("/api/tasks/1/review").get_json()["data"]["review_result"]
+    field_by_key = {field["field_key"]: field for field in review["fields"]}
+    assert field_by_key["chief_complaint"]["final_value"] == "新抽取主诉"
+    assert field_by_key["chief_complaint"]["extraction_status"] == "extracted"
 
 
 def test_cancel_processing_route_marks_task_failed(client, app):

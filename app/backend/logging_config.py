@@ -53,6 +53,7 @@ def setup_logging(log_dir: str) -> None:
 
     # Flask app logger 继承 root 配置即可
     logging.getLogger("app.backend").setLevel(logging.DEBUG)
+    _suppress_verbose_http_clients()
 
 
 def _archive_old_hot_log(log_dir: str) -> None:
@@ -96,3 +97,9 @@ def _isolate_werkzeug(log_dir: str) -> None:
         logging.INFO,
         COLD_LOG_MAX_BYTES,
     ))
+
+
+def _suppress_verbose_http_clients() -> None:
+    """避免三方 SDK DEBUG 日志把 prompt、OCR 文本或 HTTP 请求体写入 debug.log。"""
+    for logger_name in ("openai", "httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)

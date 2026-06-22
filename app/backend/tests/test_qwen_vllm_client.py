@@ -230,14 +230,20 @@ def test_qwen_vllm_client_raises_on_openai_error():
 def test_qwen_vllm_client_uses_local_base_url_when_constructed_without_injection():
     """未注入 openai_client 时，必须用 OpenAI(base_url=..., api_key=not-needed) 拼本地连接。"""
     captured = {}
-
     class CapturingOpenAI:
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
+    class CapturingHttpx:
+        class Client:
+            def __init__(self, **kwargs):
+                assert kwargs == {"trust_env": False}
+                captured["httpx_client_kwargs"] = kwargs
+
     from app.backend.services.algorithm_ports import qwen_vllm_client as mod
 
     mod.OpenAI = CapturingOpenAI
+    mod.httpx = CapturingHttpx
     client = QwenVLLMClient(
         base_url="http://127.0.0.1:8082/v1",
         model="Qwen3.5-4B-AWQ-4bit",
@@ -249,6 +255,8 @@ def test_qwen_vllm_client_uses_local_base_url_when_constructed_without_injection
     assert captured["base_url"] == "http://127.0.0.1:8082/v1"
     assert captured["api_key"] == "placeholder"
     assert captured["timeout"] == 240
+    assert isinstance(captured["http_client"], CapturingHttpx.Client)
+    assert captured["httpx_client_kwargs"] == {"trust_env": False}
 
 
 def test_qwen_vllm_client_image_path_missing_raises(tmp_path):
