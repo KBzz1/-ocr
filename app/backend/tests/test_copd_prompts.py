@@ -183,6 +183,25 @@ def test_admission_prompt_requires_fixed_schema_fields_and_not_free_keys():
         assert forbidden not in prompt, f"prompt 仍包含旧契约字段 {forbidden}"
 
 
+def test_admission_prompt_requests_compact_field_payload_without_repeated_schema_labels():
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_prompt,
+    )
+
+    schema = _sample_admission_schema()
+    units = _sample_evidence_units()
+    prompt = build_admission_structured_fields_prompt(schema, units)
+
+    assert "field_key、status、value、evidence_ids" in prompt
+    assert "后端按 schema 回填章节" in prompt
+
+    output_example = prompt.split("输出示例：", 1)[1].split("【硬约束 — 字段与 key】", 1)[0]
+    for forbidden in ('"section_key"', '"section_label"', '"field_label"'):
+        assert forbidden not in output_example, (
+            f"Qwen 输出示例不应重复 schema 可回填字段 {forbidden}"
+        )
+
+
 def test_admission_prompt_requires_not_found_for_missing_fields():
     from app.backend.services.copd_extraction.prompts import (
         build_admission_structured_fields_prompt,

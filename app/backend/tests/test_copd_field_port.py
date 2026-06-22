@@ -119,6 +119,23 @@ def current_schema():
     return load_schema("app/config/schemas/admission_record_structured_fields.v1.yaml")
 
 
+def _full_not_found_payload(schema):
+    return {
+        "schema_version": schema["version"],
+        "document_type": schema["document_type"],
+        "fields": [
+            {
+                "field_key": field["field_key"],
+                "status": "not_found",
+                "value": "",
+                "evidence_ids": [],
+            }
+            for group in schema["field_groups"]
+            for field in group["fields"]
+        ],
+    }
+
+
 def current_schema_field_keys():
     schema = current_schema()
     return [
@@ -158,6 +175,59 @@ def test_default_copd_field_port_builds_qwen_vllm_json_client():
     assert isinstance(port._llm_client, OpenAICompatibleJsonClient)
     assert captured["base_url"] == "http://qwen-vision-vllm-server:8000/v1"
     assert captured["model"] == "Qwen3.5-4B-AWQ-4bit"
+
+
+def test_qwen_admission_port_preserves_merged_ocr_context_with_evidence_units():
+    """即使已有 evidence_units，prompt 仍保留完整 merged OCR 供模型理解跨片段上下文。"""
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+
+    captured_prompts: list[str] = []
+
+    class FakeLlmClient:
+        def complete_json(self, prompt: str, **kwargs):
+            captured_prompts.append(prompt)
+            return _full_not_found_payload(current_schema())
+
+        def close(self):
+            pass
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+            "llm_client_factory": lambda *a, **k: FakeLlmClient(),
+        },
+        field_keys_provider=lambda: list(current_schema_field_keys()),
+    )
+
+    evidence_units = [
+        {
+            "id": "u001",
+            "text": "主诉：反复咳嗽、咳痰15年。",
+            "start_offset": 0,
+            "end_offset": 16,
+            "page_no": 1,
+        }
+    ]
+    merged_only_text = "MERGED_OCR_DUPLICATION_SENTINEL"
+
+    result = port.extract({
+        "document_result": {
+            "merged_text": merged_only_text,
+            "evidence_units": evidence_units,
+        },
+        "evidence_units": evidence_units,
+        "schema": current_schema(),
+        "document_type": "copd_admission_record",
+    })
+
+    assert len(result) == 61
+    prompt = captured_prompts[-1]
+    assert evidence_units[0]["text"] in prompt
+    assert merged_only_text in prompt
 
 
 def test_default_copd_field_port_does_not_require_llm_model_path():

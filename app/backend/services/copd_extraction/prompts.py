@@ -85,6 +85,8 @@ def build_adversarial_verification_prompt(source_groups: list[dict], document_co
 # 该 builder 是活动入院记录结构化抽取路径的唯一公开入口。
 # 新契约核心：
 # - 按 schema 固定字段表全量输出，不得自由生成 schema 外字段或二级 key。
+# - Qwen 字段项只输出 field_key / status / value / evidence_ids；
+#   章节、标签、审核状态和 evidence 详情由后端按 schema 与 evidence_units 回填。
 # - evidence 用 evidence_ids（编号列表），不允许模型自行撰写 evidence 文本。
 # - 严禁 OCR 文本修正、标题纠正（如把"品后诊断"改成"最后诊断"）和页序重排。
 # - 诊断字段仅摘录原文记录，禁止主观医学判断、推断、补充或改写。
@@ -104,7 +106,8 @@ def build_admission_structured_fields_prompt(
             version / document_type / field_groups。
         evidence_units: 后端生成的轻量证据单元列表，每项包含 id / text，
             可选 start_offset / end_offset / page_no / section_key。
-        document_text: 合并后的 OCR 原文（仅供模型理解上下文；不参与字段抽取）。
+        document_text: 合并后的 OCR 原文。正常路径同时提供完整 OCR 上下文
+            与 evidence_units，便于模型理解跨片段语境但只通过 evidence_ids 定位。
 
     Returns:
         完整的 Qwen prompt 字符串。
@@ -130,16 +133,15 @@ def build_admission_structured_fields_prompt(
     for unit in evidence_units or []:
         unit_id = unit.get("id", "")
         unit_text = unit.get("text", "")
-        page_no = unit.get("page_no")
-        page_part = f"（page_no={page_no}）" if page_no else ""
-        unit_blocks.append(f"- {unit_id}{page_part}：{unit_text}")
+        unit_blocks.append(f"- {unit_id}：{unit_text}")
     evidence_units_section = "\n".join(unit_blocks) if unit_blocks else "（未提供 evidence_units）"
 
-    schema_keys = [
-        field.get("field_key", "")
-        for group in schema.get("field_groups", [])
-        for field in group.get("fields", [])
-    ]
+    if document_text:
+        document_text_section = document_text
+    elif evidence_units:
+        document_text_section = "已由上方 evidence_units 按 OCR 原始顺序覆盖，本次不重复粘贴完整 OCR。"
+    else:
+        document_text_section = "（未提供 document_text）"
 
     return f"""
 你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
@@ -155,7 +157,7 @@ document_type：{document_type}
 - not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
 - uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
 
-每项字段输出固定包含：`section_key`、`section_label`、`field_key`、`field_label`、`status`、`value`、`evidence_ids`。`evidence_ids` 必须是字符串列表（list[str]），只允许从下方"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从下方"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
 
 输出示例：
 ```json
@@ -164,19 +166,13 @@ document_type：{document_type}
   "document_type": "{document_type}",
   "fields": [
     {{
-      "section_key": "chief_complaint",
-      "section_label": "主诉",
       "field_key": "chief_complaint",
-      "field_label": "主诉",
       "status": "found",
       "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
       "evidence_ids": ["u001"]
     }},
     {{
-      "section_key": "history_of_present_illness",
-      "section_label": "现病史",
       "field_key": "hpi_initial_onset",
-      "field_label": "初次发病情况",
       "status": "not_found",
       "value": "",
       "evidence_ids": []
@@ -187,7 +183,7 @@ document_type：{document_type}
 
 【硬约束 — 字段与 key】
 - field_key 只允许使用下方"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
-- section_key / section_label 必须与固定字段表中的定义一致，不得改写或拼接。
+- 字段章节和字段标签由后端按固定字段表回填；模型输出中禁止重复 section_key、section_label、field_label。
 - 字段顺序按固定字段表顺序输出，便于后端对齐。
 
 【硬约束 — evidence 与原文】
@@ -217,17 +213,11 @@ document_type：{document_type}
 {evidence_units_section}
 
 【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
-{document_text or "（未提供 document_text）"}
+{document_text_section}
 
 【再次强调】
 - 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
-- 禁止 schema 外字段；禁止自由生成二级 key；禁止输出任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
+- 禁止 schema 外字段；禁止自由生成二级 key；禁止输出章节/标签重复字段或任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
 - 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
 - 允许多个字段共用同一条 evidence unit，特别是血气 6 项。
-
-# 末尾的 schema_keys 列表是给模型的 field_key 自检参考；固定字段表已在上方枚举，
-# 这里只在末尾以 JSON 数组形式再次列出 61 个 key 便于模型逐项核对，避免漏字段或
-# 写错 key。token 预算上 ~1.5KB，可接受。
-允许的 field_key 集合（参考，必须按上表顺序全量输出）：
-{json.dumps(schema_keys, ensure_ascii=False)}
 """.strip()
