@@ -1,9 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-export const MAX_EVIDENCE_HIGHLIGHT_CHARS = 100;
-
 export type SourceMessage = {
-  kind: 'located' | 'missing' | 'unavailable' | 'too_long' | 'unlocated';
+  kind: 'located' | 'missing' | 'unavailable' | 'unlocated';
   text: string;
   evidenceText?: string;
   startIndex?: number;
@@ -29,11 +27,7 @@ function resolveSourceMessage(sourceMessage: SourceMessage | null): SourceMessag
       text: '来源片段未在 OCR 文本中定位，请核对',
     };
   }
-  if (sourceMessage.evidenceText.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) return sourceMessage;
-  return {
-    kind: 'too_long',
-    text: '来源片段过长（>100 字），不进行高亮，请人工核验',
-  };
+  return sourceMessage;
 }
 
 function renderTextWithHighlight(
@@ -43,7 +37,6 @@ function renderTextWithHighlight(
   markRef: RefObject<HTMLElement>,
 ) {
   if (!evidenceText) return text;
-  if (evidenceText.length > MAX_EVIDENCE_HIGHLIGHT_CHARS) return text;
   const offsetMatches =
     typeof startIndex === 'number' &&
     startIndex >= 0 &&
@@ -73,18 +66,12 @@ export function locateEvidence(
   if (typeof start === 'number' && typeof end === 'number' && end > start) {
     const slice = rawText.slice(start, end);
     if (slice && slice === rawText.substring(start, end)) {
-      const highlight = slice.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS ? slice : slice.slice(0, MAX_EVIDENCE_HIGHLIGHT_CHARS);
-      if (rawText.slice(start, start + highlight.length) === highlight) {
-        return { rawText, highlightText: highlight, startIndex: start };
-      }
+      return { rawText, highlightText: slice, startIndex: start };
     }
   }
 
   if (text && rawText.includes(text)) {
-    if (text.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
-      return { rawText, highlightText: text, startIndex: rawText.indexOf(text) };
-    }
-    return null;
+    return { rawText, highlightText: text, startIndex: rawText.indexOf(text) };
   }
 
   return null;

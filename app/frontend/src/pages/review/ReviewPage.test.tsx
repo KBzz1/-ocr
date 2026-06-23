@@ -514,7 +514,7 @@ describe('ReviewPage', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 
-  it('highlights a locatable short fragment from evidence longer than the guard threshold', async () => {
+  it('highlights a locatable unit from long evidence text', async () => {
     const longEvidence = [
       '现病史：患者反复咳嗽、咳痰15年，活动后气促6年，近期症状加重。',
       '入院后予以吸入治疗并完善相关检查。',
@@ -551,7 +551,6 @@ describe('ReviewPage', () => {
 
     expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
     expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
-    expect(screen.queryByText('来源片段过长（>100 字），不进行高亮，请人工核验')).toBeNull();
   });
 
   it('highlights the first locatable OCR fragment when evidence is a summarized phrase', async () => {
@@ -958,7 +957,7 @@ describe('ReviewPage', () => {
     expect(screen.queryByRole('button', { name: '一键审核' })).toBeNull();
   });
 
-  it('does not highlight evidenceText when it exceeds the short-snippet threshold', async () => {
+  it('highlights a long evidence unit when it is locatable in OCR text', async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
 
@@ -991,9 +990,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('来源片段过长（>100 字），不进行高亮，请人工核验')).toBeTruthy();
-    expect(document.querySelector('mark')).toBeNull();
-    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    expect(document.querySelector('mark')?.textContent).toBe(longEvidence);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 
   it('does not surface evidence_recovered_from_value audit flag as an evidence risk indicator', async () => {

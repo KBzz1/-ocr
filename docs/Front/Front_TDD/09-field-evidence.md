@@ -11,8 +11,8 @@
 | FE-EVD-004 | 组件 | 点击无来源字段时，文本区显示"此字段无对应来源文本" |
 | FE-EVD-005 | 组件 | 来源页码不存在于页面列表时，显示"来源页不可用"，不抛异常 |
 | FE-EVD-006 | 组件 | 导出前统计未定位来源字段数量并提示用户 |
-| FE-EVD-007 | 组件 | `evidenceText` 长度 > 100 字时，OCR 文本不高亮该整段，并提示人工核验 |
-| FE-EVD-008 | 组件 | `evidenceText` 长度 ≤ 100 且存在于 OCR 文本时，继续高亮对应片段 |
+| FE-EVD-007 | 组件 | `evidenceText` 是后端返回的可定位 evidence unit 时，即使文本较长也按该 unit 高亮 |
+| FE-EVD-008 | 组件 | `evidenceText` 存在于 OCR 文本时，继续高亮对应片段 |
 | FE-EVD-009 | 组件 | `evidenceText` 缺失或为 `null` 时，沿用无来源提示，不补造来源 |
 
 ## 高亮优先级（PR-FE-007 / T7）
@@ -29,4 +29,4 @@
 | FE-EVD-015 | 兜底 | 多个 evidence 单元 id 同时存在时，前端按 evidence 数组顺序取首个作为高亮目标 |
 | FE-EVD-016 | 兜底 | 字段 evidence 同时含 `text` 和 `start_offset` / `end_offset` 且 offset 区间对应的原文片段与 `text` 一致时，offset 优先 |
 | FE-EVD-017 | 兜底 | OCR 面板按后端保存的页顺序展示，跳转 evidence 时跳到 evidence 实际指向的页与位置，不重新排序 |
-| FE-EVD-018 | 兜底 | evidence 文本超过 100 字时，前端不渲染大范围高亮，显示"来源片段较长，请人工核对" |
+| FE-EVD-018 | 兜底 | evidence 文本由后端按 unit 分段返回时，前端不再按固定长度阈值拒绝高亮；只在无法定位时提示人工核对 |

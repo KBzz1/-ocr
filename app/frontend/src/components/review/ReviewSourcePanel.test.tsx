@@ -41,4 +41,26 @@ describe('ReviewSourcePanel', () => {
     expect(mark?.textContent).toBe('体温：36.7℃');
     expect(Array.from(pre.childNodes)[0].textContent).toBe('体温：36.7℃。\n复查');
   });
+
+  it('renders a long locatable evidence unit without applying the old 100 character guard', () => {
+    const evidenceText =
+      '体格检查：体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg 身高：175cm 体重：74kg BMI：24.2kg/m²，双肺呼吸音稍低，未闻及明显湿啰音。';
+    const rawText = `入院记录。\n${evidenceText}\n处理意见：继续观察。`;
+    const start = rawText.indexOf(evidenceText);
+
+    render(
+      <ReviewSourcePanel
+        text={rawText}
+        sourceMessage={{
+          kind: 'located',
+          text: '点击字段可定位原文',
+          evidenceText,
+          startIndex: start,
+        }}
+      />,
+    );
+
+    const pre = screen.getByLabelText('合并 OCR 文本');
+    expect(pre.querySelector('mark')?.textContent).toBe(evidenceText);
+  });
 });

@@ -4,7 +4,7 @@ import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPaylo
 import { cancelReextractTask, completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
-import { ReviewSourcePanel, MAX_EVIDENCE_HIGHLIGHT_CHARS, type SourceMessage } from '../../components/review/ReviewSourcePanel';
+import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
 import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
 import { buildReviewPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
@@ -60,7 +60,7 @@ function findLocatedEvidenceText(
   const candidates: Array<{ text: string; offset?: number }> = [];
   if (typeof evidence.start_offset === 'number' && typeof evidence.end_offset === 'number' && evidence.end_offset > evidence.start_offset) {
     const slice = ocrText.slice(evidence.start_offset, evidence.end_offset);
-    if (cleanedEvidence && slice === cleanedEvidence && slice.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
+    if (cleanedEvidence && slice === cleanedEvidence) {
       candidates.push({ text: slice, offset: evidence.start_offset });
     }
   }
@@ -68,11 +68,7 @@ function findLocatedEvidenceText(
   if (cleanedEvidence) {
     const fullEvidenceLocated = ocrText.includes(cleanedEvidence);
     if (fullEvidenceLocated) {
-      if (cleanedEvidence.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
-        candidates.push({ text: cleanedEvidence });
-      } else {
-        return undefined;
-      }
+      candidates.push({ text: cleanedEvidence });
     }
     const rawSplitCandidates = [
       ...cleanedEvidence.split(/\n+/),
@@ -82,7 +78,7 @@ function findLocatedEvidenceText(
     const splitCandidates = Array.from(new Set(
       rawSplitCandidates
         .map((line) => line.trim().replace(/^[\s"'“”‘’（）()]+|[\s"'“”‘’（）()]+$/g, ''))
-        .filter((line) => line.length >= 4 && line.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS)
+        .filter((line) => line.length >= 4)
     ));
     for (const line of splitCandidates) {
       candidates.push({ text: line });
@@ -528,8 +524,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const selectedEvidence = selectedField?.evidence?.find((item) => item.text || (typeof item.start_offset === 'number' && typeof item.end_offset === 'number'));
   const selectedEvidenceText = selectedEvidence?.text;
   const hasOffsetEvidence = Boolean(selectedEvidence && typeof selectedEvidence.start_offset === 'number' && typeof selectedEvidence.end_offset === 'number');
-  const cleanedEvidenceForGuard = selectedEvidenceText ? stripOcrMarkup(selectedEvidenceText) : undefined;
-  const evidenceExceedsHighlightLimit = Boolean(cleanedEvidenceForGuard && cleanedEvidenceForGuard.length > MAX_EVIDENCE_HIGHLIGHT_CHARS);
   const locatedEvidence = findLocatedEvidenceText(visibleOcrText, selectedEvidence);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
@@ -543,8 +537,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                 evidenceText: locatedEvidence.text,
                 startIndex: locatedEvidence.startIndex,
               }
-            : evidenceExceedsHighlightLimit
-              ? { kind: 'too_long', text: '来源片段过长（>100 字），不进行高亮，请人工核验' }
             : hasOffsetEvidence
               ? { kind: 'unlocated', text: '来源片段未在 OCR 文本中定位，请核对' }
               : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }
