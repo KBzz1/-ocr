@@ -16,9 +16,10 @@ FRONTEND_LOG="$LOG_DIR/frontend.log"
 BACKEND_HEALTH_URL="http://127.0.0.1:8081/api/system/status"
 WORKSTATION_URL="http://127.0.0.1:8081/"
 QWEN_VLLM_HEALTH_URL="http://127.0.0.1:8082/v1/models"
-QWEN_VLLM_MODEL_DIR="$ROOT_DIR/models/llm/Qwen3.5-4B-AWQ-4bit"
-QWEN_VLLM_SERVER_TAR="$ROOT_DIR/deploy/offline-images/qwen-vllm-server.tar"
-QWEN_VLLM_SERVER_LOCAL_TAG="qwen-vllm-openai:verified"
+QWEN_VLLM_MODEL_DIR="${QWEN_VLLM_MODEL_DIR:-$ROOT_DIR/models/llm/Qwen3.5-4B-AWQ-4bit}"
+QWEN_VLLM_MODEL_ROOT="${QWEN_VLLM_MODEL_ROOT:-$(dirname "$QWEN_VLLM_MODEL_DIR")}"
+QWEN_VLLM_SERVER_TAR="${QWEN_VLLM_SERVER_TAR:-$ROOT_DIR/deploy/offline-images/qwen-vllm-server.tar}"
+QWEN_VLLM_SERVER_LOCAL_TAG="${QWEN_VLLM_SERVER_LOCAL_TAG:-qwen-vllm-openai:verified}"
 CONDA_PYTHON="/home/kbzz1/miniconda3/envs/manzufei_ocr/bin/python"
 
 mkdir -p "$LOG_DIR" "$DATA_DIR" "$EXPORT_DIR" "$VLLM_CACHE_DIR"
@@ -49,7 +50,7 @@ algorithms:
   enable_local_ocr: true
   qwen_vllm_server_url: "http://127.0.0.1:8082/v1"
   qwen_vllm_model_name: "Qwen3.5-4B-AWQ-4bit"
-  qwen_vllm_model_dir: "./models/llm/Qwen3.5-4B-AWQ-4bit"
+  qwen_vllm_model_dir: "$QWEN_VLLM_MODEL_DIR"
   qwen_vllm_max_model_len: 16384
   qwen_vllm_gpu_memory_utilization: 0.85
   qwen_vllm_max_num_seqs: 1
@@ -107,6 +108,7 @@ ensure_qwen_vllm_server() {
   fi
 
   echo "Starting Qwen vLLM server..."
+  export QWEN_VLLM_MODEL_ROOT
   (
     cd "$ROOT_DIR"
     docker compose up -d qwen-vision-vllm-server

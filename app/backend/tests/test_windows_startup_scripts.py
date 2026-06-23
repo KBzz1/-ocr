@@ -452,7 +452,6 @@ def test_docker_compose_defines_qwen_vision_vllm_server():
 
     assert "qwen-vision-vllm-server:" in compose_content
     assert "qwen-vllm-openai:verified" in compose_content
-    assert "vllm serve" in compose_content
     assert "--model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit" in compose_content
     assert "--max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}" in compose_content
     assert "--gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}" in compose_content
@@ -462,7 +461,7 @@ def test_docker_compose_defines_qwen_vision_vllm_server():
     assert "--dtype auto" in compose_content
     assert "--trust-remote-code" in compose_content
     assert "127.0.0.1:8082:8000" in compose_content
-    assert "models/llm:/workspace/model/llm:ro" in compose_content
+    assert "${QWEN_VLLM_MODEL_ROOT:-./models/llm}:/workspace/model/llm:ro" in compose_content
     assert "curl -sf http://localhost:8000/v1/models" in compose_content
     assert "gpus: all" in compose_content
     assert "paddleocr-vlm-server" not in compose_content

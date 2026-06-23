@@ -39,6 +39,7 @@ data/tasks/*
 exports/*
 output/*
 logs/*
+vllm_cache/
 deploy/offline-images/*.tar
 !data/uploads/README.md
 !data/results/README.md

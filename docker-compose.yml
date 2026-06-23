@@ -27,7 +27,6 @@ services:
     container_name: qwen-vision-vllm-server
     restart: unless-stopped
     command: >
-      vllm serve
       --model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit
       --max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}
       --gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}
@@ -39,7 +38,7 @@ services:
       --port 8000
       --trust-remote-code
     volumes:
-      - ./models/llm:/workspace/model/llm:ro
+      - ${QWEN_VLLM_MODEL_ROOT:-./models/llm}:/workspace/model/llm:ro
       - ./vllm_cache:/root/.cache/vllm
     ports:
       - "127.0.0.1:8082:8000"
