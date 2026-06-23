@@ -66,8 +66,13 @@ function findLocatedEvidenceText(
   }
 
   if (cleanedEvidence) {
-    if (ocrText.includes(cleanedEvidence) && cleanedEvidence.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
-      candidates.push({ text: cleanedEvidence });
+    const fullEvidenceLocated = ocrText.includes(cleanedEvidence);
+    if (fullEvidenceLocated) {
+      if (cleanedEvidence.length <= MAX_EVIDENCE_HIGHLIGHT_CHARS) {
+        candidates.push({ text: cleanedEvidence });
+      } else {
+        return undefined;
+      }
     }
     const rawSplitCandidates = [
       ...cleanedEvidence.split(/\n+/),
@@ -525,14 +530,12 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const hasOffsetEvidence = Boolean(selectedEvidence && typeof selectedEvidence.start_offset === 'number' && typeof selectedEvidence.end_offset === 'number');
   const cleanedEvidenceForGuard = selectedEvidenceText ? stripOcrMarkup(selectedEvidenceText) : undefined;
   const evidenceExceedsHighlightLimit = Boolean(cleanedEvidenceForGuard && cleanedEvidenceForGuard.length > MAX_EVIDENCE_HIGHLIGHT_CHARS);
-  const locatedEvidence = evidenceExceedsHighlightLimit ? undefined : findLocatedEvidenceText(visibleOcrText, selectedEvidence);
+  const locatedEvidence = findLocatedEvidenceText(visibleOcrText, selectedEvidence);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
   const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const sourceMessage: SourceMessage | null = selectedField
-      ? evidenceExceedsHighlightLimit
-        ? { kind: 'too_long', text: '来源片段过长（>100 字），不进行高亮，请人工核验' }
-        : selectedEvidenceText || hasOffsetEvidence
+      ? selectedEvidenceText || hasOffsetEvidence
           ? locatedEvidence
             ? {
                 kind: 'located',
@@ -540,6 +543,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                 evidenceText: locatedEvidence.text,
                 startIndex: locatedEvidence.startIndex,
               }
+            : evidenceExceedsHighlightLimit
+              ? { kind: 'too_long', text: '来源片段过长（>100 字），不进行高亮，请人工核验' }
             : hasOffsetEvidence
               ? { kind: 'unlocated', text: '来源片段未在 OCR 文本中定位，请核对' }
               : { kind: 'missing', text: '来源文本未在当前 OCR 中定位' }

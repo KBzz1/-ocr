@@ -514,6 +514,46 @@ describe('ReviewPage', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 
+  it('highlights a locatable short fragment from evidence longer than the guard threshold', async () => {
+    const longEvidence = [
+      '现病史：患者反复咳嗽、咳痰15年，活动后气促6年，近期症状加重。',
+      '入院后予以吸入治疗并完善相关检查。',
+      '体格检查：体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg。',
+      '辅助检查提示血气分析结果需结合临床核对。'
+    ].join('');
+
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '体格检查：体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg。',
+              pages: [],
+              fields: [
+                {
+                  field_key: 'vital_signs',
+                  label: '生命体征',
+                  value: '体温：36.7℃ 脉搏：99次/分',
+                  status: 'unreviewed',
+                  evidence: [{ text: longEvidence }]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
+    expect(screen.queryByText('来源片段过长（>100 字），不进行高亮，请人工核验')).toBeNull();
+  });
+
   it('highlights the first locatable OCR fragment when evidence is a summarized phrase', async () => {
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
