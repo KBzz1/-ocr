@@ -46,6 +46,7 @@ algorithms:
 - `qwen_vllm_max_model_len` 默认 16384，不得使用 30000 作为 8GB 默认。
 - `qwen_vllm_gpu_memory_utilization` 默认 0.85。
 - `qwen_vllm_max_num_seqs` 默认 1。
+- vLLM 启动参数必须设置 `--served-model-name Qwen3.5-4B-AWQ-4bit`，并与 `qwen_vllm_model_name` 保持一致；否则 vLLM 会默认暴露容器内模型路径，后端按短模型名请求时会 404。
 - OCR 和固定字段抽取 temperature 默认 0.0。
 - 同一任务从 OCR 到固定字段抽取连续持有 `qwen_ocr_and_extraction` GPU 阶段；已有合法 `document_result.json` 的重试只重跑固定字段抽取。
 

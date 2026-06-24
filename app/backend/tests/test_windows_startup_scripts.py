@@ -453,6 +453,7 @@ def test_docker_compose_defines_qwen_vision_vllm_server():
     assert "qwen-vision-vllm-server:" in compose_content
     assert "qwen-vllm-openai:verified" in compose_content
     assert "--model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit" in compose_content
+    assert "--served-model-name ${QWEN_VLLM_SERVED_MODEL_NAME:-Qwen3.5-4B-AWQ-4bit}" in compose_content
     assert "--max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}" in compose_content
     assert "--gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}" in compose_content
     assert "--max-num-seqs ${QWEN_VLLM_MAX_NUM_SEQS:-1}" in compose_content

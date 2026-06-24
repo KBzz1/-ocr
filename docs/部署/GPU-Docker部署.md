@@ -24,7 +24,7 @@ OCR/文档解析、固定字段抽取和后端服务统一打包为 Docker 镜�
 
 5060 8GB 显存下启用 GPU 阶段队列：同一任务从 OCR 到固定字段抽取连续持有 `qwen_ocr_and_extraction` 阶段，OCR 与结构化抽取之间不允许其他任务插队，避免一个任务独占 8GB 显存。OCR 成功而抽取失败时，重试复用已保存的 `document_result.json`，只重跑字段抽取（仅持有 `field_extraction` 阶段）。
 
-服务化 Qwen vLLM 当前验证组合：`vllm/vllm-openai` 镜像 + `Qwen3.5-4B-AWQ-4bit` 模型权重 + `--max-model-len 16384 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-chunked-prefill --enable-prefix-caching --dtype auto --trust-remote-code`。`max_model_len=30000` 在 8GB 显卡下会撑爆 KV cache，绝不允许作为默认；`max_num_seqs=1` 保证同一常驻模型串行处理请求。模型目录只读挂载到容器内 `/workspace/model/llm/Qwen3.5-4B-AWQ-4bit`，vLLM cache 单独挂载到 `/root/.cache/vllm`（不进仓库）。离线镜像 tar 固定放在 `deploy/offline-images/qwen-vllm-server.tar`，命名由 `QWEN_VLLM_SERVER_LOCAL_TAG` 控制。
+服务化 Qwen vLLM 当前验证组合：`vllm/vllm-openai` 镜像 + `Qwen3.5-4B-AWQ-4bit` 模型权重 + `--served-model-name Qwen3.5-4B-AWQ-4bit --max-model-len 16384 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-chunked-prefill --enable-prefix-caching --dtype auto --trust-remote-code`。`--served-model-name` 必须与后端 `qwen_vllm_model_name` 一致，避免 vLLM 默认暴露容器内模型路径导致 `/v1/chat/completions` 返回 404。`max_model_len=30000` 在 8GB 显卡下会撑爆 KV cache，绝不允许作为默认；`max_num_seqs=1` 保证同一常驻模型串行处理请求。模型目录只读挂载到容器内 `/workspace/model/llm/Qwen3.5-4B-AWQ-4bit`，vLLM cache 单独挂载到 `/root/.cache/vllm`（不进仓库）。离线镜像 tar 固定放在 `deploy/offline-images/qwen-vllm-server.tar`，命名由 `QWEN_VLLM_SERVER_LOCAL_TAG` 控制。
 
 ## OCR 行为约束
 

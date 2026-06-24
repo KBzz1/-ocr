@@ -28,6 +28,7 @@ services:
     restart: unless-stopped
     command: >
       --model /workspace/model/llm/Qwen3.5-4B-AWQ-4bit
+      --served-model-name ${QWEN_VLLM_SERVED_MODEL_NAME:-Qwen3.5-4B-AWQ-4bit}
       --max-model-len ${QWEN_VLLM_MAX_MODEL_LEN:-16384}
       --gpu-memory-utilization ${QWEN_VLLM_GPU_MEMORY_UTILIZATION:-0.85}
       --max-num-seqs ${QWEN_VLLM_MAX_NUM_SEQS:-1}
