@@ -9,6 +9,7 @@ from ._review_field_factory import (
     build_review_summary,
     is_field_blocking,
 )
+from .copd_extraction.quality_checks import apply_quality_checks
 
 MVP_FIELD_STATUSES = {
     FieldStatus.UNREVIEWED.value,
@@ -107,6 +108,62 @@ class ReviewService:
         if isinstance(summary, dict) and callable(sync):
             sync(task_id, summary)
 
+    def _apply_quality_warnings(self, task_id: str, review: dict) -> dict:
+        fields = review.get("fields")
+        if not isinstance(fields, list) or not fields:
+            return review
+        doc = self._load_document_result(task_id)
+        full_text = doc.get("merged_text", "") if isinstance(doc, dict) else ""
+        if not full_text:
+            return review
+
+        check_input = []
+        for field in fields:
+            if not isinstance(field, dict):
+                check_input.append(field)
+                continue
+            item = dict(field)
+            item["original_value"] = (
+                field.get("final_value")
+                or field.get("auto_value")
+                or field.get("value")
+                or ""
+            )
+            # quality_flags 由 apply_quality_checks 全新计算，
+            # 不传递旧 flags 以避免重复累积
+            item["quality_flags"] = []
+            check_input.append(item)
+
+        checked = apply_quality_checks(
+            check_input,
+            full_text,
+            include_document_flags=False,
+        )
+
+        mutated = False
+        for field, checked_field in zip(fields, checked):
+            if not isinstance(field, dict) or not isinstance(checked_field, dict):
+                continue
+            next_flags = checked_field.get("quality_flags") or []
+            if not next_flags:
+                continue
+            if field.get("quality_flags") != next_flags:
+                field["quality_flags"] = next_flags
+                mutated = True
+            if (
+                field.get("verification_status") != "failed"
+                and field.get("verification_status") != "suspicious"
+            ):
+                field["verification_status"] = "suspicious"
+                mutated = True
+
+        if not mutated:
+            return review
+        review["summary"] = build_review_summary(fields)
+        review["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._store.write(f"results/{task_id}/review_result.json", review)
+        return review
+
     def get_or_init(self, task_id: str, task: dict | None = None) -> dict:
         if task is None:
             task = self._task_service.get_task(task_id)
@@ -117,6 +174,7 @@ class ReviewService:
             # BE-MVP-05-06: 按当前 schema 补齐缺失字段并重排
             schema_for_hydrate = self._schema_provider() if self._schema_provider else {}
             self._hydrate_missing_fields(existing, schema_for_hydrate)
+            self._apply_quality_warnings(task_id, existing)
             self._sync_task_review_summary(task_id, existing)
             return self._enrich_with_schema(self._enrich_with_ocr(existing, task_id))
 

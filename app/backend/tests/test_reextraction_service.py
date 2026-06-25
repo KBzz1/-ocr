@@ -291,8 +291,8 @@ def test_reextract_maps_invalid_candidate_contract_to_reextract_error(tmp_path):
     assert exc.value.details["reason"] == "invalid_candidate_contract"
 
 
-def test_reextract_passes_saved_evidence_units_to_field_port(tmp_path):
-    """saved document_result.json 已带 evidence_units 时,重抽取必须把它原样透传给 field port。"""
+def test_reextract_rebuilds_locatable_evidence_units_from_saved_ocr(tmp_path):
+    """document_result 带 OCR 原文时,重抽取使用当前构建器生成可定位 evidence_units。"""
     service, store, _task_service, port = make_service(tmp_path)
     write_task(store, status="review")
     store.write(
@@ -319,10 +319,14 @@ def test_reextract_passes_saved_evidence_units_to_field_port(tmp_path):
 
     forwarded = port.inputs[0]
     units = forwarded.get("evidence_units")
-    assert isinstance(units, list) and units, "field port must receive saved evidence_units"
+    assert isinstance(units, list) and units, "field port must receive rebuilt evidence_units"
     assert units[0]["id"] == "u001"
     assert units[0]["text"] == "主诉：反复咳嗽、咳痰15年。"
-    assert forwarded["document_result"]["evidence_units"] == units
+    assert units[0]["start_offset"] == 0
+    assert units[0]["end_offset"] == len("主诉：反复咳嗽、咳痰15年。")
+    assert units[0]["section_key"] == "chief_complaint"
+    persisted = store.read("results/task_001/document_result.json")
+    assert persisted["evidence_units"] == units
 
 
 def test_reextract_generates_evidence_units_when_legacy_document_result_lacks_them(tmp_path):
@@ -348,6 +352,61 @@ def test_reextract_generates_evidence_units_when_legacy_document_result_lacks_th
     assert isinstance(units, list) and units, "field port must receive rebuilt evidence_units"
     assert units[0]["id"] == "u001"
     assert "主诉" in units[0]["text"]
+
+
+def test_reextract_rebuilds_stale_fragmented_evidence_units(tmp_path):
+    """旧 evidence_units 曾把既往史否定句按顿号切碎；重抽取应按当前构建器重建。"""
+    service, store, _task_service, port = make_service(tmp_path)
+    write_task(store, status="review")
+    merged_text = (
+        "入院记录\n"
+        "既往史：平素身体一般，有“高血压”病史1年余，血压最高达160/90+mmHg，"
+        "长期口服“厄贝沙坦氢氯喹嗪片1片1/日”降压治疗，自测血压波动在130-140/60-70mmHg左右。"
+        "否认“糖尿病”、“冠心病”等病史，否认肝炎、结核等传染病史。"
+    )
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "task_id": "task_001",
+            "stage": "document_parsing",
+            "status": "success",
+            "merged_text": merged_text,
+            "pages": [{"page_id": "page_001", "page_no": 1, "text": merged_text}],
+            "evidence_units": [
+                {
+                    "id": "u017",
+                    "text": "否认“糖尿病”",
+                    "start_offset": merged_text.index("否认“糖尿病”"),
+                    "end_offset": merged_text.index("否认“糖尿病”") + len("否认“糖尿病”"),
+                    "page_no": 1,
+                    "section_key": "diagnosis",
+                },
+                {
+                    "id": "u018",
+                    "text": "“冠心病”等病史，否认肝炎",
+                    "start_offset": merged_text.index("“冠心病”等病史，否认肝炎"),
+                    "end_offset": merged_text.index("“冠心病”等病史，否认肝炎") + len("“冠心病”等病史，否认肝炎"),
+                    "page_no": 1,
+                    "section_key": "diagnosis",
+                },
+            ],
+        },
+    )
+
+    service.reextract("task_001")
+
+    forwarded = port.inputs[0]
+    units = forwarded.get("evidence_units")
+    assert isinstance(units, list) and units
+    negated_history_units = [
+        unit for unit in units
+        if "否认“糖尿病”" in unit["text"] and "“冠心病”等病史" in unit["text"]
+    ]
+    assert len(negated_history_units) == 1
+    assert negated_history_units[0]["section_key"] == "past_medical_history"
+    assert all(unit.get("section_key") != "diagnosis" for unit in negated_history_units)
+    persisted = store.read("results/task_001/document_result.json")
+    assert persisted["evidence_units"] == units
 
 
 def test_reextract_uses_task_document_type_profile(tmp_path):

@@ -202,6 +202,28 @@ def test_quality_check_flags_negation_risk():
     assert result[0]["quality_flags"][0]["flag"] == "negation_or_uncertainty_risk"
 
 
+def test_quality_check_flags_positive_pmh_hallucination_from_denied_history():
+    from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+
+    evidence = (
+        "既往史：平素身体一般，否认“糖尿病”、“冠心病”等病史，"
+        "否认肝炎、结核等传染病史。"
+    )
+    fields = [
+        _field("pmh_coronary_heart_disease", "有冠心病病史", evidence),
+        _field("pmh_diabetes", "糖尿病病史", evidence),
+    ]
+
+    result = apply_quality_checks(fields, evidence)
+
+    for item in result:
+        assert item["verification_status"] == "suspicious"
+        assert any(
+            flag["flag"] in {"negation_or_uncertainty_risk", "value_not_in_evidence"}
+            for flag in item["quality_flags"]
+        ), item
+
+
 # —— 新增：文档级重复检测应用到字段 ——
 
 

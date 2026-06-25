@@ -37,14 +37,14 @@ _LONG_COMMA_FALLBACK = 80
 # Best-effort section hints. Used purely as an aid for human readability; never
 # relied upon for offset computation or unit boundaries.
 _SECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("chief_complaint", re.compile(r"^\s*#{1,6}\s*主诉\b")),
-    ("history_of_present_illness", re.compile(r"^\s*#{1,6}\s*现病史\b")),
-    ("past_medical_history", re.compile(r"^\s*#{1,6}\s*既往史\b")),
-    ("personal_history", re.compile(r"^\s*#{1,6}\s*个人史\b")),
-    ("family_history", re.compile(r"^\s*#{1,6}\s*家族史\b")),
-    ("physical_examination", re.compile(r"^\s*#{1,6}\s*体格检查\b")),
-    ("ancillary_tests", re.compile(r"^\s*#{1,6}\s*辅助检查\b")),
-    ("diagnosis", re.compile(r"^\s*#{1,6}\s*(初步诊断|最终诊断|诊断)\b")),
+    ("chief_complaint", re.compile(r"^\s*(?:#{1,6}\s*)?主诉(?:\b|[：:])")),
+    ("history_of_present_illness", re.compile(r"^\s*(?:#{1,6}\s*)?现病史(?:\b|[：:])")),
+    ("past_medical_history", re.compile(r"^\s*(?:#{1,6}\s*)?既往史(?:\b|[：:])")),
+    ("personal_history", re.compile(r"^\s*(?:#{1,6}\s*)?个人史(?:\b|[：:])")),
+    ("family_history", re.compile(r"^\s*(?:#{1,6}\s*)?家族史(?:\b|[：:])")),
+    ("physical_examination", re.compile(r"^\s*(?:#{1,6}\s*)?体格检查(?:\b|[：:])")),
+    ("ancillary_tests", re.compile(r"^\s*(?:#{1,6}\s*)?辅助检查(?:\b|[：:])")),
+    ("diagnosis", re.compile(r"^\s*(?:#{1,6}\s*)?(初步诊断|最终诊断|诊断)(?:\b|[：:])")),
 )
 
 # Blood gas labels used to detect a blood-gas group. The presence of any two of
@@ -206,6 +206,8 @@ def _apply_comma_fallback(fragment: str) -> list[str]:
     """Apply controlled long-comma fallback for very long fragments."""
     if len(fragment) <= _LONG_COMMA_FALLBACK:
         return [fragment]
+    if _looks_like_history_negation_scope(fragment):
+        return [fragment]
     parts = [p.strip() for p in fragment.split("、") if p.strip()]
     if not parts:
         return [fragment]
@@ -230,6 +232,19 @@ def _looks_like_vital_sign_row(text: str) -> bool:
         return False
     matches = sum(1 for k in keywords if k in text)
     return matches >= 2
+
+
+def _looks_like_history_negation_scope(text: str) -> bool:
+    """Keep medical-history denial scopes intact.
+
+    Phrases such as ``否认糖尿病、冠心病等病史`` rely on the enumeration
+    punctuation to define one shared negation scope. Splitting by ``、`` would
+    turn the second disease into a standalone positive-looking fragment.
+    """
+    if "否认" not in text and "无" not in text and "未见" not in text:
+        return False
+    history_markers = ("病史", "既往史", "传染病史", "手术史", "输血史", "外伤史", "家族史")
+    return any(marker in text for marker in history_markers)
 
 
 def _guess_section_key(text: str) -> str | None:

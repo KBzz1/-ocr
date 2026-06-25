@@ -388,3 +388,73 @@ def test_not_found_review_field_is_not_attention():
     assert field["auto_value"] == ""
     assert field["extraction_status"] == "not_found"
     assert field["attention_message"] == ""
+
+
+def test_existing_review_result_gets_quality_warning_on_read(tmp_path):
+    store = JsonStore(str(tmp_path))
+
+    class _TaskSvc:
+        def get_task(self, task_id):
+            return {
+                "task_id": task_id,
+                "status": "review",
+                "schema_version": "admission_record_structured_fields.v1",
+                "document_type": "copd_admission_record",
+            }
+
+        def update_review_summary(self, task_id, summary):
+            store.write(f"tasks/{task_id}.json", {"task_id": task_id, "status": "review", "review_summary": summary})
+
+    schema = {
+        "version": "admission_record_structured_fields.v1",
+        "document_type": "copd_admission_record",
+        "field_groups": [
+            {
+                "group_key": "physical_examination",
+                "group_label": "体格检查",
+                "fields": [
+                    {"field_key": "pe_pulse", "label": "脉搏"},
+                ],
+            }
+        ],
+    }
+    store.write("results/t1/document_result.json", {
+        "merged_text": "体温36.6℃，脉搏36次/分，呼吸20次/分。心率99次/分，心律规则。",
+        "pages": [],
+    })
+    store.write("results/t1/review_result.json", {
+        "task_id": "t1",
+        "fields": [
+            {
+                "field_key": "pe_pulse",
+                "field_name": "脉搏",
+                "auto_value": "36次/分",
+                "final_value": "36次/分",
+                "evidence": [
+                    {
+                        "id": "u_vitals",
+                        "text": "体温36.6℃，脉搏36次/分，呼吸20次/分",
+                        "start_offset": 0,
+                        "end_offset": 23,
+                        "page_no": 1,
+                    }
+                ],
+                "extraction_status": "extracted",
+                "verification_status": "not_checked",
+                "attention_required": False,
+                "attention_message": "",
+                "quality_flags": [],
+                "status": "unreviewed",
+            }
+        ],
+        "summary": {},
+    })
+
+    service = ReviewService(store, _TaskSvc(), schema_provider=lambda: schema)
+
+    review = service.get_or_init("t1")
+
+    field = find_field(review, "pe_pulse")
+    assert field["verification_status"] == "suspicious"
+    assert any(flag["flag"] == "ocr_numeric_conflict" for flag in field["quality_flags"])
+    assert review["summary"]["suspicious_count"] == 1

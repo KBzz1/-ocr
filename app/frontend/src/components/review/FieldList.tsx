@@ -80,20 +80,21 @@ function getFieldValueLengthClass(value: string) {
   return 'field-card__item--short';
 }
 
-// 医生可见的"重点核验"只来自后端给出的 attention_required / attention_message;
+// 医生可见的"重点核验"来自后端给出的 attention_* 或字段复核状态;
 // 不再根据内部 quality_flags 的标识名推断,以免内部审计名泄漏到 UI。
 function getAttentionMessage(field: ReviewField): string | null {
-  if (!field.attention_required) return null;
   const text = field.attention_message?.trim();
-  if (text) return text;
-  return '需要重点核验，请核对原文';
+  if (field.attention_required) return text || '需要重点核验，请核对原文';
+  if (field.verification_status === 'suspicious') return text || '结果可疑，请核对原文';
+  if (field.verification_status === 'failed') return text || '复核未通过，请核对原文';
+  return null;
 }
 
 // not_found 字段默认是安静状态:空值时显示"未提及",不展示黄色感叹号。
-// 注意:attention_required === true 时,即便 extraction_status 是 not_found,
-// 仍然展示重点核验提示,因为这是后端明确标注的可疑字段。
+// 注意:字段被后端明确标注为需要重点核验时,即便 extraction_status 是 not_found,
+// 仍然展示重点核验提示。
 function isQuietNotFound(field: ReviewField) {
-  if (field.attention_required) return false;
+  if (getAttentionMessage(field) !== null) return false;
   if (field.extraction_status !== 'not_found') return false;
   const value = (field.final_value ?? field.auto_value ?? field.value ?? '').toString().trim();
   return value.length === 0;

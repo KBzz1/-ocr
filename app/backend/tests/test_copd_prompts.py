@@ -304,6 +304,42 @@ def test_admission_prompt_does_not_instruct_title_correction_or_page_reorder():
     assert "重排" in prompt or "重新排序" in prompt or "页序" in prompt
 
 
+def test_admission_prompt_preserves_negated_past_medical_history_values():
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_prompt,
+    )
+
+    schema = _sample_admission_schema()
+    ocr_text = (
+        "既往史：平素身体一般，否认“糖尿病”、“冠心病”等病史，"
+        "否认肝炎、结核等传染病史。否认外伤及手术史，否认输血史。"
+    )
+    units = [
+        {
+            "id": "u_pmh_negation",
+            "text": ocr_text,
+            "start_offset": 320,
+            "end_offset": 380,
+            "page_no": 1,
+            "section_key": "past_medical_history",
+        }
+    ]
+
+    prompt = build_admission_structured_fields_prompt(schema, units, document_text=ocr_text)
+
+    assert ocr_text in prompt
+    assert "否定范围" in prompt
+    assert "保留否定词" in prompt
+    assert "否认糖尿病病史" in prompt
+    assert "否认冠心病病史" in prompt
+    assert "不得输出“有糖尿病病史”" in prompt
+    assert "不得输出“有冠心病病史”" in prompt
+    assert "否认肝炎、结核等传染病史" in prompt
+    assert "pmh_diabetes" in prompt
+    assert "pmh_coronary_heart_disease" in prompt
+    assert "pmh_hepatitis_b" in prompt
+
+
 def test_admission_prompt_enumerates_evidence_units_by_id():
     from app.backend.services.copd_extraction.prompts import (
         build_admission_structured_fields_prompt,

@@ -40,9 +40,17 @@ PHYSIO_RANGE_BP_DIASTOLIC = (30, 160)          # mmHg
 # —— 数值矛盾检测的字段配置 ——
 # key: field_key, value: (evidence 中搜索矛盾数值的正则, 触发阈值: value_number < threshold)
 _NUMERIC_CONFLICT_CONFIG = {
-    "pulse": (r"(?:脉搏|心率)[:：]?\s*(\d{2,3})\s*次/分", 10),
+    "pulse": (r"(?:脉搏|心率)[:：]?\s*(\d{2,3})\s*次/分", 50),
     "respiration": (r"(?:呼吸)[:：]?\s*(\d{1,2})\s*次/分", 10),
     "temperature": (r"(?:体温)[:：]?\s*(\d{2,3}(?:\.\d)?)\s*[℃°C]", 10),
+}
+
+_FIELD_KEY_ALIASES = {
+    "pe_temperature": "temperature",
+    "pe_pulse": "pulse",
+    "pe_respiration_rate": "respiration",
+    "pe_blood_pressure": "blood_pressure",
+    "pe_bmi": "bmi",
 }
 
 
@@ -63,6 +71,22 @@ def _flag(flag: str, message: str, severity: str = SEVERITY_WARNING) -> dict:
 
 def _has_flag(flags: list[dict], flag_name: str) -> bool:
     return any(flag.get("flag") == flag_name for flag in flags if isinstance(flag, dict))
+
+
+def _quality_field_key(field_key: str) -> str:
+    return _FIELD_KEY_ALIASES.get(field_key, field_key)
+
+
+def _evidence_text(evidence) -> str:
+    if isinstance(evidence, str):
+        return evidence
+    if isinstance(evidence, list):
+        return "\n".join(
+            item.get("text", "")
+            for item in evidence
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        )
+    return ""
 
 
 # —————————————————————————————— 文档级质量检查 ——————————————————————————————
@@ -105,6 +129,12 @@ def _value_contexts(value: str, evidence: str, radius: int = 8) -> list[str]:
 
 
 def _has_local_negation_or_uncertainty(value: str, evidence: str) -> bool:
+    if not value or not evidence:
+        return False
+    # 值本身包含否定/不确定词 = 病历标准阴性表述（如“无吸烟史”“否认手术史”），
+    # 不应误报为“evidence 附近存在否定语气”
+    if any(word in value for word in NEGATION_OR_UNCERTAIN):
+        return False
     return any(
         any(word in context for word in NEGATION_OR_UNCERTAIN)
         for context in _value_contexts(value, evidence)
@@ -270,7 +300,31 @@ def _blood_gas_label_before_value(value: str, evidence: str) -> str:
 # —————————————————————————————— 主入口 ——————————————————————————————
 
 
-def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
+def _deduplicate_flags(item: dict) -> None:
+    """去除 item['quality_flags'] 中同 flag 名的重复条目，保留首次出现。"""
+    flags = item.get("quality_flags")
+    if not flags:
+        return
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for flag in flags:
+        if not isinstance(flag, dict):
+            unique.append(flag)
+            continue
+        name = flag.get("flag", "")
+        if name and name in seen:
+            continue
+        seen.add(name)
+        unique.append(flag)
+    item["quality_flags"] = unique
+
+
+def apply_quality_checks(
+    fields: list[dict],
+    full_text: str,
+    *,
+    include_document_flags: bool = True,
+) -> list[dict]:
     """对字段列表施加薄规则核验，为可疑字段添加 quality_flags 并将
     verification_status 设为 "suspicious"。
 
@@ -286,8 +340,8 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
     for item in checked:
         item.setdefault("quality_flags", [])
         value = item.get("original_value") or ""
-        evidence = item.get("evidence") or ""
-        field_key = item.get("field_key", "")
+        evidence = _evidence_text(item.get("evidence"))
+        field_key = _quality_field_key(item.get("field_key", ""))
 
         # —— 数字值是否在 evidence 中出现 ——
         value_has_numbers = False
@@ -337,7 +391,8 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
             )
 
         # —— 同一字段附近数值矛盾（已泛化至脉率/呼吸/体温） ——
-        if _has_numeric_conflict(field_key, value, evidence):
+        numeric_context = f"{evidence}\n{full_text}" if full_text else evidence
+        if _has_numeric_conflict(field_key, value, numeric_context):
             item["quality_flags"].append(
                 _flag(FLAG_OCR_NUMERIC_CONFLICT, "同一字段附近存在不一致数值，请核对原文")
             )
@@ -355,10 +410,13 @@ def apply_quality_checks(fields: list[dict], full_text: str) -> list[dict]:
             )
 
         # —— 文档级重复/拼接 flag 附加到所有字段 ——
-        if doc_flags:
+        if include_document_flags and doc_flags:
             for flag in doc_flags:
                 if not _has_flag(item["quality_flags"], flag["flag"]):
                     item["quality_flags"].append(flag)
+
+        # —— 去重：同名字段级别的 flag 只保留一条 ——
+        _deduplicate_flags(item)
 
         # —— 汇总：有 flag 则标记 suspicious ——
         if item["quality_flags"] and item.get("verification_status") != "failed":

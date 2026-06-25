@@ -6,6 +6,7 @@ from .admission_contract import (
     validate_qwen_payload,
 )
 from .prompts import build_admission_structured_fields_prompt
+from .quality_checks import apply_quality_checks
 
 
 class COPDAdmissionQwenFieldPort:
@@ -47,10 +48,15 @@ class COPDAdmissionQwenFieldPort:
         # Structural validation raises AppError(ALGORITHM_CONTRACT_INVALID) on
         # any contract violation (missing fields, bad statuses, wrong types).
         validate_qwen_payload(payload, schema)
-        return map_qwen_fields_to_review_candidates(
+        candidates = map_qwen_fields_to_review_candidates(
             payload,
             schema,
             evidence_units=evidence_units,
+        )
+        return apply_quality_checks(
+            candidates,
+            document_text,
+            include_document_flags=False,
         )
 
 

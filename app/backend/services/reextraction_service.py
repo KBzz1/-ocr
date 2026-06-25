@@ -88,6 +88,7 @@ class ReextractionService:
             )
 
         evidence_units = self._load_evidence_units_for_reextract(document_result)
+        self._persist_rebuilt_evidence_units(task_id, document_result, evidence_units)
 
         candidates = field_port.extract(
             {
@@ -171,15 +172,32 @@ class ReextractionService:
     def _load_evidence_units_for_reextract(self, document_result: dict) -> list[dict]:
         """Return evidence units to feed the field port.
 
-        Re-extraction prefers the units persisted alongside the successful
-        ``document_result.json`` (so OCR highlights stay byte-stable). When
-        the saved result predates Task 2 (legacy), rebuild units from the
-        raw OCR pages and merged text.
+        Re-extraction rebuilds units from raw OCR pages and merged text when
+        possible. This lets improved evidence splitting repair older saved
+        units while preserving byte-stable offsets because the merged OCR text
+        remains the source of truth. If pages/merged_text are unavailable,
+        fall back to saved units for legacy data.
         """
         saved = document_result.get("evidence_units") if isinstance(document_result, dict) else None
+        rebuilt = build_evidence_units(document_result or {})
+        if rebuilt:
+            return rebuilt
         if isinstance(saved, list) and saved:
             return saved
-        return build_evidence_units(document_result or {})
+        return []
+
+    def _persist_rebuilt_evidence_units(
+        self,
+        task_id: str,
+        document_result: dict,
+        evidence_units: list[dict],
+    ) -> None:
+        if not isinstance(document_result, dict) or not evidence_units:
+            return
+        if document_result.get("evidence_units") == evidence_units:
+            return
+        document_result["evidence_units"] = evidence_units
+        self._store.write(f"results/{task_id}/document_result.json", document_result)
 
     def _load_ocr_document_result(self, task_id: str) -> dict:
         result_store = AlgorithmResultStore(self._store)

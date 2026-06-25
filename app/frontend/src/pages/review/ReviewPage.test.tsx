@@ -754,12 +754,12 @@ describe('ReviewPage', () => {
     expect((await screen.findAllByText('已完成')).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not surface legacy quality_flag names or OCR corrections as doctor-facing attention', async () => {
-    // Task 8 spec: 黄色感叹号只来自 attention_required/attention_message;
-    // 旧版从 quality_flags.flag 字符串派生黄色提示的逻辑已移除。
+  it('shows generic warning markers for suspicious fields without leaking internal quality flags', async () => {
+    // 黄色感叹号来自后端 attention_* 或 verification_status=suspicious;
+    // 旧版从 quality_flags.flag 字符串派生医生可见文案的逻辑已移除。
     // 这里给后端塞一个"看起来可疑"的 quality_flags 列表,
-    // 但字段没有 attention_required,断言这些内部 flag 名/OCR 纠错信息
-    // 都不出现在医生可见 UI 上。
+    // 但字段没有 attention_message,断言 UI 只展示通用重点核验文案,
+    // 内部 flag 名/OCR 纠错信息都不出现在医生可见 UI 上。
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -833,8 +833,11 @@ describe('ReviewPage', () => {
     // 等字段区渲染出来
     await screen.findByLabelText('BMI');
 
-    // 没有任何 attention_required,不应出现"重点核验:"aria-label
-    expect(screen.queryByLabelText(/^重点核验[:：]/)).toBeNull();
+    const flags = screen.getAllByLabelText('重点核验：结果可疑，请核对原文');
+    expect(flags).toHaveLength(6);
+    for (const flag of flags) {
+      expect(flag.textContent).toBe('!');
+    }
 
     // 内部 flag 名 / 旧版 OCR 纠错信息绝不进入医生可见 UI
     const body = document.body.textContent ?? '';
@@ -849,6 +852,51 @@ describe('ReviewPage', () => {
     expect(body).not.toContain('source_hint=');
     // OCR 原文保留:不允许前端把 BHI 静默改写成 BMI
     expect(body).toContain('BHI');
+  });
+
+  it('shows a generic warning marker for suspicious fields without attention_required', async () => {
+    server.use(
+      http.get('*/api/tasks/task_001/review', () =>
+        HttpResponse.json({
+          success: true,
+          data: {
+            task_id: 'task_001',
+            status: 'review',
+            review_result: {
+              ocr_text: '体温：36.7℃ 脉搏：99次/分',
+              pages: [
+                {
+                  page_id: 'page_001',
+                  page_no: 1,
+                  preview_url: '/api/tasks/task_001/images/page_001',
+                  parsed_text: '体温：36.7℃ 脉搏：99次/分'
+                }
+              ],
+              fields: [
+                {
+                  field_key: 'temperature',
+                  label: '体温',
+                  value: '36.7℃',
+                  status: 'unreviewed',
+                  verification_status: 'suspicious',
+                  quality_flags: [
+                    { flag: 'value_not_in_evidence', severity: 'warning', message: '字段值中的数字未能在 evidence 中直接找到' }
+                  ],
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '36.7℃' }]
+                }
+              ]
+            }
+          }
+        })
+      )
+    );
+
+    render(<ReviewPage taskId="task_001" />);
+
+    const flag = await screen.findByLabelText('重点核验：结果可疑，请核对原文');
+    expect(flag.textContent).toBe('!');
+    expect(flag.closest('[data-testid="review-field-card-temperature"]')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('value_not_in_evidence');
   });
 
   it('shows a message when task completion validation fails', async () => {

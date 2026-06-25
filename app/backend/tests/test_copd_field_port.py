@@ -230,6 +230,172 @@ def test_qwen_admission_port_preserves_merged_ocr_context_with_evidence_units():
     assert merged_only_text in prompt
 
 
+def test_qwen_admission_port_marks_quality_risks_as_suspicious():
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+
+    class FakeLlmClient:
+        def complete_json(self, prompt: str, **kwargs):
+            schema = current_schema()
+            fields = []
+            for group in schema["field_groups"]:
+                for field in group["fields"]:
+                    fk = field["field_key"]
+                    if fk == "pe_pulse":
+                        fields.append({
+                            "field_key": fk,
+                            "status": "found",
+                            "value": "36次/分",
+                            "evidence_ids": ["u_vitals"],
+                        })
+                    else:
+                        fields.append({
+                            "field_key": fk,
+                            "status": "not_found",
+                            "value": "",
+                            "evidence_ids": [],
+                        })
+            return {
+                "schema_version": schema["version"],
+                "document_type": schema["document_type"],
+                "fields": fields,
+            }
+
+        def close(self):
+            pass
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+            "llm_client_factory": lambda *a, **k: FakeLlmClient(),
+        },
+        field_keys_provider=lambda: list(current_schema_field_keys()),
+    )
+
+    document_text = "体温36.6℃，脉搏36次/分，呼吸20次/分。心率99次/分，心律规则。"
+    evidence_units = [
+        {
+            "id": "u_vitals",
+            "text": "体温36.6℃，脉搏36次/分，呼吸20次/分",
+            "start_offset": 0,
+            "end_offset": 23,
+            "page_no": 1,
+        }
+    ]
+
+    result = port.extract({
+        "document_result": {
+            "merged_text": document_text,
+            "evidence_units": evidence_units,
+        },
+        "evidence_units": evidence_units,
+        "schema": current_schema(),
+        "document_type": "copd_admission_record",
+    })
+
+    pulse = next(item for item in result if item["field_key"] == "pe_pulse")
+    assert pulse["verification_status"] == "suspicious"
+    assert any(flag["flag"] == "ocr_numeric_conflict" for flag in pulse["quality_flags"])
+
+
+def test_qwen_admission_prompt_real_llm_preserves_denied_pmh_when_enabled():
+    """真实 Qwen vLLM 集成测试：验证提示词不会把否认既往史抽成阳性。
+
+    默认跳过，避免普通单测依赖本机 GPU/容器。手动验证时执行：
+    MANZUFEI_RUN_LLM_INTEGRATION=1 conda run -n manzufei_ocr python -m pytest \
+      app/backend/tests/test_copd_field_port.py::test_qwen_admission_prompt_real_llm_preserves_denied_pmh_when_enabled -q -s
+    """
+    import os
+
+    import pytest
+
+    if os.environ.get("MANZUFEI_RUN_LLM_INTEGRATION") != "1":
+        pytest.skip("set MANZUFEI_RUN_LLM_INTEGRATION=1 to call local Qwen vLLM")
+
+    from app.backend.services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
+    from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+    from app.backend.services.copd_extraction.port import COPDAdmissionQwenFieldPort
+
+    schema = current_schema()
+    ocr_text = (
+        "入院记录\n"
+        "主诉：反复咳嗽、咳痰15年，喘息6年，加重1月。\n"
+        "既往史：平素身体一般，否认“糖尿病”、“冠心病”等病史，"
+        "否认肝炎、结核等传染病史。否认外伤及手术史，否认输血史。\n"
+        "个人史：吸烟40余年，已戒烟2年。"
+    )
+    evidence_units = [
+        {
+            "id": "u_chief_complaint",
+            "text": "主诉：反复咳嗽、咳痰15年，喘息6年，加重1月。",
+            "start_offset": 5,
+            "end_offset": 31,
+            "page_no": 1,
+            "section_key": "chief_complaint",
+        },
+        {
+            "id": "u_pmh_negation",
+            "text": (
+                "既往史：平素身体一般，否认“糖尿病”、“冠心病”等病史，"
+                "否认肝炎、结核等传染病史。否认外伤及手术史，否认输血史。"
+            ),
+            "start_offset": 32,
+            "end_offset": 91,
+            "page_no": 1,
+            "section_key": "past_medical_history",
+        },
+        {
+            "id": "u_personal_smoking",
+            "text": "个人史：吸烟40余年，已戒烟2年。",
+            "start_offset": 92,
+            "end_offset": 109,
+            "page_no": 1,
+            "section_key": "personal_history",
+        },
+    ]
+
+    base_url = os.environ.get("MANZUFEI_QWEN_VLLM_URL", "http://127.0.0.1:8082/v1")
+    model = os.environ.get("MANZUFEI_QWEN_VLLM_MODEL", "Qwen3.5-4B-AWQ-4bit")
+    qwen_client = QwenVLLMClient(
+        base_url=base_url,
+        model=model,
+        timeout_seconds=360,
+    )
+    port = COPDAdmissionQwenFieldPort(
+        OpenAICompatibleJsonClient(qwen_client, max_tokens=8192, temperature=0.0)
+    )
+
+    result = port.extract({
+        "document_result": {
+            "merged_text": ocr_text,
+            "evidence_units": evidence_units,
+        },
+        "evidence_units": evidence_units,
+        "schema": schema,
+        "document_type": "copd_admission_record",
+    })
+
+    by_key = {item["field_key"]: item for item in result}
+    diabetes_value = by_key["pmh_diabetes"]["value"]
+    coronary_value = by_key["pmh_coronary_heart_disease"]["value"]
+
+    print({
+        "pmh_diabetes": diabetes_value,
+        "pmh_coronary_heart_disease": coronary_value,
+        "pmh_hepatitis_b": by_key["pmh_hepatitis_b"]["value"],
+    })
+
+    assert "否认" in diabetes_value
+    assert "糖尿病" in diabetes_value
+    assert "有糖尿病" not in diabetes_value
+    assert "否认" in coronary_value
+    assert "冠心病" in coronary_value
+    assert "有冠心病" not in coronary_value
+
+
 def test_default_copd_field_port_does_not_require_llm_model_path():
     """默认路径不再依赖 `llm_model_path` 加载本地 GGUF。"""
     from app.backend.services.copd_extraction.port import build_default_copd_field_port

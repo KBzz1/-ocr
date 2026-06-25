@@ -98,6 +98,35 @@ def test_build_evidence_units_offsets_match_merged_text():
         )
 
 
+def test_build_evidence_units_keeps_negated_past_history_sentence_together():
+    history_line = (
+        "既往史：平素身体一般，有“高血压”病史1年余，血压最高达160/90+mmHg，"
+        "长期口服“厄贝沙坦氢氯喹嗪片1片1/日”降压治疗，自测血压波动在130-140/60-70mmHg左右。"
+        "否认“糖尿病”、“冠心病”等病史，否认肝炎、结核等传染病史。"
+        "否认外伤及手术史，否认输血史。"
+    )
+    text = "入院记录\n" + history_line
+    pages = [
+        {"page_id": "p1", "page_no": 1, "status": "success", "text": text},
+    ]
+    doc = _document_result(pages, text)
+
+    units = build_evidence_units(doc)
+
+    negated_history_units = [
+        unit for unit in units
+        if "否认“糖尿病”" in unit["text"] and "“冠心病”等病史" in unit["text"]
+    ]
+    assert len(negated_history_units) == 1, (
+        "否认糖尿病、冠心病等病史必须保留在同一 evidence unit，"
+        "否则模型和高亮都会丢失否定范围"
+    )
+    unit = negated_history_units[0]
+    assert "否认肝炎、结核等传染病史" in unit["text"]
+    assert unit["section_key"] == "past_medical_history"
+    assert text[unit["start_offset"]:unit["end_offset"]] == unit["text"]
+
+
 def test_build_evidence_units_uses_saved_page_order():
     # Page 1 in saved order contains "诊断" content; page 2 contains "主诉" content.
     # The order is unnatural but represents what the backend saved; offsets must
