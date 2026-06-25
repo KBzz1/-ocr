@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { locateEvidence, ReviewSourcePanel } from './ReviewSourcePanel';
 
@@ -62,5 +62,29 @@ describe('ReviewSourcePanel', () => {
 
     const pre = screen.getByLabelText('合并 OCR 文本');
     expect(pre.querySelector('mark')?.textContent).toBe(evidenceText);
+  });
+
+  it('exposes a return-to-highlight callback when evidence is located', () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    let callback: (() => void) | undefined;
+
+    render(
+      <ReviewSourcePanel
+        text="主诉：反复咳嗽、咳痰15年"
+        sourceMessage={{
+          kind: 'located',
+          text: '点击字段可定位原文',
+          evidenceText: '反复咳嗽、咳痰15年',
+          startIndex: 3,
+        }}
+        onReturnToHighlightReady={(nextCallback) => {
+          callback = nextCallback;
+        }}
+      />,
+    );
+
+    callback?.();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 });
