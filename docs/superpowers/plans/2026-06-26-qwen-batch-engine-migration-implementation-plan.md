@@ -32,6 +32,135 @@ Use Claude Code goal mode for execution and keep this plan as the loop contract.
 
 Do not run two implementation subagents in parallel. The backend and frontend files touched here share contracts and must move in a controlled sequence.
 
+### Loop Control Rules
+
+The controller agent should treat Tasks 1-14 as the automatic loop. Task 15 is a manual approval phase, not part of the autonomous loop.
+
+Per task loop:
+
+```text
+select next unchecked task
+dispatch implementer
+wait for implementer DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED
+if NEEDS_CONTEXT, answer with repo context and rerun implementer
+if BLOCKED, inspect blocker once and either fix plan context or stop with a concrete blocker report
+run spec-compliance review
+fix spec issues until approved
+run code-quality review
+fix quality issues until approved
+record verification commands and commit SHA
+continue to next task
+```
+
+Hard stop points:
+
+- Stop after Task 14 and run the final multi-angle review wave. Report the result to the user before Task 15.
+- Stop before Task 15 unless the user explicitly says to switch the default engine to `qwen_batch`.
+- Stop if a task would require real patient data, real hospital samples, model weights, cloud APIs, CDN, runtime package downloads, or unapproved network access.
+- Stop if implementation requires changing field semantics, core prompt flow, or mapping Qwen fields back to the old 61-field schema.
+- Stop if a reviewer finds an architecture boundary violation that cannot be fixed inside the current task.
+
+Controller status record for each task:
+
+```text
+Task N:
+- Implementer status:
+- Focused tests:
+- Commit:
+- Spec reviewer:
+- Quality reviewer:
+- Remaining risk:
+```
+
+### Reusable Subagent Prompts
+
+Use these prompts by pasting the exact task section into `Task text`.
+
+Implementer prompt:
+
+```text
+You are implementing one task from the Qwen batch migration plan in `/home/kbzz1/manzufei_ocr`.
+
+Read first:
+- `AGENTS.md`
+- `CLAUDE.md`
+- `docs/AGENTS.md`
+- `app/backend/CLAUDE.md` if touching backend
+- `app/backend/services/algorithm_ports/CLAUDE.md` if touching algorithm ports
+- `app/frontend/AGENTS.md` if touching frontend
+- Spec: `docs/superpowers/specs/2026-06-26-qwen-batch-engine-migration-design.md`
+
+Task text:
+Paste the full Task N section below this line before dispatching the subagent.
+
+Rules:
+- Implement only this task.
+- Start with the failing test exactly as the task describes.
+- Run the specified failing test and confirm it fails for the expected reason.
+- Implement the minimal code/docs for this task.
+- Run the specified passing verification.
+- Do not touch unrelated dirty worktree changes.
+- Do not submit real patient data, logs, model weights, `.env`, local paths, OCR full text, image base64, full prompts, or full model output.
+- Do not import upstream algorithm internals into backend product code.
+- Do not infer or fabricate medical fields.
+- Commit only this task with the Chinese commit message specified in the task.
+
+Return:
+- DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED.
+- Files changed.
+- Verification commands and results.
+- Commit SHA.
+- Any concerns.
+```
+
+Spec-compliance reviewer prompt:
+
+```text
+You are the spec-compliance reviewer for one completed task in `/home/kbzz1/manzufei_ocr`.
+
+Read:
+- Spec: `docs/superpowers/specs/2026-06-26-qwen-batch-engine-migration-design.md`
+- Plan: `docs/superpowers/plans/2026-06-26-qwen-batch-engine-migration-implementation-plan.md`
+- The completed Task N section.
+- The task commit diff.
+
+Review only spec and plan compliance:
+- Did the task implement exactly the requested behavior?
+- Did it preserve the Qwen batch architecture boundary?
+- Did it avoid old-field remapping as the default path?
+- Did it preserve failed-task semantics and no silent fallback?
+- Did it avoid frontend inference or field fabrication?
+- Did it avoid prompt/field semantic changes outside the task?
+
+Return findings first with file/line references. Use one of:
+- APPROVED
+- CHANGES_REQUIRED
+```
+
+Code-quality reviewer prompt:
+
+```text
+You are the code-quality reviewer for one completed task in `/home/kbzz1/manzufei_ocr`.
+
+Read:
+- Relevant onboarding files for touched directories.
+- The completed Task N section.
+- The task commit diff.
+- The verification output reported by the implementer.
+
+Review quality, maintainability, and privacy:
+- Are files focused and module boundaries clean?
+- Are tests meaningful and deterministic?
+- Are errors explicit and debuggable without leaking sensitive data?
+- Is the implementation compatible with offline local deployment?
+- Is the code consistent with existing repo style?
+- Did it avoid unrelated refactors?
+
+Return findings first with file/line references. Use one of:
+- APPROVED
+- CHANGES_REQUIRED
+```
+
 Per-task review angles:
 
 - Spec reviewer: algorithm boundary, field contract, failure semantics, no silent fallback, no frontend inference.
@@ -2875,7 +3004,9 @@ If no fixes were required, do not create an empty commit.
 
 ---
 
-### Task 15: Controlled Default Switch After Review Approval
+### Task 15: Manual Approval Phase - Controlled Default Switch
+
+Do not execute this task in the autonomous loop. The controller agent must stop after Task 14, complete the final multi-angle review wave, report the evidence to the user, and wait for explicit approval before making these edits.
 
 **Files:**
 - Modify: `app/config/default.yaml`
@@ -2896,7 +3027,7 @@ rollback config remains available
 legacy path still selectable with algorithm_engine=legacy
 ```
 
-- [ ] **Step 2: Switch default only if the user explicitly approves**
+- [ ] **Step 2: Switch default only after explicit user approval in the current execution thread**
 
 Change `app/config/default.yaml`:
 
@@ -2942,7 +3073,7 @@ git commit -m "切换默认Qwen批处理引擎"
 
 ## Final Multi-Angle Review Prompts
 
-After Task 14, and again after Task 15 if the default switch is approved, dispatch these reviewers with the full diff and test results.
+After Task 14, dispatch these reviewers with the full diff and test results. If the user subsequently explicitly approves Task 15, dispatch the same final review wave again after the default switch commit.
 
 ### Architecture Reviewer Prompt
 
@@ -3057,15 +3188,17 @@ Plan: `docs/superpowers/plans/2026-06-26-qwen-batch-engine-migration-implementat
 要求：
 - 先读取 `AGENTS.md`、`CLAUDE.md`、`docs/AGENTS.md`、`app/backend/CLAUDE.md`、`app/backend/services/algorithm_ports/CLAUDE.md`、`app/frontend/AGENTS.md`。
 - 使用 `$Skill`/Superpowers：`superpowers:subagent-driven-development`。
-- 严格按 plan task-by-task 执行；每个任务先写失败测试，再实现，再跑测试。
+- 严格按 plan task-by-task 执行；自动 loop 只执行 Task 1-14。Task 15 是人工批准阶段，不得自动执行。
+- 每个任务先写失败测试，再实现，再跑测试。
 - 每个任务完成后单独 commit，commit message 使用中文。
 - 每个任务后必须先派 spec-compliance reviewer，再派 code-quality reviewer；有问题就修复并复审。
-- 全部任务完成后必须按 plan 的 final multi-angle review prompts 派多角度 reviewer。
+- Task 14 完成后必须按 plan 的 final multi-angle review prompts 派多角度 reviewer，并把结果报告给用户。
 - 不要修改与计划无关的文件；不要回滚用户已有改动。
 - 不要提交真实数据、日志、模型权重、密钥、本机私有路径、OCR 全文、图片 base64 或完整模型输出。
 - 新 engine 失败时必须进入 failed，不允许静默 fallback 到 legacy 生成另一套字段。
 - 前端不得从 schema、OCR 文本或页面内容推断、补造结构化字段。
 - 最后运行 plan 的最终验证命令，并报告通过项和无法运行项及原因。
+- 如果用户没有在当前执行线程明确批准 Task 15，不要修改 `app/config/default.yaml` 的默认引擎。
 
-开始执行前，先复述你将执行的 Task 1、Task 1 的验证命令，以及本轮不会切换默认引擎，除非用户在 Task 15 前明确批准。
+开始执行前，先复述你将执行的 Task 1、Task 1 的验证命令，以及本轮自动 loop 只执行 Task 1-14，不会切换默认引擎。
 ```
