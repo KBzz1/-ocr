@@ -615,4 +615,33 @@ describe('shared frontend contracts', () => {
       prompt_version: 'copd.prompt.v1'
     });
   });
+
+  it('normalizes_review_payload_with_qwen_metadata', () => {
+    const payload = {
+      task_id: 'task_qwen',
+      status: 'review',
+      review_result: {
+        field_groups: [
+          {
+            group_key: 'history_of_present_illness',
+            group_label: '现病史',
+            fields: [{ field_key: 'hpi_mental_sleep_appetite', label: '精神睡眠食欲', qwen_type: 'J', qwen_path: ['现病史', '精神睡眠食欲'] }]
+          }
+        ],
+        fields: [
+          {
+            field_key: 'hpi_mental_sleep_appetite',
+            field_name: '精神睡眠食欲',
+            final_value: '异常',
+            status: 'unreviewed',
+            qwen_type: 'J',
+            qwen_status: 'abnormal',
+            qwen_path: ['现病史', '精神睡眠食欲']
+          }
+        ]
+      }
+    };
+
+    expect(JSON.stringify(payload)).toContain('qwen_type');
+  });
 });

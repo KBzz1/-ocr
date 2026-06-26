@@ -12,7 +12,7 @@ const fieldGroups = [
     group_key: 'chief_complaint',
     group_label: '主诉',
     fields: [
-      { field_key: 'chief_complaint', label: '主诉' },
+      { field_key: 'chief_complaint', label: '主诉', qwen_type: 'T', qwen_path: ['主诉'] },
       { field_key: 'chief_complaint_duration', label: '主诉病程' }
     ]
   },
@@ -21,7 +21,8 @@ const fieldGroups = [
     group_label: '现病史',
     fields: [
       { field_key: 'present_illness', label: '现病史' },
-      { field_key: 'onset_date', label: '起病时间' }
+      { field_key: 'onset_date', label: '起病时间' },
+      { field_key: 'hpi_mental_sleep_appetite', label: '精神睡眠食欲', qwen_type: 'J', qwen_path: ['现病史', '精神睡眠食欲'] }
     ]
   },
   {
@@ -122,6 +123,8 @@ export const demoReviewPayload: ReviewPayload = {
         candidate_value: '反复咳嗽、咳痰15年，加重伴喘憋3天。',
         status: 'unreviewed',
         attention_required: false,
+        qwen_type: 'T',
+        qwen_path: ['主诉'],
         evidence: [
           {
             id: 'u001',
@@ -168,6 +171,18 @@ export const demoReviewPayload: ReviewPayload = {
         status: 'unreviewed',
         extraction_status: 'not_found',
         attention_required: false
+      },
+      {
+        field_key: 'hpi_mental_sleep_appetite',
+        label: '精神睡眠食欲',
+        field_name: '精神睡眠食欲',
+        value: '异常',
+        final_value: '异常',
+        status: 'unreviewed',
+        attention_required: false,
+        qwen_type: 'J',
+        qwen_status: 'abnormal',
+        qwen_path: ['现病史', '精神睡眠食欲']
       },
       {
         field_key: 'past_history',

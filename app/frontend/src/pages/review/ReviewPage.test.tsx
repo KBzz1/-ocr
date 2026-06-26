@@ -1514,6 +1514,63 @@ describe('ReviewPage', () => {
     // 没有"重点核验:" aria-label
     expect(screen.queryByLabelText(/^重点核验[:：]/)).toBeNull();
   });
+
+  it('loads_qwen_batch_fields_and_highlights_anchor_evidence', async () => {
+    const payload = {
+      task_id: 'task_qwen',
+      status: 'review' as const,
+      review_result: {
+        ocr_text: '主诉：反复咳嗽15年。精神睡眠食欲差。',
+        pages: [{ page_id: 'p1', page_no: 1, parsed_text: '主诉：反复咳嗽15年。精神睡眠食欲差。' }],
+        field_groups: [
+          {
+            group_key: 'chief_complaint',
+            group_label: '主诉',
+            fields: [{ field_key: 'chief_complaint', label: '主诉', qwen_type: 'T', qwen_path: ['主诉'] }]
+          },
+          {
+            group_key: 'history_of_present_illness',
+            group_label: '现病史',
+            fields: [{ field_key: 'hpi_mental_sleep_appetite', label: '精神睡眠食欲', qwen_type: 'J', qwen_path: ['现病史', '精神睡眠食欲'] }]
+          }
+        ],
+        fields: [
+          {
+            field_key: 'chief_complaint',
+            field_name: '主诉',
+            label: '主诉',
+            value: '反复咳嗽15年',
+            final_value: '反复咳嗽15年',
+            status: 'unreviewed' as const,
+            qwen_type: 'T' as const,
+            qwen_path: ['主诉'],
+            evidence: [{ id: 's1-s1', text: '主诉：反复咳嗽15年。', start_offset: 0, end_offset: 11 }]
+          },
+          {
+            field_key: 'hpi_mental_sleep_appetite',
+            field_name: '精神睡眠食欲',
+            label: '精神睡眠食欲',
+            value: '异常',
+            final_value: '异常',
+            status: 'unreviewed' as const,
+            qwen_type: 'J' as const,
+            qwen_status: 'abnormal' as const,
+            qwen_path: ['现病史', '精神睡眠食欲'],
+            evidence: [{ id: 's2-s2', text: '精神睡眠食欲差。', start_offset: 11, end_offset: 19 }]
+          }
+        ]
+      }
+    };
+
+    render(<ReviewPage taskId="task_qwen" demoPayload={payload} />);
+
+    expect(await screen.findByText('现病史')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
+    expect(screen.getByText('点击字段可定位原文')).toBeTruthy();
+    const mark = document.querySelector('mark');
+    expect(mark?.textContent).toBe('精神睡眠食欲差。');
+  });
 });
 
 describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no warning text', () => {
