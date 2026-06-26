@@ -62,7 +62,7 @@ function findLocatedEvidenceText(
     return undefined;
   }
 
-  const candidates: Array<{ text: string; offset?: number }> = [];
+  const candidates: Array<{ text: string }> = [];
   if (cleanedEvidence) {
     const fullEvidenceLocated = ocrText.includes(cleanedEvidence);
     if (fullEvidenceLocated) {
@@ -84,7 +84,7 @@ function findLocatedEvidenceText(
   }
 
   const located = candidates
-    .map((item) => ({ item, index: typeof item.offset === 'number' ? item.offset : ocrText.indexOf(item.text) }))
+    .map((item) => ({ item, index: ocrText.indexOf(item.text) }))
     .filter((entry) => entry.index >= 0)
     .sort((a, b) => a.index - b.index || b.item.text.length - a.item.text.length);
 
