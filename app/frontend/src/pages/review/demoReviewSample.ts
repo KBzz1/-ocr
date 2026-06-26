@@ -1,4 +1,4 @@
-import type { ReviewPayload } from '../../api/review';
+import type { FieldGroupDef, ReviewPayload } from '../../api/review';
 
 export const demoReviewTaskId = 'task-demo-review';
 
@@ -7,7 +7,7 @@ export const demoReviewTaskId = 'task-demo-review';
 // OCR 文本中先于 ## 主诉 出现的"页面顺序与 schema 顺序不一致"场景,
 // 便于在本地复核 FieldList 渲染、证据高亮与黄色重点核验提示。
 
-const fieldGroups = [
+const fieldGroups: FieldGroupDef[] = [
   {
     group_key: 'chief_complaint',
     group_label: '主诉',

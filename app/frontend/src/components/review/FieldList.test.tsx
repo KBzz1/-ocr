@@ -66,7 +66,7 @@ describe('FieldList', () => {
       />
     );
 
-    const textarea = screen.getByLabelText('patient_name') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('姓名 字段') as HTMLTextAreaElement;
     expect(textarea.readOnly).toBe(true);
 
     const reviewButton = screen.getByRole('button', { name: '审核 姓名' }) as HTMLButtonElement;
@@ -90,7 +90,7 @@ describe('FieldList', () => {
       />
     );
 
-    const textarea = screen.getByLabelText('patient_name') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('姓名 字段') as HTMLTextAreaElement;
     await user.type(textarea, '李四');
     expect(onChange).not.toHaveBeenCalled();
 
@@ -147,8 +147,7 @@ describe('FieldList', () => {
 
     // Section title visible
     expect(screen.getByLabelText('主诉')).toBeTruthy();
-    // Textarea accessible label still points at chief_complaint
-    const textarea = screen.getByLabelText('chief_complaint') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('主诉 字段') as HTMLTextAreaElement;
     expect(textarea.value).toBe('头痛三天');
     // The topline label element should NOT exist as a duplicate text node
     // (group title in <h3> is the only visible 主诉 label; the topline <label> is hidden)
@@ -279,6 +278,49 @@ describe('FieldList', () => {
         status: 'modified'
       })
     ]);
+  });
+
+  it('renders_qwen_j_field_from_field_group_definition_when_field_lacks_metadata', () => {
+    const onChange = vi.fn();
+    const onFocus = vi.fn();
+    const onToggle = vi.fn();
+
+    render(
+      <FieldList
+        fields={[makeField({
+          field_key: 'hpi_mental_sleep_appetite',
+          field_name: '精神睡眠食欲',
+          label: '精神睡眠食欲',
+          value: '异常',
+          final_value: '异常',
+          qwen_status: 'abnormal'
+        })]}
+        fieldGroups={[
+          {
+            group_key: 'history_of_present_illness',
+            group_label: '现病史',
+            fields: [
+              {
+                field_key: 'hpi_mental_sleep_appetite',
+                label: '精神睡眠食欲',
+                qwen_type: 'J',
+                qwen_path: ['现病史', '精神睡眠食欲'],
+                review_control: 'judgement',
+                options: ['正常', '异常', '未提及', '不确定']
+              }
+            ]
+          }
+        ]}
+        selectedFieldKey={null}
+        onChange={onChange}
+        onFocusField={onFocus}
+        onToggleReviewed={onToggle}
+      />
+    );
+
+    expect(screen.getByRole('group', { name: '精神睡眠食欲 状态' })).toBeTruthy();
+    expect(screen.queryByLabelText('hpi_mental_sleep_appetite')).toBeNull();
+    expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('disables_qwen_j_control_when_read_only', async () => {

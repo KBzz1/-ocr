@@ -65,7 +65,7 @@ export function locateEvidence(
 
   if (typeof start === 'number' && typeof end === 'number' && end > start) {
     const slice = rawText.slice(start, end);
-    if (slice && slice === rawText.substring(start, end)) {
+    if (slice && (!text || slice === text)) {
       return { rawText, highlightText: slice, startIndex: start };
     }
   }

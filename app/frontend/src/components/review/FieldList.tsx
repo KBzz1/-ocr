@@ -22,6 +22,18 @@ function buildEmptyFieldStub(fieldKey: string, label: string): ReviewField {
   };
 }
 
+function mergeFieldDefinitionMetadata(field: ReviewField, fieldDef: FieldGroupDef['fields'][number]): ReviewField {
+  return {
+    ...field,
+    field_name: field.field_name ?? fieldDef.label,
+    label: field.label ?? fieldDef.label,
+    qwen_type: field.qwen_type ?? fieldDef.qwen_type,
+    qwen_path: field.qwen_path ?? fieldDef.qwen_path,
+    review_control: field.review_control ?? fieldDef.review_control,
+    options: field.options ?? fieldDef.options,
+  };
+}
+
 function groupFields(
   fields: ReviewField[],
   fieldGroups: FieldGroupDef[] | undefined,
@@ -44,10 +56,10 @@ function groupFields(
     for (const fdef of group.fields) {
       const field = fieldMap.get(fdef.field_key);
       if (field) {
-        groupFields.push({ ...field, field_name: fdef.label || field.field_name });
+        groupFields.push(mergeFieldDefinitionMetadata(field, fdef));
         usedKeys.add(fdef.field_key);
       } else if (includeAllSchemaFields) {
-        groupFields.push(buildEmptyFieldStub(fdef.field_key, fdef.label));
+        groupFields.push(mergeFieldDefinitionMetadata(buildEmptyFieldStub(fdef.field_key, fdef.label), fdef));
       }
     }
     if (groupFields.length > 0 || includeAllSchemaFields) {
@@ -114,12 +126,14 @@ function AutoGrowTextarea({
   value,
   onChange,
   onFocus,
+  label,
   readOnly = false,
 }: {
   field: ReviewField;
   value: string;
   onChange: (value: string) => void;
   onFocus: () => void;
+  label: string;
   readOnly?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -138,7 +152,7 @@ function AutoGrowTextarea({
       className="field-card__input"
       rows={1}
       value={value}
-      aria-label={field.field_key}
+      aria-label={`${label} 字段`}
       readOnly={readOnly}
       onChange={(e) => onChange(e.currentTarget.value)}
       onFocus={onFocus}
@@ -266,7 +280,7 @@ export function FieldList({
                           className="field-card__placeholder"
                           role="textbox"
                           aria-readonly="true"
-                          aria-label={field.field_key}
+                          aria-label={`${fieldLabel} 未提及`}
                           data-placeholder="未提及"
                           onClick={() => onFocusField(field)}
                         >
@@ -300,6 +314,7 @@ export function FieldList({
                         <AutoGrowTextarea
                           field={field}
                           value={value}
+                          label={fieldLabel}
                           onChange={(nextValue) => updateField(field.field_key, nextValue)}
                           onFocus={() => onFocusField(field)}
                           readOnly={readOnly}

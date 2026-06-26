@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../../../tests/setupTests';
 import { ReviewPage } from './ReviewPage';
+import type { ReviewPayload } from '../../api/review';
 
 function mockReviewRoutes() {
   server.use(
@@ -347,7 +348,7 @@ describe('ReviewPage', () => {
     expect(screen.getByText('已修改')).toBeTruthy();
     expect(screen.getByLabelText('切换任务')).toBeTruthy();
 
-    await userEvent.type(screen.getByLabelText('patient_name'), '修正');
+    await userEvent.type(screen.getByLabelText('姓名 字段'), '修正');
     expect(screen.getByText('未保存修改')).toBeTruthy();
   });
 
@@ -403,11 +404,11 @@ describe('ReviewPage', () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByLabelText('patient_name')).toBeTruthy();
+    expect(await screen.findByLabelText('姓名 字段')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
     const reviewCheck = screen.getByRole('button', { name: '审核 姓名' });
     expect(reviewCheck.getAttribute('aria-pressed')).toBe('false');
-    expect(reviewCheck.closest('.field-card__value-row')?.querySelector('.field-card__input')).toBe(screen.getByLabelText('patient_name'));
+    expect(reviewCheck.closest('.field-card__value-row')?.querySelector('.field-card__input')).toBe(screen.getByLabelText('姓名 字段'));
 
     await userEvent.click(reviewCheck);
 
@@ -415,7 +416,7 @@ describe('ReviewPage', () => {
     expect(screen.getByText('2 个字段，1 个已确认')).toBeTruthy();
     expect(screen.getByText('未保存修改')).toBeTruthy();
 
-    await userEvent.click(screen.getByLabelText('chief_complaint'));
+    await userEvent.click(screen.getByLabelText('主诉 字段'));
     expect(screen.getByRole('img', { name: '第 2 页原图' })).toBeTruthy();
   });
 
@@ -641,7 +642,7 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByLabelText('patient_name');
+    await screen.findByLabelText('姓名 字段');
     await userEvent.click(screen.getByRole('button', { name: '保存修改' }));
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
@@ -656,7 +657,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByText('OCR 合并文本')).toBeTruthy();
-    const field = screen.getByLabelText('patient_name') as HTMLInputElement;
+    const field = screen.getByLabelText('姓名 字段') as HTMLInputElement;
     expect(field.value).toBe('张三');
 
     await userEvent.clear(field);
@@ -699,7 +700,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByText('主诉')).toBeTruthy();
-    expect((screen.getByLabelText('chief_complaint') as HTMLInputElement).value).toBe('头痛三天');
+    expect((screen.getByLabelText('主诉 字段') as HTMLInputElement).value).toBe('头痛三天');
   });
 
   it('saves every field as confirmed before completing from one-click review', async () => {
@@ -745,7 +746,7 @@ describe('ReviewPage', () => {
     );
     render(<ReviewPage taskId="task_001" />);
 
-    const nameField = await screen.findByLabelText('patient_name');
+    const nameField = await screen.findByLabelText('姓名 字段');
     await userEvent.clear(nameField);
     await userEvent.type(nameField, '李四');
     await userEvent.click(screen.getByRole('button', { name: '一键审核' }));
@@ -831,7 +832,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     // 等字段区渲染出来
-    await screen.findByLabelText('BMI');
+    await screen.findByLabelText('BMI 字段');
 
     const flags = screen.getAllByLabelText('重点核验：结果可疑，请核对原文');
     expect(flags).toHaveLength(6);
@@ -1085,7 +1086,7 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByLabelText('temperature')).toBeTruthy();
+    expect(await screen.findByLabelText('体温 字段')).toBeTruthy();
     expect(screen.getByText('36.7℃', { selector: 'mark' })).toBeTruthy();
     expect(screen.queryByText(/证据风险|来源风险/)).toBeNull();
     expect(screen.queryByText(/evidence_recovered_from_value/)).toBeNull();
@@ -1516,7 +1517,7 @@ describe('ReviewPage', () => {
   });
 
   it('loads_qwen_batch_fields_and_highlights_anchor_evidence', async () => {
-    const payload = {
+    const payload: ReviewPayload = {
       task_id: 'task_qwen',
       status: 'review' as const,
       review_result: {
@@ -1570,6 +1571,53 @@ describe('ReviewPage', () => {
     expect(screen.getByText('点击字段可定位原文')).toBeTruthy();
     const mark = document.querySelector('mark');
     expect(mark?.textContent).toBe('精神睡眠食欲差。');
+  });
+
+  it('uses_evidence_offset_before_text_search_when_evidence_text_repeats', async () => {
+    const repeatedText = '精神睡眠食欲差。主诉：反复咳嗽15年。精神睡眠食欲差。';
+    const secondOccurrenceStart = repeatedText.lastIndexOf('精神睡眠食欲差。');
+    const payload: ReviewPayload = {
+      task_id: 'task_qwen_duplicate_evidence',
+      status: 'review' as const,
+      review_result: {
+        ocr_text: repeatedText,
+        pages: [{ page_id: 'p1', page_no: 1, parsed_text: repeatedText }],
+        field_groups: [
+          {
+            group_key: 'history_of_present_illness',
+            group_label: '现病史',
+            fields: [{ field_key: 'hpi_mental_sleep_appetite', label: '精神睡眠食欲', qwen_type: 'J' as const }]
+          }
+        ],
+        fields: [
+          {
+            field_key: 'hpi_mental_sleep_appetite',
+            field_name: '精神睡眠食欲',
+            label: '精神睡眠食欲',
+            value: '异常',
+            final_value: '异常',
+            status: 'unreviewed' as const,
+            qwen_type: 'J' as const,
+            qwen_status: 'abnormal' as const,
+            evidence: [{
+              id: 's2-s2',
+              text: '精神睡眠食欲差。',
+              start_offset: secondOccurrenceStart,
+              end_offset: secondOccurrenceStart + '精神睡眠食欲差。'.length
+            }]
+          }
+        ]
+      }
+    };
+
+    render(<ReviewPage taskId="task_qwen_duplicate_evidence" demoPayload={payload} />);
+
+    await screen.findByText('现病史');
+    await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
+
+    const mark = document.querySelector('mark');
+    expect(mark?.textContent).toBe('精神睡眠食欲差。');
+    expect(mark?.previousSibling?.textContent).toContain('主诉：反复咳嗽15年。');
   });
 });
 

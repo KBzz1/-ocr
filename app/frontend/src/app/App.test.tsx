@@ -197,7 +197,7 @@ describe('Workstation data integration', () => {
     expect(screen.queryByRole('main', { name: '任务列表页' })).toBeNull();
     expect(window.location.pathname).toBe('/review');
     expect(screen.getAllByText('2').length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('patient_name')).toBeTruthy();
+    expect(screen.getByLabelText('姓名 字段')).toBeTruthy();
   });
 
   it('opens an existing non-review task instead of falling back to the demo sample', async () => {
@@ -249,7 +249,7 @@ describe('Workstation data integration', () => {
     expect(screen.queryByText('演示样本')).toBeNull();
     expect(screen.queryByText('任务 demo-review')).toBeNull();
     expect(screen.getAllByText('99').length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('patient_name')).toBeTruthy();
+    expect(screen.getByLabelText('姓名 字段')).toBeTruthy();
   });
 
   it('shows an empty task detail state when there are no real tasks', async () => {

@@ -4,7 +4,7 @@ import { getReview, reopenReview, saveReview, type ReviewField, type ReviewPaylo
 import { cancelReextractTask, completeTask, getTaskDetail, getTasks, reextractTaskFromOcr, renameTask, retryTaskProcessing, type TaskDetail, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { ExportPanel } from '../../components/export/ExportPanel';
 import { FieldList } from '../../components/review/FieldList';
-import { ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
+import { locateEvidence, ReviewSourcePanel, type SourceMessage } from '../../components/review/ReviewSourcePanel';
 import { getTaskStatusLabel, taskStatusMeta } from '../../styles/status';
 import { buildReviewPath } from '../../app/routes';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
@@ -52,19 +52,17 @@ function findLocatedEvidenceText(
   evidence: { text?: string; start_offset?: number; end_offset?: number } | undefined
 ) {
   if (!evidence) return undefined;
+  const offsetLocation = locateEvidence(ocrText, evidence);
+  if (offsetLocation) {
+    return { text: offsetLocation.highlightText, startIndex: offsetLocation.startIndex };
+  }
+
   const cleanedEvidence = evidence.text ? stripOcrMarkup(evidence.text) : undefined;
   if (!cleanedEvidence && (typeof evidence.start_offset !== 'number' || typeof evidence.end_offset !== 'number')) {
     return undefined;
   }
 
   const candidates: Array<{ text: string; offset?: number }> = [];
-  if (typeof evidence.start_offset === 'number' && typeof evidence.end_offset === 'number' && evidence.end_offset > evidence.start_offset) {
-    const slice = ocrText.slice(evidence.start_offset, evidence.end_offset);
-    if (cleanedEvidence && slice === cleanedEvidence) {
-      candidates.push({ text: slice, offset: evidence.start_offset });
-    }
-  }
-
   if (cleanedEvidence) {
     const fullEvidenceLocated = ocrText.includes(cleanedEvidence);
     if (fullEvidenceLocated) {
