@@ -1,12 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
-import type { ReviewField } from '../../api/review';
+import type { ReviewField, FieldGroupDef, QwenJudgementStatus } from '../../api/review';
 import type { FieldStatus } from '../../styles/status';
-
-type FieldGroupDef = {
-  group_key: string;
-  group_label: string;
-  fields: Array<{ field_key: string; label: string }>;
-};
 
 type FieldListProps = {
   fields: ReviewField[];
@@ -78,6 +72,21 @@ function getFieldValueLengthClass(value: string) {
   if (value.length > 56 || value.includes('\n')) return 'field-card__item--long';
   if (value.length > 18) return 'field-card__item--medium';
   return 'field-card__item--short';
+}
+
+const QWEN_J_OPTIONS = [
+  { value: '正常', status: 'normal', label: '正常' },
+  { value: '异常', status: 'abnormal', label: '异常' },
+  { value: '', status: 'not_mentioned', label: '未提及' },
+  { value: '不确定', status: 'uncertain', label: '不确定' },
+] as const;
+
+function getQwenStatusFromValue(value: string): QwenJudgementStatus {
+  if (value === '正常') return 'normal';
+  if (value === '异常') return 'abnormal';
+  if (value === '不确定') return 'uncertain';
+  if (value === '') return 'not_mentioned';
+  return 'uncertain';
 }
 
 // 医生可见的"重点核验"来自后端给出的 attention_* 或字段复核状态;
@@ -167,6 +176,23 @@ export function FieldList({
     );
   }
 
+  function updateQwenJudgementField(fieldKey: string, value: string, qwenStatus: NonNullable<ReviewField['qwen_status']>) {
+    onChange(
+      fields.map((f) =>
+        f.field_key === fieldKey
+          ? {
+              ...f,
+              value,
+              final_value: value,
+              qwen_status: qwenStatus,
+              extraction_status: qwenStatus === 'not_mentioned' ? ('not_found' as const) : f.extraction_status,
+              status: value === (f.final_value ?? f.auto_value ?? '') ? f.status : ('modified' as const),
+            }
+          : f,
+      ),
+    );
+  }
+
   return (
     <div className="field-cards">
       {groups.map((group) => {
@@ -245,6 +271,30 @@ export function FieldList({
                           onClick={() => onFocusField(field)}
                         >
                           未提及
+                        </div>
+                      ) : field.qwen_type === 'J' || field.review_control === 'judgement' ? (
+                        <div className="field-card__judgement" role="group" aria-label={`${fieldLabel} 状态`}>
+                          {QWEN_J_OPTIONS.map((option) => {
+                            const currentStatus = field.qwen_status ?? getQwenStatusFromValue(value);
+                            const pressed = currentStatus === option.status;
+                            return (
+                              <button
+                                key={option.status}
+                                type="button"
+                                className="field-card__judgement-option"
+                                aria-label={`${option.label} ${fieldLabel}`}
+                                aria-pressed={pressed}
+                                disabled={readOnly}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onFocusField(field);
+                                  updateQwenJudgementField(field.field_key, option.value, option.status);
+                                }}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
                         </div>
                       ) : (
                         <AutoGrowTextarea

@@ -1,0 +1,158 @@
+# =============================================================================
+# Qwen3.5-4B 配置文件
+# =============================================================================
+
+# 模型配置
+model:
+  name: "Qwen3.5-4B-AWQ-4bit"
+  quantization: "awq"                    # 4-bit AWQ 量化
+  server_url: "http://vllm-server:8000/v1"   # 容器内访问地址 (由环境变量覆盖)
+
+# 推理优化参数 (针对 8GB 小显存优化)
+# -----------------------------------------------------------------------------
+# 【参数说明指南】
+# temperature:        (默认0.0) 必须保持为 0.0！对于需要精确提取生僻字和原样照抄的 OCR 任务，
+#                     任何高于 0.0 的值都会让模型产生随机幻觉和“脑补”，从而出现错别字。
+# top_p:              (默认0.95) 只有在 temperature > 0 时才生效。控制词汇的概率截断。
+# top_k:              (默认20) 只有在 temperature > 0 时才生效。限制备选词汇池的大小。
+# min_p:              (默认0.0) 丢弃概率低于该阈值的生僻词。
+# presence_penalty:   (默认0.0) 存在惩罚。>0 会鼓励模型尝试新的话题。OCR 不需要修改。
+# repetition_penalty: (默认1.15) 重复惩罚。1.0 代表不惩罚。如果发现模型一直在复读同一句话，
+#                     可以稍微调高（如 1.05 或 1.1）。
+# -----------------------------------------------------------------------------
+inference:
+  temperature: 0.0
+  max_tokens: 6000
+  top_p: 1.0
+  top_k: 50
+  min_p: 0.0
+  presence_penalty: 0.0
+  repetition_penalty: 1.15
+  thinking_enabled: false      # 关闭 thinking 模式以节省 token
+
+# 处理配置
+processing:
+  max_workers: 8                # 客户端并发请求数 (与模型承载力及显存大小相关)
+  output_formats:               # 输出格式列表: markdown, json
+    - markdown
+    - json
+  merge_output: true            # 是否生成合并文件
+  archive_processed: true       # 处理完后移到 input/processed/
+  pdf_dpi: 200                  # PDF 渲染 DPI
+  supported_extensions:         # 支持的文件扩展名
+    - .jpg
+    - .jpeg
+    - .png
+    - .bmp
+    - .tiff
+    - .tif
+    - .pdf
+
+# OCR 识别配置
+ocr:
+  backend: "qwen-vl"           # 当前使用的 OCR 后端: qwen-vl
+  system_prompt: |
+    你是一个专业的医疗文档 OCR 识别助手。
+    你的任务是精确地将图片中的文字转化为文本，为后续的结构化提取提供完美的语料。
+  user_prompt: "请识别这张图片中的核心病历文字内容，保持原始段落格式。"
+
+# 结构化 JSON 提取配置
+extraction:
+  enabled: true
+
+  system_prompt: |
+    你是中文病历结构化抽取助手。严格按 schema_template 输出 JSON，不新增字段。
+
+    <病历原文>已经被切分为细粒度的片段，每个片段的**正前方**都注入了隐形的定位锚点（如 <s1>病历内容...）。请你在阅读时忽略它们，不要受其影响。
+    
+    schema_template 中：
+    T=原文截取型，输出 {"v":值或null,"p":["<s开头>","<s结尾>"]或null}
+    J=状态判断型，输出 {"s":0|1|2,"p":["<s开头>","<s结尾>"]或null}
+
+    s含义：0=正常，1=异常，2=未提及。
+    p含义：支撑该结论的证据范围的【起始锚点】和【结束锚点】（请提取片段最前方的那个标签），必须是一个严格包含两个元素的JSON数组，例如 ["<s3>", "<s5>"]。如果证据极短只包含一个标签，则首尾重复，例如 ["<s5>", "<s5>"]。严禁填错数组格式！
+    T字段未提及时：v=null,p=null。
+    J字段：只要原文中有提及（无论正常还是异常），都必须填写 p。完全未提及时 p=null。
+    绝对不要输出证据原文内容，绝对不要输出Markdown或推理过程，直接输出纯粹的严格JSON格式。
+
+  user_prompt_template: |
+    schema_template:
+    {schema_template}
+
+    <病历原文>
+    {text}
+    </病历原文>
+
+    JSON:
+
+  schema_template:
+    主诉: T
+
+    现病史:
+      初次发病情况: T
+      后续发病情况: T
+      院内诊断情况: T
+      治疗药物: T
+      近期症状: T
+      精神睡眠食欲: J
+      大便情况: T
+      小便情况: J
+      体重变化: T
+
+    既往史:
+      心脏病: T
+      高血压: T
+      糖尿病: T
+      乙肝: J
+      便血: T
+      肾炎: J
+      血液病: J
+      冠心病: T
+      脑梗塞: T
+      手术史: J
+      输血史: J
+      血制品史: J
+      过敏史: J
+
+    个人史:
+      工作: T
+      吸烟史: T
+      饮酒史: T
+
+    家族史: T
+
+    体格检查:
+      生命体征: T
+      身高体重BMI: T
+      皮肤: J
+      眼部: J
+      耳部: J
+      鼻部: J
+      口腔: J
+      颈部: J
+      胸部: T
+      呼吸: T
+      心律: T
+      腹部: J
+      四肢: J
+      神经: J
+
+    辅助检查:
+      胸部CT: T
+      心脏超声: T
+      血气: T
+      CRP: T
+      血常规: T
+      电解质: J
+      肾功: J
+      D2聚体: J
+
+    初步诊断: T
+    最终诊断: T
+
+
+# 增量监控配置
+monitor:
+  enabled: true                 # 是否启用增量监控
+  interval_seconds: 10          # 轮询间隔 (秒)
+  settle_seconds: 3             # 新文件到达后等待写入完成的秒数

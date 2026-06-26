@@ -224,6 +224,95 @@ describe('FieldList', () => {
     expect(flag.closest('.field-card__item')).toBeTruthy();
   });
 
+  it('renders_qwen_j_field_as_status_segmented_control', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onFocus = vi.fn();
+    const onToggle = vi.fn();
+    const groups: FieldGroupDef[] = [
+      {
+        group_key: 'history_of_present_illness',
+        group_label: '现病史',
+        fields: [
+          {
+            field_key: 'hpi_mental_sleep_appetite',
+            label: '精神睡眠食欲',
+            qwen_type: 'J',
+            qwen_path: ['现病史', '精神睡眠食欲']
+          }
+        ]
+      }
+    ];
+
+    render(
+      <FieldList
+        fields={[makeField({
+          field_key: 'hpi_mental_sleep_appetite',
+          field_name: '精神睡眠食欲',
+          label: '精神睡眠食欲',
+          value: '异常',
+          final_value: '异常',
+          qwen_type: 'J',
+          qwen_status: 'abnormal',
+          qwen_path: ['现病史', '精神睡眠食欲']
+        })]}
+        fieldGroups={groups}
+        selectedFieldKey={null}
+        onChange={onChange}
+        onFocusField={onFocus}
+        onToggleReviewed={onToggle}
+      />
+    );
+
+    expect(screen.queryByLabelText('hpi_mental_sleep_appetite')).toBeNull();
+    expect(screen.getByRole('button', { name: '正常 精神睡眠食欲' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: '正常 精神睡眠食欲' }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        field_key: 'hpi_mental_sleep_appetite',
+        final_value: '正常',
+        value: '正常',
+        qwen_status: 'normal',
+        status: 'modified'
+      })
+    ]);
+  });
+
+  it('disables_qwen_j_control_when_read_only', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onFocus = vi.fn();
+    const onToggle = vi.fn();
+
+    render(
+      <FieldList
+        fields={[makeField({
+          field_key: 'pe_skin',
+          field_name: '皮肤',
+          label: '皮肤',
+          value: '正常',
+          final_value: '正常',
+          qwen_type: 'J',
+          qwen_status: 'normal'
+        })]}
+        fieldGroups={[{ group_key: 'physical_exam', group_label: '体格检查', fields: [{ field_key: 'pe_skin', label: '皮肤', qwen_type: 'J' }] }]}
+        selectedFieldKey={null}
+        onChange={onChange}
+        onFocusField={onFocus}
+        onToggleReviewed={onToggle}
+        readOnly
+      />
+    );
+
+    const normal = screen.getByRole('button', { name: '正常 皮肤' }) as HTMLButtonElement;
+    expect(normal.disabled).toBe(true);
+    await user.click(normal);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('does_not_render_internal_quality_flag_names', () => {
     const onChange = vi.fn();
     const onFocus = vi.fn();

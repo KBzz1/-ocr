@@ -1,0 +1,108 @@
+# Qwen Batch Engine - Overlay Config (safe model/inference/processing keys from upstream)
+# Generated from upstream config.yaml, stripped of server URLs, paths, and secrets.
+
+model:
+  name: "Qwen3.5-4B-AWQ-4bit"
+  quantization: "awq"
+
+inference:
+  temperature: 0.0
+  max_tokens: 6000
+  top_p: 1.0
+  top_k: 50
+  min_p: 0.0
+  presence_penalty: 0.0
+  repetition_penalty: 1.15
+  thinking_enabled: false
+
+processing:
+  max_workers: 8
+  output_formats:
+    - markdown
+    - json
+  merge_output: true
+  archive_processed: true
+  pdf_dpi: 200
+  supported_extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .bmp
+    - .tiff
+    - .tif
+    - .pdf
+
+ocr:
+  backend: "qwen-vl"
+  system_prompt: |
+    你是一个专业的医疗文档 OCR 识别助手。
+    你的任务是精确地将图片中的文字转化为文本，为后续的结构化提取提供完美的语料。
+  user_prompt: "请识别这张图片中的核心病历文字内容，保持原始段落格式。"
+
+extraction:
+  enabled: true
+
+  schema_template:
+    主诉: T
+
+    现病史:
+      初次发病情况: T
+      后续发病情况: T
+      院内诊断情况: T
+      治疗药物: T
+      近期症状: T
+      精神睡眠食欲: J
+      大便情况: T
+      小便情况: J
+      体重变化: T
+
+    既往史:
+      心脏病: T
+      高血压: T
+      糖尿病: T
+      乙肝: J
+      便血: T
+      肾炎: J
+      血液病: J
+      冠心病: T
+      脑梗塞: T
+      手术史: J
+      输血史: J
+      血制品史: J
+      过敏史: J
+
+    个人史:
+      工作: T
+      吸烟史: T
+      饮酒史: T
+
+    家族史: T
+
+    体格检查:
+      生命体征: T
+      身高体重BMI: T
+      皮肤: J
+      眼部: J
+      耳部: J
+      鼻部: J
+      口腔: J
+      颈部: J
+      胸部: T
+      呼吸: T
+      心律: T
+      腹部: J
+      四肢: J
+      神经: J
+
+    辅助检查:
+      胸部CT: T
+      心脏超声: T
+      血气: T
+      CRP: T
+      血常规: T
+      电解质: J
+      肾功: J
+      D2聚体: J
+
+    初步诊断: T
+    最终诊断: T

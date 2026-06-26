@@ -1,0 +1,31 @@
+inference:
+  temperature: 0.0
+  max_tokens: 6000
+  top_p: 1.0
+  top_k: 50
+  min_p: 0.0
+  presence_penalty: 0.0
+  repetition_penalty: 1.15
+  thinking_enabled: false
+
+processing:
+  max_workers: 8
+  output_formats:
+    - markdown
+    - json
+  merge_output: true
+  archive_processed: true
+  pdf_dpi: 200
+  supported_extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .bmp
+    - .tiff
+    - .tif
+    - .pdf
+
+monitor:
+  enabled: true
+  interval_seconds: 10
+  settle_seconds: 3

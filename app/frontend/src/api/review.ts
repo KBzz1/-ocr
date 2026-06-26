@@ -2,6 +2,9 @@ import { apiRequest } from './client';
 import type { TaskStatus } from './tasks';
 import type { FieldStatus } from '../styles/status';
 
+export type QwenFieldType = 'T' | 'J';
+export type QwenJudgementStatus = 'normal' | 'abnormal' | 'not_mentioned' | 'uncertain';
+
 export interface ReviewEvidence {
   id?: string;
   page_id?: string;
@@ -36,12 +39,24 @@ export interface ReviewField {
     normalized: string;
     reason: string;
   };
+  qwen_type?: QwenFieldType;
+  qwen_path?: string[];
+  qwen_status?: QwenJudgementStatus;
+  review_control?: 'text' | 'judgement';
+  options?: string[];
 }
 
 export interface FieldGroupDef {
   group_key: string;
   group_label: string;
-  fields: Array<{ field_key: string; label: string }>;
+  fields: Array<{
+    field_key: string;
+    label: string;
+    qwen_type?: QwenFieldType;
+    qwen_path?: string[];
+    review_control?: 'text' | 'judgement';
+    options?: string[];
+  }>;
 }
 
 export interface ReviewResult {
@@ -84,7 +99,12 @@ function normalizeReviewField(field: ReviewField): ReviewField {
     value,
     candidate_value: candidateValue,
     final_value: value,
-    evidence: normalizeEvidence(field.evidence)
+    evidence: normalizeEvidence(field.evidence),
+    qwen_type: field.qwen_type,
+    qwen_path: field.qwen_path,
+    qwen_status: field.qwen_status,
+    review_control: field.review_control,
+    options: field.options
   };
 }
 
