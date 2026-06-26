@@ -389,3 +389,33 @@ def test_qwen_vllm_max_model_len_rejects_30000_for_8gb_default(tmp_path):
 
     with pytest.raises(ValueError, match="qwen_vllm_max_model_len"):
         load_config(str(config_dir))
+
+
+def test_repository_default_config_uses_qwen_batch_engine():
+    from app.backend.config import load_config
+
+    config = load_config()
+
+    assert config["algorithm_engine"] == "qwen_batch"
+    assert config["qwen_batch_schema_path"].endswith(
+        "app/config/schemas/qwen_batch_admission_record.v1.yaml"
+    )
+    assert config["qwen_batch_runner_timeout_seconds"] == 1800
+
+
+def test_algorithm_engine_can_roll_back_to_legacy(tmp_path):
+    from app.backend.config import load_config
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        """
+algorithms:
+  algorithm_engine: legacy
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_dir))
+
+    assert config["algorithm_engine"] == "legacy"

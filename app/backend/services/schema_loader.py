@@ -146,6 +146,18 @@ def load_schema(path: str) -> dict:
                 "type": field_type,
                 "required": required,
                 "hint": hint,
+                **({
+                    "qwen_type": field["qwen_type"],
+                } if "qwen_type" in field else {}),
+                **({
+                    "qwen_path": field["qwen_path"],
+                } if "qwen_path" in field else {}),
+                **({
+                    "review_control": field["review_control"],
+                } if "review_control" in field else {}),
+                **({
+                    "options": field["options"],
+                } if "options" in field else {}),
             })
 
         normalized_groups.append({

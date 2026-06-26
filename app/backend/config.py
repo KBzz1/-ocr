@@ -30,6 +30,10 @@ DEFAULT_CONFIG = {
     "log_backup_count": 5,
     "enable_copd_extractor": False,
     "enable_local_ocr": False,
+    "algorithm_engine": "legacy",
+    "qwen_batch_job_dir": "./data/algorithm_jobs",
+    "qwen_batch_runner_timeout_seconds": 1800,
+    "qwen_batch_schema_path": "./app/config/schemas/qwen_batch_admission_record.v1.yaml",
     "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
     "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
     "qwen_vllm_model_dir": "./models/llm/Qwen3.5-4B-AWQ-4bit",
@@ -98,6 +102,8 @@ def _flatten_config(raw: dict) -> dict:
         flattened["min_quad_area_ratio"] = upload_config["min_quad_area_ratio"]
 
     algorithms_config = raw.get("algorithms", {})
+    if "algorithm_engine" in algorithms_config:
+        flattened["algorithm_engine"] = algorithms_config["algorithm_engine"]
     if "enable_copd_extractor" in algorithms_config:
         flattened["enable_copd_extractor"] = algorithms_config["enable_copd_extractor"]
     if "enable_local_ocr" in algorithms_config:
@@ -128,6 +134,12 @@ def _flatten_config(raw: dict) -> dict:
         flattened["qwen_extraction_timeout_seconds"] = algorithms_config["qwen_extraction_timeout_seconds"]
     if "gpu_stage_queue_enabled" in algorithms_config:
         flattened["gpu_stage_queue_enabled"] = algorithms_config["gpu_stage_queue_enabled"]
+    if "qwen_batch_job_dir" in algorithms_config:
+        flattened["qwen_batch_job_dir"] = algorithms_config["qwen_batch_job_dir"]
+    if "qwen_batch_runner_timeout_seconds" in algorithms_config:
+        flattened["qwen_batch_runner_timeout_seconds"] = algorithms_config["qwen_batch_runner_timeout_seconds"]
+    if "qwen_batch_schema_path" in algorithms_config:
+        flattened["qwen_batch_schema_path"] = algorithms_config["qwen_batch_schema_path"]
 
     return flattened
 
@@ -142,6 +154,8 @@ def _normalize_paths(config: dict) -> dict:
         "export_dir",
         "static_dir",
         "qwen_vllm_model_dir",
+        "qwen_batch_job_dir",
+        "qwen_batch_schema_path",
     ):
         path = config.get(key)
         if path and not os.path.isabs(path):
@@ -196,6 +210,22 @@ def _validate_config(config: dict):
 
     if not isinstance(config.get("gpu_stage_queue_enabled"), bool):
         raise ValueError(f"gpu_stage_queue_enabled 必须为布尔值，当前值: {config.get('gpu_stage_queue_enabled')}")
+
+    algorithm_engine = config.get("algorithm_engine")
+    if algorithm_engine not in {"legacy", "qwen_batch"}:
+        raise ValueError(f"algorithm_engine 必须为 legacy 或 qwen_batch，当前值: {algorithm_engine}")
+
+    qwen_batch_timeout = config.get("qwen_batch_runner_timeout_seconds")
+    if not isinstance(qwen_batch_timeout, int) or isinstance(qwen_batch_timeout, bool) or qwen_batch_timeout <= 0:
+        raise ValueError(f"qwen_batch_runner_timeout_seconds 必须为正整数，当前值: {qwen_batch_timeout}")
+
+    qwen_batch_job_dir = config.get("qwen_batch_job_dir")
+    if not isinstance(qwen_batch_job_dir, str) or not qwen_batch_job_dir.strip():
+        raise ValueError(f"qwen_batch_job_dir 必须为非空路径，当前值: {qwen_batch_job_dir}")
+
+    qwen_batch_schema_path = config.get("qwen_batch_schema_path")
+    if not isinstance(qwen_batch_schema_path, str) or not qwen_batch_schema_path.strip():
+        raise ValueError(f"qwen_batch_schema_path 必须为非空路径，当前值: {qwen_batch_schema_path}")
 
     # --- Qwen Vision vLLM 共享配置（OCR + 固定字段抽取共用） ---
     qwen_vllm_server_url = config.get("qwen_vllm_server_url")

@@ -23,6 +23,7 @@ upload:
   min_quad_area_ratio: 0.01
 
 algorithms:
+  algorithm_engine: qwen_batch
   enable_local_ocr: false
   # Qwen Vision vLLM 共享配置（OCR + 固定字段抽取）
   # 一个本地 vLLM 服务同时承担 OCR 和固定字段抽取；后端走 OpenAI Python SDK。
@@ -40,3 +41,6 @@ algorithms:
   qwen_extraction_timeout_seconds: 360
   gpu_stage_queue_enabled: true
   enable_copd_extractor: false
+  qwen_batch_job_dir: "./data/algorithm_jobs"
+  qwen_batch_runner_timeout_seconds: 1800
+  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v1.yaml"

@@ -141,8 +141,10 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     from .services.schema_service import SchemaService
 
-    schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
-                               "admission_record_structured_fields.v1.yaml")
+    algorithm_engine = config.get("algorithm_engine", "legacy")
+    legacy_schema_path = os.path.join(PROJECT_ROOT, "app", "config", "schemas",
+                                      "admission_record_structured_fields.v1.yaml")
+    schema_path = config["qwen_batch_schema_path"] if algorithm_engine == "qwen_batch" else legacy_schema_path
     schema_service = SchemaService(schema_path)
     app.config["SCHEMA_SERVICE"] = schema_service
 
@@ -156,7 +158,8 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
 
     image_port = None
     doc_port = None
-    if config.get("enable_local_ocr"):
+    field_port = None
+    if algorithm_engine == "legacy" and config.get("enable_local_ocr"):
         from .services.algorithm_ports.image_processing import OriginalImagePassthroughPort
         from .services.algorithm_ports.qwen_vision_vllm import QwenVisionVLLMDocumentPort
         from .services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
@@ -178,39 +181,59 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
             event_logger=event_log.safe_write,
         )
 
-    field_port = None
-    if config.get("enable_copd_extractor"):
+    if algorithm_engine == "legacy" and config.get("enable_copd_extractor"):
         from .services.copd_extraction.port import build_default_copd_field_port
         field_port = build_default_copd_field_port(config, schema_service.get_field_order)
 
     from .services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
     from .services.document_profiles import DocumentProfile, DocumentProfileRegistry
 
+    qwen_batch_port = None
+    if algorithm_engine == "qwen_batch":
+        from .services.algorithm_ports.qwen_batch_adapter import QwenBatchAlgorithmPort
+
+        qwen_batch_port = QwenBatchAlgorithmPort(
+            job_root=config["qwen_batch_job_dir"],
+            schema_path=config["qwen_batch_schema_path"],
+            timeout_seconds=int(config["qwen_batch_runner_timeout_seconds"]),
+        )
+
+    active_document_type = "qwen_batch_admission_record" if algorithm_engine == "qwen_batch" else "copd_admission_record"
+    active_profile = DocumentProfile(
+        document_type=active_document_type,
+        label="入院记录",
+        schema=schema_service.get_current(),
+        prompt_version="qwen_batch_prompt.v1" if algorithm_engine == "qwen_batch" else ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
+        field_port=qwen_batch_port if algorithm_engine == "qwen_batch" else field_port,
+        quality_rule_profile="qwen_batch_admission_record" if algorithm_engine == "qwen_batch" else "copd_admission_record",
+    )
+
     document_profile_registry = DocumentProfileRegistry(
         store=store,
-        profiles=[
-            DocumentProfile(
-                document_type="copd_admission_record",
-                label="入院记录",
-                schema=schema_service.get_current(),
-                prompt_version=ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
-                field_port=field_port,
-                quality_rule_profile="copd_admission_record",
-            )
-        ],
-        default_document_type="copd_admission_record",
+        profiles=[active_profile],
+        default_document_type=active_document_type,
     )
     app.config["DOCUMENT_PROFILE_REGISTRY"] = document_profile_registry
 
-    orchestrator = ProcessingOrchestrator(
-        store=store,
-        image_port=image_port,
-        doc_port=doc_port,
-        field_port=field_port,
-        field_port_registry={"copd_admission_record": field_port},
-        schema_validator=schema_service.build_validator(),
-        gpu_stage_queue=gpu_stage_queue,
-    )
+    if algorithm_engine == "qwen_batch":
+        from .services.algorithm_ports.qwen_batch_orchestrator import QwenBatchProcessingOrchestrator
+
+        orchestrator = QwenBatchProcessingOrchestrator(
+            store=store,
+            batch_port=qwen_batch_port,
+            schema_validator=schema_service.build_validator(),
+            gpu_stage_queue=gpu_stage_queue,
+        )
+    else:
+        orchestrator = ProcessingOrchestrator(
+            store=store,
+            image_port=image_port,
+            doc_port=doc_port,
+            field_port=field_port,
+            field_port_registry={"copd_admission_record": field_port},
+            schema_validator=schema_service.build_validator(),
+            gpu_stage_queue=gpu_stage_queue,
+        )
     from collections import defaultdict
     from threading import Lock, Thread
 

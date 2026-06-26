@@ -926,3 +926,56 @@ algorithms:
     assert profile.document_type == "copd_admission_record"
     assert profile.label == "入院记录"
     assert profile.schema_version == "admission_record_structured_fields.v1"
+
+
+def test_create_backend_app_with_qwen_batch_engine_config(tmp_path, monkeypatch):
+    from app.backend import create_backend_app
+    from app.backend.services.algorithm_ports.qwen_batch_orchestrator import (
+        QwenBatchProcessingOrchestrator,
+    )
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    job_dir = tmp_path / "jobs"
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  model_dir: "{tmp_path}/models"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+algorithms:
+  algorithm_engine: qwen_batch
+  qwen_batch_job_dir: "{job_dir}"
+  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v1.yaml"
+  qwen_batch_runner_timeout_seconds: 1800
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
+
+    app = create_backend_app(str(config_dir))
+    config = app.config["BACKEND_CONFIG"]
+    registry = app.config["DOCUMENT_PROFILE_REGISTRY"]
+    profile = registry.get_profile("qwen_batch_admission_record")
+
+    assert config["algorithm_engine"] == "qwen_batch"
+    assert registry.get_default_document_type() == "qwen_batch_admission_record"
+    assert profile.schema_version == "qwen_batch_admission_record.v1"
+    assert profile.field_port is not None
+    assert isinstance(app.config["TASK_SERVICE"]._orchestrator, QwenBatchProcessingOrchestrator)

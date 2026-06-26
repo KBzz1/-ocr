@@ -567,3 +567,15 @@ python algorithms/qwen_batch_engine/adapter/run_job.py --job-dir data/algorithm_
 - 算法模块目录与后端适配层分离，便于后续同步上游。
 - 测试不依赖真实模型、真实患者数据或联网。
 - 离线部署文档明确正式镜像和依赖不得使用公网 `latest` 或构建期下载。
+
+## 默认切换记录
+
+- 切换日期：2026-06-26。
+- 批准方式：用户在当前执行线程明确要求“执行 Task 15”。
+- 默认引擎：`algorithms.algorithm_engine=qwen_batch`。
+- 回滚方式：将 `app/config/local.yaml` 或部署配置中的 `algorithms.algorithm_engine` 改回 `legacy`，重新处理任务会使用旧逐页 OCR/字段抽取路径；失败任务不会静默回落。
+- 保留内容：legacy 配置、旧 orchestrator 和旧 schema 继续保留，不在本次默认切换中删除。
+- 验证命令：
+  - `conda run -n manzufei_ocr python -m pytest app/backend/tests/test_config.py app/backend/tests/test_backend_e2e.py::test_create_backend_app_with_qwen_batch_engine_config -q`
+  - `conda run -n manzufei_ocr python -m pytest app/backend/tests/test_qwen_batch_engine_layout.py app/backend/tests/test_qwen_batch_adapter.py app/backend/tests/test_qwen_batch_orchestrator.py -q`
+  - `npm --prefix app/frontend run typecheck`
