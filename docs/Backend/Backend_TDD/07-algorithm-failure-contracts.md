@@ -40,3 +40,13 @@
 | BE-FLD-010 | 契约 | 医生可读的 `attention_message` 必须为中文自然语言；不得暴露内部 flag 原始名（如 `source_section_not_found`、`evidence_missing_fallback`） | 内部 flag 名称泄露给医生 |
 
 业务契约测试禁止以裁剪、透视矫正、摩尔纹处理效果或真实模型准确率作为通过条件。慢阻肺字段契约、质量核验和审核流转使用手写样本、fixture 和可注入 LLM 客户端覆盖；算法子系统自身效果评估应另行设计，不混入后端业务契约测试。
+
+## Qwen 批处理引擎 (BE-QWEN-BATCH)
+
+| ID | 层次 | 行为 | RED 失败点 |
+|----|------|------|------------|
+| BE-QWEN-BATCH-001 | 契约 | job 目录或 manifest 创建失败时，任务进入 `failed`，错误码为 `ALGORITHM_MODULE_FAILED` | 空 job 被当成成功 |
+| BE-QWEN-BATCH-002 | 契约 | `run_job.py` 非 0 退出、超时、未生成 `result.json` 或生成非法 JSON 时，任务进入 `failed` | 子进程失败被吞掉 |
+| BE-QWEN-BATCH-003 | 契约 | `merged_ocr.txt` 为空、`merged_structured.json` 缺失或结构非法时，任务进入 `failed` | OCR/抽取全空仍进入审核 |
+| BE-QWEN-BATCH-004 | 契约 | Qwen 输出字段整体为空时，任务进入 `failed`；单字段锚点缺失只标重点核验 | 字段全空进入审核或单字段问题阻断整单 |
+| BE-QWEN-BATCH-005 | 隐私 | 事件日志只记录 job_id、engine、耗时、文件数量、错误类型，不记录 OCR 全文、患者姓名、图片 base64、完整 prompt 或完整模型输出 | 敏感原文进入普通日志 |

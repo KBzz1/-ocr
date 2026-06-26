@@ -74,3 +74,32 @@ type FieldExtractionPort = {
 - `qwen_extraction_max_tokens` 默认 8192；`qwen_extraction_timeout_seconds` 默认 360；`qwen_extraction_temperature` 默认 0.0。
 - 字段结果契约、证据回填与 `not_found` 处理继续按 `docs/superpowers/specs/2026-06-18-qwen-admission-record-structured-fields-evidence-design.md`；旧本地 GGUF 抽取路径与旧 OCR 容器路径不得再路由到 `copd_admission_record`。
 - `weight_loss` 抽到 `0g`、`0kg`、`0克` 等反直觉值时，后端只追加 `counterintuitive_zero_weight_loss` 质量标记并置为 `suspicious`，不得自动改写为推测值。
+
+## Qwen 批处理算法引擎端口
+
+`qwen_batch_engine` 是 OCR、图片预处理、并发调度、OCR 合并、全局结构化抽取和锚点证据生成的一体化算法子系统。后端主流程不得 import `algorithms/qwen_batch_engine/upstream/scripts/process.py` 内部函数，只能调用稳定入口：
+
+```text
+python algorithms/qwen_batch_engine/adapter/run_job.py --job-dir data/algorithm_jobs/{task_id}
+```
+
+批处理 job 输入：
+
+- `data/algorithm_jobs/{task_id}/manifest.json`
+- `data/algorithm_jobs/{task_id}/input/page_001.jpg`
+
+批处理 job 标准输出：
+
+- `output/merged_ocr.txt`
+- `output/merged_structured.json`
+- `output/anchors.json`
+- `output/summary.json`
+- `result.json`
+- `error.json`，仅失败时存在
+
+后端只读取 `result.json` 并写入：
+
+- `results/{task_id}/document_result.json`
+- `results/{task_id}/field_candidates.json`
+
+Qwen 字段以 `qwen_batch_admission_record.v1` schema 为准。`T` 字段保存原文截取值，`J` 字段保存 `正常 / 异常 / 未提及 / 不确定` 状态文本。前端和导出使用 schema 中的 `qwen_type`、`qwen_path` 和 `field_key`，不得把 Qwen 字段强行映射回旧 61 字段作为默认路径。
