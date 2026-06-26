@@ -172,6 +172,39 @@ app/backend/
 - 是否改变核心抽取语义。
 - 至少一条离线样例回归结果或无法回归的原因。
 
+## 算法快照
+
+不强制算法侧按正式 release 流程交付，但本项目每次同步或切换算法时必须固化一个本地算法快照，避免后续排查时只剩“当时口头说过”。
+
+快照建议放在：
+
+```text
+algorithms/qwen_batch_engine/snapshots/
+  2026-06-26-a746ba9/
+    upstream_commit.txt
+    schema_template.yaml
+    prompt_system.txt
+    prompt_user_template.txt
+    model_config.yaml
+    runtime_config.yaml
+    smoke_result.md
+```
+
+最小快照内容：
+
+- 上游 commit 或同步来源说明。
+- 当前字段 schema 或 `config.yaml` 中的 `schema_template`。
+- 当前 OCR prompt、结构化抽取 system prompt、user prompt template。
+- 模型名称、量化方式、推理参数、vLLM 关键参数。
+- 本项目 overlay/adapter 的版本或 commit。
+- 至少一条脱敏样例或合成 fixture 的 smoke 结果；如果无法跑真实模型，记录原因和已跑的 contract test。
+
+快照不是为了限制算法侧迭代，而是让工作站能回答：
+
+- 某个任务当时是用哪版字段、prompt、模型配置跑的。
+- 字段变化是算法侧变化、overlay 变化，还是产品适配变化。
+- 同步新代码后是否出现输出结构退化。
+
 ## 工作站 Batch Job 契约
 
 后端创建每个任务的 job 目录：
@@ -262,6 +295,29 @@ field_groups:
 - 师弟有而当前没有的字段，例如 `CRP`，纳入新 schema。
 - 当前拆得更细但师弟合并的字段，例如血气、生命体征、身高体重 BMI，第一阶段按师弟合并字段展示。
 - 后续若需要医生精细审核，可在第二阶段从合并字段再派生细字段，但不得在前端从 OCR 文本自行推断。
+
+### 字段演进策略
+
+字段以师弟 schema 为产品字段源头，但本项目必须把字段变化分类，避免每次字段微调都演变成前后端临时改动。
+
+字段变化分三类：
+
+- **兼容新增**：新增字段或新增章节，不删除、不改名、不改变已有字段含义。前端按 schema 自动展示，导出新增列或新增 sheet。
+- **兼容展示调整**：字段 label、章节 label、提示文案变化，但字段语义不变。保留内部 `field_key`，只更新展示和导出标题。
+- **破坏性变化**：字段删除、拆分、合并、改名、`T/J` 类型变化、字段含义变化。这类变化必须创建新 schema version，并在快照中记录。
+
+内部 `field_key` 生成规则：
+
+- 优先使用 schema 中显式给出的稳定 key。
+- 如果上游只给中文路径，本项目生成稳定 key，并把 `qwen_path` 保存为源路径。
+- 中文 label 可变，`qwen_path` 和 `field_key` 的映射必须随快照保存。
+- 不允许用旧 61 字段 key 强行表达师弟字段，除非只是历史导出兼容视图，且不得作为默认审核字段。
+
+历史任务处理：
+
+- 已完成任务保持原 schema version 和字段结果，不因当前 schema 更新自动重写。
+- 新任务使用当前默认 qwen batch schema。
+- 如需用新 schema 重跑旧任务，必须通过显式“重新处理/重新抽取”动作生成新结果。
 
 ## T/J 字段语义
 
@@ -359,6 +415,14 @@ field_groups:
 - 字段全空：任务失败。
 - 单字段证据定位失败：字段重点核验，不阻断任务。
 
+适配器禁止事项：
+
+- 不做医学字段推断。
+- 不把算法 `T/J` 状态改写成旧字段语义。
+- 不吞掉算法错误后返回空成功。
+- 不把真实 OCR 文本、患者姓名、图片 base64 或完整模型输出写入普通事件日志。
+- 不直接依赖上游脚本里的全局变量、当前工作目录副作用或 `print` 输出作为成功判据。
+
 ## 算法运行形态
 
 第一阶段允许后端以子进程或 Docker run 方式调用 batch engine，降低改造成本。
@@ -372,6 +436,33 @@ GET /jobs/{job_id}/result
 ```
 
 不建议第一阶段就把师弟脚本改成 Flask/FastAPI 服务，因为这会增加同步上游代码的成本。
+
+第一阶段的稳定入口必须是一个本项目控制的命令：
+
+```text
+python algorithms/qwen_batch_engine/adapter/run_job.py --job-dir data/algorithm_jobs/{task_id}
+```
+
+后端可以通过子进程或容器调用这个命令，但不能直接调用 `upstream/scripts/process.py` 内部函数。`run_job.py` 负责准备上游运行所需目录、应用 overlay、调用上游入口、收集输出并生成标准 `result.json` / `error.json`。
+
+## 切换与回滚
+
+迁移不能一次性删除旧路径后再验证。默认路径切换按以下门禁推进：
+
+1. **落仓不启用**：引入 `upstream/overlay/adapter`，不改变现有默认处理路径。
+2. **contract test 通过**：用 fixture 验证 job manifest、result normalize、字段 schema、证据 offset、失败映射。
+3. **本地样例 smoke 通过**：至少一条脱敏或合成样例能产出 OCR、结构化字段和可高亮证据。
+4. **审核页可用**：前端能展示 `T/J` 字段、保存修改、完成审核。
+5. **导出可用**：JSON/Excel 能按新 schema 输出。
+6. **默认切换**：配置项切换默认算法路径到 qwen batch engine。
+7. **旧路径降级**：旧逐页 OCR/旧字段抽取标记为 legacy，不再作为默认入口。
+8. **延迟删除**：确认无活动引用和验收样例通过后，再删除交集代码。
+
+必须保留回滚开关：
+
+- 默认算法路径通过配置控制。
+- 新 engine 失败时任务按失败契约进入 `failed`，不静默回落生成另一套字段。
+- 人工排障时可以切回 legacy 路径重跑，但结果必须标明 engine/source，避免混淆。
 
 ## 前端影响
 
@@ -435,6 +526,7 @@ GET /jobs/{job_id}/result
 - 新增 `algorithms/qwen_batch_engine/`。
 - 保留上游批处理脚本和配置。
 - 新增 `overlay/`，把 prompt 适配、证据 offset 记录和离线配置覆盖放在可审计补丁区。
+- 新增 `snapshots/`，每次同步固化 schema、prompt、模型配置和 smoke/contract 结果。
 - 新增 job manifest、result normalize、anchors offset 回填。
 - 后端能对单个工作站任务创建 job 并读取成功结果。
 - 测试覆盖成功、OCR 全空、JSON 非法、字段全空、证据锚点缺失。
