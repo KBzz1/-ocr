@@ -42,14 +42,17 @@
 ## 已确认决策
 
 - 模型仍使用当前本地 Qwen OCR + LLM 一体模型，通过 vLLM OpenAI-compatible API 提供服务。
-- 算法运行模式切换为批处理 job，不再把逐页 OCR 端口作为默认算法主路径。
-- 字段体系优先按师弟仓库的中文嵌套 schema 对齐。
-- 保留师弟 prompt 中 `T`/`J` 两类字段思想：
+- 算法运行模式切换为师弟批处理 job，不再把现有逐页 OCR 端口作为默认算法主路径。
+- OCR 整体识别、图片预处理、拼接/合并、并发调度、字段抽取、LLM harness 和核心 prompt 流程以师弟算法仓库为权威来源。
+- 字段体系按师弟仓库的中文嵌套 schema 对齐；本项目内部稳定 key 只作为工程 ID，不形成第二套业务字段契约。
+- 保留并优先复用师弟 prompt 中 `T`/`J` 两类字段思想：
   - `T`：原文截取型，输出值和锚点范围。
   - `J`：状态判断型，输出正常、异常、未提及和锚点范围。
 - 证据 prompt 层采用师弟的锚点范围方案。
 - 后端持久化层必须补齐审核需要的证据结构：证据文本、起止 offset、页号或来源文件、锚点范围。
-- 算法仓库作为模块接入，后续可继续从上游同步。
+- 本项目负责把算法能力产品化：任务状态、job 输入输出、结果校验、证据 offset 回填、审核页、导出、离线部署、日志和错误映射。
+- 允许为了工作站后端契约对 prompt 做受控适配，但不得重写师弟已经验证过的核心 prompt 流程、字段含义、并发策略或算法判断逻辑。
+- 算法仓库作为模块接入，后续可继续从上游同步；上游同步优先于在本项目内重造算法逻辑。
 - 不提交模型权重、真实患者图片、OCR 输出、运行日志、vLLM cache 或镜像 tar。
 
 ## 范围
@@ -69,7 +72,7 @@
 
 - 医学诊断建议、HIS/EMR 写回或云端服务。
 - 真实算法准确率复现实验设计。
-- 上游算法 prompt 的医学内容重写。
+- 上游算法核心 prompt 流程、字段含义和医学抽取逻辑重写。
 - 复杂版面坐标、像素级 bounding box 高亮。
 - 在第一阶段完全重写导出模板和所有历史字段兼容逻辑。
 
@@ -85,6 +88,11 @@ algorithms/
       docker-compose.yaml
       start.bat
       stop.bat
+    overlay/
+      config/
+      prompts/
+      patches/
+      CHANGELOG.md
     adapter/
       run_job.py
       normalize_result.py
@@ -106,7 +114,63 @@ data/algorithm_jobs/
     error.json
 ```
 
-`upstream/` 尽量保持师弟仓库结构，便于后续同步和 diff。`adapter/` 放本项目私有包装代码，负责把工作站任务转换成上游可处理的目录形态，并把输出标准化。
+`upstream/` 默认保持师弟仓库结构，便于后续同步和 diff。`overlay/` 放本项目对算法侧的可审计补丁和配置覆盖。`adapter/` 放本项目私有包装代码，负责把工作站任务转换成上游可处理的目录形态，并把输出标准化。
+
+## 模块边界
+
+本迁移的核心目标是避免算法逻辑和产品后端混在一起。目录边界必须按以下规则执行：
+
+```text
+algorithms/qwen_batch_engine/upstream/
+  师弟算法仓库的原样同步区。默认不改或只做同步所需的极小兼容变更。
+
+algorithms/qwen_batch_engine/overlay/
+  本项目对算法侧的可审计补丁区，例如配置覆盖、prompt 包装、证据锚点 offset 记录、
+  离线运行所需的最小补丁。overlay 必须能说明是补产品化契约，不是重写算法。
+
+algorithms/qwen_batch_engine/adapter/
+  工作站 job 输入输出适配区。只负责 manifest、目录准备、结果归一化、错误映射、
+  证据 offset 回填和 contract validation。
+
+app/backend/
+  产品后端。只负责任务状态、审核、导出、API、持久化和本地日志。
+  不承载 OCR、字段抽取、医学判断、prompt 分支或并发调度算法。
+```
+
+硬约束：
+
+- `adapter/` 不得按 OCR 文本推断或补造字段值。
+- `adapter/` 不得把师弟中文字段重新映射回本项目旧 61 字段作为默认路径。
+- `app/backend/` 不得 import `upstream/scripts/process.py` 内部函数；后端只调用稳定 job 入口或读取标准 job result。
+- 上游算法输出结构变化时，优先在 `adapter/normalize_result.py` 兼容；如果变化涉及字段含义或 prompt 流程，先同步 spec，再实施。
+- 旧算法路径切换为非默认后，必须先通过测试确认无活动引用，再分阶段删除交集代码，不做无验证的大规模物理删除。
+
+## Prompt 适配原则
+
+允许修改 prompt，但修改目标必须是“让师弟算法更稳定地服务工作站契约”，不是把算法责任迁回本项目后端。
+
+允许：
+
+- 增加固定输出外壳，例如 job id、schema version、字段类型、锚点元数据。
+- 增强 JSON 严格性、禁止 Markdown、禁止思考过程、禁止证据原文生成等格式约束。
+- 在不改变字段含义的前提下补充后端需要的错误语义、空值语义和证据锚点要求。
+- 把锚点生成从只保存文本升级为保存 `start_offset`、`end_offset`、`page_no`、`source_file`。
+- 通过配置覆盖调整温度、token、并发、超时和模型服务地址。
+
+不允许：
+
+- 在本项目里重写一套独立字段抽取 prompt，并让它与师弟 prompt 并行演化。
+- 为适配旧前端/旧导出而改变师弟字段含义。
+- 在 prompt 或后端 adapter 中加入样本特化医学规则来“修正”模型结果。
+- 让前端从 schema、OCR 文本或页面内容推断、补造结构化字段。
+- 未经量化或至少样例回归验证就改动核心 prompt 流程。
+
+每次 prompt 适配必须记录：
+
+- 变更原因。
+- 影响字段或输出结构。
+- 是否改变核心抽取语义。
+- 至少一条离线样例回归结果或无法回归的原因。
 
 ## 工作站 Batch Job 契约
 
@@ -347,8 +411,10 @@ GET /jobs/{job_id}/result
 上游同步原则：
 
 - `algorithms/qwen_batch_engine/upstream/` 只做必要最小改动。
+- `algorithms/qwen_batch_engine/overlay/` 保存本项目补丁、配置覆盖和 prompt 适配记录。
 - 本项目私有包装放在 `algorithms/qwen_batch_engine/adapter/`。
 - 每次同步记录上游 commit 到 `VERSION` 和 job manifest。
+- 每次 overlay 变更记录到 `overlay/CHANGELOG.md`，说明原因、影响字段、是否改变核心抽取语义和回归结果。
 - 同步后先跑算法适配器契约测试，再做工作站端到端测试。
 
 建议同步流程：
@@ -357,8 +423,9 @@ GET /jobs/{job_id}/result
 1. 拉取 aufgh/qwen 新提交到 /tmp
 2. 对比 upstream/ 差异
 3. 更新 algorithms/qwen_batch_engine/upstream/
-4. 若输出结构变化，只改 adapter/normalize_result.py
-5. 跑后端适配器测试和一条离线样例验收
+4. 重新套用 overlay/ 中的配置、prompt 和补丁
+5. 若输出结构变化，只改 adapter/normalize_result.py
+6. 跑后端适配器测试和一条离线样例验收
 ```
 
 ## 分阶段实施
@@ -367,6 +434,7 @@ GET /jobs/{job_id}/result
 
 - 新增 `algorithms/qwen_batch_engine/`。
 - 保留上游批处理脚本和配置。
+- 新增 `overlay/`，把 prompt 适配、证据 offset 记录和离线配置覆盖放在可审计补丁区。
 - 新增 job manifest、result normalize、anchors offset 回填。
 - 后端能对单个工作站任务创建 job 并读取成功结果。
 - 测试覆盖成功、OCR 全空、JSON 非法、字段全空、证据锚点缺失。
