@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # The test suite injects a fake runner.
 # ---------------------------------------------------------------------------
 
-ENGINE_ROOT = Path(__file__).resolve().parents[6] / "algorithms" / "qwen_batch_engine"
+ENGINE_ROOT = Path(__file__).resolve().parents[4] / "algorithms" / "qwen_batch_engine"
 VERSION_PATH = ENGINE_ROOT / "VERSION"
 
 

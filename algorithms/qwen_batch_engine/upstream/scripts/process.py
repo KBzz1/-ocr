@@ -59,8 +59,9 @@ builtins.print = timestamped_print
 # 配置加载
 # =============================================================================
 
-def load_config(config_path: str = "/workspace/config.yaml") -> dict:
+def load_config(config_path: str = None) -> dict:
     """加载配置文件"""
+    config_path = config_path or os.environ.get("QWEN_BATCH_CONFIG_PATH", "/workspace/config.yaml")
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -722,8 +723,9 @@ def main():
     supported_ext = processing.get("supported_extensions", [".jpg", ".jpeg", ".png", ".pdf"])
 
     # 路径配置
-    input_dir = "/workspace/input"
-    output_dir = Path("/workspace/output")
+    workspace_dir = os.environ.get("QWEN_BATCH_WORKSPACE_DIR", "/workspace")
+    input_dir = os.environ.get("QWEN_BATCH_INPUT_DIR", str(Path(workspace_dir) / "input"))
+    output_dir = Path(os.environ.get("QWEN_BATCH_OUTPUT_DIR", str(Path(workspace_dir) / "output")))
     processed_dir = Path(input_dir) / "processed"
 
     output_dir.mkdir(parents=True, exist_ok=True)
