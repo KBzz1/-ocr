@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 
 export type SourceMessage = {
   kind: 'located' | 'missing' | 'unavailable' | 'unlocated';
@@ -16,6 +16,8 @@ export type EvidenceLocation = {
 type ReviewSourcePanelProps = {
   text: string;
   sourceMessage: SourceMessage | null;
+  onReturnToHighlightReady?: (callback: () => void) => void;
+  hideLocatedMessage?: boolean;
 };
 
 function resolveSourceMessage(sourceMessage: SourceMessage | null): SourceMessage | null {
@@ -73,19 +75,30 @@ export function locateEvidence(
   return null;
 }
 
-export function ReviewSourcePanel({ text, sourceMessage }: ReviewSourcePanelProps) {
+export function ReviewSourcePanel({ text, sourceMessage, onReturnToHighlightReady, hideLocatedMessage = false }: ReviewSourcePanelProps) {
   const markRef = useRef<HTMLElement>(null);
   const effectiveSourceMessage = resolveSourceMessage(sourceMessage);
+  const shouldRenderSourceMessage = Boolean(
+    effectiveSourceMessage && (!hideLocatedMessage || effectiveSourceMessage.kind !== 'located')
+  );
 
-  useEffect(() => {
+  const scrollToHighlight = useCallback(() => {
     if (effectiveSourceMessage?.kind !== 'located') return;
     if (typeof markRef.current?.scrollIntoView !== 'function') return;
     markRef.current.scrollIntoView({ block: 'center', inline: 'nearest' });
-  }, [effectiveSourceMessage?.evidenceText, effectiveSourceMessage?.kind]);
+  }, [effectiveSourceMessage?.kind, effectiveSourceMessage?.evidenceText]);
+
+  useEffect(() => {
+    scrollToHighlight();
+  }, [scrollToHighlight]);
+
+  useEffect(() => {
+    onReturnToHighlightReady?.(scrollToHighlight);
+  }, [onReturnToHighlightReady, scrollToHighlight]);
 
   return (
     <div className="review-source">
-      {effectiveSourceMessage ? <p className={`review-source__message review-source__message--${effectiveSourceMessage.kind}`}>{effectiveSourceMessage.text}</p> : null}
+      {shouldRenderSourceMessage && effectiveSourceMessage ? <p className={`review-source__message review-source__message--${effectiveSourceMessage.kind}`}>{effectiveSourceMessage.text}</p> : null}
       <pre aria-label="合并 OCR 文本">
         {renderTextWithHighlight(
           text,

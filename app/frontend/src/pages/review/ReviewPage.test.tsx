@@ -206,6 +206,10 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
+    await screen.findByText('字段校对');
+    expect(screen.queryByLabelText('合并 OCR 文本')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     const ocrBox = await screen.findByLabelText('合并 OCR 文本');
     expect(ocrBox.textContent).toBe('<div>## 品后诊断&nbsp;</div>\n\n\n慢阻肺 &amp; 感染  ');
   });
@@ -352,7 +356,7 @@ describe('ReviewPage', () => {
     expect(screen.getByText('未保存修改')).toBeTruthy();
   });
 
-  it('shows raw merged OCR text by default in the review workspace', async () => {
+  it('shows raw merged OCR text in the floating OCR window without showing it by default', async () => {
     mockReviewRoutes();
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
@@ -394,6 +398,10 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     await screen.findByText('字段校对');
+    expect(screen.queryByLabelText('OCR 文本')).toBeNull();
+    expect(screen.queryByLabelText('合并 OCR 文本')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     const ocrBox = screen.getByLabelText('合并 OCR 文本');
     expect(ocrBox.textContent).toBe('<div style="text-align: center;">第一页文本</div><br><div>第二页文本</div>');
     expect(ocrBox.textContent).toContain('text-align');
@@ -468,7 +476,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    await waitFor(() => expect(document.querySelector('mark')).toBeTruthy());
     expect(screen.getByText('张三', { selector: 'mark' })).toBeTruthy();
 
     await userEvent.click(screen.getByTestId('review-field-card-chief_complaint'));
@@ -510,6 +520,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
     expect(document.querySelector('mark')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
@@ -554,7 +566,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    await waitFor(() => expect(document.querySelector('mark')).toBeTruthy());
     expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
   });
 
@@ -601,6 +615,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
     expect(document.querySelector('mark')).toBeNull();
 
@@ -661,7 +677,8 @@ describe('ReviewPage', () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('OCR 合并文本')).toBeTruthy();
+    expect(await screen.findByText('字段校对')).toBeTruthy();
+    expect(screen.queryByLabelText('合并 OCR 文本')).toBeNull();
     const field = screen.getByLabelText('姓名 字段') as HTMLInputElement;
     expect(field.value).toBe('张三');
 
@@ -856,8 +873,10 @@ describe('ReviewPage', () => {
     expect(body).not.toContain('evidence_missing_fallback');
     expect(body).not.toContain('source_section_not_found');
     expect(body).not.toContain('source_hint=');
-    // OCR 原文保留:不允许前端把 BHI 静默改写成 BMI
-    expect(body).toContain('BHI');
+
+    // OCR 原文保留:不允许前端把 BHI 静默改写成 BMI;但完整 OCR 只在浮窗里展示。
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    expect(screen.getByLabelText('合并 OCR 文本').textContent).toContain('BHI');
   });
 
   it('shows a generic warning marker for suspicious fields without attention_required', async () => {
@@ -924,7 +943,7 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('OCR 合并文本');
+    await screen.findByText('字段校对');
     await userEvent.click(screen.getByRole('button', { name: '一键审核' }));
 
     expect(await screen.findByText('仍有字段未审核')).toBeTruthy();
@@ -1044,7 +1063,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    await waitFor(() => expect(document.querySelector('mark')).toBeTruthy());
     expect(document.querySelector('mark')?.textContent).toBe(longEvidence);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
@@ -1092,6 +1113,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_001" />);
 
     expect(await screen.findByLabelText('体温 字段')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     expect(screen.getByText('36.7℃', { selector: 'mark' })).toBeTruthy();
     expect(screen.queryByText(/证据风险|来源风险/)).toBeNull();
     expect(screen.queryByText(/evidence_recovered_from_value/)).toBeNull();
@@ -1195,7 +1217,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('点击字段可定位原文');
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    await waitFor(() => expect(document.querySelector('mark')).toBeTruthy());
     const mark = document.querySelector('mark');
     expect(mark).toBeTruthy();
     expect(mark?.textContent).toBe('慢性阻塞性肺疾病急性加重');
@@ -1233,6 +1257,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
     expect(document.querySelector('mark')).toBeNull();
   });
@@ -1267,6 +1293,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     expect(await screen.findByText('来源片段未在 OCR 文本中定位，请核对')).toBeTruthy();
     expect(document.querySelector('mark')).toBeNull();
     expect(document.body.textContent ?? '').not.toContain('不存在的来源片段');
@@ -1322,7 +1350,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    await screen.findByText('点击字段可定位原文');
+    await screen.findByText('字段校对');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    await waitFor(() => expect(document.querySelector('mark')).toBeTruthy());
     const mark = document.querySelector('mark');
     expect(mark?.textContent).toBe('第二页保存内容');
     const tablist = screen.getByRole('tablist', { name: '任务页码' });
@@ -1475,8 +1505,11 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    // 1. OCR 面板展示原文(## 品后诊断 错字保留,不被静默改写)
-    expect(await screen.findByText('OCR 合并文本')).toBeTruthy();
+    // 1. OCR 浮窗展示原文(## 品后诊断 错字保留,不被静默改写),但不默认占据工作区。
+    await screen.findByText('字段校对');
+    expect(screen.queryByLabelText('合并 OCR 文本')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
+    expect(await screen.findByLabelText('合并 OCR 文本')).toBeTruthy();
     const body = document.body.textContent ?? '';
     expect(body).toContain('## 品后诊断');
     expect(body).not.toContain('## 最后诊断');
@@ -1572,7 +1605,6 @@ describe('ReviewPage', () => {
     expect(await screen.findByText('现病史')).toBeTruthy();
     expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
     await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
-    expect(screen.getByText('点击字段可定位原文')).toBeTruthy();
     const mark = document.querySelector('mark');
     expect(mark?.textContent).toBe('精神睡眠食欲差。');
   });
