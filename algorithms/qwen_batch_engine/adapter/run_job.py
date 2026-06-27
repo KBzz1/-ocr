@@ -45,6 +45,43 @@ def _load_schema(schema_path: Path) -> dict:
     return loaded
 
 
+def _schema_template_from_schema(schema: dict) -> dict:
+    template: dict = {}
+    for group in schema.get("field_groups", []):
+        if not isinstance(group, dict):
+            continue
+        for field in group.get("fields", []):
+            if not isinstance(field, dict):
+                continue
+            qwen_path = field.get("qwen_path")
+            if not isinstance(qwen_path, list) or not qwen_path:
+                group_label = group.get("group_label")
+                label = field.get("label")
+                if not isinstance(label, str) or not label:
+                    continue
+                if isinstance(group_label, str) and group_label and group_label != label:
+                    qwen_path = [group_label, label]
+                else:
+                    qwen_path = [label]
+
+            cursor = template
+            for part in qwen_path[:-1]:
+                if not isinstance(part, str) or not part:
+                    cursor = None
+                    break
+                next_cursor = cursor.setdefault(part, {})
+                if not isinstance(next_cursor, dict):
+                    cursor[part] = {}
+                    next_cursor = cursor[part]
+                cursor = next_cursor
+            if cursor is None:
+                continue
+            leaf = qwen_path[-1]
+            if isinstance(leaf, str) and leaf:
+                cursor[leaf] = field.get("qwen_type") or "T"
+    return template
+
+
 def _iter_schema_fields(schema: dict) -> list[dict]:
     fields: list[dict] = []
     for group in schema.get("field_groups", []):
@@ -81,25 +118,57 @@ def _value_from_raw_response(raw_response: str | None, path: list[str]):
     return value
 
 
-def _build_anchor_map(text: str) -> dict[str, str]:
+def _build_anchor_map(text: str) -> dict[str, dict]:
     parts = re.split(r"([。！？\n，,；;.:：]+)", text)
-    anchor_map: dict[str, str] = {}
+    anchor_map: dict[str, dict] = {}
     anchor_idx = 1
     current_chunk = ""
+    current_start: int | None = None
+    cursor = 0
     for i in range(0, len(parts), 2):
         chunk = parts[i]
         punct = parts[i + 1] if i + 1 < len(parts) else ""
+        piece = chunk + punct
+        if current_start is None and piece.strip():
+            current_start = cursor
         current_chunk += chunk + punct
+        cursor += len(piece)
         if current_chunk.strip():
-            anchor_map[f"<s{anchor_idx}>"] = current_chunk.strip()
+            stripped = current_chunk.strip()
+            leading_trim = len(current_chunk) - len(current_chunk.lstrip())
+            start_offset = (current_start or 0) + leading_trim
+            anchor_map[f"<s{anchor_idx}>"] = {
+                "id": f"<s{anchor_idx}>",
+                "text": stripped,
+                "start_offset": start_offset,
+                "end_offset": start_offset + len(stripped),
+            }
             anchor_idx += 1
             current_chunk = ""
+            current_start = None
         else:
             current_chunk = ""
+            current_start = None
     return anchor_map
 
 
-def _restore_evidence_from_position(position, anchor_map: dict[str, str]) -> str | None:
+def _serialize_anchors(anchor_map: dict[str, dict]) -> list[dict]:
+    def anchor_number(item: tuple[str, dict]) -> int:
+        match = re.search(r"\d+", item[0])
+        return int(match.group()) if match else 0
+
+    return [
+        {
+            "id": anchor["id"],
+            "text": anchor["text"],
+            "start_offset": anchor["start_offset"],
+            "end_offset": anchor["end_offset"],
+        }
+        for _, anchor in sorted(anchor_map.items(), key=anchor_number)
+    ]
+
+
+def _resolve_evidence_from_position(position, anchor_map: dict[str, dict], merged_text: str) -> dict | None:
     if not isinstance(position, list) or len(position) != 2:
         return None
     start_match = re.search(r"\d+", str(position[0]))
@@ -111,7 +180,15 @@ def _restore_evidence_from_position(position, anchor_map: dict[str, str]) -> str
     if start > end:
         start, end = end, start
     chunks = [anchor_map[tag] for i in range(start, end + 1) if (tag := f"<s{i}>") in anchor_map]
-    return "".join(chunks) if chunks else None
+    if not chunks:
+        return None
+    start_offset = chunks[0]["start_offset"]
+    end_offset = chunks[-1]["end_offset"]
+    return {
+        "text": merged_text[start_offset:end_offset],
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+    }
 
 
 def _find_text_span(merged_text: str, evidence_text: str | None) -> tuple[int | None, int | None]:
@@ -136,12 +213,15 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
 
         value = ""
         evidence_text = None
+        evidence_location = None
         qwen_status = None
         if isinstance(node, dict):
             is_judgement_node = qwen_type == "J" or "状态" in node or "s" in node
             if is_judgement_node:
                 status = node.get("状态", node.get("s"))
-                evidence_text = node.get("证据") or _restore_evidence_from_position(node.get("p"), anchor_map)
+                position = node.get("_position") or node.get("p")
+                evidence_location = _resolve_evidence_from_position(position, anchor_map, merged_text)
+                evidence_text = node.get("证据")
                 if status == "正常":
                     value = "正常"
                     qwen_status = "normal"
@@ -162,23 +242,34 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
                     qwen_status = "uncertain"
             else:
                 raw_value = node.get("值", node.get("v"))
-                evidence_text = node.get("证据") or _restore_evidence_from_position(node.get("p"), anchor_map)
+                position = node.get("_position") or node.get("p")
+                evidence_location = _resolve_evidence_from_position(position, anchor_map, merged_text)
+                evidence_text = node.get("证据")
                 value = raw_value if isinstance(raw_value, str) else ""
         elif isinstance(node, str):
             value = node
 
         extraction_status = "extracted" if value.strip() else "not_found"
         evidence = []
-        evidence_lookup_text = evidence_text if isinstance(evidence_text, str) and evidence_text.strip() else value
+        evidence_lookup_text = (
+            evidence_location.get("text")
+            if isinstance(evidence_location, dict)
+            else evidence_text if isinstance(evidence_text, str) and evidence_text.strip()
+            else value
+        )
         if evidence_lookup_text and extraction_status != "not_found":
-            start, end = _find_text_span(merged_text, evidence_lookup_text)
             evidence_item = {
                 "id": f"{field_key}-e1",
                 "text": evidence_lookup_text,
             }
-            if start is not None and end is not None:
-                evidence_item["start_offset"] = start
-                evidence_item["end_offset"] = end
+            if isinstance(evidence_location, dict):
+                evidence_item["start_offset"] = evidence_location["start_offset"]
+                evidence_item["end_offset"] = evidence_location["end_offset"]
+            else:
+                start, end = _find_text_span(merged_text, evidence_lookup_text)
+                if start is not None and end is not None:
+                    evidence_item["start_offset"] = start
+                    evidence_item["end_offset"] = end
             evidence.append(evidence_item)
 
         candidate = {
@@ -225,6 +316,8 @@ def normalize_upstream_output(*, job_dir: Path, schema_path: Path) -> None:
             structured_raw = json.loads(raw_response.strip())
         except json.JSONDecodeError:
             pass
+    anchor_map = _build_anchor_map(merged_text)
+    anchors = _serialize_anchors(anchor_map)
 
     review_fields = _normalize_review_fields(
         structured=structured_raw,
@@ -241,21 +334,30 @@ def normalize_upstream_output(*, job_dir: Path, schema_path: Path) -> None:
         "document_result": {
             "merged_text": merged_text,
             "pages": [],
+            "anchors": anchors,
             "upstream_output_dir": str(upstream_output),
         },
         "review_fields": review_fields,
         "warnings": [],
     }
+    (job_dir / "anchors.json").write_text(
+        json.dumps(anchors, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     (job_dir / "result.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-def _prepare_runtime_config(job_path: Path) -> Path:
+def _prepare_runtime_config(job_path: Path, schema_path: Path) -> Path:
     config = yaml.safe_load(UPSTREAM_CONFIG.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
         raise ValueError("upstream config must be a mapping")
+    schema = _load_schema(schema_path)
+    extraction = config.setdefault("extraction", {})
+    if isinstance(extraction, dict):
+        extraction["schema_template"] = _schema_template_from_schema(schema)
     processing = config.setdefault("processing", {})
     if isinstance(processing, dict):
         processing["archive_processed"] = True
@@ -297,7 +399,7 @@ def run_job(
         shutil.rmtree(upstream_output)
     upstream_output.mkdir(parents=True, exist_ok=True)
     try:
-        config_path = _prepare_runtime_config(job_path)
+        config_path = _prepare_runtime_config(job_path, schema)
     except Exception as exc:
         _write_error(job_path, "config_prepare_failed", f"{type(exc).__name__}: {exc}")
         return 1

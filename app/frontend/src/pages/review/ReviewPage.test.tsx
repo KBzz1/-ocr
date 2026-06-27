@@ -383,7 +383,7 @@ describe('ReviewPage', () => {
                   label: '姓名',
                   value: '张三',
                   status: 'unreviewed',
-                  evidence: [{ page_id: 'page_001', page_no: 1, text: '张三' }]
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '张三', start_offset: 3, end_offset: 5 }]
                 }
               ]
             }
@@ -450,7 +450,7 @@ describe('ReviewPage', () => {
                   label: '姓名',
                   value: '张三',
                   status: 'unreviewed',
-                  evidence: [{ page_id: 'page_001', page_no: 1, text: '张三' }]
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '张三', start_offset: 3, end_offset: 5 }]
                 },
                 {
                   field_key: 'chief_complaint',
@@ -475,7 +475,7 @@ describe('ReviewPage', () => {
     expect(screen.getByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
   });
 
-  it('highlights OCR evidence after stripping markup from long source text', async () => {
+  it('does not highlight markup source text without a verified offset', async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
 
@@ -510,9 +510,9 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
-    expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+    expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('highlights a locatable unit from long evidence text', async () => {
@@ -539,7 +539,11 @@ describe('ReviewPage', () => {
                   label: '生命体征',
                   value: '体温：36.7℃ 脉搏：99次/分',
                   status: 'unreviewed',
-                  evidence: [{ text: longEvidence }]
+                  evidence: [{
+                    text: '体格检查：体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg。',
+                    start_offset: 0,
+                    end_offset: '体格检查：体温：36.7℃ 脉搏：99次/分 呼吸：21次/分 血压：142/87mmHg。'.length
+                  }]
                 }
               ]
             }
@@ -554,7 +558,7 @@ describe('ReviewPage', () => {
     expect(document.querySelector('mark')?.textContent).toContain('体温：36.7℃ 脉搏：99次/分');
   });
 
-  it('highlights the first locatable OCR fragment when evidence is a summarized phrase', async () => {
+  it('does not guess OCR highlight when evidence is a summarized phrase without offset', async () => {
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -597,11 +601,12 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
-    expect(screen.getByText('心前区隐痛10+年', { selector: 'mark' })).toBeTruthy();
+    expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
 
     await userEvent.click(screen.getByTestId('review-field-card-maintenance_therapy'));
-    expect(screen.getByText('噻托溴铵粉雾剂18ug经口吸入1/日', { selector: 'mark' })).toBeTruthy();
+    expect(screen.getByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
   });
 
   it('does not complete from shortcut while a save request is in flight', async () => {
@@ -1028,7 +1033,7 @@ describe('ReviewPage', () => {
                   label: '体温',
                   value: '36.7℃',
                   status: 'unreviewed',
-                  evidence: [{ text: longEvidence }],
+                  evidence: [{ text: longEvidence, start_offset: 0, end_offset: longEvidence.length }],
                 },
               ],
             },
@@ -1068,7 +1073,7 @@ describe('ReviewPage', () => {
                   label: '体温',
                   value: '36.7℃',
                   status: 'unreviewed',
-                  evidence: [{ page_id: 'page_001', page_no: 1, text: '36.7℃' }],
+                  evidence: [{ page_id: 'page_001', page_no: 1, text: '36.7℃', start_offset: 3, end_offset: 8 }],
                   quality_flags: [
                     {
                       flag: 'evidence_recovered_from_value',
@@ -1176,8 +1181,8 @@ describe('ReviewPage', () => {
                       page_id: 'page_001',
                       page_no: 1,
                       text: '慢性阻塞性肺疾病急性加重',
-                      start_offset: 7,
-                      end_offset: 19
+                      start_offset: 8,
+                      end_offset: 20
                     }
                   ]
                 }
@@ -1198,7 +1203,7 @@ describe('ReviewPage', () => {
     expect(document.body.textContent ?? '').not.toContain('## 最后诊断');
   });
 
-  it('falls_back_to_evidence_text_when_offset_is_missing', async () => {
+  it('does_not_fall_back_to_evidence_text_when_offset_is_missing', async () => {
     server.use(
       http.get('*/api/tasks/task_001/review', () =>
         HttpResponse.json({
@@ -1228,9 +1233,8 @@ describe('ReviewPage', () => {
 
     render(<ReviewPage taskId="task_001" />);
 
-    expect(await screen.findByText('点击字段可定位原文')).toBeTruthy();
-    const mark = document.querySelector('mark');
-    expect(mark?.textContent).toBe('张三');
+    expect(await screen.findByText('来源文本未在当前 OCR 中定位')).toBeTruthy();
+    expect(document.querySelector('mark')).toBeNull();
   });
 
   it('shows_unlocated_message_without_fabricating_highlight', async () => {

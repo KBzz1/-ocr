@@ -70,10 +70,6 @@ export function locateEvidence(
     }
   }
 
-  if (text && rawText.includes(text)) {
-    return { rawText, highlightText: text, startIndex: rawText.indexOf(text) };
-  }
-
   return null;
 }
 

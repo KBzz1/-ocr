@@ -63,4 +63,14 @@ describe('ReviewSourcePanel', () => {
     const pre = screen.getByLabelText('合并 OCR 文本');
     expect(pre.querySelector('mark')?.textContent).toBe(evidenceText);
   });
+
+  it('does not locate evidence text without a verified offset', () => {
+    const rawText = '精神睡眠食欲差。主诉：反复咳嗽。精神睡眠食欲差。';
+
+    const location = locateEvidence(rawText, {
+      text: '精神睡眠食欲差。',
+    });
+
+    expect(location).toBeNull();
+  });
 });

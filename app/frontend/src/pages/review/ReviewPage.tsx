@@ -33,20 +33,6 @@ function formatDateTime(value?: string | null) {
   return `${year}/${month}/${day} ${hour}:${minute}`;
 }
 
-function stripOcrMarkup(text: string) {
-  return text
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(div|p|tr|li|h[1-6]|section|article|table)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 function findLocatedEvidenceText(
   ocrText: string,
   evidence: { text?: string; start_offset?: number; end_offset?: number } | undefined
@@ -56,40 +42,7 @@ function findLocatedEvidenceText(
   if (offsetLocation) {
     return { text: offsetLocation.highlightText, startIndex: offsetLocation.startIndex };
   }
-
-  const cleanedEvidence = evidence.text ? stripOcrMarkup(evidence.text) : undefined;
-  if (!cleanedEvidence && (typeof evidence.start_offset !== 'number' || typeof evidence.end_offset !== 'number')) {
-    return undefined;
-  }
-
-  const candidates: Array<{ text: string }> = [];
-  if (cleanedEvidence) {
-    const fullEvidenceLocated = ocrText.includes(cleanedEvidence);
-    if (fullEvidenceLocated) {
-      candidates.push({ text: cleanedEvidence });
-    }
-    const rawSplitCandidates = [
-      ...cleanedEvidence.split(/\n+/),
-      ...cleanedEvidence.split(/[，,；;。！？!?]+/),
-      ...cleanedEvidence.split(/[、"'“”‘’（）()]+/)
-    ];
-    const splitCandidates = Array.from(new Set(
-      rawSplitCandidates
-        .map((line) => line.trim().replace(/^[\s"'“”‘’（）()]+|[\s"'“”‘’（）()]+$/g, ''))
-        .filter((line) => line.length >= 4)
-    ));
-    for (const line of splitCandidates) {
-      candidates.push({ text: line });
-    }
-  }
-
-  const located = candidates
-    .map((item) => ({ item, index: ocrText.indexOf(item.text) }))
-    .filter((entry) => entry.index >= 0)
-    .sort((a, b) => a.index - b.index || b.item.text.length - a.item.text.length);
-
-  const first = located[0];
-  return first ? { text: first.item.text, startIndex: first.index } : undefined;
+  return undefined;
 }
 
 function buildDemoTaskDetail(taskId: string, payload: ReviewPayload): TaskDetail {

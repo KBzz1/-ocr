@@ -264,6 +264,7 @@ def restore_compact_output(data, anchor_map: dict):
             return {
                 "值": data.get("v"),
                 "证据": restore_evidence(data.get("p"), anchor_map),
+                "_position": data.get("p"),
             }
 
         # J 类型叶子节点：状态判断型
@@ -271,6 +272,7 @@ def restore_compact_output(data, anchor_map: dict):
             return {
                 "状态": status_map.get(data.get("s"), "未提及"),
                 "证据": restore_evidence(data.get("p"), anchor_map),
+                "_position": data.get("p"),
             }
 
         # 普通嵌套对象
@@ -508,6 +510,29 @@ def process_single_file_qwen(
 # 全局合并与统一结构化抽取
 # =============================================================================
 
+def _clean_ocr_text_for_extraction(text: str) -> str:
+    """去掉 OCR Markdown 包装,只保留可作为证据定位的正文。"""
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+        if stripped.startswith("# OCR 完整结果"):
+            continue
+        if stripped.startswith("生成时间:"):
+            continue
+        if stripped in {"---", "```", "```text"}:
+            continue
+        if re.fullmatch(r"第\s*\d+\s*页", stripped):
+            continue
+        cleaned_lines.append(line)
+
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def merge_results(client: OpenAI, model_name: str, config: dict, output_dir: Path, results: list, output_formats: list):
     """合并所有 OCR 结果，并在长文本上进行统一全局抽取"""
     # 修复并发导致的乱序问题：合并前根据文件名重新排序
@@ -540,7 +565,9 @@ def merge_results(client: OpenAI, model_name: str, config: dict, output_dir: Pat
                     for md_file in md_files:
                         try:
                             content = md_file.read_text(encoding="utf-8")
-                            combined_ocr_for_extraction.append(f"【来源文件: {result['file']}】\n{content}")
+                            clean_content = _clean_ocr_text_for_extraction(content)
+                            if clean_content:
+                                combined_ocr_for_extraction.append(clean_content)
                             f.write(content)
                             f.write("\n\n")
                         except Exception as e:
@@ -553,16 +580,15 @@ def merge_results(client: OpenAI, model_name: str, config: dict, output_dir: Pat
         # 额外生成一个结构更干净的 txt 版本
         merged_txt = merged_dir / "merged_ocr.txt"
         with open(merged_txt, "w", encoding="utf-8") as f_txt:
-            f_txt.write(f"合并时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             for item in combined_ocr_for_extraction:
                 f_txt.write(item)
-                f_txt.write("\n\n========================================================================\n\n")
+                f_txt.write("\n\n")
         print(f"[MERGE] 纯文本 txt 也已保存至: {merged_txt}")
 
     # 2. 对合并后的文本进行统一全局抽取
     if "json" in output_formats:
         merged_json = merged_dir / "merged_structured.json"
-        full_text = "\n\n---\n\n".join(combined_ocr_for_extraction)
+        full_text = "\n\n".join(combined_ocr_for_extraction)
         
         extraction_config = config.get("extraction", {})
         global_structured = None
