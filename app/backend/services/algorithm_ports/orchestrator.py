@@ -375,7 +375,7 @@ class ProcessingOrchestrator:
                     details={"stage": "field_extraction", "reason": "schema_validation_failed"},
                 )
 
-        self._result_store.write_field_candidates(task_id, candidates)
+        self._result_store.write_field_candidates(task_id, candidates, schema)
 
         return task_service.mark_ready(task_id)
 

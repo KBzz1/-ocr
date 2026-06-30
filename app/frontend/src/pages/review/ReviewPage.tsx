@@ -454,7 +454,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const locatedEvidence = findLocatedEvidenceText(visibleOcrText, selectedEvidence);
   const modifiedFieldCount = fields.filter((field) => field.status === 'modified').length;
   const pendingReviewFieldCount = fields.filter((field) => field.status !== 'confirmed').length;
-  const confirmedFieldCount = fields.filter((field) => field.status === 'confirmed').length;
   const selectedFieldLabel = selectedField?.field_name ?? selectedField?.label ?? selectedField?.field_key;
   const sourceMessage: SourceMessage | null = selectedField
       ? selectedEvidenceText || hasOffsetEvidence
@@ -753,7 +752,6 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                 <h2>字段校对</h2>
               </div>
               <div className="review-panel__heading-right">
-                <span className="review-panel__count">{fields.length} 个字段，{confirmedFieldCount} 个已确认</span>
                 <button
                   type="button"
                   className="review-ocr-open-button"

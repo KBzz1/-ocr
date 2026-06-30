@@ -303,6 +303,87 @@ def test_get_or_init_reorders_fields_to_schema_order(tmp_path):
     assert find_field(review, "patient_name")["final_value"] == "张三"
 
 
+def test_existing_review_with_old_schema_version_is_not_rehydrated_by_current_schema(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "old_schema.v1",
+            "document_type": "medical_record",
+            "initialized_at": "2026-05-19T10:00:00+00:00",
+            "updated_at": "2026-05-19T10:00:00+00:00",
+            "field_groups": [
+                {
+                    "group_key": "old",
+                    "group_label": "旧字段",
+                    "fields": [{"field_key": "legacy_only", "label": "旧字段"}],
+                }
+            ],
+            "fields": [
+                {
+                    "field_key": "legacy_only",
+                    "field_name": "旧字段",
+                    "auto_value": "旧值",
+                    "final_value": "旧值",
+                    "status": "unreviewed",
+                    "empty_accepted": False,
+                    "extraction_status": "extracted",
+                    "verification_status": "not_checked",
+                    "quality_flags": [],
+                    "ocr_correction": None,
+                    "history": [],
+                }
+            ],
+            "summary": {"total_count": 1},
+        },
+    )
+
+    review = review_service.get_or_init("task_001")
+
+    assert [field["field_key"] for field in review["fields"]] == ["legacy_only"]
+    assert review["field_groups"][0]["group_key"] == "old"
+    persisted = store.read("results/task_001/review_result.json")
+    assert [field["field_key"] for field in persisted["fields"]] == ["legacy_only"]
+
+
+def test_old_candidate_wrapper_with_schema_snapshot_initializes_without_current_schema(tmp_path):
+    review_service, _task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    store.write(
+        "results/task_001/field_candidates.json",
+        {
+            "task_id": "task_001",
+            "stage": "field_extraction",
+            "status": "success",
+            "schema_version": "old_schema.v1",
+            "document_type": "medical_record",
+            "field_groups": [
+                {
+                    "group_key": "old",
+                    "group_label": "旧字段",
+                    "fields": [{"field_key": "legacy_only", "label": "旧字段"}],
+                }
+            ],
+            "candidates": [
+                {
+                    "field_key": "legacy_only",
+                    "original_value": "旧值",
+                    "evidence": "第1页",
+                    "confidence": 0.9,
+                }
+            ],
+        },
+    )
+
+    review = review_service.get_or_init("task_001")
+
+    assert review["schema_version"] == "old_schema.v1"
+    assert [field["field_key"] for field in review["fields"]] == ["legacy_only"]
+    assert review["field_groups"][0]["group_key"] == "old"
+
+
 # --- Task 6: 审核返回证据数组与核验提示 ---
 
 

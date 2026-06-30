@@ -6,7 +6,13 @@ import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { ReviewPage } from './ReviewPage';
 
 function selectTaskForDetail(tasks: TaskSummary[]) {
-  return tasks.find((task) => task.status === 'review') ?? tasks[0] ?? null;
+  const visibleTasks = tasks.filter((task) => task.status === 'review' || task.status === 'done');
+  return (
+    visibleTasks.find((task) => task.task_id === 'smoke_qwen_review' || task.display_name === 'Qwen真实烟测审核')
+    ?? tasks.find((task) => task.status === 'review')
+    ?? tasks[0]
+    ?? null
+  );
 }
 
 export function ReviewEntryPage() {

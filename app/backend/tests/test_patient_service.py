@@ -160,3 +160,73 @@ def test_create_strips_name_whitespace(tmp_path):
     patient = service.create("  张三  ")
 
     assert patient["name"] == "张三"
+
+
+def test_create_patient_accepts_gender_and_age(tmp_path):
+    service = make_service(tmp_path)
+
+    patient = service.create("张三", gender="男", age=58)
+
+    assert patient["gender"] == "男"
+    assert patient["age"] == 58
+
+
+def test_create_patient_treats_missing_demographics_as_none(tmp_path):
+    service = make_service(tmp_path)
+
+    patient = service.create("张三")
+
+    assert patient["gender"] is None
+    assert patient["age"] is None
+
+
+def test_create_patient_rejects_invalid_gender(tmp_path):
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc:
+        service.create("张三", gender="other")
+
+    assert exc.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+
+
+def test_create_patient_rejects_out_of_range_age(tmp_path):
+    service = make_service(tmp_path)
+
+    with pytest.raises(AppError) as exc:
+        service.create("张三", age=200)
+
+    assert exc.value.code == ErrorCode.INVALID_REQUEST_PARAMS.code
+
+
+def test_update_demographics_partial_update(tmp_path):
+    service = make_service(tmp_path)
+    patient = service.create("张三", gender="男", age=58)
+
+    updated = service.update_demographics(patient["patient_id"], age=59)
+
+    assert updated["gender"] == "男"
+    assert updated["age"] == 59
+    assert updated["name"] == "张三"
+
+
+def test_update_demographics_can_clear_field_with_empty_string(tmp_path):
+    service = make_service(tmp_path)
+    patient = service.create("张三", gender="男", age=58)
+
+    cleared = service.update_demographics(patient["patient_id"], gender="")
+
+    assert cleared["gender"] is None
+    assert cleared["age"] == 58
+
+
+def test_list_returns_demographics_on_public_record(tmp_path):
+    service = make_service(tmp_path)
+    service.create("张三", gender="男", age=58)
+    service.create("李四", gender="女", age=42)
+
+    items = {item["name"]: item for item in service.list()}
+
+    assert items["张三"]["gender"] == "男"
+    assert items["张三"]["age"] == 58
+    assert items["李四"]["gender"] == "女"
+    assert items["李四"]["age"] == 42

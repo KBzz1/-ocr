@@ -71,7 +71,7 @@ async function submitCreateTaskDialog(
     await user.clear(within(dialog).getByLabelText('记录时间（可选）'));
     await user.type(within(dialog).getByLabelText('记录时间（可选）'), options.recordTime);
   }
-  await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
+  await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 }
 
 function mockReadyTaskReview() {

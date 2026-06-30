@@ -53,10 +53,14 @@ class AlgorithmResultStore:
             "evidence_units": evidence_units,
         }
 
-    def write_field_candidates(self, task_id: str, candidates: list[dict]) -> None:
+    def write_field_candidates(self, task_id: str, candidates: list[dict], schema: dict | None = None) -> None:
+        schema = schema if isinstance(schema, dict) else {}
         self._store.write(f"results/{task_id}/field_candidates.json", {
             "task_id": task_id,
             "stage": "field_extraction",
             "status": "success",
             "candidates": candidates,
+            "schema_version": schema.get("version"),
+            "document_type": schema.get("document_type"),
+            "field_groups": schema.get("field_groups") if isinstance(schema.get("field_groups"), list) else None,
         })

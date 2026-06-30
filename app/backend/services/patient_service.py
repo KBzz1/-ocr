@@ -30,20 +30,38 @@ class PatientService:
 
     # -- CRUD --
 
-    def create(self, name: str) -> dict:
+    def create(self, name: str, *, gender: str | None = None, age: int | None = None) -> dict:
         clean_name = (name or "").strip()
         if not clean_name:
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="patient name 不能为空")
+        normalized_gender = self._normalize_gender(gender)
+        normalized_age = self._normalize_age(age)
         now = self._now()
         patient_id = self._new_patient_id()
         record = {
             "patient_id": patient_id,
             "name": clean_name,
+            "gender": normalized_gender,
+            "age": normalized_age,
             "created_at": now,
             "updated_at": now,
             "deleted_at": None,
             "name_history": [],
         }
+        self._write_patient(record)
+        return record
+
+    def update_demographics(self, patient_id: str, *, gender: str | None = None, age: int | None = None) -> dict:
+        """仅更新患者人口学字段（性别/年龄），不触发姓名历史与任务快照刷新。
+
+        字段值为 None 表示不更新对应字段；显式空字符串表示清空。
+        """
+        record = self.get(patient_id)
+        if gender is not None:
+            record["gender"] = self._normalize_gender(gender)
+        if age is not None:
+            record["age"] = self._normalize_age(age)
+        record["updated_at"] = self._now()
         self._write_patient(record)
         return record
 
@@ -161,4 +179,35 @@ class PatientService:
         normalized = dict(record)
         normalized.setdefault("name_history", [])
         normalized.setdefault("deleted_at", None)
+        normalized.setdefault("gender", None)
+        normalized.setdefault("age", None)
         return normalized
+
+    @staticmethod
+    def _normalize_gender(value) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="gender 必须为字符串")
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if cleaned not in {"男", "女", "未知"}:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST_PARAMS,
+                message="gender 仅支持 男 / 女 / 未知",
+            )
+        return cleaned
+
+    @staticmethod
+    def _normalize_age(value) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="age 必须为整数")
+        if value < 0 or value > 150:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST_PARAMS,
+                message="age 必须在 0-150 之间",
+            )
+        return value

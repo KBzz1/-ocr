@@ -11,3 +11,6 @@
 | BE-SCH-005 | API | `GET /api/schema/current` 返回当前 schema，前端可动态展示字段 | schema 接口缺失 |
 | BE-SCH-006 | 集成 | schema 用于慢阻肺字段结果全量覆盖、前端展示和导出顺序；不得在无原文证据时生成医学值 | schema 被用于补造字段值 |
 | BE-SCH-007 | 单元 | 第一版默认慢阻肺/呼吸系统入院记录 schema，后续再扩展其他文书类型 | 文书类型选择失败 |
+| BE-SCH-008 | 集成 | `review_result` 保存 `field_groups` 快照；当历史 `review_result.schema_version` 与当前 schema 不一致时，读取审核页不得按当前 schema 补齐/重排/写回 | 历史任务字段被当前默认 schema 覆盖 |
+
+字段版本架构见 `docs/Backend/field-schema-versioning-architecture.md`。

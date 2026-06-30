@@ -1,6 +1,6 @@
 engine=qwen_batch_engine
 upstream_repo=https://github.com/aufgh/qwen
 upstream_commit=a746ba9d061d2af8878485f1f837e4d10e2bd755
-schema_version=qwen_batch_admission_record.v1
+schema_version=qwen_batch_admission_record.v2
 adapter_contract=job_result.v1
 synced_at=2026-06-26

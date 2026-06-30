@@ -16,7 +16,7 @@ def test_qwen_batch_engine_layout_exists():
 def test_qwen_batch_engine_version_records_upstream_commit():
     version_text = (ENGINE_ROOT / "VERSION").read_text(encoding="utf-8")
     assert "upstream_commit=a746ba9d061d2af8878485f1f837e4d10e2bd755" in version_text
-    assert "schema_version=qwen_batch_admission_record.v1" in version_text
+    assert "schema_version=qwen_batch_admission_record.v2" in version_text
 
 
 def test_qwen_batch_engine_does_not_commit_runtime_or_secret_files():

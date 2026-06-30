@@ -547,7 +547,7 @@ def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path,
 
     模拟场景:
     - OCR 页面按系统保存顺序写入(不重排): page 1 = ## 品后诊断 + 最终诊断; page 2 = 主诉...
-    - Fake Qwen 字段端口返回 schema 全量 61 字段:
+    - Fake Qwen 字段端口返回 legacy schema 全量 61 字段:
       * chief_complaint found,evidence 指向 page 2
       * diagnosis_final found,evidence 指向 page 1
       * 血气 6 字段共享同一 evidence unit
@@ -561,7 +561,7 @@ def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path,
     schema_field_groups = schema["field_groups"]
 
     class AdmissionRecordFullProcessing:
-        """模拟 Qwen 固定字段全量 61 字段抽取 + OCR 标题错字 + 乱序保存。"""
+        """模拟 legacy 固定字段全量 61 字段抽取 + OCR 标题错字 + 乱序保存。"""
 
         # OCR 页面按系统保存顺序写入(刻意乱序: 诊断在前,主诉在后)
         PAGE1_TEXT = "## 品后诊断\n慢性阻塞性肺疾病急性加重\nⅡ型呼吸衰竭"
@@ -586,7 +586,7 @@ def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path,
             self._store = store
 
         def _build_candidates(self, task: dict) -> list[dict]:
-            """按 schema 全量 61 字段产出候选;found/not_found 严格匹配 task 描述。"""
+            """按 legacy schema 全量 61 字段产出候选;found/not_found 严格匹配 task 描述。"""
             images = task.get("images") or []
             page_ids = [img["page_id"] for img in sorted(images, key=lambda i: i["page_no"])]
 
@@ -875,7 +875,7 @@ def test_admission_record_raw_ocr_typo_and_page_order_still_reviewable(tmp_path,
     assert fields_by_key["chief_complaint"]["evidence"][0]["page_no"] == 2
     assert fields_by_key["diagnosis_final"]["evidence"][0]["page_no"] == 1
 
-    # 7. 全量 61 字段已被补齐(由 _hydrate_missing_fields)
+    # 7. legacy 全量 61 字段已被补齐(由 _hydrate_missing_fields)
     assert len(review_payload["fields"]) == 61
 
 
@@ -962,7 +962,7 @@ paths:
 algorithms:
   algorithm_engine: qwen_batch
   qwen_batch_job_dir: "{job_dir}"
-  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v1.yaml"
+  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v2.yaml"
   qwen_batch_runner_timeout_seconds: 1800
 """,
         encoding="utf-8",
@@ -976,6 +976,6 @@ algorithms:
 
     assert config["algorithm_engine"] == "qwen_batch"
     assert registry.get_default_document_type() == "qwen_batch_admission_record"
-    assert profile.schema_version == "qwen_batch_admission_record.v1"
+    assert profile.schema_version == "qwen_batch_admission_record.v2"
     assert profile.field_port is not None
     assert isinstance(app.config["TASK_SERVICE"]._orchestrator, QwenBatchProcessingOrchestrator)

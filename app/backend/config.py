@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     "algorithm_engine": "legacy",
     "qwen_batch_job_dir": "./data/algorithm_jobs",
     "qwen_batch_runner_timeout_seconds": 1800,
-    "qwen_batch_schema_path": "./app/config/schemas/qwen_batch_admission_record.v1.yaml",
+    "qwen_batch_schema_path": "./app/config/schemas/qwen_batch_admission_record.v2.yaml",
     "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
     "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
     "qwen_vllm_model_dir": "./models/llm/Qwen3.5-4B-AWQ-4bit",

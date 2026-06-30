@@ -200,6 +200,40 @@ def _find_text_span(merged_text: str, evidence_text: str | None) -> tuple[int | 
     return start, start + len(evidence_text)
 
 
+_NORMAL_JUDGEMENT_PATTERNS = (
+    "正常",
+    "无异常",
+    "未见异常",
+    "无压痛",
+    "无肿大",
+    "无充血",
+    "无水肿",
+    "无黄染",
+    "无分泌物",
+    "未闻及病理性杂音",
+    "未触及包块",
+    "未扪及包块",
+    "未触及明显",
+    "未扪及肿大",
+    "阴性",
+)
+
+
+def _infer_judgement_from_text(text: str | None) -> tuple[str, str] | None:
+    """Infer only conservative judgement statuses from model-selected evidence.
+
+    Qwen sometimes returns a J field as {"值": "...", "证据": "..."} instead of
+    {"状态": "..."}; if that selected text explicitly says normal/negative, keep
+    the evidence and normalize it to normal rather than dropping it as not found.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    normalized = text.replace(" ", "")
+    if any(pattern in normalized for pattern in _NORMAL_JUDGEMENT_PATTERNS):
+        return "正常", "normal"
+    return None
+
+
 def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict, raw_response: str | None = None) -> list[dict]:
     review_fields: list[dict] = []
     anchor_map = _build_anchor_map(merged_text)
@@ -222,10 +256,18 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
                 position = node.get("_position") or node.get("p")
                 evidence_location = _resolve_evidence_from_position(position, anchor_map, merged_text)
                 evidence_text = node.get("证据")
-                if status == "正常":
+                raw_value = node.get("值", node.get("v"))
+                inference_text = (
+                    raw_value if isinstance(raw_value, str) and raw_value.strip()
+                    else evidence_text if isinstance(evidence_text, str) and evidence_text.strip()
+                    else evidence_location.get("text") if isinstance(evidence_location, dict)
+                    else ""
+                )
+                inferred_status = _infer_judgement_from_text(inference_text)
+                if status == "正常" or (isinstance(status, str) and status.startswith("正常")):
                     value = "正常"
                     qwen_status = "normal"
-                elif status == "异常":
+                elif status == "异常" or (isinstance(status, str) and status.startswith("异常")):
                     value = "异常"
                     qwen_status = "abnormal"
                 elif status in (0, "0"):
@@ -234,6 +276,8 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
                 elif status in (1, "1"):
                     value = "异常"
                     qwen_status = "abnormal"
+                elif inferred_status is not None:
+                    value, qwen_status = inferred_status
                 elif status == "未提及" or status in (2, "2") or status is None:
                     value = ""
                     qwen_status = "not_mentioned"

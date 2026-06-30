@@ -240,6 +240,22 @@ def test_admission_prompt_requires_not_found_for_missing_fields():
     assert "不得省略" in prompt or "不能省略" in prompt or "必须输出" in prompt
 
 
+def test_admission_prompt_requires_normal_status_for_negative_physical_exam_j_fields():
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_prompt,
+    )
+
+    schema = _sample_admission_schema()
+    units = _sample_evidence_units()
+    prompt = build_admission_structured_fields_prompt(schema, units)
+
+    assert "J 型状态字段判定" in prompt
+    assert "外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常" in prompt
+    assert "耳部=正常" in prompt
+    assert "不得因为是阴性描述而输出 not_found" in prompt
+    assert "只有原文完全没有该部位/项目信息时" in prompt
+
+
 def test_admission_prompt_forbids_subjective_diagnosis():
     from app.backend.services.copd_extraction.prompts import (
         build_admission_structured_fields_prompt,
@@ -259,6 +275,21 @@ def test_admission_prompt_forbids_subjective_diagnosis():
     assert "添加" in prompt or "补充" in prompt
     # 暗示诊断字段必须摘录原文，不能医学推理
     assert "主观" in prompt or "医学判断" in prompt or "医学推理" in prompt
+
+
+def test_admission_prompt_requires_numbered_diagnosis_items_to_remain_separate():
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_prompt,
+    )
+
+    schema = _sample_admission_schema()
+    units = _sample_evidence_units()
+    prompt = build_admission_structured_fields_prompt(schema, units)
+
+    assert "按编号分行保留" in prompt
+    assert "不得合并成一句" in prompt
+    assert "便于审核页逐条展示、编辑和导出" in prompt
+    assert "1慢性阻塞性肺疾病急性加重\n2高血压2级中危\n3慢性胃炎" in prompt
 
 
 def test_admission_prompt_allows_shared_evidence_ids():

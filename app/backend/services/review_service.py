@@ -98,9 +98,50 @@ class ReviewService:
         if self._schema_provider is None:
             return review
         schema = self._schema_provider()
-        if schema and "field_groups" in schema:
+        review_schema_version = review.get("schema_version")
+        schema_version = schema.get("version") if isinstance(schema, dict) else None
+        if (
+            schema
+            and "field_groups" in schema
+            and (not review_schema_version or review_schema_version == schema_version)
+        ):
             review["field_groups"] = schema["field_groups"]
         return review
+
+    def _schema_for_existing_review(self, review: dict) -> dict:
+        if self._schema_provider is None:
+            return {}
+        schema = self._schema_provider()
+        if not isinstance(schema, dict):
+            return {}
+        review_schema_version = review.get("schema_version")
+        if review_schema_version and review_schema_version != schema.get("version"):
+            return {}
+        return schema
+
+    def _schema_for_candidate_wrapper(self, wrapper: dict, task: dict) -> dict:
+        current_schema = self._schema_provider() if self._schema_provider else {}
+        if not isinstance(current_schema, dict):
+            current_schema = {}
+        wrapper_schema_version = wrapper.get("schema_version")
+        current_schema_version = current_schema.get("version")
+        wrapper_field_groups = wrapper.get("field_groups")
+        if (
+            wrapper_schema_version
+            and wrapper_schema_version != current_schema_version
+        ):
+            if isinstance(wrapper_field_groups, list):
+                return {
+                    "version": wrapper_schema_version,
+                    "document_type": wrapper.get("document_type") or task.get("document_type"),
+                    "field_groups": wrapper_field_groups,
+                }
+            return {
+                "version": wrapper_schema_version,
+                "document_type": wrapper.get("document_type") or task.get("document_type"),
+                "field_groups": [],
+            }
+        return current_schema
 
     def _sync_task_review_summary(self, task_id: str, review: dict) -> None:
         summary = review.get("summary")
@@ -172,7 +213,8 @@ class ReviewService:
         existing = self._store.read(f"results/{task_id}/review_result.json")
         if existing is not None:
             # BE-MVP-05-06: 按当前 schema 补齐缺失字段并重排
-            schema_for_hydrate = self._schema_provider() if self._schema_provider else {}
+            # 仅限同 schema_version。历史任务不得被当前默认 schema 静默改写。
+            schema_for_hydrate = self._schema_for_existing_review(existing)
             self._hydrate_missing_fields(existing, schema_for_hydrate)
             self._apply_quality_warnings(task_id, existing)
             self._sync_task_review_summary(task_id, existing)
@@ -183,19 +225,22 @@ class ReviewService:
         if not isinstance(candidates, list) or not candidates:
             raise AppError(ErrorCode.REVIEW_VALIDATION_FAILED, message="字段候选缺失或为空，无法初始化审核")
 
-        schema = self._schema_provider() if self._schema_provider else {}
+        schema = self._schema_for_candidate_wrapper(wrapper, task)
         fields = self._build_fields(candidates, schema)
+        field_groups = schema.get("field_groups") if isinstance(schema.get("field_groups"), list) else wrapper.get("field_groups")
         now = self._now()
         review = {
             "task_id": task_id,
-            "schema_version": schema.get("version") or task.get("schema_version"),
-            "document_type": schema.get("document_type") or task.get("document_type"),
+            "schema_version": schema.get("version") or wrapper.get("schema_version") or task.get("schema_version"),
+            "document_type": schema.get("document_type") or wrapper.get("document_type") or task.get("document_type"),
             "initialized_at": now,
             "updated_at": now,
             "source_groups": self._build_source_groups(candidates),
             "fields": fields,
             "summary": self._build_summary(fields),
         }
+        if isinstance(field_groups, list):
+            review["field_groups"] = field_groups
         self._store.write(f"results/{task_id}/review_result.json", review)
         # BE-MVP-05-06: candidates 路径也要按 schema 补齐缺失字段并重排
         self._hydrate_missing_fields(review, schema)

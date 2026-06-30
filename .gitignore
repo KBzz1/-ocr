@@ -36,8 +36,10 @@ data/temp/*
 data/sessions/*
 data/pages/*
 data/tasks/*
+data/algorithm_jobs/*
 exports/*
 output/*
+app/frontend/output/*
 logs/*
 vllm_cache/
 deploy/offline-images/*.tar
@@ -45,6 +47,7 @@ deploy/offline-images/*.tar
 !data/results/README.md
 !data/temp/README.md
 !data/sessions/README.md
+!data/algorithm_jobs/README.md
 !exports/README.md
 !logs/README.md
 

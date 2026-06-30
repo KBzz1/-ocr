@@ -102,4 +102,6 @@ python algorithms/qwen_batch_engine/adapter/run_job.py --job-dir data/algorithm_
 - `results/{task_id}/document_result.json`
 - `results/{task_id}/field_candidates.json`
 
-Qwen 字段以 `qwen_batch_admission_record.v1` schema 为准。`T` 字段保存原文截取值，`J` 字段保存 `正常 / 异常 / 未提及 / 不确定` 状态文本。前端和导出使用 schema 中的 `qwen_type`、`qwen_path` 和 `field_key`，不得把 Qwen 字段强行映射回旧 61 字段作为默认路径。
+Qwen 字段以当前 `qwen_batch_admission_record` 活动 schema 为准，当前版本为 `qwen_batch_admission_record.v2`。`T` 字段保存原文截取值，`J` 字段保存 `正常 / 异常 / 未提及 / 不确定` 状态文本。前端和导出使用 schema 中的 `qwen_type`、`qwen_path` 和 `field_key`，不得把 Qwen 字段强行映射回旧 61 字段作为默认路径。
+
+字段版本变迁遵循 `docs/Backend/field-schema-versioning-architecture.md`：已被任务使用的 schema 不原地改语义，新字段集合必须新增版本；审核结果保存 `field_groups` 快照；历史任务不得在普通读取路径被当前 schema 自动改写。

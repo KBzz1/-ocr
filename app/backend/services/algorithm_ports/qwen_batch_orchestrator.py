@@ -142,6 +142,8 @@ class QwenBatchProcessingOrchestrator:
             {
                 "candidates": review_fields,
                 "schema_version": schema.get("version", ""),
+                "document_type": schema.get("document_type", ""),
+                "field_groups": schema.get("field_groups") if isinstance(schema.get("field_groups"), list) else None,
             },
         )
 

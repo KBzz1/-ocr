@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -321,6 +321,75 @@ describe('FieldList', () => {
     expect(screen.getByRole('group', { name: '精神睡眠食欲 状态' })).toBeTruthy();
     expect(screen.queryByLabelText('hpi_mental_sleep_appetite')).toBeNull();
     expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: '不确定 精神睡眠食欲' })).toBeNull();
+  });
+
+  it('renders_uncertain_qwen_j_field_as_unselected_with_warning', () => {
+    const onChange = vi.fn();
+    const onFocus = vi.fn();
+    const onToggle = vi.fn();
+
+    render(
+      <FieldList
+        fields={[makeField({
+          field_key: 'pe_ears',
+          field_name: '耳部',
+          label: '耳部',
+          value: '不确定',
+          final_value: '不确定',
+          qwen_type: 'J',
+          qwen_status: 'uncertain'
+        })]}
+        fieldGroups={[{ group_key: 'physical_exam', group_label: '体格检查', fields: [{ field_key: 'pe_ears', label: '耳部', qwen_type: 'J' }] }]}
+        selectedFieldKey={null}
+        onChange={onChange}
+        onFocusField={onFocus}
+        onToggleReviewed={onToggle}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: '不确定 耳部' })).toBeNull();
+    expect(screen.getByLabelText('耳部 不确定，请核对原文')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '正常 耳部' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: '异常 耳部' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: '未提及 耳部' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('renders_numbered_diagnoses_as_separate_editable_items', async () => {
+    const onChange = vi.fn();
+    const onFocus = vi.fn();
+    const onToggle = vi.fn();
+
+    render(
+      <FieldList
+        fields={[makeField({
+          field_key: 'diagnosis_final',
+          field_name: '最终诊断',
+          label: '最终诊断',
+          value: '1慢性阻塞性肺疾病急性加重 2Ⅱ型呼吸衰竭 3高血压2级中危',
+          final_value: '1慢性阻塞性肺疾病急性加重 2Ⅱ型呼吸衰竭 3高血压2级中危'
+        })]}
+        fieldGroups={[{ group_key: 'diagnosis', group_label: '诊断', fields: [{ field_key: 'diagnosis_final', label: '最终诊断' }] }]}
+        selectedFieldKey={null}
+        onChange={onChange}
+        onFocusField={onFocus}
+        onToggleReviewed={onToggle}
+      />
+    );
+
+    expect(screen.getByLabelText('最终诊断 诊断列表')).toBeTruthy();
+    expect(screen.getByLabelText('最终诊断 第 1 项')).toHaveProperty('value', '慢性阻塞性肺疾病急性加重');
+    expect(screen.getByLabelText('最终诊断 第 2 项')).toHaveProperty('value', 'Ⅱ型呼吸衰竭');
+    expect(screen.getByLabelText('最终诊断 第 3 项')).toHaveProperty('value', '高血压2级中危');
+
+    fireEvent.change(screen.getByLabelText('最终诊断 第 2 项'), { target: { value: '慢性呼吸衰竭' } });
+    expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        field_key: 'diagnosis_final',
+        final_value: '1慢性阻塞性肺疾病急性加重\n2慢性呼吸衰竭\n3高血压2级中危',
+        status: 'modified'
+      })
+    ]);
   });
 
   it('disables_qwen_j_control_when_read_only', async () => {

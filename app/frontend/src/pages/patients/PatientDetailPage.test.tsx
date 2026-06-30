@@ -444,7 +444,7 @@ describe('PatientDetailPage', () => {
     await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
 
     const dialog = await screen.findByRole('dialog', { name: '新建任务' });
-    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     await waitFor(() =>
       expect(createBody).toMatchObject({
@@ -489,7 +489,7 @@ describe('PatientDetailPage', () => {
     const header = await screen.findByLabelText('患者头部');
     await user.click(within(header).getByRole('button', { name: '新建该患者任务' }));
     const dialog = await screen.findByRole('dialog', { name: '新建任务' });
-    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     await waitFor(() => {
       const submitButton = within(dialog).getByRole('button', { name: '正在创建' }) as HTMLButtonElement;

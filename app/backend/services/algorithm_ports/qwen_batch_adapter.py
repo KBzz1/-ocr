@@ -107,7 +107,7 @@ class QwenBatchAlgorithmPort:
                     {"page_id": str, "page_no": int, "original_image_path": str},
                     ...
                 ],
-                "schema_version": str,  # e.g. "qwen_batch_admission_record.v1"
+                "schema_version": str,  # e.g. "qwen_batch_admission_record.v2"
             }
 
         Returns a dict with ``status`` (``"success"`` or ``"failed"``) and

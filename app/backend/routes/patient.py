@@ -23,7 +23,11 @@ def create_patient():
     if not isinstance(name, str) or not name.strip():
         raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="name 必须为非空字符串")
     service = _get_patient_service()
-    record = service.create(name)
+    record = service.create(
+        name,
+        gender=body.get("gender"),
+        age=body.get("age"),
+    )
     _safe_event("patient_created", patient_id=record["patient_id"])
     return success(data=service.to_public(record), status=201)
 
@@ -56,6 +60,28 @@ def update_patient(patient_id):
     record = service.rename(patient_id, name)
     service.refresh_snapshots_for_active_tasks(patient_id)
     _safe_event("patient_renamed", patient_id=record["patient_id"])
+    return success(data=service.to_public(record))
+
+
+@patient_bp.route("/api/patients/<patient_id>/demographics", methods=["PATCH"])
+def update_patient_demographics(patient_id: str):
+    """局部更新患者人口学字段（gender/age）。
+
+    - 字段缺失表示不更新；显式空字符串/0 表示清空
+    - 校验失败返回 INVALID_REQUEST_PARAMS
+    - 不触发姓名历史与 patient_snapshot 刷新
+    """
+    body = request.get_json(silent=True) or {}
+    service = _get_patient_service()
+    record = service.update_demographics(
+        patient_id,
+        gender=body.get("gender") if "gender" in body else None,
+        age=body.get("age") if "age" in body else None,
+    )
+    _safe_event(
+        "patient_demographics_updated",
+        patient_id=record["patient_id"],
+    )
     return success(data=service.to_public(record))
 
 

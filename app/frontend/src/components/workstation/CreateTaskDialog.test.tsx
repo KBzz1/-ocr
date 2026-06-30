@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 function mockPatientsSearch(
-  patients: Array<{ patient_id: string; name: string; task_count?: number; latest_record_at?: string | null }>
+  patients: Array<{ patient_id: string; name: string; gender?: string | null; age?: number | null; task_count?: number; latest_record_at?: string | null }>
 ) {
   return http.get('*/api/patients', () =>
     HttpResponse.json({
@@ -21,6 +21,8 @@ function mockPatientsSearch(
         patients: patients.map((patient) => ({
           patient_id: patient.patient_id,
           name: patient.name,
+          gender: patient.gender ?? null,
+          age: patient.age ?? null,
           created_at: '2026-06-07T10:00:00+08:00',
           updated_at: '2026-06-07T10:00:00+08:00',
           deleted_at: null,
@@ -95,7 +97,7 @@ describe('CreateTaskDialog', () => {
     await user.clear(within(dialog).getByLabelText('记录时间（可选）'));
     await user.type(within(dialog).getByLabelText('记录时间（可选）'), '09:30');
 
-    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     await waitFor(() => {
       expect(handleSubmit).toHaveBeenCalledTimes(1);
@@ -201,7 +203,7 @@ describe('CreateTaskDialog', () => {
     await user.clear(within(dialog).getByLabelText('记录日期'));
     await user.type(within(dialog).getByLabelText('记录日期'), '2026-06-07');
 
-    await user.click(within(dialog).getByRole('button', { name: '创建任务并显示二维码' }));
+    await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     // 响应未返回前，弹窗内不应出现二维码相关内容
     expect(screen.queryByRole('dialog', { name: '手机扫码上传' })).toBeNull();

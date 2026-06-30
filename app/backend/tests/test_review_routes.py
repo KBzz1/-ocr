@@ -25,6 +25,9 @@ sessions:
 upload:
   max_file_size_mb: 10
   min_quad_area_ratio: 0.01
+algorithms:
+  algorithm_engine: qwen_batch
+  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v2.yaml"
 """,
         encoding="utf-8",
     )
@@ -56,7 +59,7 @@ def review_task(app):
             "export_summary": {"last_exported_at": None, "formats": [], "files": []},
         },
     )
-    # 使用 schema 实际存在的字段(默认入院记录固定字段 schema 包含 chief_complaint 等 61 字段)
+    # 使用当前默认 Qwen 批处理 schema 实际存在的字段。
     store.write(
         "results/1/field_candidates.json",
         {
@@ -65,7 +68,7 @@ def review_task(app):
             "status": "success",
             "candidates": [
                 {"field_key": "chief_complaint", "original_value": "退休", "evidence": "第1页", "confidence": 0.9},
-                {"field_key": "pe_temperature", "original_value": "36.5℃", "evidence": "第2页", "confidence": 0.85},
+                {"field_key": "pe_vital_signs", "original_value": "体温36.5℃", "evidence": "第2页", "confidence": 0.85},
             ],
         },
     )
@@ -80,12 +83,12 @@ def test_get_review_initializes_result(client, review_task):
     assert data["task_id"] == "1"
     assert data["status"] == "review"
     fields = data["review_result"]["fields"]
-    # BE-MVP-05-06: 字段集合与 schema 一致(默认入院记录 schema 61 个字段)
+    # BE-MVP-05-06: 字段集合与当前 schema 一致。
     assert len(fields) >= 2
     # 候选里有的字段被正确填入
     field_by_key = {f["field_key"]: f for f in fields}
     assert field_by_key["chief_complaint"]["final_value"] == "退休"
-    assert field_by_key["pe_temperature"]["final_value"] == "36.5℃"
+    assert field_by_key["pe_vital_signs"]["final_value"] == "体温36.5℃"
 
 
 def test_put_review_saves_final_fields(client, review_task):
@@ -94,7 +97,7 @@ def test_put_review_saves_final_fields(client, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "工人", "status": "modified"},
-                {"field_key": "pe_temperature", "value": "36.5℃", "status": "confirmed"},
+                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -104,7 +107,7 @@ def test_put_review_saves_final_fields(client, review_task):
     field_by_key = {f["field_key"]: f for f in fields}
     assert field_by_key["chief_complaint"]["status"] == "modified"
     assert field_by_key["chief_complaint"]["final_value"] == "工人"
-    assert field_by_key["pe_temperature"]["status"] == "confirmed"
+    assert field_by_key["pe_vital_signs"]["status"] == "confirmed"
 
 
 def test_complete_review_route_marks_done(client, review_task):
@@ -113,7 +116,7 @@ def test_complete_review_route_marks_done(client, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "退休", "status": "confirmed"},
-                {"field_key": "pe_temperature", "value": "36.5℃", "status": "confirmed"},
+                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -130,7 +133,7 @@ def test_reopen_review_transitions_done_to_review(client, app, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "退休", "status": "confirmed"},
-                {"field_key": "pe_temperature", "value": "36.5℃", "status": "confirmed"},
+                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -188,7 +191,7 @@ def test_review_route_returns_schema_ordered_admission_fields(client, app, revie
     ]
     schema_groups_keys = [group["group_key"] for group in schema["field_groups"]]
     assert [group["group_key"] for group in field_groups] == schema_groups_keys
-    # fields 数量与 schema 一致(默认 61 字段),按 schema 顺序
+    # fields 数量与 schema 一致,按 schema 顺序
     returned_field_keys = [f["field_key"] for f in review_result["fields"]]
     assert len(returned_field_keys) == len(schema_field_keys)
     assert returned_field_keys == schema_field_keys

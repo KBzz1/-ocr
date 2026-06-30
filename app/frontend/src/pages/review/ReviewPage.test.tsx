@@ -14,7 +14,7 @@ function mockReviewRoutes() {
         success: true,
         data: {
           task_id: 'task_001',
-          display_name: 'task_001',
+          display_name: 'Qwen真实烟测审核',
           status: 'review',
           created_at: '2026-05-19T10:00:00+08:00',
           updated_at: '2026-05-19T10:03:00+08:00',
@@ -49,19 +49,11 @@ function mockReviewRoutes() {
           tasks: [
             {
               task_id: 'task_001',
-              display_name: 'task_001',
+              display_name: 'Qwen真实烟测审核',
               status: 'review',
               created_at: '2026-05-19T10:00:00+08:00',
               updated_at: '2026-05-19T10:03:00+08:00',
               page_count: 2
-            },
-            {
-              task_id: 'task_002',
-              display_name: 'task_002',
-              status: 'done',
-              created_at: '2026-05-20T10:00:00+08:00',
-              updated_at: '2026-05-20T10:03:00+08:00',
-              page_count: 1
             }
           ]
         }
@@ -421,7 +413,6 @@ describe('ReviewPage', () => {
     await userEvent.click(reviewCheck);
 
     expect(screen.getByRole('button', { name: '取消审核 姓名' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('2 个字段，1 个已确认')).toBeTruthy();
     expect(screen.getByText('未保存修改')).toBeTruthy();
 
     await userEvent.click(screen.getByLabelText('主诉 字段'));

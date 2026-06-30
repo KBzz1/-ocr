@@ -144,6 +144,9 @@ class ReextractionService:
                 "stage": "field_extraction",
                 "status": "success",
                 "candidates": candidates,
+                "schema_version": schema.get("version"),
+                "document_type": schema.get("document_type"),
+                "field_groups": schema.get("field_groups") if isinstance(schema.get("field_groups"), list) else None,
                 "metadata": metadata,
             },
         )
@@ -296,6 +299,10 @@ class ReextractionService:
                     new_fields.append(build_placeholder_field(fk, schema_label, now=now))
 
         existing_review["fields"] = new_fields
+        existing_review["schema_version"] = schema.get("version") or existing_review.get("schema_version")
+        existing_review["document_type"] = schema.get("document_type") or existing_review.get("document_type")
+        if isinstance(schema.get("field_groups"), list):
+            existing_review["field_groups"] = schema["field_groups"]
         existing_review["updated_at"] = now
         existing_review["summary"] = build_review_summary(new_fields)
         self._store.write(f"results/{task_id}/review_result.json", existing_review)

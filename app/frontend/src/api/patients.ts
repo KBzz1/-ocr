@@ -4,6 +4,8 @@ import type { TaskSummary } from './tasks';
 export interface PatientRecord {
   patient_id: string;
   name: string;
+  gender?: string | null;
+  age?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -27,10 +29,17 @@ export interface PatientDetailResponse {
 
 export interface CreatePatientInput {
   name: string;
+  gender?: string | null;
+  age?: number | null;
 }
 
 export interface UpdatePatientInput {
   name: string;
+}
+
+export interface UpdatePatientDemographicsInput {
+  gender?: string | null;
+  age?: number | null;
 }
 
 export interface DeletePatientResult {
@@ -72,6 +81,14 @@ export function getPatientRecords(patientId: string) {
 
 export function updatePatient(patientId: string, patch: UpdatePatientInput) {
   return apiRequest<PatientRecord>(`/api/patients/${encodeURIComponent(patientId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+}
+
+export function updatePatientDemographics(patientId: string, patch: UpdatePatientDemographicsInput) {
+  return apiRequest<PatientRecord>(`/api/patients/${encodeURIComponent(patientId)}/demographics`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch)

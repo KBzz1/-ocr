@@ -398,7 +398,7 @@ def test_repository_default_config_uses_qwen_batch_engine():
 
     assert config["algorithm_engine"] == "qwen_batch"
     assert config["qwen_batch_schema_path"].endswith(
-        "app/config/schemas/qwen_batch_admission_record.v1.yaml"
+        "app/config/schemas/qwen_batch_admission_record.v2.yaml"
     )
     assert config["qwen_batch_runner_timeout_seconds"] == 1800
 

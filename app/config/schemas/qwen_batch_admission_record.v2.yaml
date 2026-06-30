@@ -1,0 +1,78 @@
+version: "qwen_batch_admission_record.v2"
+document_type: "qwen_batch_admission_record"
+field_groups:
+  - group_key: chief_complaint
+    group_label: 主诉
+    fields:
+      - {field_key: chief_complaint, label: 主诉, type: string, qwen_path: ["主诉"], qwen_type: T, review_control: text}
+  - group_key: history_of_present_illness
+    group_label: 现病史
+    fields:
+      - {field_key: hpi_initial_onset, label: 初次发病情况, type: string, qwen_path: ["现病史", "初次发病情况"], qwen_type: T, review_control: text}
+      - {field_key: hpi_subsequent_onset, label: 后续发病情况, type: string, qwen_path: ["现病史", "后续发病情况"], qwen_type: T, review_control: text}
+      - {field_key: hpi_in_hospital_diagnosis, label: 院内诊断情况, type: string, qwen_path: ["现病史", "院内诊断情况"], qwen_type: T, review_control: text}
+      - {field_key: hpi_medications, label: 治疗药物, type: string, qwen_path: ["现病史", "治疗药物"], qwen_type: T, review_control: text}
+      - {field_key: hpi_recent_symptoms, label: 近期症状, type: string, qwen_path: ["现病史", "近期症状"], qwen_type: T, review_control: text}
+      - {field_key: hpi_mental_sleep_appetite, label: 精神睡眠食欲, type: string, qwen_path: ["现病史", "精神睡眠食欲"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: hpi_stool, label: 大便情况, type: string, qwen_path: ["现病史", "大便情况"], qwen_type: T, review_control: text}
+      - {field_key: hpi_urination, label: 小便情况, type: string, qwen_path: ["现病史", "小便情况"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: hpi_weight_change, label: 体重变化, type: string, qwen_path: ["现病史", "体重变化"], qwen_type: T, review_control: text}
+  - group_key: past_history
+    group_label: 既往史
+    fields:
+      - {field_key: pmh_heart_disease, label: 心脏病, type: string, qwen_path: ["既往史", "心脏病"], qwen_type: T, review_control: text}
+      - {field_key: pmh_hypertension, label: 高血压, type: string, qwen_path: ["既往史", "高血压"], qwen_type: T, review_control: text}
+      - {field_key: pmh_diabetes, label: 糖尿病, type: string, qwen_path: ["既往史", "糖尿病"], qwen_type: T, review_control: text}
+      - {field_key: pmh_hepatitis_b, label: 乙肝, type: string, qwen_path: ["既往史", "乙肝"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_bloody_stool, label: 便血, type: string, qwen_path: ["既往史", "便血"], qwen_type: T, review_control: text}
+      - {field_key: pmh_nephritis, label: 肾炎, type: string, qwen_path: ["既往史", "肾炎"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_blood_disease, label: 血液病, type: string, qwen_path: ["既往史", "血液病"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_coronary_heart_disease, label: 冠心病, type: string, qwen_path: ["既往史", "冠心病"], qwen_type: T, review_control: text}
+      - {field_key: pmh_cerebral_infarction, label: 脑梗塞, type: string, qwen_path: ["既往史", "脑梗塞"], qwen_type: T, review_control: text}
+      - {field_key: pmh_surgery_history, label: 手术史, type: string, qwen_path: ["既往史", "手术史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_transfusion_history, label: 输血史, type: string, qwen_path: ["既往史", "输血史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_blood_product_history, label: 血制品史, type: string, qwen_path: ["既往史", "血制品史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_allergy_history, label: 过敏史, type: string, qwen_path: ["既往史", "过敏史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+  - group_key: personal_history
+    group_label: 个人史
+    fields:
+      - {field_key: personal_work, label: 工作, type: string, qwen_path: ["个人史", "工作"], qwen_type: T, review_control: text}
+      - {field_key: personal_smoking_history, label: 吸烟史, type: string, qwen_path: ["个人史", "吸烟史"], qwen_type: T, review_control: text}
+      - {field_key: personal_drinking_history, label: 饮酒史, type: string, qwen_path: ["个人史", "饮酒史"], qwen_type: T, review_control: text}
+  - group_key: family_history
+    group_label: 家族史
+    fields:
+      - {field_key: family_history, label: 家族史, type: string, qwen_path: ["家族史"], qwen_type: T, review_control: text}
+  - group_key: physical_exam
+    group_label: 体格检查
+    fields:
+      - {field_key: pe_vital_signs, label: 生命体征, type: string, qwen_path: ["体格检查", "生命体征"], qwen_type: T, review_control: text}
+      - {field_key: pe_height_weight_bmi, label: 身高体重BMI, type: string, qwen_path: ["体格检查", "身高体重BMI"], qwen_type: T, review_control: text}
+      - {field_key: pe_skin, label: 皮肤, type: string, qwen_path: ["体格检查", "皮肤"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_eyes, label: 眼部, type: string, qwen_path: ["体格检查", "眼部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_ears, label: 耳部, type: string, qwen_path: ["体格检查", "耳部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_nose, label: 鼻部, type: string, qwen_path: ["体格检查", "鼻部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_oral_cavity, label: 口腔, type: string, qwen_path: ["体格检查", "口腔"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_neck, label: 颈部, type: string, qwen_path: ["体格检查", "颈部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_chest, label: 胸部, type: string, qwen_path: ["体格检查", "胸部"], qwen_type: T, review_control: text}
+      - {field_key: pe_respiration, label: 呼吸, type: string, qwen_path: ["体格检查", "呼吸"], qwen_type: T, review_control: text}
+      - {field_key: pe_heart_rhythm, label: 心律, type: string, qwen_path: ["体格检查", "心律"], qwen_type: T, review_control: text}
+      - {field_key: pe_abdomen, label: 腹部, type: string, qwen_path: ["体格检查", "腹部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_limbs, label: 四肢, type: string, qwen_path: ["体格检查", "四肢"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pe_neurological, label: 神经, type: string, qwen_path: ["体格检查", "神经"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+  - group_key: auxiliary_exam
+    group_label: 辅助检查
+    fields:
+      - {field_key: aux_chest_ct, label: 胸部CT, type: string, qwen_path: ["辅助检查", "胸部CT"], qwen_type: T, review_control: text}
+      - {field_key: aux_echocardiography, label: 心脏超声, type: string, qwen_path: ["辅助检查", "心脏超声"], qwen_type: T, review_control: text}
+      - {field_key: aux_blood_gas, label: 血气, type: string, qwen_path: ["辅助检查", "血气"], qwen_type: T, review_control: text}
+      - {field_key: aux_crp, label: CRP, type: string, qwen_path: ["辅助检查", "CRP"], qwen_type: T, review_control: text}
+      - {field_key: aux_blood_routine, label: 血常规, type: string, qwen_path: ["辅助检查", "血常规"], qwen_type: T, review_control: text}
+      - {field_key: aux_electrolytes, label: 电解质, type: string, qwen_path: ["辅助检查", "电解质"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: aux_renal_function, label: 肾功, type: string, qwen_path: ["辅助检查", "肾功"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: aux_d_dimer, label: D2聚体, type: string, qwen_path: ["辅助检查", "D2聚体"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+  - group_key: diagnosis
+    group_label: 诊断
+    fields:
+      - {field_key: diagnosis_initial, label: 初步诊断, type: string, qwen_path: ["初步诊断"], qwen_type: T, review_control: text}
+      - {field_key: diagnosis_final, label: 最终诊断, type: string, qwen_path: ["最终诊断"], qwen_type: T, review_control: text}

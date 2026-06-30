@@ -43,4 +43,4 @@ algorithms:
   enable_copd_extractor: false
   qwen_batch_job_dir: "./data/algorithm_jobs"
   qwen_batch_runner_timeout_seconds: 1800
-  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v1.yaml"
+  qwen_batch_schema_path: "./app/config/schemas/qwen_batch_admission_record.v2.yaml"
