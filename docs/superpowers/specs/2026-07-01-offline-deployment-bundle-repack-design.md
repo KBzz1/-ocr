@@ -74,55 +74,45 @@ manzufei_ocr_offline_bundle/                # 解压后形态，放在桌面
 
 ## 实施步骤
 
-### 1. 前端构建
-```bash
-cd /home/kbzz1/manzufei_ocr/app/frontend
-npm run build
-```
-预期：刷新 `app/frontend/dist/`，生成最新 `index.html` + `assets/`。
+### 1. 离线包组装（含 npm build + docker build + assemble + zip）
 
-### 2. 后端镜像构建
-```bash
-cd /home/kbzz1/manzufei_ocr
-docker build -t manzufei-ocr:0.1.0 .
-```
-预期：`docker images manzufei-ocr` 显示镜像 digest 更新、时间戳为本次构建。
+`scripts/deploy/package_offline_docker_bundle.sh` 内部已包含 `npm run build` + `docker build -t manzufei-ocr:0.1.0` + 组装 + zip 全部流程；只跑一次脚本即可。
 
-### 3. 离线包组装
 ```bash
 cd /home/kbzz1/manzufei_ocr
 bash scripts/deploy/package_offline_docker_bundle.sh
 ```
+
 预期：
-- `output/manzufei_ocr_offline_bundle/` 解压形态生成
+- `output/manzufei_ocr_offline_bundle/` 解压形态生成（含新构建的 `images/manzufei-ocr.tar`）
 - `output/manzufei_ocr_offline_bundle.zip` 同步生成
 
-### 4. 清理仓库侧解压产物
+### 2. 清理仓库侧解压产物
 ```bash
 rm -rf /home/kbzz1/manzufei_ocr/output/manzufei_ocr_offline_bundle
 ```
 预期：`output/` 目录里只剩 `manzufei_ocr_offline_bundle.zip`。
 
-### 5. 清理桌面旧包
+### 3. 清理桌面旧包
 ```bash
 rm -rf /mnt/c/Users/97949/Desktop/manzufei_ocr_offline_bundle
 ```
 预期：旧包整体删除（包括其 `data/`、`exports/`、`logs/`、`deploy_debug_logs/` 现场历史）。**不备份**。
 
-### 6. 同步到桌面
+### 4. 同步到桌面
 ```bash
 cp /home/kbzz1/manzufei_ocr/output/manzufei_ocr_offline_bundle.zip /mnt/c/Users/97949/Desktop/
 ```
 预期：桌面出现新 zip（与仓库内一致）。
 
-### 7. 桌面解压
+### 5. 桌面解压
 ```bash
 cd /mnt/c/Users/97949/Desktop
 unzip manzufei_ocr_offline_bundle.zip
 ```
 预期：桌面出现 `manzufei_ocr_offline_bundle/` 解压目录。
 
-### 8. 校验
+### 6. 校验
 - 4 个 bat 文件日期为本次（2026-07-01）
 - `images/manzufei-ocr.tar` 体积与 `docker images` 报告的 `manzufei-ocr:0.1.0` `Size` 一致
 - `images/qwen-vllm-server.tar` 与 `deploy/offline-images/qwen-vllm-server.tar` 体积一致
@@ -134,13 +124,14 @@ unzip manzufei_ocr_offline_bundle.zip
 
 | 失败位置 | 现象 | 处理 |
 |---------|------|------|
-| 步骤 1（npm build）| 前端编译错 | 中止；不进入 docker build；通知用户 |
-| 步骤 2（docker build）| 镜像构建失败 | 中止；不进入打包；保留旧镜像 `manzufei-ocr:0.1.0`（未被覆盖） |
-| 步骤 3（packager）| tar 导出失败 / bat 拷贝失败 | 中止；清理 `output/`；不碰桌面 |
-| 步骤 4（清理 output/）| 删除失败 | 警告继续；桌面同步步骤仍可走（只拷 zip） |
-| 步骤 5（清理旧包）| 权限错 | 中止；不覆盖；用户手动处理桌面后重试 |
-| 步骤 6（cp zip）| 磁盘满 | 中止；旧包已清掉 → 用户需要重跑完整流程 |
-| 步骤 7（unzip）| zip 损坏 | 中止；重新跑步骤 3 重打 zip |
+| 步骤 1（脚本内 npm build）| 前端编译错 | 脚本 `set -e` 中止；通知用户；不进入 docker build |
+| 步骤 1（脚本内 docker build）| 镜像构建失败 | 脚本 `set -e` 中止；保留旧镜像 `manzufei-ocr:0.1.0`（未被覆盖） |
+| 步骤 1（脚本内 docker save）| tar 导出失败 | 脚本 `set -e` 中止；不进入 zip；不碰桌面 |
+| 步骤 1（脚本内 zip）| zip 失败 | 脚本 `set -e` 中止；解压目录已生成但 zip 没有 |
+| 步骤 2（清理 output/）| 删除失败 | 警告继续；桌面同步步骤仍可走（只拷 zip） |
+| 步骤 3（清理旧包）| 权限错 | 中止；不覆盖；用户手动处理桌面后重试 |
+| 步骤 4（cp zip）| 磁盘满 | 中止；旧包已清掉 → 用户需要重跑完整流程 |
+| 步骤 5（unzip）| zip 损坏 | 中止；重新跑步骤 1 重打 zip |
 
 ## 风险与回退
 
