@@ -97,4 +97,25 @@ describe('ReviewSourcePanel', () => {
     callback?.();
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
+
+  it('scrolls back to the highlighted evidence when the return signal changes', () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const props = {
+      text: '主诉：反复咳嗽、咳痰15年',
+      sourceMessage: {
+        kind: 'located' as const,
+        text: '点击字段可定位原文',
+        evidenceText: '反复咳嗽、咳痰15年',
+        startIndex: 3,
+      },
+    };
+
+    const { rerender } = render(<ReviewSourcePanel {...props} returnToHighlightSignal={1} />);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    rerender(<ReviewSourcePanel {...props} returnToHighlightSignal={2} />);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
 });

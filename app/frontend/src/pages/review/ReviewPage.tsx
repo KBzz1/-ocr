@@ -94,6 +94,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
+  const [fieldFocusSignal, setFieldFocusSignal] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'failed'>('idle');
   const [isCompleting, setIsCompleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -472,7 +473,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
 
   function handleFocusField(field: ReviewField) {
     setSelectedFieldKey(field.field_key);
-    setIsOcrWindowOpen(true);
+    if (isOcrWindowOpen) {
+      setFieldFocusSignal((current) => current + 1);
+    }
     const evidence = field.evidence?.find((item) => item.page_id || item.page_no);
     if (evidence?.page_id) {
       setSelectedPageId(evidence.page_id);
@@ -799,6 +802,7 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
               text={visibleOcrText || '无 OCR 文本'}
               sourceMessage={sourceMessage}
               selectedFieldLabel={selectedFieldLabel}
+              returnToHighlightSignal={fieldFocusSignal}
               onClose={() => setIsOcrWindowOpen(false)}
             />
           ) : null}

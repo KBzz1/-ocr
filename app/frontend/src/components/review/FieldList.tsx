@@ -301,6 +301,22 @@ export function FieldList({
                 const attentionMessage = getAttentionMessage(field);
                 const isAttention = attentionMessage !== null;
                 const attentionAriaLabel = `重点核验：${attentionMessage ?? ''}`;
+                const reviewCheck = (
+                  <button
+                    type="button"
+                    className="field-card__review-check"
+                    aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
+                    aria-pressed={isReviewed}
+                    disabled={readOnly}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onFocusField(field);
+                      onToggleReviewed(field);
+                    }}
+                  >
+                    {isReviewed ? '✓' : ''}
+                  </button>
+                );
 
                 return (
                   <div
@@ -379,6 +395,7 @@ export function FieldList({
                               </button>
                             );
                           })}
+                          {reviewCheck}
                         </div>
                       ) : showDiagnosisItems ? (
                         <DiagnosisListEditor
@@ -411,20 +428,7 @@ export function FieldList({
                           <span className="field-card__judgement-warning field-card__judgement-warning--empty" aria-hidden="true" />
                         )
                       ) : null}
-                      <button
-                        type="button"
-                        className="field-card__review-check"
-                        aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
-                        aria-pressed={isReviewed}
-                        disabled={readOnly}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onFocusField(field);
-                          onToggleReviewed(field);
-                        }}
-                      >
-                        {isReviewed ? '✓' : ''}
-                      </button>
+                      {!isJudgementField ? reviewCheck : null}
                     </div>
                   </div>
                 );

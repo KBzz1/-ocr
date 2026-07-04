@@ -13,6 +13,13 @@ Feature: 字段状态管理与确认
     When 我查看字段列表
     Then 各字段应分别显示 "未审核"、"已确认"、"已修改"
 
+  Scenario: 每个可审核字段都有确认入口
+    Given 审核页中同时存在普通文本字段、判定字段和 "未提及" 字段
+    When 我查看字段列表
+    Then 每个字段都应该有独立的确认勾选框
+    And 判定字段的确认勾选框应位于 "正常/异常/未提及" 判定框内部
+    And 普通文本字段和 "未提及" 字段的确认勾选框应与字段值右侧对齐
+
   Scenario: 自动抽取风险作为字段元数据展示
     Given 后端返回字段 extraction_status、verification_status 和 quality_flags
     When 我查看字段列表

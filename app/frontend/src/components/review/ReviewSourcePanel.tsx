@@ -18,6 +18,7 @@ type ReviewSourcePanelProps = {
   sourceMessage: SourceMessage | null;
   onReturnToHighlightReady?: (callback: () => void) => void;
   hideLocatedMessage?: boolean;
+  returnToHighlightSignal?: number;
 };
 
 function resolveSourceMessage(sourceMessage: SourceMessage | null): SourceMessage | null {
@@ -75,7 +76,13 @@ export function locateEvidence(
   return null;
 }
 
-export function ReviewSourcePanel({ text, sourceMessage, onReturnToHighlightReady, hideLocatedMessage = false }: ReviewSourcePanelProps) {
+export function ReviewSourcePanel({
+  text,
+  sourceMessage,
+  onReturnToHighlightReady,
+  hideLocatedMessage = false,
+  returnToHighlightSignal = 0,
+}: ReviewSourcePanelProps) {
   const markRef = useRef<HTMLElement>(null);
   const effectiveSourceMessage = resolveSourceMessage(sourceMessage);
   const shouldRenderSourceMessage = Boolean(
@@ -90,7 +97,7 @@ export function ReviewSourcePanel({ text, sourceMessage, onReturnToHighlightRead
 
   useEffect(() => {
     scrollToHighlight();
-  }, [scrollToHighlight]);
+  }, [scrollToHighlight, returnToHighlightSignal]);
 
   useEffect(() => {
     onReturnToHighlightReady?.(scrollToHighlight);

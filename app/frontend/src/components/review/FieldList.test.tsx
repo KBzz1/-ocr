@@ -189,6 +189,8 @@ describe('FieldList', () => {
     expect(section.querySelector('.field-card__flag')).toBeNull();
     expect(section.querySelector('[aria-label^="重点核验"]')).toBeNull();
     expect(screen.queryByLabelText(/重点核验/)).toBeNull();
+    const reviewCheck = screen.getByRole('button', { name: '审核 既往史' });
+    expect(reviewCheck.closest('.field-card__value-row')).toBeTruthy();
   });
 
   it('renders_attention_as_yellow_exclamation_only', () => {
@@ -266,6 +268,8 @@ describe('FieldList', () => {
     expect(screen.queryByLabelText('hpi_mental_sleep_appetite')).toBeNull();
     expect(screen.getByRole('button', { name: '正常 精神睡眠食欲' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+    const reviewCheck = screen.getByRole('button', { name: '审核 精神睡眠食欲' });
+    expect(reviewCheck.closest('.field-card__judgement')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '正常 精神睡眠食欲' }));
 

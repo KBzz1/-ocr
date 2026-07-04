@@ -412,6 +412,27 @@
   color: #ffffff;
 }
 
+.icon-button--close {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #2c2c2c;
+}
+
+.icon-button--close img {
+  width: 15px;
+  height: 15px;
+  display: block;
+  opacity: 0.86;
+  pointer-events: none;
+}
+
+.icon-button--close:hover:not(:disabled),
+.icon-button--close:focus-visible {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 .session-indicator,
 .status-dot {
   width: 10px;
@@ -773,12 +794,11 @@
 .qr-dialog__header .icon-button {
   width: 36px;
   height: 36px;
-  background: #eef4fb;
   color: #334155;
 }
 
 .qr-dialog__header .icon-button:hover {
-  background: #e2e8f0;
+  background: transparent;
 }
 
 .qr-dialog__body {

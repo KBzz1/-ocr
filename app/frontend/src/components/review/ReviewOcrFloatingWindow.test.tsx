@@ -46,11 +46,11 @@ describe('ReviewOcrFloatingWindow', () => {
     expect(fieldbar.textContent).toContain('58岁');
   });
 
-  it('uses compact controls with accessible names', () => {
+  it('only keeps close control in the title bar', () => {
     const { onClose } = renderWindow();
 
-    expect(screen.getByRole('button', { name: 'OCR 原文信息' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '恢复默认窗口大小和位置' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'OCR 原文信息' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '恢复默认窗口大小和位置' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '关闭 OCR 原文窗口' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });

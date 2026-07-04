@@ -400,6 +400,18 @@ describe('ReviewPage', () => {
     expect(screen.queryByRole('button', { name: '当前页' })).toBeNull();
   });
 
+  it('does not open the OCR window when focusing a field while OCR is closed', async () => {
+    mockReviewRoutes();
+    render(<ReviewPage taskId="task_001" />);
+
+    const chiefComplaint = await screen.findByLabelText('主诉 字段');
+    expect(screen.queryByRole('dialog', { name: /OCR 原文/ })).toBeNull();
+
+    await userEvent.click(chiefComplaint);
+
+    expect(screen.queryByRole('dialog', { name: /OCR 原文/ })).toBeNull();
+  });
+
   it('reviews an individual field from its checkbox and tracks field focus', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
@@ -1595,6 +1607,7 @@ describe('ReviewPage', () => {
 
     expect(await screen.findByText('现病史')).toBeTruthy();
     expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
     const mark = document.querySelector('mark');
     expect(mark?.textContent).toBe('精神睡眠食欲差。');
@@ -1640,6 +1653,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_qwen_duplicate_evidence" demoPayload={payload} />);
 
     await screen.findByText('现病史');
+    await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
 
     const mark = document.querySelector('mark');

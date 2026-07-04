@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import closeIconUrl from '../../assets/icons/actions/icon-close.svg?url';
+import resizeDiagonalIconUrl from '../../assets/icons/actions/resize-diagonal.svg?url';
 import { ReviewSourcePanel, type SourceMessage } from './ReviewSourcePanel';
 
 type WindowRect = {
@@ -30,6 +32,7 @@ type ReviewOcrFloatingWindowProps = {
   onClose: () => void;
   initialRect?: WindowRect;
   viewportSize?: ViewportSize;
+  returnToHighlightSignal?: number;
 };
 
 const MIN_WIDTH = 360;
@@ -90,12 +93,12 @@ export function ReviewOcrFloatingWindow({
   onClose,
   initialRect,
   viewportSize,
+  returnToHighlightSignal,
 }: ReviewOcrFloatingWindowProps) {
   const viewport = useMemo(() => getViewportSize(viewportSize), [viewportSize]);
   const [rect, setRect] = useState<WindowRect>(() => clampRect(initialRect ?? getDefaultRect(viewport), viewport));
   const dragRef = useRef<{ startX: number; startY: number; startRect: WindowRect } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; startRect: WindowRect } | null>(null);
-  const [returnToHighlight, setReturnToHighlight] = useState<(() => void) | null>(null);
 
   const title = selectedFieldLabel ? `${selectedFieldLabel} · OCR 原文` : 'OCR 原文';
 
@@ -113,11 +116,6 @@ export function ReviewOcrFloatingWindow({
     if (resolvedPatientInfo.bedNo) items.push({ label: '床号', value: resolvedPatientInfo.bedNo });
     return items;
   }, [resolvedPatientInfo]);
-
-  const resetRect = useCallback(() => {
-    const nextViewport = getViewportSize(viewportSize);
-    setRect(clampRect(initialRect ?? getDefaultRect(nextViewport), nextViewport));
-  }, [initialRect, viewportSize]);
 
   useEffect(() => {
     function handleMouseMove(event: MouseEvent) {
@@ -179,40 +177,12 @@ export function ReviewOcrFloatingWindow({
         <div className="review-ocr-window__actions">
           <button
             type="button"
-            className="review-ocr-window__action review-ocr-window__action--info"
-            aria-label="OCR 原文信息"
-            title="OCR 原文信息"
-            onClick={() => undefined}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-              <circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-              <line x1="7" y1="6" x2="7" y2="10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <circle cx="7" cy="4.2" r="0.8" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="review-ocr-window__action review-ocr-window__action--reset"
-            aria-label="恢复默认窗口大小和位置"
-            title="恢复默认窗口大小和位置"
-            onClick={resetRect}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-              <rect x="2.5" y="2.5" width="9" height="9" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
-              <line x1="2.5" y1="6" x2="11.5" y2="6" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
-          </button>
-          <button
-            type="button"
             className="review-ocr-window__action review-ocr-window__action--close"
             aria-label="关闭 OCR 原文窗口"
             title="关闭 OCR 原文窗口"
             onClick={onClose}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              <line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            </svg>
+            <img src={closeIconUrl} alt="" aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -231,7 +201,7 @@ export function ReviewOcrFloatingWindow({
           text={text}
           sourceMessage={sourceMessage}
           hideLocatedMessage
-          onReturnToHighlightReady={(callback) => setReturnToHighlight(() => callback)}
+          returnToHighlightSignal={returnToHighlightSignal}
         />
       </div>
       <button
@@ -243,7 +213,9 @@ export function ReviewOcrFloatingWindow({
           if (event.button !== 0) return;
           resizeRef.current = { startX: event.clientX, startY: event.clientY, startRect: rect };
         }}
-      />
+      >
+        <img src={resizeDiagonalIconUrl} alt="" aria-hidden="true" />
+      </button>
     </section>
   );
 }
