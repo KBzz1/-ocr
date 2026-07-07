@@ -37,6 +37,7 @@ data/sessions/*
 data/pages/*
 data/tasks/*
 data/algorithm_jobs/*
+res/
 exports/*
 output/*
 app/frontend/output/*

@@ -269,8 +269,8 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
     }
   }
 
-  function handleFieldsChange(nextFields: ReviewField[]) {
-    setFields(nextFields);
+  function handleFieldsChange(nextOrUpdater: ReviewField[] | ((prev: ReviewField[]) => ReviewField[])) {
+    setFields(nextOrUpdater);
     setSaveStatus('dirty');
   }
 
@@ -344,9 +344,9 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
       setMessage(null);
     } catch (error) {
       if (reextractCancelledRef.current) {
-        setMessage('已取消重新抽取');
+        setMessage('已取消重新处理');
       } else {
-        setMessage(error instanceof Error ? error.message : '重新抽取失败，请重试');
+        setMessage(error instanceof Error ? error.message : '重新处理失败，请重试');
       }
     } finally {
       reextractControllerRef.current = null;
@@ -709,11 +709,11 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
           {reextractMeta ? (
             <div className="review-reextract-banner" role="status">
               <span>
-                已重新抽取 · run_id=<b>{reextractMeta.run_id}</b> · schema=<b>{reextractMeta.schema_version ?? '—'}</b> · prompt=<b>{reextractMeta.prompt_version ?? '—'}</b> · 候选 {reextractMeta.candidate_count} 项
+                已重新处理 · run_id=<b>{reextractMeta.run_id}</b> · schema=<b>{reextractMeta.schema_version ?? '—'}</b> · prompt=<b>{reextractMeta.prompt_version ?? '—'}</b> · 候选 {reextractMeta.candidate_count} 项
               </span>
               <button
                 type="button"
-                aria-label="关闭重新抽取摘要"
+                aria-label="关闭重新处理摘要"
                 className="review-reextract-banner__close"
                 onClick={handleDismissReextractMeta}
               >
@@ -771,10 +771,10 @@ export function ReviewPage({ taskId = getTaskIdFromPath(), demoPayload }: Review
                   {isReextracting ? (
                     <>
                       <span className="review-reextract-button__spinner" aria-hidden="true" />
-                      重新抽取中
+                      重新处理中
                     </>
                   ) : (
-                    '重新抽取'
+                    '重新处理'
                   )}
                 </button>
                 {isReextracting ? (

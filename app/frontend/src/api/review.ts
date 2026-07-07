@@ -44,6 +44,9 @@ export interface ReviewField {
   qwen_status?: QwenJudgementStatus;
   review_control?: 'text' | 'judgement';
   options?: string[];
+  unit?: string;
+  parameter_group?: string;
+  parameter_columns?: number;
 }
 
 export interface FieldGroupDef {
@@ -56,6 +59,9 @@ export interface FieldGroupDef {
     qwen_path?: string[];
     review_control?: 'text' | 'judgement';
     options?: string[];
+    unit?: string;
+    parameter_group?: string;
+    parameter_columns?: number;
   }>;
 }
 
@@ -104,7 +110,10 @@ function normalizeReviewField(field: ReviewField): ReviewField {
     qwen_path: field.qwen_path,
     qwen_status: field.qwen_status,
     review_control: field.review_control,
-    options: field.options
+    options: field.options,
+    unit: field.unit,
+    parameter_group: field.parameter_group,
+    parameter_columns: field.parameter_columns
   };
 }
 

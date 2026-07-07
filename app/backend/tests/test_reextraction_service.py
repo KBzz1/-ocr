@@ -54,7 +54,7 @@ def make_service(tmp_path, field_port=None):
     return service, store, task_service, port
 
 
-def write_task(store, status="review"):
+def write_task(store, status="review", images=None):
     store.write(
         "tasks/task_001.json",
         {
@@ -63,7 +63,7 @@ def write_task(store, status="review"):
             "created_at": "2026-05-29T10:00:00+00:00",
             "updated_at": "2026-05-29T10:00:00+00:00",
             "upload_token": "token",
-            "images": [],
+            "images": images or [],
             "error_code": None,
             "error_message": None,
             "export_summary": {"last_exported_at": None, "formats": [], "files": []},
@@ -264,6 +264,85 @@ def test_reextract_requires_saved_ocr_text(tmp_path):
         service.reextract("task_001")
 
     assert exc.value.code == ErrorCode.REEXTRACTION_VALIDATION_FAILED.code
+
+
+def test_reextract_accepts_legacy_document_result_with_merged_text_only(tmp_path):
+    service, store, _task_service, port = make_service(tmp_path)
+    write_task(store, status="review")
+    store.write(
+        "results/task_001/document_result.json",
+        {
+            "merged_text": "姓名：张三",
+            "pages": [],
+        },
+    )
+
+    result = service.reextract("task_001")
+
+    assert result["source"] == "ocr_text_only"
+    assert port.inputs[0]["document_result"]["merged_text"] == "姓名：张三"
+
+
+def test_reextract_reprocesses_images_when_text_only_port_is_unavailable(tmp_path):
+    store = JsonStore(str(tmp_path / "data"))
+
+    class FullProcessingPort:
+        def __init__(self):
+            self.calls = 0
+
+        def run(self, task):
+            self.calls += 1
+            return {
+                "status": "success",
+                "document_result": {
+                    "merged_text": "姓名：张三",
+                    "pages": [
+                        {
+                            "page_id": "page_001",
+                            "page_no": 1,
+                            "status": "success",
+                            "text": "姓名：张三",
+                        }
+                    ],
+                },
+                "review_fields": FakeFieldPort().extract({}),
+            }
+
+    from app.backend.services.algorithm_ports.qwen_batch_orchestrator import QwenBatchProcessingOrchestrator
+
+    full_port = FullProcessingPort()
+    orchestrator = QwenBatchProcessingOrchestrator(store=store, batch_port=full_port)
+    task_service = TaskService(
+        store=store,
+        orchestrator=orchestrator,
+        schema_provider=schema,
+    )
+    service = ReextractionService(
+        store=store,
+        task_service=task_service,
+        field_port=full_port,
+        schema_provider=schema,
+        prompt_version_provider=lambda: "qwen_batch_prompt.v1",
+    )
+    write_task(
+        store,
+        status="review",
+        images=[{"page_id": "page_001", "page_no": 1, "original_image_path": "/tmp/page.jpg"}],
+    )
+    write_existing_review(store)
+
+    result = service.reextract("task_001")
+
+    assert full_port.calls == 1
+    assert result["status"] == "review"
+    assert result["source"] == "image_reprocess"
+    wrapper = store.read("results/task_001/field_candidates.json")
+    assert wrapper["metadata"]["source"] == "image_reprocess"
+    review = store.read("results/task_001/review_result.json")
+    field = next(f for f in review["fields"] if f["field_key"] == "patient_name")
+    assert field["final_value"] == "张三"
+    archived = store.list_json("results/task_001/record_type_change_archive")
+    assert len(archived) == 1
 
 
 def test_reextract_maps_invalid_candidate_contract_to_reextract_error(tmp_path):

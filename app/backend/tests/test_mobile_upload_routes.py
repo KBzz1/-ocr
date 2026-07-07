@@ -95,6 +95,22 @@ def test_mobile_upload_status_returns_existing_images(client):
     assert [image["page_no"] for image in data["images"]] == [1]
 
 
+def test_delete_uploaded_image_removes_page_and_renumbers(client):
+    task = _create_task(client)
+    first = _upload(client, task, "first.png").get_json()["data"]
+    _upload(client, task, "second.png")
+
+    response = client.delete(
+        f"/api/mobile-upload/{task['task_id']}/images/{first['page_id']}?token={task['upload_token']}"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["page_count"] == 1
+    assert [image["page_no"] for image in data["images"]] == [1]
+    assert [image["page_id"] for image in data["images"]] == ["page_002"]
+
+
 def test_upload_rejects_invalid_token(client):
     task = _create_task(client)
 
@@ -155,6 +171,46 @@ def test_mobile_upload_status_omits_document_type_options(client):
     assert data["document_type"] == "copd_admission_record"
     assert data["document_type_label"] == "入院记录"
     assert "available_document_types" not in data
+
+
+def test_mobile_upload_status_omits_internal_server_paths(client):
+    """手机端 API 响应不得包含 original_image_path 等服务端本机路径。"""
+    task = _create_task(client)
+    upload_resp = _upload(client, task, "page.png")
+    assert upload_resp.status_code == 201
+
+    response = client.get(f"/api/mobile-upload/{task['task_id']}?token={task['upload_token']}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    for image in data["images"]:
+        assert "original_image_path" not in image, (
+            f"image 不应泄露服务端本机路径字段 original_image_path: {image}"
+        )
+        assert isinstance(image.get("page_id"), str)
+        assert isinstance(image.get("page_no"), int)
+        # preview_url 必须存在且是相对路径
+        preview = image.get("preview_url")
+        assert isinstance(preview, str) and preview.startswith("/"), (
+            f"preview_url 应为相对路径,实际: {preview!r}"
+        )
+
+
+def test_delete_uploaded_image_response_omits_internal_server_paths(client):
+    """DELETE 图片后返回的 images 也不应泄露 original_image_path。"""
+    task = _create_task(client)
+    first = _upload(client, task, "first.png").get_json()["data"]
+
+    response = client.delete(
+        f"/api/mobile-upload/{task['task_id']}/images/{first['page_id']}?token={task['upload_token']}"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    for image in data["images"]:
+        assert "original_image_path" not in image, (
+            f"DELETE 响应 image 不应泄露 original_image_path: {image}"
+        )
 
 
 def test_mobile_upload_document_type_route_is_removed(client):

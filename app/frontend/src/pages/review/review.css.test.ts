@@ -20,4 +20,22 @@ describe('review workspace layout css contract', () => {
     expect(css).toContain('overflow: auto;');
     expect(css).toContain('.review-panel--fields .field-cards {\n  height: auto;\n  max-height: none;\n  overflow: visible;');
   });
+
+  it('keeps review field controls aligned to stable full-width grid tracks', () => {
+    expect(css).toContain(".field-card__item[data-testid='review-field-card-diagnosis_initial']");
+    expect(css).toContain(".field-card__item[data-testid='review-field-card-diagnosis_final']");
+    expect(css).toContain("grid-column: 1 / -1;");
+    expect(css).toContain('.field-card__value-row {\n  position: relative;\n  width: 100%;\n  min-width: 0;');
+    expect(css).toContain('.field-card__value-row--judgement {\n  display: grid;\n  grid-template-columns: minmax(0, 1fr);');
+    expect(css).toContain('.field-card__text-editor,\n.field-card__abnormal-editor {\n  box-sizing: border-box;');
+    expect(css).toContain('.field-card__judgement-warning {\n  position: absolute;');
+    expect(css).toContain('.field-card__diagnosis-input {\n  width: 100%;\n  box-sizing: border-box;');
+  });
+
+  it('supports dense one-row parameter groups for vitals and blood gas', () => {
+    expect(css).toContain(".field-card__parameter-set[data-columns='6'] .field-card__parameter-grid");
+    expect(css).toContain('grid-template-columns: repeat(6, minmax(0, 1fr));');
+    expect(css).toContain(".field-card__parameter-set[data-columns='8'] .field-card__parameter-grid");
+    expect(css).toContain('grid-template-columns: repeat(8, minmax(0, 1fr));');
+  });
 });

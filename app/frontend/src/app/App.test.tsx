@@ -60,7 +60,7 @@ async function submitCreateTaskDialog(
   await user.click(within(dialog).getByRole('button', { name: '下一步' }));
   await user.selectOptions(
     within(dialog).getByLabelText('记录类型') as HTMLSelectElement,
-    options.documentType ?? 'copd_admission_record'
+    options.documentType ?? 'qwen_batch_admission_record'
   );
   await user.clear(within(dialog).getByLabelText('记录日期'));
   await user.type(

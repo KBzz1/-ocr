@@ -25,7 +25,7 @@
 | BE-MVP-04 OCR/文档解析和结构化字段抽取 | 已完成 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析和 LLM 结构化提取按可替换算法子系统接入；主代码维护字段契约、质量核验和审核流转 |
 | BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态保留 `unreviewed / confirmed / modified`，自动抽取元数据作为审核辅助 |
 | BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值；空占位字段不阻断导出 |
-| BE-MVP-07 批量导出与 OCR 文本重抽取框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 先支持批量 JSON zip 和基于已保存 OCR 文本重新触发 LLM 字段抽取；不重新跑 OCR，不做汇总 Excel |
+| BE-MVP-07 批量导出与重新处理框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 支持批量 JSON zip；审核页重新处理优先复用 OCR，缺 OCR 时基于已有图片重新 OCR + 抽取；不做汇总 Excel |
 | FE-MVP-01 工作台总览 | 已完成 | `app/frontend/src/pages/workstation/` | 新建任务、二维码、最近任务、状态统计 |
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
@@ -33,7 +33,7 @@
 | BE-PAT-01 患者档案与任务归属 | 已完成 | `app/backend/services/patient_service.py`、`app/backend/services/patient_query_service.py`、`app/backend/services/task_service.py` | 患者、记录时间、改绑、逻辑删除 |
 | FE-PAT-01 患者中心页面 | 已完成 | `app/frontend/src/pages/patients/`、`app/frontend/src/components/workstation/CreateTaskDialog.tsx` | 患者搜索、详情时间轴、字段摘要、改绑、删除 |
 | DEV-DATA-01 一次性测试数据整理 | 已完成 | `scripts/maintenance/prepare_patient_demo_data.py` | 把开发数据收敛到 1 个可见任务 + 1 个"测试用例"患者 |
-| FE-MVP-05 批量导出与重抽取入口 | 已完成 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 任务多选批量 zip 下载和审核页 OCR 文本重抽取入口已落地；重抽取直接覆盖审核字段 |
+| FE-MVP-05 批量导出与重新处理入口 | 已完成 | `app/frontend/src/pages/tasks/`、`app/frontend/src/pages/review/` | 任务多选批量 zip 下载和审核页重新处理入口已落地；重新处理直接覆盖审核字段 |
 | REL-MVP-01 本地运行包 | 已完成 | `scripts/deploy/package_offline_docker_bundle.sh`、`deploy/windows/`、`Dockerfile`、`docker-compose.yml` | Windows 离线 Docker 包已形成；OCR 通过常驻 `paddleocr-vlm-server` 调用 PaddleOCR-VL |
 
 ## 后端任务
@@ -113,14 +113,14 @@
   - 边界：只做当前专病，不扩展为通用医学规则引擎。
   - P2：默认 `section_groups` prompt 已补齐 OCR 风险提示；任务级 `document_type` 已作为后续多文书模板选择、schema/prompt/抽取规则选择的主入口。
 
-- [x] **BE-MVP-04-05 基于已保存 OCR 文本重新抽取框架**
-  - 范围：新增 `POST /api/tasks/{task_id}/reextract`，读取已保存 `document_result.json` 或审核结果中的 OCR 文本，复用现有 LLM 字段抽取端口和 schema 校验，生成新的字段候选。
-  - 边界：不重新跑 OCR，不重新处理图片；重抽取结果直接覆盖 `review_result.json["fields"]`(新 final_value、抽取元数据、状态重置为 `unreviewed`,并在 `history` 追加 `reextract` 记录);任务为 `done` 时回退到 `review`;缺少 OCR 文本时返回 `REEXTRACTION_VALIDATION_FAILED`。
+- [x] **BE-MVP-04-05 审核页重新处理框架**
+  - 范围：`POST /api/tasks/{task_id}/reextract` 优先读取已保存 `document_result.json` 或审核结果中的 OCR 文本；缺少可用 OCR 文本但存在已上传图片时，基于图片重新 OCR 并调用 LLM 重新处理字段。
+  - 边界：不提供补传图片或修订采集；重新处理结果直接覆盖 `review_result.json["fields"]`(新 final_value、抽取元数据、状态重置为 `unreviewed`,并在 `history` 追加 `reextract` 记录);任务为 `done` 时回退到 `review`;缺少 OCR 文本且无可用图片、算法失败或候选非法时返回 `REEXTRACTION_VALIDATION_FAILED`。
   - 设计：`docs/superpowers/specs/2026-05-29-batch-export-reextract-design.md`、`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`(新行为权威来源)。
   - 计划：`docs/superpowers/plans/2026-05-29-batch-export-reextract-plan.md`。
 
 - [x] **BE-MVP-04-06 schema/prompt 版本元数据框架**
-  - 范围：重抽取记录 `schema_version`、`prompt_version`、`source=ocr_text_only`、`run_id` 和候选数量，prompt 版本由 COPD prompt 模块显式常量化。
+  - 范围：重新处理记录 `schema_version`、`prompt_version`、`source`、`run_id` 和候选数量，`source` 可为 `ocr_text_only` 或 `image_reprocess`，prompt 版本由对应 profile 显式提供。
   - 边界：当前只记录版本和审计元数据；字段方案编辑、prompt 模板管理和版本切换 UI 后置。
 
 ### BE-COPD-01 慢阻肺专病字段抽取
@@ -263,9 +263,9 @@
   - 范围：审核页触发 JSON/Excel 导出。
   - 边界：不在前端拼 Excel。
 
-- [x] **FE-MVP-04-05 OCR 文本重抽取入口**
-  - 范围：审核页提供"重新抽取"入口，调用 `reextractTaskFromOcr(taskId)`，成功后展示 `schema_version`、`prompt_version`、`run_id` 和候选数量，并刷新审核页字段。
-  - 边界：UI 不展示免责文案；后端重抽取直接覆盖审核页当前字段并将字段状态重置为 `unreviewed`；不做重抽取结果对比与采用 UI。
+- [x] **FE-MVP-04-05 审核页重新处理入口**
+  - 范围：审核页提供"重新处理"入口，调用 `reextractTaskFromOcr(taskId)`，成功后展示 `schema_version`、`prompt_version`、`run_id` 和候选数量，并刷新审核页字段。
+  - 边界：UI 不展示免责文案；后端重新处理直接覆盖审核页当前字段并将字段状态重置为 `unreviewed`；不做处理结果对比与采用 UI。
   - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
 
 ## E2E 和发布任务
@@ -314,8 +314,8 @@
 
 以下能力已有部分后端框架或方向约束，但完整产品化仍需重新排期：
 
-- 字段方案/schema/prompt 版本管理：后端受控维护字段 schema 和 prompt 版本，支持选择版本后基于已保存 OCR 文本重新抽取。
-- 重抽取结果采用策略：不属于当前产品契约；重抽取直接覆盖审核字段，不做逐字段采用/保留 UI。
+- 字段方案/schema/prompt 版本管理：后端受控维护字段 schema 和 prompt 版本，支持选择版本后重新处理。
+- 重新处理结果采用策略：不属于当前产品契约；重新处理直接覆盖审核字段，不做逐字段采用/保留 UI。
 
 ## 全局边界
 

@@ -96,7 +96,7 @@ def cancel_reextract_task(task_id):
     if not cancelled:
         raise AppError(
             ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-            message="当前没有正在进行的重新抽取任务",
+            message="当前没有正在进行的重新处理任务",
             details={"reason": "no_inflight_reextract"},
         )
     return success(data={"task_id": task_id, "cancelled": True})

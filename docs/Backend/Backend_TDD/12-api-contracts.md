@@ -26,6 +26,7 @@
 | BE-API-008 | API | 任务详情返回图片列表、OCR 文本、结构化字段、错误信息和导出信息的稳定结构 | 前端契约漂移 |
 | BE-API-009 | API | `review` 和 `done` 任务可导出 JSON/Excel，其他状态返回 `EXPORT_VALIDATION_FAILED` | 非法状态可导出 |
 | BE-API-010 | API | 批量 JSON zip 只接受 `review` / `done` 任务，失败响应包含统一错误结构 | 批量导出混入不可导出任务 |
-| BE-API-011 | API | 重抽取接口缺少 OCR 文本或候选契约非法时返回 `REEXTRACTION_VALIDATION_FAILED` | 重抽取静默失败或覆盖人工值 |
+| BE-API-011 | API | 重新处理接口优先复用 OCR 文本；缺少可用 OCR 文本时基于已上传图片重新 OCR 并抽取；无可用输入或候选契约非法时返回 `REEXTRACTION_VALIDATION_FAILED` | 重新处理静默失败或字段候选非法仍覆盖审核结果 |
+| BE-API-012 | API | 审核字段中的固定数值字段必须值/单位分离：`final_value`、`auto_value` 只保存数值本体，单位通过 schema 字段元数据 `unit` 返回；同类数值字段可通过 `parameter_group` 和 `parameter_columns` 组成审核页参数组 | 单位混入审核值、前端自行拆单位或参数组布局漂移 |
 
 当前 MVP 不设计 `/api/capture-sessions*`、`/api/mobile/{session_id}/*`、更新 `quad_points`、页面排序或修订采集 API 契约。

@@ -84,6 +84,25 @@ class TestSchemaLoaderValid:
         group_keys = [g["group_key"] for g in result["field_groups"]]
         assert group_keys == ["c", "a", "b"]
 
+    def test_preserves_parameter_display_metadata(self):
+        from app.backend.services.schema_loader import load_schema
+
+        tmpdir = tempfile.mkdtemp()
+        schema = _valid_schema()
+        schema["field_groups"][0]["fields"][0].update({
+            "unit": "℃",
+            "parameter_group": "生命体征",
+            "parameter_columns": 8,
+        })
+        path = _write_yaml(tmpdir, "schema.yaml", schema)
+
+        result = load_schema(path)
+
+        field = result["field_groups"][0]["fields"][0]
+        assert field["unit"] == "℃"
+        assert field["parameter_group"] == "生命体征"
+        assert field["parameter_columns"] == 8
+
 
 class TestSchemaLoaderReject:
     def test_load_missing_file_raises(self):
@@ -177,6 +196,18 @@ class TestSchemaLoaderReject:
             "group_label": "重复组",
             "fields": [{"field_key": "x", "label": "x"}],
         })
+        path = _write_yaml(tmpdir, "schema.yaml", schema)
+
+        with pytest.raises(AppError) as exc_info:
+            load_schema(path)
+        assert exc_info.value.code == ErrorCode.INTERNAL_SERVER_ERROR.code
+
+    def test_reject_invalid_parameter_columns(self):
+        from app.backend.services.schema_loader import load_schema
+
+        tmpdir = tempfile.mkdtemp()
+        schema = _valid_schema()
+        schema["field_groups"][0]["fields"][0]["parameter_columns"] = 9
         path = _write_yaml(tmpdir, "schema.yaml", schema)
 
         with pytest.raises(AppError) as exc_info:

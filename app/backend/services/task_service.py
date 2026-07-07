@@ -341,7 +341,7 @@ class TaskService:
         if result_store.read_success_document_result(task_id) is None:
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="任务缺少已识别 OCR 文本，无法仅重新抽取字段",
+                message="任务缺少已识别 OCR 文本，无法仅重新处理字段",
                 details={"reason": "ocr_text_missing"},
             )
 
@@ -469,6 +469,16 @@ class TaskService:
         task = self._start_processing(task_id, "失败任务重试")
         return self._dispatch_orchestrator(task, schema=schema)
 
+    def reprocess_inline(
+        self,
+        task_id: str,
+        schema: dict | None = None,
+        reason: str = "重新处理",
+    ) -> dict:
+        self._archive_review_result(task_id, self._now())
+        task = self._start_processing(task_id, reason)
+        return self._run_orchestrator(task, schema=schema)
+
     def assert_upload_token(self, task: dict, token: str | None) -> None:
         if not token or token != task.get("upload_token"):
             raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="上传令牌无效")
@@ -481,6 +491,22 @@ class TaskService:
         task["updated_at"] = self._now()
         self._write_task(task)
         return page
+
+    def remove_image(self, task_id: str, page_id: str) -> tuple[dict, dict]:
+        task = self._read_task(task_id)
+        if task["status"] != TaskStatus.UPLOADING.value:
+            raise AppError(ErrorCode.TASK_UPLOAD_CLOSED)
+        images = list(task.get("images") or [])
+        removed = next((image for image in images if image.get("page_id") == page_id), None)
+        if removed is None:
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="图片不存在", details={"page_id": page_id})
+        remaining = [image for image in images if image.get("page_id") != page_id]
+        for index, image in enumerate(remaining, start=1):
+            image["page_no"] = index
+        task["images"] = remaining
+        task["updated_at"] = self._now()
+        self._write_task(task)
+        return removed, self._normalize_task(task)
 
     def finish_upload(self, task_id: str) -> dict:
         task = self._read_task(task_id)

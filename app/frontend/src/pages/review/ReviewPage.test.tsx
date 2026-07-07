@@ -1606,7 +1606,7 @@ describe('ReviewPage', () => {
     render(<ReviewPage taskId="task_qwen" demoPayload={payload} />);
 
     expect(await screen.findByText('现病史')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '异常 精神睡眠食欲' }).getAttribute('aria-pressed')).toBe('true');
+    expect((screen.getByLabelText('精神睡眠食欲 字段') as HTMLTextAreaElement).value).toBe('异常');
     await userEvent.click(screen.getByRole('button', { name: '打开 OCR' }));
     await userEvent.click(screen.getByTestId('review-field-card-hpi_mental_sleep_appetite'));
     const mark = document.querySelector('mark');
@@ -1675,34 +1675,34 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     // 默认 mock 是 review 状态,按钮应显示
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
-    expect(await screen.findByRole('button', { name: '重新抽取' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '重新处理' })).toBeTruthy();
 
     // done 状态应显示
     cleanup();
     mockReviewRoutesDone();
     render(<ReviewPage taskId="task_001" />);
-    expect(await screen.findByRole('button', { name: '重新抽取' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '重新处理' })).toBeTruthy();
 
     // uploading 状态不显示:等待页面进入非可审核的只读态
     cleanup();
     mockReviewRoutesWithStatus('uploading');
     render(<ReviewPage taskId="task_001" />);
     expect(await screen.findByText('任务尚未进入审核')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+    expect(document.querySelector('.review-reextract-button')).toBeNull();
 
     // processing 状态不显示
     cleanup();
     mockReviewRoutesWithStatus('processing');
     render(<ReviewPage taskId="task_001" />);
     expect(await screen.findByText('任务尚未进入审核')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+    expect(document.querySelector('.review-reextract-button')).toBeNull();
 
     // failed 状态不显示
     cleanup();
     mockReviewRoutesWithStatus('failed');
     render(<ReviewPage taskId="task_001" />);
     expect(await screen.findByText('任务处理失败')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新抽取' })).toBeNull();
+    expect(document.querySelector('.review-reextract-button')).toBeNull();
   });
 
   it('clicking reextract disables the button and calls reextractTaskFromOcr', async () => {
@@ -1727,7 +1727,7 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
       })
     );
     render(<ReviewPage taskId="task_001" />);
-    const button = await screen.findByRole('button', { name: '重新抽取' });
+    const button = await screen.findByRole('button', { name: '重新处理' });
     await user.click(button);
     expect(reextractSpy).toHaveBeenCalledTimes(1);
   });
@@ -1757,14 +1757,14 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
       )
     );
     render(<ReviewPage taskId="task_001" />);
-    const button = await screen.findByRole('button', { name: '重新抽取' });
+    const button = await screen.findByRole('button', { name: '重新处理' });
     await user.click(button);
-    // 点击瞬间:按钮文字变"重新抽取中"且 disabled(不依赖 8s apiRequest 超时)
-    const inFlight = await screen.findByRole('button', { name: /重新抽取中/ });
+    // 点击瞬间:按钮文字变"重新处理中"且 disabled(不依赖 8s apiRequest 超时)
+    const inFlight = await screen.findByRole('button', { name: /重新处理中/ });
     expect((inFlight as HTMLButtonElement).disabled).toBe(true);
     // 让请求完成,按钮文字恢复
     resolveReextract();
-    await waitFor(() => screen.getByRole('button', { name: '重新抽取' }));
+    await waitFor(() => screen.getByRole('button', { name: '重新处理' }));
   });
 
   it('cancel button aborts the in-flight reextract and shows a cancelled message', async () => {
@@ -1792,15 +1792,15 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
       )
     );
     render(<ReviewPage taskId="task_001" />);
-    const reextractButton = await screen.findByRole('button', { name: '重新抽取' });
+    const reextractButton = await screen.findByRole('button', { name: '重新处理' });
     await user.click(reextractButton);
     // 取消按钮只在 isReextracting 时出现
     const cancelButton = await screen.findByRole('button', { name: '取消' });
     await user.click(cancelButton);
-    // catch 路径展示"已取消重新抽取"而非"重新抽取失败"
-    expect(await screen.findByText('已取消重新抽取')).toBeTruthy();
+    // catch 路径展示"已取消重新处理"而非"重新处理失败"
+    expect(await screen.findByText('已取消重新处理')).toBeTruthy();
     // 按钮文字恢复 + 取消按钮消失
-    await waitFor(() => screen.getByRole('button', { name: '重新抽取' }));
+    await waitFor(() => screen.getByRole('button', { name: '重新处理' }));
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
   });
 
@@ -1824,7 +1824,7 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
       )
     );
     render(<ReviewPage taskId="task_001" />);
-    const button = await screen.findByRole('button', { name: '重新抽取' });
+    const button = await screen.findByRole('button', { name: '重新处理' });
     await user.click(button);
 
     expect(await screen.findByText(/reextract_20260605T101530Z/)).toBeTruthy();
@@ -1854,7 +1854,7 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     );
     render(<ReviewPage taskId="task_001" />);
     expect(await screen.findByText('已完成')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: '重新抽取' }));
+    await user.click(screen.getByRole('button', { name: '重新处理' }));
     expect(await screen.findByText('待审核')).toBeTruthy();
   });
 
@@ -1864,21 +1864,21 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
     server.use(
       http.post('*/api/tasks/task_001/reextract', () =>
         HttpResponse.json(
-          { error: { code: 'REEXTRACTION_VALIDATION_FAILED', message: '任务缺少已识别 OCR 文本,无法重新抽取', details: {} } },
+          { error: { code: 'REEXTRACTION_VALIDATION_FAILED', message: '任务缺少已识别 OCR 文本,无法重新处理', details: {} } },
           { status: 400 }
         )
       )
     );
     render(<ReviewPage taskId="task_001" />);
-    const button = await screen.findByRole('button', { name: '重新抽取' });
+    const button = await screen.findByRole('button', { name: '重新处理' });
     await user.click(button);
-    expect(await screen.findByText('任务缺少已识别 OCR 文本,无法重新抽取')).toBeTruthy();
+    expect(await screen.findByText('任务缺少已识别 OCR 文本,无法重新处理')).toBeTruthy();
   });
 
   it('does not render any warning text about not re-OCR / not re-process / not overwriting manual results', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
-    await screen.findByRole('button', { name: '重新抽取' });
+    await screen.findByRole('button', { name: '重新处理' });
     const body = document.body.textContent ?? '';
     expect(body).not.toContain('不重新 OCR');
     expect(body).not.toContain('不重新识别');
@@ -1890,7 +1890,7 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
   it('does not render the reextract banner before reextract is triggered', async () => {
     mockReviewRoutes();
     render(<ReviewPage taskId="task_001" />);
-    await screen.findByRole('button', { name: '重新抽取' });
+    await screen.findByRole('button', { name: '重新处理' });
     expect(screen.queryByText(/reextract_/)).toBeNull();
   });
 
@@ -1914,9 +1914,9 @@ describe('Reextract entry (FE-MVP-04-05) - new contract: direct overwrite, no wa
       )
     );
     render(<ReviewPage taskId="task_001" />);
-    await user.click(await screen.findByRole('button', { name: '重新抽取' }));
+    await user.click(await screen.findByRole('button', { name: '重新处理' }));
     expect(await screen.findByText(/reextract_clear_test/)).toBeTruthy();
-    const closeButton = screen.getByRole('button', { name: '关闭重新抽取摘要' });
+    const closeButton = screen.getByRole('button', { name: '关闭重新处理摘要' });
     await user.click(closeButton);
     await waitFor(() => expect(screen.queryByText(/reextract_clear_test/)).toBeNull());
   });

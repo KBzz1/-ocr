@@ -48,6 +48,15 @@ export function uploadTaskImage(
   );
 }
 
+export function deleteTaskImage(taskId: string, token: string, pageId: string) {
+  return apiRequest<TaskUploadStatus>(
+    `/api/mobile-upload/${encodeURIComponent(taskId)}/images/${encodeURIComponent(pageId)}?token=${encodeURIComponent(token)}`,
+    {
+      method: 'DELETE'
+    }
+  );
+}
+
 export function getTaskUploadStatus(taskId: string, token: string) {
   return apiRequest<TaskUploadStatus>(
     `/api/mobile-upload/${encodeURIComponent(taskId)}?token=${encodeURIComponent(token)}`

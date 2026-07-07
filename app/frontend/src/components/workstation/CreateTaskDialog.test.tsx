@@ -51,7 +51,7 @@ describe('CreateTaskDialog', () => {
             upload_token: 'token_001',
             mobile_upload_url: 'http://127.0.0.1:8081/mobile/upload/1?token=token_001',
             patient: { patient_id: 'P-A1B2C3D4', name: '测试用例', deleted: false },
-            document_type: 'copd_admission_record',
+            document_type: 'qwen_batch_admission_record',
             document_type_label: '入院记录',
             record_date: '2026-06-07',
             record_time: '09:30'
@@ -89,7 +89,7 @@ describe('CreateTaskDialog', () => {
     await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     const recordTypeSelect = within(dialog).getByLabelText('记录类型') as HTMLSelectElement;
-    await user.selectOptions(recordTypeSelect, 'copd_admission_record');
+    await user.selectOptions(recordTypeSelect, 'qwen_batch_admission_record');
 
     await user.clear(within(dialog).getByLabelText('记录日期'));
     await user.type(within(dialog).getByLabelText('记录日期'), '2026-06-07');
@@ -104,7 +104,7 @@ describe('CreateTaskDialog', () => {
     });
     expect(createBody).toEqual({
       patient_id: 'P-A1B2C3D4',
-      document_type: 'copd_admission_record',
+      document_type: 'qwen_batch_admission_record',
       record_date: '2026-06-07',
       record_time: '09:30'
     });
@@ -198,7 +198,7 @@ describe('CreateTaskDialog', () => {
     await user.click(within(dialog).getByRole('button', { name: '下一步' }));
 
     const recordTypeSelect = within(dialog).getByLabelText('记录类型') as HTMLSelectElement;
-    await user.selectOptions(recordTypeSelect, 'copd_admission_record');
+    await user.selectOptions(recordTypeSelect, 'qwen_batch_admission_record');
 
     await user.clear(within(dialog).getByLabelText('记录日期'));
     await user.type(within(dialog).getByLabelText('记录日期'), '2026-06-07');

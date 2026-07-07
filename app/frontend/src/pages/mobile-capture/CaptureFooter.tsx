@@ -1,16 +1,28 @@
 interface CaptureFooterProps {
   canFinish: boolean;
   isFinishing: boolean;
+  canReset?: boolean;
   onFinish: () => void;
+  onReset?: () => void;
 }
 
 export function CaptureFooter({
   canFinish,
   isFinishing,
-  onFinish
+  canReset = false,
+  onFinish,
+  onReset
 }: CaptureFooterProps) {
   return (
     <footer className="capture-footer" role="contentinfo">
+      <button
+        className="mobile-button secondary"
+        type="button"
+        disabled={!canReset || isFinishing}
+        onClick={onReset}
+      >
+        清除所有图片
+      </button>
       <button
         className="mobile-button"
         type="button"

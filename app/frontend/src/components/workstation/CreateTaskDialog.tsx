@@ -21,7 +21,7 @@ type DocumentTypeOption = {
 type CreateTaskStep = 'patient' | 'record';
 
 const DOCUMENT_TYPE_OPTIONS: DocumentTypeOption[] = [
-  { value: 'copd_admission_record', label: '入院记录' }
+  { value: 'qwen_batch_admission_record', label: '入院记录' }
 ];
 
 function todayDateString() {

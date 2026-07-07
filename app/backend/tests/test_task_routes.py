@@ -494,7 +494,7 @@ def test_delete_nonexistent_task_returns_404(client):
     assert response.get_json()["error"]["code"] == "TASK_NOT_FOUND"
 
 
-# --- 重新抽取取消(BE-MVP-04-05 补)---
+# --- 重新处理取消(BE-MVP-04-05 补)---
 
 
 def test_reextract_job_registry_lifecycle():
@@ -582,7 +582,7 @@ def test_cancel_reextract_route_aborts_reextract_between_llm_batches(client, app
             if cancellation_token.wait(timeout=2.0):
                 raise AppError(
                     ErrorCode.REEXTRACTION_CANCELLED,
-                    message="用户取消重新抽取",
+                    message="用户取消重新处理",
                     details={"reason": "user_cancelled"},
                 )
             return {"task_id": task_id, "status": "review", "run_id": "r1",

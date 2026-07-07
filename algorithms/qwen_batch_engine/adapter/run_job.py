@@ -200,25 +200,6 @@ def _find_text_span(merged_text: str, evidence_text: str | None) -> tuple[int | 
     return start, start + len(evidence_text)
 
 
-_NORMAL_JUDGEMENT_PATTERNS = (
-    "正常",
-    "无异常",
-    "未见异常",
-    "无压痛",
-    "无肿大",
-    "无充血",
-    "无水肿",
-    "无黄染",
-    "无分泌物",
-    "未闻及病理性杂音",
-    "未触及包块",
-    "未扪及包块",
-    "未触及明显",
-    "未扪及肿大",
-    "阴性",
-)
-
-
 def _infer_judgement_from_text(text: str | None) -> tuple[str, str] | None:
     """Infer only conservative judgement statuses from model-selected evidence.
 
@@ -228,10 +209,177 @@ def _infer_judgement_from_text(text: str | None) -> tuple[str, str] | None:
     """
     if not isinstance(text, str) or not text.strip():
         return None
-    normalized = text.replace(" ", "")
-    if any(pattern in normalized for pattern in _NORMAL_JUDGEMENT_PATTERNS):
+    from app.backend.services.copd_extraction.judgement_rules import matches_normal_judgement
+
+    if matches_normal_judgement(text):
         return "正常", "normal"
     return None
+
+
+def _abnormal_judgement_value(*, status, raw_value, evidence_text, evidence_location) -> str:
+    """Keep the concrete abnormal wording for J fields when the model provides it."""
+    candidates = []
+    if isinstance(raw_value, str):
+        candidates.append(raw_value.strip())
+    if isinstance(status, str) and status.startswith("异常"):
+        candidates.append(status.removeprefix("异常").lstrip("：:，,；; ").strip())
+    if isinstance(evidence_text, str):
+        candidates.append(evidence_text.strip())
+    if isinstance(evidence_location, dict):
+        location_text = evidence_location.get("text")
+        if isinstance(location_text, str):
+            candidates.append(location_text.strip())
+
+    for candidate in candidates:
+        if candidate and candidate != "异常":
+            return candidate
+    return "异常"
+
+
+def _text_from_text_node(node) -> str:
+    if isinstance(node, dict):
+        for key in ("值", "v", "证据"):
+            value = node.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    if isinstance(node, str):
+        return node.strip()
+    return ""
+
+
+def _legacy_text_node(structured: dict, raw_response: str | None, path: list[str]) -> dict | None:
+    node = _value_at_path(structured, path)
+    if node is None:
+        node = _value_from_raw_response(raw_response, path)
+    text = _text_from_text_node(node)
+    if not text:
+        return None
+    return {"值": text, "证据": text}
+
+
+def _extract_composite_value(text: str, pattern: str) -> str:
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    value = match.group(1).strip()
+    return value.rstrip("。；;，,、")
+
+
+_COMPOSITE_FIELD_PATTERNS: dict[str, tuple[list[str], str]] = {
+    "pe_temperature": (
+        ["体格检查", "生命体征"],
+        r"体温[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*℃?",
+    ),
+    "pe_pulse": (
+        ["体格检查", "生命体征"],
+        r"脉搏[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?",
+    ),
+    "pe_heart_rate": (
+        ["体格检查", "心律"],
+        r"心率[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?",
+    ),
+    "pe_respiration_rate": (
+        ["体格检查", "生命体征"],
+        r"呼吸[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?",
+    ),
+    "pe_blood_pressure": (
+        ["体格检查", "生命体征"],
+        r"血压[:：]?\s*([0-9]{2,3}\s*/\s*[0-9]{2,3})\s*mmHg",
+    ),
+    "pe_height": (
+        ["体格检查", "身高体重BMI"],
+        r"身高[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*cm",
+    ),
+    "pe_weight": (
+        ["体格检查", "身高体重BMI"],
+        r"体重[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*kg",
+    ),
+    "pe_bmi": (
+        ["体格检查", "身高体重BMI"],
+        r"BMI[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*kg/m[²2]?",
+    ),
+    "aux_blood_gas_ph": (
+        ["辅助检查", "血气"],
+        r"pH\s*([0-9]+(?:\.[0-9]+)?)",
+    ),
+    "aux_blood_gas_pco2": (
+        ["辅助检查", "血气"],
+        r"(?:pCO2|PCO2|PaCO2|PC02)\s*([0-9]+(?:\.[0-9]+)?)\s*mmHg",
+    ),
+    "aux_blood_gas_po2": (
+        ["辅助检查", "血气"],
+        r"(?:pO2|PO2|PaO2|P02)\s*([0-9]+(?:\.[0-9]+)?)\s*mmHg",
+    ),
+    "aux_blood_gas_na": (
+        ["辅助检查", "血气"],
+        r"Na\+?\s*([0-9]+(?:\.[0-9]+)?)\s*mmol/L",
+    ),
+    "aux_blood_gas_fio2": (
+        ["辅助检查", "血气"],
+        r"(?:FiO2|FIO2|Fi02|F102)\s*([0-9]+(?:\.[0-9]+)?)",
+    ),
+    "aux_blood_gas_oxygenation_index": (
+        ["辅助检查", "血气"],
+        r"氧合指数[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*%?",
+    ),
+    "aux_blood_routine_wbc": (
+        ["辅助检查", "血常规"],
+        r"白细胞(?:\(WBC\))?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[*×]\s*)?10\^9/L",
+    ),
+    "aux_blood_routine_mxd_percent": (
+        ["辅助检查", "血常规"],
+        r"单核细胞百分率(?:\(MXD%\))?\s*([0-9]+(?:\.[0-9]+)?%)",
+    ),
+    "aux_blood_routine_mod_absolute": (
+        ["辅助检查", "血常规"],
+        r"单核细胞绝对值(?:\(MOD#\))?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[*×]\s*)?10\^9/L",
+    ),
+}
+
+
+_PARAMETER_VALUE_PATTERNS: dict[str, str] = {
+    "pe_temperature": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_pulse": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_heart_rate": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_respiration_rate": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_blood_pressure": r"([0-9]{2,3}\s*/\s*[0-9]{2,3})",
+    "pe_height": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_weight": r"([0-9]+(?:\.[0-9]+)?)",
+    "pe_bmi": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_ph": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_pco2": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_po2": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_na": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_fio2": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_gas_oxygenation_index": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_crp": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_routine_wbc": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_routine_mxd_percent": r"([0-9]+(?:\.[0-9]+)?)",
+    "aux_blood_routine_mod_absolute": r"([0-9]+(?:\.[0-9]+)?)",
+}
+
+
+def _normalize_parameter_value(field_key: str, value: str) -> str:
+    pattern = _PARAMETER_VALUE_PATTERNS.get(field_key)
+    if not pattern or not value.strip():
+        return value
+    match = re.search(pattern, value)
+    if not match:
+        return value.strip()
+    return match.group(1).strip()
+
+
+def _split_legacy_composite_node(field_key: str, structured: dict, raw_response: str | None) -> dict | None:
+    rule = _COMPOSITE_FIELD_PATTERNS.get(field_key)
+    if rule is None:
+        return None
+    legacy_path, pattern = rule
+    legacy_node = _legacy_text_node(structured, raw_response, legacy_path)
+    legacy_text = _text_from_text_node(legacy_node)
+    value = _extract_composite_value(legacy_text, pattern)
+    if not value:
+        return None
+    return {"值": value, "证据": legacy_text}
 
 
 def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict, raw_response: str | None = None) -> list[dict]:
@@ -244,6 +392,8 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
         node = _value_at_path(structured, qwen_path) if isinstance(qwen_path, list) else None
         if node is None and isinstance(qwen_path, list):
             node = _value_from_raw_response(raw_response, qwen_path)
+        if node is None:
+            node = _split_legacy_composite_node(field_key, structured, raw_response)
 
         value = ""
         evidence_text = None
@@ -268,13 +418,23 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
                     value = "正常"
                     qwen_status = "normal"
                 elif status == "异常" or (isinstance(status, str) and status.startswith("异常")):
-                    value = "异常"
+                    value = _abnormal_judgement_value(
+                        status=status,
+                        raw_value=raw_value,
+                        evidence_text=evidence_text,
+                        evidence_location=evidence_location,
+                    )
                     qwen_status = "abnormal"
                 elif status in (0, "0"):
                     value = "正常"
                     qwen_status = "normal"
                 elif status in (1, "1"):
-                    value = "异常"
+                    value = _abnormal_judgement_value(
+                        status=status,
+                        raw_value=raw_value,
+                        evidence_text=evidence_text,
+                        evidence_location=evidence_location,
+                    )
                     qwen_status = "abnormal"
                 elif inferred_status is not None:
                     value, qwen_status = inferred_status
@@ -292,6 +452,8 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
                 value = raw_value if isinstance(raw_value, str) else ""
         elif isinstance(node, str):
             value = node
+        if isinstance(value, str):
+            value = _normalize_parameter_value(field_key, value)
 
         extraction_status = "extracted" if value.strip() else "not_found"
         evidence = []

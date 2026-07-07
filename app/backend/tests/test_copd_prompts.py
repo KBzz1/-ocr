@@ -254,6 +254,8 @@ def test_admission_prompt_requires_normal_status_for_negative_physical_exam_j_fi
     assert "耳部=正常" in prompt
     assert "不得因为是阴性描述而输出 not_found" in prompt
     assert "只有原文完全没有该部位/项目信息时" in prompt
+    assert "异常时必须" in prompt
+    assert "具体异常描述" in prompt or "异常原文短描述" in prompt
 
 
 def test_admission_prompt_forbids_subjective_diagnosis():

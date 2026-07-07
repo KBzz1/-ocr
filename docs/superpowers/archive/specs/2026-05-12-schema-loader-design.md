@@ -51,9 +51,23 @@ field_groups:
         type: string
         required: false
         hint: ""
+      - field_key: temperature
+        label: 体温
+        type: string
+        unit: "℃"
+        parameter_group: 生命体征
+        parameter_columns: 4
 ```
 
 字段对象使用 `field_key` 作为持久化、候选字段校验、审核保存和导出的唯一字段标识。API 可以兼容输出 `key` 别名给前端展示，但后端内部契约和算法候选统一使用 `field_key`。
+
+固定检验/体征类数值字段可使用展示元数据：
+
+- `unit`：字段值的展示单位。审核值中的 `auto_value` / `final_value` 只保存数值本体，不保存单位。
+- `parameter_group`：同类数值字段在审核页内聚合展示的参数组名，例如"生命体征"、"血气"、"血常规"。
+- `parameter_columns`：参数组期望列数，取值 1 到 4。前端可在窄屏下自适应降列，但不得改变字段值。
+
+这些展示元数据只影响审核展示和导出说明，不得被前端或后端当作从 OCR 文本补造字段值的规则。
 
 ### 第一版字段组
 
@@ -125,6 +139,7 @@ field_groups:
 - 保留 YAML 中 `field_groups` 和 `fields` 顺序。
 - 为缺省的 `required` 填充 `false`。
 - 为缺省的 `hint` 填充空字符串。
+- 保留合法的展示元数据 `unit`、`parameter_group`、`parameter_columns`。
 - 字段对象必须包含 `field_key`；如实现需要前端兼容，可在 API 层派生 `key`，不得替代内部 `field_key`。
 
 拒绝条件：
@@ -142,6 +157,9 @@ field_groups:
 | 字段 | `type` 必须在 `{string, number, date, boolean}` 内，缺省为 `string` |
 | 字段 | `required` 缺省为 `false`，存在时必须为 boolean |
 | 字段 | `hint` 缺省为空字符串，存在时必须为 string |
+| 字段 | `unit` 存在时必须为 string |
+| 字段 | `parameter_group` 存在时必须为 string |
+| 字段 | `parameter_columns` 存在时必须为 1 到 4 的整数 |
 
 schema 校验失败是配置错误，不是算法错误。
 
@@ -212,7 +230,10 @@ schema 校验失败是配置错误，不是算法错误。
             "label": "姓名",
             "type": "string",
             "required": false,
-            "hint": ""
+            "hint": "",
+            "unit": "℃",
+            "parameter_group": "生命体征",
+            "parameter_columns": 4
           }
         ]
       }
@@ -226,6 +247,7 @@ schema 校验失败是配置错误，不是算法错误。
 - API 输出顺序必须与 YAML 文件一致。
 - `field_key` 是后端权威字段标识。
 - `key` 仅作为前端兼容别名，值必须等于 `field_key`；若前端统一改用 `field_key`，可不输出 `key`。
+- `unit`、`parameter_group`、`parameter_columns` 是字段展示元数据，必须原样透传给前端；固定数值字段的单位不得混入审核字段值。
 - API 不输出字段值、候选结果、字段状态或审核结果。
 - API 不暴露本机 schema 文件路径。
 

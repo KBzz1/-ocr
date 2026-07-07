@@ -140,6 +140,32 @@ def load_schema(path: str) -> dict:
                                         "group_key": group_key,
                                         "field_key": field_key})
 
+            unit = field.get("unit")
+            if unit is not None and not isinstance(unit, str):
+                raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
+                               message="field unit 必须为 string",
+                               details={"reason": "unit 非法",
+                                        "group_key": group_key,
+                                        "field_key": field_key})
+
+            parameter_group = field.get("parameter_group")
+            if parameter_group is not None and not isinstance(parameter_group, str):
+                raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
+                               message="field parameter_group 必须为 string",
+                               details={"reason": "parameter_group 非法",
+                                        "group_key": group_key,
+                                        "field_key": field_key})
+
+            parameter_columns = field.get("parameter_columns")
+            if parameter_columns is not None and (
+                not isinstance(parameter_columns, int) or parameter_columns < 1 or parameter_columns > 8
+            ):
+                raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
+                               message="field parameter_columns 必须为 1 到 8 的整数",
+                               details={"reason": "parameter_columns 非法",
+                                        "group_key": group_key,
+                                        "field_key": field_key})
+
             normalized_fields.append({
                 "field_key": field_key,
                 "label": label,
@@ -158,6 +184,15 @@ def load_schema(path: str) -> dict:
                 **({
                     "options": field["options"],
                 } if "options" in field else {}),
+                **({
+                    "unit": unit,
+                } if unit is not None else {}),
+                **({
+                    "parameter_group": parameter_group,
+                } if parameter_group is not None else {}),
+                **({
+                    "parameter_columns": parameter_columns,
+                } if parameter_columns is not None else {}),
             })
 
         normalized_groups.append({

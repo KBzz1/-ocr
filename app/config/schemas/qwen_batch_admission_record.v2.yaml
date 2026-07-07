@@ -27,8 +27,8 @@ field_groups:
       - {field_key: pmh_bloody_stool, label: 便血, type: string, qwen_path: ["既往史", "便血"], qwen_type: T, review_control: text}
       - {field_key: pmh_nephritis, label: 肾炎, type: string, qwen_path: ["既往史", "肾炎"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pmh_blood_disease, label: 血液病, type: string, qwen_path: ["既往史", "血液病"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
-      - {field_key: pmh_coronary_heart_disease, label: 冠心病, type: string, qwen_path: ["既往史", "冠心病"], qwen_type: T, review_control: text}
-      - {field_key: pmh_cerebral_infarction, label: 脑梗塞, type: string, qwen_path: ["既往史", "脑梗塞"], qwen_type: T, review_control: text}
+      - {field_key: pmh_coronary_heart_disease, label: 冠心病, type: string, qwen_path: ["既往史", "冠心病"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
+      - {field_key: pmh_cerebral_infarction, label: 脑梗塞, type: string, qwen_path: ["既往史", "脑梗塞"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pmh_surgery_history, label: 手术史, type: string, qwen_path: ["既往史", "手术史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pmh_transfusion_history, label: 输血史, type: string, qwen_path: ["既往史", "输血史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pmh_blood_product_history, label: 血制品史, type: string, qwen_path: ["既往史", "血制品史"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
@@ -46,8 +46,14 @@ field_groups:
   - group_key: physical_exam
     group_label: 体格检查
     fields:
-      - {field_key: pe_vital_signs, label: 生命体征, type: string, qwen_path: ["体格检查", "生命体征"], qwen_type: T, review_control: text}
-      - {field_key: pe_height_weight_bmi, label: 身高体重BMI, type: string, qwen_path: ["体格检查", "身高体重BMI"], qwen_type: T, review_control: text}
+      - {field_key: pe_temperature, label: 体温, type: string, qwen_path: ["体格检查", "体温"], qwen_type: T, review_control: text, unit: "℃", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_pulse, label: 脉搏, type: string, qwen_path: ["体格检查", "脉搏"], qwen_type: T, review_control: text, unit: "次/分", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_heart_rate, label: 心率, type: string, qwen_path: ["体格检查", "心率"], qwen_type: T, review_control: text, unit: "次/分", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_respiration_rate, label: 呼吸, type: string, qwen_path: ["体格检查", "生命体征呼吸"], qwen_type: T, review_control: text, unit: "次/分", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_blood_pressure, label: 血压, type: string, qwen_path: ["体格检查", "血压"], qwen_type: T, review_control: text, unit: "mmHg", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_height, label: 身高, type: string, qwen_path: ["体格检查", "身高"], qwen_type: T, review_control: text, unit: "cm", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_weight, label: 体重, type: string, qwen_path: ["体格检查", "体重"], qwen_type: T, review_control: text, unit: "kg", parameter_group: 生命体征, parameter_columns: 8}
+      - {field_key: pe_bmi, label: BMI, type: string, qwen_path: ["体格检查", "BMI"], qwen_type: T, review_control: text, unit: "kg/m²", parameter_group: 生命体征, parameter_columns: 8}
       - {field_key: pe_skin, label: 皮肤, type: string, qwen_path: ["体格检查", "皮肤"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_eyes, label: 眼部, type: string, qwen_path: ["体格检查", "眼部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_ears, label: 耳部, type: string, qwen_path: ["体格检查", "耳部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
@@ -56,7 +62,7 @@ field_groups:
       - {field_key: pe_neck, label: 颈部, type: string, qwen_path: ["体格检查", "颈部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_chest, label: 胸部, type: string, qwen_path: ["体格检查", "胸部"], qwen_type: T, review_control: text}
       - {field_key: pe_respiration, label: 呼吸, type: string, qwen_path: ["体格检查", "呼吸"], qwen_type: T, review_control: text}
-      - {field_key: pe_heart_rhythm, label: 心律, type: string, qwen_path: ["体格检查", "心律"], qwen_type: T, review_control: text}
+      - {field_key: pe_heart_rhythm, label: 心律, type: string, qwen_path: ["体格检查", "心律"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_abdomen, label: 腹部, type: string, qwen_path: ["体格检查", "腹部"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_limbs, label: 四肢, type: string, qwen_path: ["体格检查", "四肢"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: pe_neurological, label: 神经, type: string, qwen_path: ["体格检查", "神经"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
@@ -65,9 +71,16 @@ field_groups:
     fields:
       - {field_key: aux_chest_ct, label: 胸部CT, type: string, qwen_path: ["辅助检查", "胸部CT"], qwen_type: T, review_control: text}
       - {field_key: aux_echocardiography, label: 心脏超声, type: string, qwen_path: ["辅助检查", "心脏超声"], qwen_type: T, review_control: text}
-      - {field_key: aux_blood_gas, label: 血气, type: string, qwen_path: ["辅助检查", "血气"], qwen_type: T, review_control: text}
-      - {field_key: aux_crp, label: CRP, type: string, qwen_path: ["辅助检查", "CRP"], qwen_type: T, review_control: text}
-      - {field_key: aux_blood_routine, label: 血常规, type: string, qwen_path: ["辅助检查", "血常规"], qwen_type: T, review_control: text}
+      - {field_key: aux_blood_gas_ph, label: pH, type: string, qwen_path: ["辅助检查", "血气pH"], qwen_type: T, review_control: text, parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_blood_gas_pco2, label: pCO2, type: string, qwen_path: ["辅助检查", "血气pCO2"], qwen_type: T, review_control: text, unit: "mmHg", parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_blood_gas_po2, label: pO2, type: string, qwen_path: ["辅助检查", "血气pO2"], qwen_type: T, review_control: text, unit: "mmHg", parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_blood_gas_na, label: Na+, type: string, qwen_path: ["辅助检查", "血气Na+"], qwen_type: T, review_control: text, unit: "mmol/L", parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_blood_gas_fio2, label: FIO2, type: string, qwen_path: ["辅助检查", "血气FIO2"], qwen_type: T, review_control: text, parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_blood_gas_oxygenation_index, label: 氧合指数, type: string, qwen_path: ["辅助检查", "血气氧合指数"], qwen_type: T, review_control: text, unit: "%", parameter_group: 血气, parameter_columns: 6}
+      - {field_key: aux_crp, label: CRP, type: string, qwen_path: ["辅助检查", "CRP"], qwen_type: T, review_control: text, unit: "mg/L", parameter_group: CRP, parameter_columns: 1}
+      - {field_key: aux_blood_routine_wbc, label: 白细胞(WBC), type: string, qwen_path: ["辅助检查", "血常规白细胞"], qwen_type: T, review_control: text, unit: "10^9/L", parameter_group: 血常规, parameter_columns: 3}
+      - {field_key: aux_blood_routine_mxd_percent, label: 单核细胞百分率(MXD%), type: string, qwen_path: ["辅助检查", "血常规MXD%"], qwen_type: T, review_control: text, unit: "%", parameter_group: 血常规, parameter_columns: 3}
+      - {field_key: aux_blood_routine_mod_absolute, label: 单核细胞绝对值(MOD#), type: string, qwen_path: ["辅助检查", "血常规MOD#"], qwen_type: T, review_control: text, unit: "10^9/L", parameter_group: 血常规, parameter_columns: 3}
       - {field_key: aux_electrolytes, label: 电解质, type: string, qwen_path: ["辅助检查", "电解质"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: aux_renal_function, label: 肾功, type: string, qwen_path: ["辅助检查", "肾功"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}
       - {field_key: aux_d_dimer, label: D2聚体, type: string, qwen_path: ["辅助检查", "D2聚体"], qwen_type: J, review_control: judgement, options: ["正常", "异常", "未提及", "不确定"]}

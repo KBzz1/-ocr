@@ -12,8 +12,8 @@ def _raise_if_cancelled(token) -> None:
     if token is None:
         return
     if getattr(token, "is_set", lambda: False)():
-        raise AppError(
-            ErrorCode.REEXTRACTION_CANCELLED,
-            message="用户取消重新抽取",
-            details={"reason": "user_cancelled"},
-        )
+            raise AppError(
+                ErrorCode.REEXTRACTION_CANCELLED,
+                message="用户取消重新处理",
+                details={"reason": "user_cancelled"},
+            )

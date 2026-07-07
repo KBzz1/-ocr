@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -25,15 +26,153 @@ class ReviewService:
         self._schema_provider = schema_provider
 
     @staticmethod
-    def _iter_schema_field_keys(schema: dict):
-        """按 schema 顺序产出 (field_key, label) 元组,跳过缺失 field_key 的项。"""
+    def _iter_schema_fields(schema: dict):
+        """按 schema 顺序产出 (field_key, label, schema_field) 元组。"""
         for group in schema.get("field_groups", []) or []:
             for schema_field in group.get("fields", []) or []:
                 fk = schema_field.get("field_key")
                 if not fk:
                     continue
                 label = schema_field.get("label") or schema_field.get("field_name") or fk
-                yield fk, label
+                yield fk, label, schema_field
+
+    @staticmethod
+    def _field_text(field: dict | None) -> str:
+        if not isinstance(field, dict):
+            return ""
+        for key in ("final_value", "auto_value", "value"):
+            value = field.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    @staticmethod
+    def _extract_composite_value(text: str, pattern: str) -> str:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            return ""
+        return match.group(1).strip().rstrip("。；;，,、")
+
+    _LEGACY_COMPOSITE_FIELD_PATTERNS: dict[str, tuple[str, str]] = {
+        "pe_temperature": ("pe_vital_signs", r"体温[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*℃?"),
+        "pe_pulse": ("pe_vital_signs", r"脉搏[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?"),
+        "pe_heart_rate": ("pe_heart_rhythm", r"心率[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?"),
+        "pe_respiration_rate": ("pe_vital_signs", r"呼吸[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*次/分?"),
+        "pe_blood_pressure": ("pe_vital_signs", r"血压[:：]?\s*([0-9]{2,3}\s*/\s*[0-9]{2,3})\s*mmHg"),
+        "pe_height": ("pe_height_weight_bmi", r"身高[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*cm"),
+        "pe_weight": ("pe_height_weight_bmi", r"体重[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*kg"),
+        "pe_bmi": ("pe_height_weight_bmi", r"BMI[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*kg/m[²2]?"),
+        "aux_blood_gas_ph": ("aux_blood_gas", r"pH\s*([0-9]+(?:\.[0-9]+)?)"),
+        "aux_blood_gas_pco2": ("aux_blood_gas", r"(?:pCO2|PCO2|PaCO2|PC02)\s*([0-9]+(?:\.[0-9]+)?)\s*mmHg"),
+        "aux_blood_gas_po2": ("aux_blood_gas", r"(?:pO2|PO2|PaO2|P02)\s*([0-9]+(?:\.[0-9]+)?)\s*mmHg"),
+        "aux_blood_gas_na": ("aux_blood_gas", r"Na\+?\s*([0-9]+(?:\.[0-9]+)?)\s*mmol/L"),
+        "aux_blood_gas_fio2": ("aux_blood_gas", r"(?:FiO2|FIO2|Fi02|F102)\s*([0-9]+(?:\.[0-9]+)?)"),
+        "aux_blood_gas_oxygenation_index": ("aux_blood_gas", r"氧合指数[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*%?"),
+        "aux_blood_routine_wbc": (
+            "aux_blood_routine",
+            r"白细胞(?:\(WBC\))?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[*×]\s*)?10\^9/L",
+        ),
+        "aux_blood_routine_mxd_percent": (
+            "aux_blood_routine",
+            r"单核细胞百分率(?:\(MXD%\))?\s*([0-9]+(?:\.[0-9]+)?%)",
+        ),
+        "aux_blood_routine_mod_absolute": (
+            "aux_blood_routine",
+            r"单核细胞绝对值(?:\(MOD#\))?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[*×]\s*)?10\^9/L",
+        ),
+    }
+
+    _PARAMETER_VALUE_PATTERNS: dict[str, str] = {
+        "pe_temperature": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_pulse": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_heart_rate": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_respiration_rate": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_blood_pressure": r"([0-9]{2,3}\s*/\s*[0-9]{2,3})",
+        "pe_height": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_weight": r"([0-9]+(?:\.[0-9]+)?)",
+        "pe_bmi": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_ph": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_pco2": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_po2": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_na": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_fio2": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_gas_oxygenation_index": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_crp": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_routine_wbc": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_routine_mxd_percent": r"([0-9]+(?:\.[0-9]+)?)",
+        "aux_blood_routine_mod_absolute": r"([0-9]+(?:\.[0-9]+)?)",
+    }
+
+    @classmethod
+    def _normalize_parameter_value(cls, field_key: str, value: str) -> str:
+        pattern = cls._PARAMETER_VALUE_PATTERNS.get(field_key)
+        if not pattern or not value.strip():
+            return value
+        match = re.search(pattern, value)
+        if not match:
+            return value.strip()
+        return match.group(1).strip()
+
+    @staticmethod
+    def _infer_judgement_value(text: str) -> str | None:
+        from .copd_extraction.judgement_rules import matches_normal_judgement
+
+        if matches_normal_judgement(text):
+            return "正常"
+        return None
+
+    def _build_field_from_legacy_composite(self, field_key: str, label: str, existing: dict[str, dict]) -> dict | None:
+        rule = self._LEGACY_COMPOSITE_FIELD_PATTERNS.get(field_key)
+        if rule is None:
+            return None
+        legacy_key, pattern = rule
+        legacy_field = existing.get(legacy_key)
+        legacy_text = self._field_text(legacy_field)
+        value = self._extract_composite_value(legacy_text, pattern)
+        if not value:
+            return None
+
+        field = build_placeholder_field(field_key, label)
+        field["auto_value"] = value
+        field["final_value"] = value
+        field["evidence"] = legacy_field.get("evidence") if isinstance(legacy_field, dict) else None
+        field["source_text"] = legacy_text
+        field["source_hint"] = legacy_field.get("source_hint") if isinstance(legacy_field, dict) else None
+        field["source_group_id"] = legacy_field.get("source_group_id") if isinstance(legacy_field, dict) else None
+        field["source_section"] = legacy_field.get("source_section") if isinstance(legacy_field, dict) else None
+        field["extraction_status"] = "extracted"
+        field["verification_status"] = "not_checked"
+        field["attention_required"] = False
+        field["attention_message"] = ""
+        field["status"] = FieldStatus.UNREVIEWED.value
+        return field
+
+    def _normalize_existing_field_for_schema(self, field: dict, schema_field: dict) -> bool:
+        mutated = False
+        field_key = field.get("field_key")
+        if not isinstance(field_key, str):
+            return False
+
+        if field_key in self._PARAMETER_VALUE_PATTERNS:
+            for value_key in ("auto_value", "final_value", "value"):
+                raw_value = field.get(value_key)
+                if not isinstance(raw_value, str):
+                    continue
+                normalized = self._normalize_parameter_value(field_key, raw_value)
+                if normalized != raw_value:
+                    field[value_key] = normalized
+                    mutated = True
+
+        if schema_field.get("review_control") == "judgement" or schema_field.get("qwen_type") == "J":
+            current_value = self._field_text(field)
+            inferred = self._infer_judgement_value(current_value)
+            if inferred and field.get("final_value") != inferred:
+                field["auto_value"] = inferred
+                field["final_value"] = inferred
+                field["extraction_status"] = "extracted"
+                field["verification_status"] = "not_checked"
+                mutated = True
+        return mutated
 
     def _hydrate_missing_fields(self, review: dict, schema: dict) -> dict:
         """按 schema 顺序补齐 review 中缺失的字段,并对已存在字段按 schema 顺序重排。
@@ -47,15 +186,19 @@ class ReviewService:
         ordered_keys: list[str] = []
         new_fields: list[dict] = []
         mutated = False
-        for fk, label in self._iter_schema_field_keys(schema):
+        for fk, label, schema_field in self._iter_schema_fields(schema):
             ordered_keys.append(fk)
             field = existing.get(fk)
             if field is None:
-                field = build_placeholder_field(fk, label)
+                field = self._build_field_from_legacy_composite(fk, label, existing)
+                if field is None:
+                    field = build_placeholder_field(fk, label)
                 mutated = True
             elif field.get("field_name") != label:
                 # schema.label 优先于 review.field_name(与 ExportService 语义一致)
                 field["field_name"] = label
+                mutated = True
+            if self._normalize_existing_field_for_schema(field, schema_field):
                 mutated = True
             new_fields.append(field)
 

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type FocusEvent } from 'react';
 import type { ReviewField, FieldGroupDef, QwenJudgementStatus } from '../../api/review';
 import type { FieldStatus } from '../../styles/status';
 
@@ -6,7 +6,7 @@ type FieldListProps = {
   fields: ReviewField[];
   fieldGroups?: FieldGroupDef[];
   selectedFieldKey: string | null;
-  onChange: (fields: ReviewField[]) => void;
+  onChange: (nextOrUpdater: ReviewField[] | ((prev: ReviewField[]) => ReviewField[])) => void;
   onFocusField: (field: ReviewField) => void;
   onToggleReviewed: (field: ReviewField) => void;
   readOnly?: boolean;
@@ -25,12 +25,15 @@ function buildEmptyFieldStub(fieldKey: string, label: string): ReviewField {
 function mergeFieldDefinitionMetadata(field: ReviewField, fieldDef: FieldGroupDef['fields'][number]): ReviewField {
   return {
     ...field,
-    field_name: field.field_name ?? fieldDef.label,
-    label: field.label ?? fieldDef.label,
+    field_name: fieldDef.label ?? field.field_name,
+    label: fieldDef.label ?? field.label,
     qwen_type: field.qwen_type ?? fieldDef.qwen_type,
     qwen_path: field.qwen_path ?? fieldDef.qwen_path,
     review_control: field.review_control ?? fieldDef.review_control,
     options: field.options ?? fieldDef.options,
+    unit: fieldDef.unit ?? field.unit,
+    parameter_group: fieldDef.parameter_group ?? field.parameter_group,
+    parameter_columns: fieldDef.parameter_columns ?? field.parameter_columns,
   };
 }
 
@@ -82,10 +85,43 @@ function groupFields(
 
 function getFieldLayoutClass(field: ReviewField, value: string) {
   const label = field.field_name ?? field.label ?? field.field_key;
+  if (field.parameter_group) return 'field-card__item--parameter';
   if (value.length > 56 || value.includes('\n')) return 'field-card__item--long';
   if (field.qwen_type === 'J' || field.review_control === 'judgement') return 'field-card__item--medium';
   if (value.length > 22 || label.length > 6) return 'field-card__item--medium';
   return 'field-card__item--short';
+}
+
+type FieldLayoutItem =
+  | { kind: 'field'; field: ReviewField }
+  | { kind: 'parameterGroup'; groupLabel: string; columns: number; fields: ReviewField[] };
+
+function buildFieldLayoutItems(fields: ReviewField[]): FieldLayoutItem[] {
+  const items: FieldLayoutItem[] = [];
+  let index = 0;
+  while (index < fields.length) {
+    const current = fields[index];
+    const groupLabel = current.parameter_group;
+    if (!groupLabel) {
+      items.push({ kind: 'field', field: current });
+      index += 1;
+      continue;
+    }
+
+    const grouped: ReviewField[] = [];
+    const columns = current.parameter_columns ?? 3;
+    while (index < fields.length && fields[index].parameter_group === groupLabel) {
+      grouped.push(fields[index]);
+      index += 1;
+    }
+    items.push({
+      kind: 'parameterGroup',
+      groupLabel,
+      columns: Math.min(Math.max(columns, 1), 8),
+      fields: grouped,
+    });
+  }
+  return items;
 }
 
 const QWEN_J_OPTIONS = [
@@ -132,15 +168,16 @@ function isDiagnosisField(field: ReviewField) {
 }
 
 function parseDiagnosisItems(value: string): DiagnosisItem[] {
-  const matches = Array.from(value.matchAll(/(?:^|\s+)(\d+)[.、．]?\s*/g));
+  const normalizedValue = value.replace(/\\n/g, '\n');
+  const matches = Array.from(normalizedValue.matchAll(/(?:^|\s+)(\d+)[.、．]?\s*/g));
   if (matches.length <= 1) return [];
   return matches.map((match, index) => {
     const next = matches[index + 1];
     const start = (match.index ?? 0) + match[0].length;
-    const end = next?.index ?? value.length;
+    const end = next?.index ?? normalizedValue.length;
     return {
       index: match[1],
-      text: value.slice(start, end).trim(),
+      text: normalizedValue.slice(start, end).trim(),
     };
   }).filter((item) => item.text.length > 0);
 }
@@ -154,15 +191,19 @@ function AutoGrowTextarea({
   value,
   onChange,
   onFocus,
+  onBlur,
   label,
   readOnly = false,
+  autoFocus = false,
 }: {
   field: ReviewField;
   value: string;
   onChange: (value: string) => void;
   onFocus: () => void;
+  onBlur?: (event: FocusEvent<HTMLTextAreaElement>) => void;
   label: string;
   readOnly?: boolean;
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
@@ -172,6 +213,12 @@ function AutoGrowTextarea({
     el.style.height = 'auto';
     el.style.height = `${Math.max(el.scrollHeight, 34)}px`;
   }, [value]);
+
+  useLayoutEffect(() => {
+    if (autoFocus && ref.current) {
+      ref.current.focus();
+    }
+  }, [autoFocus]);
 
   return (
     <textarea
@@ -184,6 +231,7 @@ function AutoGrowTextarea({
       readOnly={readOnly}
       onChange={(e) => onChange(e.currentTarget.value)}
       onFocus={onFocus}
+      onBlur={onBlur}
     />
   );
 }
@@ -242,33 +290,231 @@ export function FieldList({
 
   function updateField(fieldKey: string, value: string) {
     onChange(
-      fields.map((f) =>
-        f.field_key === fieldKey
-          ? {
-              ...f,
-              value,
-              final_value: value,
-              status: value === (f.final_value ?? f.auto_value ?? '') ? f.status : ('modified' as const),
-            }
-          : f,
-      ),
+      (prev: ReviewField[]) =>
+        prev.map((f) =>
+          f.field_key === fieldKey
+            ? {
+                ...f,
+                value,
+                final_value: value,
+                status: value === (f.final_value ?? f.auto_value ?? '') ? f.status : ('modified' as const),
+              }
+            : f,
+        ),
     );
   }
 
   function updateQwenJudgementField(fieldKey: string, value: string, qwenStatus: NonNullable<ReviewField['qwen_status']>) {
     onChange(
-      fields.map((f) =>
-        f.field_key === fieldKey
-          ? {
-              ...f,
-              value,
-              final_value: value,
-              qwen_status: qwenStatus,
-              extraction_status: qwenStatus === 'not_mentioned' ? ('not_found' as const) : f.extraction_status,
-              status: value === (f.final_value ?? f.auto_value ?? '') ? f.status : ('modified' as const),
-            }
-          : f,
-      ),
+      (prev: ReviewField[]) =>
+        prev.map((f) =>
+          f.field_key === fieldKey
+            ? {
+                ...f,
+                value,
+                final_value: value,
+                qwen_status: qwenStatus,
+                extraction_status:
+                  qwenStatus === 'not_mentioned'
+                    ? ('not_found' as const)
+                    : qwenStatus === 'uncertain'
+                      ? ('uncertain' as const)
+                      : ('extracted' as const),
+                status:
+                  value === (f.final_value ?? f.auto_value ?? '') && qwenStatus === f.qwen_status
+                    ? f.status
+                    : ('modified' as const),
+              }
+            : f,
+        ),
+    );
+  }
+
+  function renderFieldCard(field: ReviewField, hideFieldLabel: boolean) {
+    const isSuspicious = field.verification_status === 'suspicious';
+    const isSelected = field.field_key === selectedFieldKey;
+    const isReviewed = field.status === 'confirmed';
+    const value = field.final_value ?? field.auto_value ?? '';
+    const fieldLabel = field.field_name ?? field.label ?? field.field_key;
+    const isJudgementField = field.qwen_type === 'J' || field.review_control === 'judgement';
+    const currentJudgementStatus = field.qwen_status ?? getQwenStatusFromValue(value);
+    const isAbnormalJudgement = isJudgementField && currentJudgementStatus === 'abnormal';
+    const isNotMentionedJudgement = isJudgementField && currentJudgementStatus === 'not_mentioned';
+    const isUncertainJudgement = isJudgementField && currentJudgementStatus === 'uncertain';
+    const quietNotFound = !isJudgementField && isQuietNotFound(field);
+    const isDiagnosis = isDiagnosisField(field);
+    const diagnosisItems = isDiagnosis ? parseDiagnosisItems(value) : [];
+    const showDiagnosisItems = !quietNotFound && !isJudgementField && diagnosisItems.length > 1;
+    const attentionMessage = getAttentionMessage(field);
+    const isAttention = attentionMessage !== null;
+    const attentionAriaLabel = `重点核验：${attentionMessage ?? ''}`;
+    const reviewCheck = (
+      <button
+        type="button"
+        className="field-card__review-check"
+        aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
+        aria-pressed={isReviewed}
+        disabled={readOnly}
+        onClick={(event) => {
+          event.stopPropagation();
+          onFocusField(field);
+          onToggleReviewed(field);
+        }}
+      >
+        {isReviewed ? '✓' : ''}
+      </button>
+    );
+
+    return (
+      <div
+        key={field.field_key}
+        className={`field-card__item ${getFieldLayoutClass(field, value)}${isDiagnosis ? ' field-card__item--diagnosis' : ''}${isSelected ? ' is-focused' : ''}${isSuspicious ? ' is-suspicious' : ''}${isReviewed ? ' is-reviewed' : ''}${quietNotFound ? ' is-not-found' : ''}${isAttention ? ' is-attention' : ''}`}
+        data-testid={`review-field-card-${field.field_key}`}
+        onClick={() => onFocusField(field)}
+      >
+        {!hideFieldLabel ? (
+          <div className="field-card__topline">
+            <label
+              className="field-card__label"
+              htmlFor={`review-field-${field.field_key}`}
+            >
+              {fieldLabel}
+            </label>
+            {isAttention ? (
+              <span
+                className="field-card__flag"
+                aria-label={attentionAriaLabel}
+                data-tooltip={attentionMessage ?? ''}
+                tabIndex={0}
+              >
+                !
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {isAttention ? (
+          hideFieldLabel ? (
+            <div className="field-card__topline">
+              <span
+                className="field-card__flag"
+                aria-label={attentionAriaLabel}
+                data-tooltip={attentionMessage ?? ''}
+                tabIndex={0}
+              >
+                !
+              </span>
+            </div>
+          ) : null
+        ) : null}
+        <div className={`field-card__value-row${isJudgementField && !isAbnormalJudgement ? ' field-card__value-row--judgement' : ''}${showDiagnosisItems ? ' field-card__value-row--diagnosis' : ''}`}>
+          {quietNotFound ? (
+            <div className="field-card__text-editor field-card__text-editor--placeholder">
+              <div
+                id={`review-field-${field.field_key}`}
+                className="field-card__placeholder"
+                role="textbox"
+                aria-readonly="true"
+                aria-label={`${fieldLabel} 未提及`}
+                data-placeholder="未提及"
+                onClick={() => onFocusField(field)}
+              >
+                未提及
+              </div>
+              {reviewCheck}
+            </div>
+          ) : isAbnormalJudgement ? (
+            <div className="field-card__abnormal-editor">
+              <AutoGrowTextarea
+                field={field}
+                value={value}
+                label={fieldLabel}
+                onChange={(nextValue) => updateField(field.field_key, nextValue)}
+                onBlur={(event) => {
+                  if (event.currentTarget.value.trim().length === 0) {
+                    updateQwenJudgementField(field.field_key, '', 'not_mentioned');
+                  }
+                }}
+                onFocus={() => onFocusField(field)}
+                readOnly={readOnly}
+                autoFocus={value.trim().length === 0}
+              />
+              {reviewCheck}
+            </div>
+          ) : isJudgementField ? (
+            <div
+              className={`field-card__judgement${isNotMentionedJudgement ? ' is-not-mentioned' : ''}`}
+              role="group"
+              aria-label={`${fieldLabel} 状态`}
+            >
+              {QWEN_J_OPTIONS.map((option) => {
+                const pressed = !isUncertainJudgement && currentJudgementStatus === option.status;
+                return (
+                  <button
+                    key={option.status}
+                    type="button"
+                    className="field-card__judgement-option"
+                    aria-label={`${option.label} ${fieldLabel}`}
+                    aria-pressed={pressed}
+                    disabled={readOnly}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onFocusField(field);
+                      updateQwenJudgementField(
+                        field.field_key,
+                        option.status === 'abnormal' ? '' : option.value,
+                        option.status
+                      );
+                    }}
+                  >
+                    <span className="field-card__judgement-dot" aria-hidden="true" />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+              {reviewCheck}
+            </div>
+          ) : showDiagnosisItems ? (
+            <div className="field-card__text-editor field-card__text-editor--diagnosis">
+              <DiagnosisListEditor
+                items={diagnosisItems}
+                label={fieldLabel}
+                readOnly={readOnly}
+                onChange={(nextValue) => updateField(field.field_key, nextValue)}
+                onFocus={() => onFocusField(field)}
+              />
+              {reviewCheck}
+            </div>
+          ) : (
+            <div className={field.unit ? 'field-card__parameter-value' : undefined}>
+              <div className="field-card__text-editor">
+                <AutoGrowTextarea
+                  field={field}
+                  value={value}
+                  label={fieldLabel}
+                  onChange={(nextValue) => updateField(field.field_key, nextValue)}
+                  onFocus={() => onFocusField(field)}
+                  readOnly={readOnly}
+                />
+                {reviewCheck}
+              </div>
+              {field.unit ? <span className="field-card__unit" aria-hidden="true">{field.unit}</span> : null}
+            </div>
+          )}
+          {isJudgementField && !isAbnormalJudgement ? (
+            isUncertainJudgement ? (
+              <span
+                className="field-card__judgement-warning"
+                aria-label={`${fieldLabel} 不确定，请核对原文`}
+                title="不确定，请核对原文"
+              >
+                !
+              </span>
+            ) : (
+              <span className="field-card__judgement-warning field-card__judgement-warning--empty" aria-hidden="true" />
+            )
+          ) : null}
+        </div>
+      </div>
     );
   }
 
@@ -286,149 +532,20 @@ export function FieldList({
             </header>
 
             <div className="field-card__body">
-              {group.fields.map((field) => {
-                const isSuspicious = field.verification_status === 'suspicious';
-                const isSelected = field.field_key === selectedFieldKey;
-                const isReviewed = field.status === 'confirmed';
-                const value = field.final_value ?? field.auto_value ?? '';
-                const fieldLabel = field.field_name ?? field.label ?? field.field_key;
-                const isJudgementField = field.qwen_type === 'J' || field.review_control === 'judgement';
-                const currentJudgementStatus = field.qwen_status ?? getQwenStatusFromValue(value);
-                const isUncertainJudgement = isJudgementField && currentJudgementStatus === 'uncertain';
-                const quietNotFound = isQuietNotFound(field);
-                const diagnosisItems = isDiagnosisField(field) ? parseDiagnosisItems(value) : [];
-                const showDiagnosisItems = !quietNotFound && !isJudgementField && diagnosisItems.length > 1;
-                const attentionMessage = getAttentionMessage(field);
-                const isAttention = attentionMessage !== null;
-                const attentionAriaLabel = `重点核验：${attentionMessage ?? ''}`;
-                const reviewCheck = (
-                  <button
-                    type="button"
-                    className="field-card__review-check"
-                    aria-label={`${isReviewed ? '取消审核' : '审核'} ${fieldLabel}`}
-                    aria-pressed={isReviewed}
-                    disabled={readOnly}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onFocusField(field);
-                      onToggleReviewed(field);
-                    }}
-                  >
-                    {isReviewed ? '✓' : ''}
-                  </button>
-                );
-
+              {buildFieldLayoutItems(group.fields).map((layoutItem) => {
+                if (layoutItem.kind === 'field') {
+                  return renderFieldCard(layoutItem.field, hideDuplicateFieldLabel);
+                }
                 return (
                   <div
-                    key={field.field_key}
-                    className={`field-card__item ${getFieldLayoutClass(field, value)}${isSelected ? ' is-focused' : ''}${isSuspicious ? ' is-suspicious' : ''}${isReviewed ? ' is-reviewed' : ''}${quietNotFound ? ' is-not-found' : ''}${isAttention ? ' is-attention' : ''}`}
-                    data-testid={`review-field-card-${field.field_key}`}
-                    onClick={() => onFocusField(field)}
+                    key={`${group.groupKey}-${layoutItem.groupLabel}`}
+                    className="field-card__parameter-set"
+                    data-columns={layoutItem.columns}
+                    data-testid={`review-parameter-group-${layoutItem.groupLabel}`}
                   >
-                    {!hideDuplicateFieldLabel ? (
-                      <div className="field-card__topline">
-                        <label
-                          className="field-card__label"
-                          htmlFor={`review-field-${field.field_key}`}
-                        >
-                          {fieldLabel}
-                        </label>
-                        {isAttention ? (
-                          <span
-                            className="field-card__flag"
-                            aria-label={attentionAriaLabel}
-                            data-tooltip={attentionMessage ?? ''}
-                            tabIndex={0}
-                          >
-                            !
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {isAttention ? (
-                      hideDuplicateFieldLabel ? (
-                        <div className="field-card__topline">
-                          <span
-                            className="field-card__flag"
-                            aria-label={attentionAriaLabel}
-                            data-tooltip={attentionMessage ?? ''}
-                            tabIndex={0}
-                          >
-                            !
-                          </span>
-                        </div>
-                      ) : null
-                    ) : null}
-                    <div className={`field-card__value-row${isJudgementField ? ' field-card__value-row--judgement' : ''}${showDiagnosisItems ? ' field-card__value-row--diagnosis' : ''}`}>
-                      {quietNotFound ? (
-                        <div
-                          id={`review-field-${field.field_key}`}
-                          className="field-card__placeholder"
-                          role="textbox"
-                          aria-readonly="true"
-                          aria-label={`${fieldLabel} 未提及`}
-                          data-placeholder="未提及"
-                          onClick={() => onFocusField(field)}
-                        >
-                          未提及
-                        </div>
-                      ) : isJudgementField ? (
-                        <div className="field-card__judgement" role="group" aria-label={`${fieldLabel} 状态`}>
-                          {QWEN_J_OPTIONS.map((option) => {
-                            const pressed = !isUncertainJudgement && currentJudgementStatus === option.status;
-                            return (
-                              <button
-                                key={option.status}
-                                type="button"
-                                className="field-card__judgement-option"
-                                aria-label={`${option.label} ${fieldLabel}`}
-                                aria-pressed={pressed}
-                                disabled={readOnly}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onFocusField(field);
-                                  updateQwenJudgementField(field.field_key, option.value, option.status);
-                                }}
-                              >
-                                <span className="field-card__judgement-dot" aria-hidden="true" />
-                                <span>{option.label}</span>
-                              </button>
-                            );
-                          })}
-                          {reviewCheck}
-                        </div>
-                      ) : showDiagnosisItems ? (
-                        <DiagnosisListEditor
-                          items={diagnosisItems}
-                          label={fieldLabel}
-                          readOnly={readOnly}
-                          onChange={(nextValue) => updateField(field.field_key, nextValue)}
-                          onFocus={() => onFocusField(field)}
-                        />
-                      ) : (
-                        <AutoGrowTextarea
-                          field={field}
-                          value={value}
-                          label={fieldLabel}
-                          onChange={(nextValue) => updateField(field.field_key, nextValue)}
-                          onFocus={() => onFocusField(field)}
-                          readOnly={readOnly}
-                        />
-                      )}
-                      {isJudgementField ? (
-                        isUncertainJudgement ? (
-                          <span
-                            className="field-card__judgement-warning"
-                            aria-label={`${fieldLabel} 不确定，请核对原文`}
-                            title="不确定，请核对原文"
-                          >
-                            !
-                          </span>
-                        ) : (
-                          <span className="field-card__judgement-warning field-card__judgement-warning--empty" aria-hidden="true" />
-                        )
-                      ) : null}
-                      {!isJudgementField ? reviewCheck : null}
+                    <div className="field-card__parameter-title">{layoutItem.groupLabel}</div>
+                    <div className="field-card__parameter-grid">
+                      {layoutItem.fields.map((field) => renderFieldCard(field, false))}
                     </div>
                   </div>
                 );

@@ -63,3 +63,10 @@ class PageService:
             self._safe_remove(abs_image_path)
             raise
         return page
+
+    def delete_saved_page(self, page: dict) -> None:
+        self._safe_remove(page.get("original_image_path", ""))
+        task_id = page.get("task_id")
+        page_id = page.get("page_id")
+        if isinstance(task_id, str) and isinstance(page_id, str):
+            self._store.delete(self._file_validator.build_path(task_id, page_id, "json"))

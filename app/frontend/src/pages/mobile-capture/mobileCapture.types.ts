@@ -1,4 +1,4 @@
-export type CapturePageStatus = 'uploaded' | 'uploading' | 'failed';
+export type CapturePageStatus = 'pending' | 'uploaded' | 'uploading' | 'failed';
 
 export interface CapturePageItem {
   localId: string;
@@ -8,5 +8,6 @@ export interface CapturePageItem {
   status: CapturePageStatus;
   previewUrl?: string;
   fileName?: string;
+  file?: File;
   errorMessage?: string;
 }

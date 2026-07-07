@@ -17,7 +17,7 @@ from .algorithm_ports.results import AlgorithmResultStore
 
 
 class ReextractionService:
-    """Re-run field extraction from persisted OCR text only."""
+    """Re-run field extraction, falling back to full image processing when OCR text is unavailable."""
 
     def __init__(
         self,
@@ -46,47 +46,79 @@ class ReextractionService:
         if task["status"] not in (TaskStatus.REVIEW.value, TaskStatus.DONE.value):
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="只有待审核或已完成任务可以基于 OCR 文本重新抽取",
+                message="只有待审核或已完成任务可以重新处理",
                 details={"current": task["status"]},
             )
 
-        document_result = self._load_ocr_document_result(task_id)
+        schema, field_port, prompt_version = self._resolve_extraction_profile(task)
 
-        profile = None
+        if field_port is None:
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message="字段抽取模块未配置，无法重新处理",
+                details={"reason": "field_port_not_configured"},
+            )
+        if not isinstance(schema, dict):
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message="schema 缺失或非法，无法重新处理",
+                details={"reason": "schema_missing_or_invalid"},
+            )
+
+        if not hasattr(field_port, "extract"):
+            return self._reprocess_from_images(task_id, task, schema, prompt_version)
+
+        try:
+            document_result = self._load_ocr_document_result(task_id)
+        except AppError as exc:
+            if exc.details.get("reason") == "ocr_text_missing" and task.get("images"):
+                return self._reprocess_from_images(task_id, task, schema, prompt_version)
+            raise
+
+        return self._extract_from_saved_ocr(
+            task_id,
+            task,
+            document_result,
+            field_port,
+            schema,
+            prompt_version,
+            cancellation_token,
+            source="ocr_text_only",
+        )
+
+    def _resolve_extraction_profile(self, task: dict) -> tuple[dict, object, str]:
         if self._document_profiles is not None:
             try:
                 profile = self._document_profiles.get_profile(task.get("document_type") or "copd_admission_record")
             except AppError as exc:
                 raise AppError(
                     ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                    message="文书模板未注册或未完成接入，无法重新抽取",
+                    message="文书模板未注册或未完成接入，无法重新处理",
                     details={
                         "reason": "document_type_not_registered",
                         "document_type": task.get("document_type"),
                         "error_code": exc.code,
                     },
                 )
-            schema = profile.schema
-            field_port = profile.field_port
-            prompt_version = profile.prompt_version
-        else:
-            schema = self._schema_provider() if self._schema_provider else {}
-            field_port = self._field_port
-            prompt_version = self._prompt_version_provider()
+            return profile.schema, profile.field_port, profile.prompt_version
+        return (
+            self._schema_provider() if self._schema_provider else {},
+            self._field_port,
+            self._prompt_version_provider(),
+        )
 
-        if field_port is None:
-            raise AppError(
-                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="字段抽取模块未配置，无法重新抽取",
-                details={"reason": "field_port_not_configured"},
-            )
-        if not isinstance(schema, dict):
-            raise AppError(
-                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="schema 缺失或非法，无法重新抽取",
-                details={"reason": "schema_missing_or_invalid"},
-            )
-
+    def _extract_from_saved_ocr(
+        self,
+        task_id: str,
+        task: dict,
+        document_result: dict,
+        field_port,
+        schema: dict,
+        prompt_version: str,
+        cancellation_token: Optional[Event],
+        *,
+        source: str,
+    ) -> dict:
         evidence_units = self._load_evidence_units_for_reextract(document_result)
         self._persist_rebuilt_evidence_units(task_id, document_result, evidence_units)
 
@@ -96,15 +128,84 @@ class ReextractionService:
                 "document_result": document_result,
                 "evidence_units": evidence_units,
                 "schema": schema,
-                "source": "ocr_text_only",
+                "source": source,
                 "document_type": task.get("document_type") or "copd_admission_record",
                 "cancellation_token": cancellation_token,
             }
         )
+        return self._finalize_reprocess_result(
+            task_id,
+            task,
+            candidates,
+            schema,
+            prompt_version,
+            source=source,
+        )
+
+    def _reprocess_from_images(
+        self,
+        task_id: str,
+        task: dict,
+        schema: dict,
+        prompt_version: str,
+    ) -> dict:
+        if not task.get("images"):
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message="任务缺少已上传图片，无法重新处理",
+                details={"reason": "image_inputs_missing"},
+            )
+        if not hasattr(self._task_service, "reprocess_inline"):
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message="任务处理模块未配置，无法重新处理",
+                details={"reason": "task_reprocess_not_configured"},
+            )
+
+        result_task = self._task_service.reprocess_inline(
+            task_id,
+            schema=schema,
+            reason="重新处理",
+        )
+        if result_task.get("status") != TaskStatus.REVIEW.value:
+            raise AppError(
+                ErrorCode.REEXTRACTION_VALIDATION_FAILED,
+                message=result_task.get("error_message") or "重新处理失败",
+                details={
+                    "reason": "image_reprocess_failed",
+                    "task_status": result_task.get("status"),
+                    "error_code": result_task.get("error_code"),
+                    "details": result_task.get("details"),
+                },
+            )
+
+        wrapper = self._store.read(f"results/{task_id}/field_candidates.json")
+        candidates = wrapper.get("candidates") if isinstance(wrapper, dict) else None
+        return self._finalize_reprocess_result(
+            task_id,
+            result_task,
+            candidates,
+            schema,
+            prompt_version,
+            source="image_reprocess",
+            existing_wrapper=wrapper if isinstance(wrapper, dict) else None,
+        )
+
+    def _finalize_reprocess_result(
+        self,
+        task_id: str,
+        task: dict,
+        candidates,
+        schema: dict,
+        prompt_version: str,
+        *,
+        source: str,
+        existing_wrapper: dict | None = None,
+    ) -> dict:
         if not isinstance(candidates, list) or not candidates or all_fields_empty(candidates):
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="重新抽取字段结果为空",
+                message="重新处理字段结果为空",
                 details={"reason": "empty_field_results"},
             )
         try:
@@ -112,7 +213,7 @@ class ReextractionService:
         except AppError as exc:
             raise AppError(
                 ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                message="重新抽取字段候选结构非法",
+                message="重新处理字段候选结构非法",
                 details={"reason": "invalid_candidate_contract", "validation_error": str(exc)},
             )
         if self._schema_validator:
@@ -124,7 +225,7 @@ class ReextractionService:
             except Exception as exc:
                 raise AppError(
                     ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-                    message="重新抽取字段结果未通过 schema 校验",
+                    message="重新处理字段结果未通过 schema 校验",
                     details={"reason": "schema_validation_failed", "validation_error": str(exc)},
                 )
 
@@ -132,13 +233,13 @@ class ReextractionService:
         run_id = f"reextract_{now.replace(':', '').replace('-', '').replace('.', '')}"
         metadata = {
             "run_id": run_id,
-            "source": "ocr_text_only",
+            "source": source,
             "schema_version": schema.get("version"),
             "prompt_version": prompt_version,
             "created_at": now,
         }
-        self._store.write(
-            f"results/{task_id}/field_candidates.json",
+        wrapper = existing_wrapper if isinstance(existing_wrapper, dict) else {}
+        wrapper.update(
             {
                 "task_id": task_id,
                 "stage": "field_extraction",
@@ -148,7 +249,11 @@ class ReextractionService:
                 "document_type": schema.get("document_type"),
                 "field_groups": schema.get("field_groups") if isinstance(schema.get("field_groups"), list) else None,
                 "metadata": metadata,
-            },
+            }
+        )
+        self._store.write(
+            f"results/{task_id}/field_candidates.json",
+            wrapper,
         )
         self._store.write(
             f"results/{task_id}/reextract_runs/{run_id}.json",
@@ -208,6 +313,18 @@ class ReextractionService:
         if doc is not None:
             return doc
 
+        raw_doc = self._store.read(f"results/{task_id}/document_result.json")
+        if isinstance(raw_doc, dict):
+            merged_text = raw_doc.get("merged_text")
+            if isinstance(merged_text, str) and merged_text.strip():
+                pages = raw_doc.get("pages")
+                evidence_units = raw_doc.get("evidence_units")
+                return {
+                    "pages": pages if isinstance(pages, list) else [],
+                    "merged_text": merged_text,
+                    "evidence_units": evidence_units if isinstance(evidence_units, list) else [],
+                }
+
         review = self._store.read(f"results/{task_id}/review_result.json")
         if isinstance(review, dict):
             ocr_text = review.get("ocr_text")
@@ -222,7 +339,7 @@ class ReextractionService:
 
         raise AppError(
             ErrorCode.REEXTRACTION_VALIDATION_FAILED,
-            message="任务缺少已识别 OCR 文本，无法重新抽取",
+            message="任务缺少已识别 OCR 文本，无法直接重新处理",
             details={"reason": "ocr_text_missing"},
         )
 

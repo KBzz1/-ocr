@@ -7,6 +7,7 @@ BUNDLE_NAME="${BUNDLE_NAME:-manzufei_ocr_offline_bundle}"
 BUNDLE_DIR="${BUNDLE_DIR:-$ROOT_DIR/output/$BUNDLE_NAME}"
 ARCHIVE_PATH="${ARCHIVE_PATH:-$ROOT_DIR/output/$BUNDLE_NAME.zip}"
 OFFLINE_IMAGE_DIR="${OFFLINE_IMAGE_DIR:-$ROOT_DIR/deploy/offline-images}"
+SKIP_ZIP="${SKIP_ZIP:-0}"
 
 # 同一个本地 Qwen vLLM 镜像同时承担 OCR 与固定字段抽取。
 # 镜像来源必须由 QA 在交付前锚定到具体 digest 后再写入；此处只声明命名空间。
@@ -64,6 +65,7 @@ if [ -d "$ROOT_DIR/models" ]; then
   echo "Copying models..."
   mkdir -p "$BUNDLE_DIR/models"
   tar \
+    --exclude='.git' \
     --exclude='README.md' \
     --exclude='.gitignore' \
     --exclude='*.tmp' \
@@ -76,7 +78,9 @@ fi
 echo "Bundle ready:"
 echo "  $BUNDLE_DIR"
 
-if command -v python3 >/dev/null 2>&1; then
+if [ "$SKIP_ZIP" = "1" ]; then
+  echo "SKIP_ZIP=1; skipped zip archive creation"
+elif command -v python3 >/dev/null 2>&1; then
   echo "Creating zip archive: $ARCHIVE_PATH"
   rm -f "$ARCHIVE_PATH"
   (

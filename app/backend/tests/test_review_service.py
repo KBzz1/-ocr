@@ -267,6 +267,102 @@ def test_get_or_init_hydrates_missing_schema_fields(tmp_path):
     assert {f["field_key"] for f in persisted["fields"]} == {"patient_name", "department"}
 
 
+def test_get_or_init_splits_legacy_composite_review_fields(tmp_path):
+    store = JsonStore(str(tmp_path))
+
+    class _TaskSvc:
+        def get_task(self, task_id):
+            return {"task_id": task_id, "status": "review", "schema_version": "qwen_batch_admission_record.v2"}
+
+        def update_review_summary(self, task_id, summary):
+            pass
+
+    schema = {
+        "version": "qwen_batch_admission_record.v2",
+        "document_type": "qwen_batch_admission_record",
+        "field_groups": [
+            {
+                "group_key": "physical_exam",
+                "group_label": "体格检查",
+                "fields": [
+                    {"field_key": "pe_temperature", "label": "体温"},
+                    {"field_key": "pe_pulse", "label": "脉搏"},
+                    {"field_key": "pe_heart_rate", "label": "心率"},
+                    {"field_key": "pe_respiration_rate", "label": "生命体征呼吸"},
+                    {"field_key": "pe_blood_pressure", "label": "血压"},
+                    {"field_key": "pe_height", "label": "身高"},
+                    {"field_key": "pe_weight", "label": "体重"},
+                    {"field_key": "pe_bmi", "label": "BMI"},
+                    {"field_key": "pe_heart_rhythm", "label": "心律", "qwen_type": "J", "review_control": "judgement"},
+                ],
+            },
+            {
+                "group_key": "auxiliary_exam",
+                "group_label": "辅助检查",
+                "fields": [
+                    {"field_key": "aux_blood_gas_ph", "label": "血气pH"},
+                    {"field_key": "aux_blood_gas_pco2", "label": "血气pCO2"},
+                    {"field_key": "aux_blood_gas_po2", "label": "血气pO2"},
+                    {"field_key": "aux_blood_gas_na", "label": "血气Na+"},
+                    {"field_key": "aux_blood_gas_fio2", "label": "血气FIO2"},
+                    {"field_key": "aux_blood_gas_oxygenation_index", "label": "血气氧合指数"},
+                    {"field_key": "aux_blood_routine_wbc", "label": "白细胞(WBC)"},
+                    {"field_key": "aux_blood_routine_mxd_percent", "label": "单核细胞百分率(MXD%)"},
+                    {"field_key": "aux_blood_routine_mod_absolute", "label": "单核细胞绝对值(MOD#)"},
+                ],
+            },
+        ],
+    }
+    vital_signs = "体温:36.7℃脉搏:99次/分呼吸:21次/分血压:142/87mmHg"
+    heart_rhythm = "心率99次/分，心律规则，心音正常，心脏各瓣膜未闻及病理性杂音，无心包摩擦音。"
+    height_weight_bmi = "身高:175cm体重:74kgBMI:24.2kg/m²"
+    blood_gas = "pH7.40↓、pCO235.00mmHg、PO276.00mmHg↓、Na+130.00mmol/L↓、FiO221.00、氧合指数:361%。"
+    blood_routine = "白细胞(WBC)6.68*10^9/L、单核细胞百分率(MXD%)13.9%、单核细胞绝对值(MOD#)0.92*10^9/L。"
+    store.write(
+        "results/task_001/review_result.json",
+        {
+            "task_id": "task_001",
+            "schema_version": "qwen_batch_admission_record.v2",
+            "document_type": "qwen_batch_admission_record",
+            "fields": [
+                {"field_key": "pe_vital_signs", "field_name": "生命体征", "auto_value": vital_signs, "final_value": vital_signs, "status": "unreviewed"},
+                {"field_key": "pe_heart_rhythm", "field_name": "心律", "auto_value": heart_rhythm, "final_value": heart_rhythm, "status": "unreviewed"},
+                {"field_key": "pe_height_weight_bmi", "field_name": "身高体重BMI", "auto_value": height_weight_bmi, "final_value": height_weight_bmi, "status": "unreviewed"},
+                {"field_key": "pe_weight", "field_name": "体重", "auto_value": "74kg", "final_value": "74kg", "status": "unreviewed"},
+                {"field_key": "aux_blood_gas", "field_name": "血气", "auto_value": blood_gas, "final_value": blood_gas, "status": "unreviewed"},
+                {"field_key": "aux_blood_gas_pco2", "field_name": "血气pCO2", "auto_value": "35.00mmHg", "final_value": "35.00mmHg", "status": "unreviewed"},
+                {"field_key": "aux_blood_routine", "field_name": "血常规", "auto_value": blood_routine, "final_value": blood_routine, "status": "unreviewed"},
+            ],
+            "summary": {},
+        },
+    )
+    service = ReviewService(store, _TaskSvc(), schema_provider=lambda: schema)
+
+    review = service.get_or_init("task_001")
+
+    field_keys = [field["field_key"] for field in review["fields"]]
+    assert "pe_vital_signs" not in field_keys
+    assert find_field(review, "pe_temperature")["final_value"] == "36.7"
+    assert find_field(review, "pe_pulse")["final_value"] == "99"
+    assert find_field(review, "pe_heart_rate")["final_value"] == "99"
+    assert find_field(review, "pe_respiration_rate")["final_value"] == "21"
+    assert find_field(review, "pe_blood_pressure")["final_value"] == "142/87"
+    assert find_field(review, "pe_height")["final_value"] == "175"
+    assert find_field(review, "pe_weight")["final_value"] == "74"
+    assert find_field(review, "pe_bmi")["final_value"] == "24.2"
+    assert find_field(review, "pe_heart_rhythm")["final_value"] == "正常"
+    assert find_field(review, "aux_blood_gas_ph")["final_value"] == "7.40"
+    assert find_field(review, "aux_blood_gas_pco2")["final_value"] == "35.00"
+    assert find_field(review, "aux_blood_gas_po2")["final_value"] == "76.00"
+    assert find_field(review, "aux_blood_gas_na")["final_value"] == "130.00"
+    assert find_field(review, "aux_blood_gas_fio2")["final_value"] == "21.00"
+    assert find_field(review, "aux_blood_gas_oxygenation_index")["final_value"] == "361"
+    assert find_field(review, "aux_blood_routine_wbc")["final_value"] == "6.68"
+    assert find_field(review, "aux_blood_routine_mxd_percent")["final_value"] == "13.9"
+    assert find_field(review, "aux_blood_routine_mod_absolute")["final_value"] == "0.92"
+    assert store.read("results/task_001/review_result.json")["summary"]["total_count"] == 18
+
+
 def test_get_or_init_reorders_fields_to_schema_order(tmp_path):
     """BE-MVP-05-06: review 已有字段按 schema 顺序重排,确保导出顺序与 schema 一致。"""
     review_service, _task_service, store = make_services(tmp_path)
@@ -469,6 +565,86 @@ def test_not_found_review_field_is_not_attention():
     assert field["auto_value"] == ""
     assert field["extraction_status"] == "not_found"
     assert field["attention_message"] == ""
+
+
+# --- judgement 规则一致性 & 误判防护 ---
+
+
+def test_judgement_rules_matches_normal_indicators():
+    from app.backend.services.copd_extraction.judgement_rules import matches_normal_judgement
+
+    # 两处应一致识别的正常/阴性表述
+    for text in (
+        "正常",
+        "无异常",
+        "未见异常",
+        "无压痛",
+        "无肿大",
+        "无充血",
+        "无水肿",
+        "无黄染",
+        "无分泌物",
+        "未闻及病理性杂音",
+        "未触及包块",
+        "未扪及包块",
+        "未触及明显",
+        "未扪及肿大",
+        "心律规则",
+        "心音正常",
+        "未闻及杂音",
+        "阴性",
+    ):
+        assert matches_normal_judgement(text), f"应识别为正常: {text!r}"
+
+
+def test_judgement_rules_matches_normal_in_compound_text():
+    from app.backend.services.copd_extraction.judgement_rules import matches_normal_judgement
+
+    # 复合文本中含有正常/阴性指示词时应命中
+    assert matches_normal_judgement("腹部平坦，无压痛，无肿大")
+    assert matches_normal_judgement("心律规则，心音正常，未闻及杂音")
+    assert matches_normal_judgement("外耳道无异常分泌物，双侧乳突区无压痛")
+
+
+def test_judgement_rules_rejects_false_positive_normal_substring():
+    from app.backend.services.copd_extraction.judgement_rules import matches_normal_judgement
+
+    # "正常" 作为其他词语的子串不应误判（如 "肺动脉压正常范围上限"）
+    assert not matches_normal_judgement("肺动脉压正常范围上限"), (
+        "\"正常\" 内嵌在复合词中不应被误判为正常结论"
+    )
+    assert not matches_normal_judgement("甲状腺功能异常进一步检查"), (
+        "\"异常\" 不应触发误判（当前仅匹配正常模式，此断言确保\"异常\"不命中）"
+    )
+    # 不相关的临床描述不应命中
+    assert not matches_normal_judgement("患者既往有血小板减少病史")
+
+
+def test_judgement_rules_handles_edge_cases():
+    from app.backend.services.copd_extraction.judgement_rules import matches_normal_judgement
+
+    assert not matches_normal_judgement("")
+    assert not matches_normal_judgement("   ")
+    assert matches_normal_judgement(" 正常 ")  # 带空白
+    assert matches_normal_judgement("正常。")  # 带标点
+    assert matches_normal_judgement("，正常，")  # 中文标点包围
+
+
+def test_review_service_infer_judgement_uses_shared_rules():
+    """确保 ReviewService._infer_judgement_value 使用共享规则且不误判。"""
+    from app.backend.services.review_service import ReviewService
+
+    # 正常表述
+    assert ReviewService._infer_judgement_value("无压痛") == "正常"
+    assert ReviewService._infer_judgement_value("未闻及杂音") == "正常"
+    assert ReviewService._infer_judgement_value("心律规则") == "正常"
+    assert ReviewService._infer_judgement_value("阴性") == "正常"
+    # 不应误判
+    assert ReviewService._infer_judgement_value("肺动脉压正常范围上限") is None
+    assert ReviewService._infer_judgement_value("血小板减少病史") is None
+    # 空/空白
+    assert ReviewService._infer_judgement_value("") is None
+    assert ReviewService._infer_judgement_value("   ") is None
 
 
 def test_existing_review_result_gets_quality_warning_on_read(tmp_path):

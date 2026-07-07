@@ -1209,12 +1209,88 @@
   grid-column: span 1;
 }
 
+.field-card__item--parameter {
+  grid-column: span 1;
+}
+
 .field-card__item--medium {
   grid-column: span 2;
 }
 
+.field-card__item--diagnosis,
+.field-card__item[data-testid='review-field-card-diagnosis_initial'],
+.field-card__item[data-testid='review-field-card-diagnosis_final'] {
+  grid-column: 1 / -1;
+}
+
 .field-card__item--long {
   grid-column: 1 / -1;
+}
+
+.field-card__parameter-set {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border: 1px solid #e4edf8;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.field-card__parameter-title {
+  margin-bottom: 8px;
+  color: #1f3554;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.field-card__parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.field-card__parameter-set[data-columns='1'] .field-card__parameter-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.field-card__parameter-set[data-columns='2'] .field-card__parameter-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field-card__parameter-set[data-columns='4'] .field-card__parameter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.field-card__parameter-set[data-columns='6'] .field-card__parameter-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.field-card__parameter-set[data-columns='8'] .field-card__parameter-grid {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.field-card__parameter-set[data-columns='6'],
+.field-card__parameter-set[data-columns='8'] {
+  padding: 8px;
+}
+
+.field-card__parameter-set[data-columns='6'] .field-card__item,
+.field-card__parameter-set[data-columns='8'] .field-card__item {
+  padding: 8px 8px;
+}
+
+.field-card__parameter-set[data-columns='6'] .field-card__input,
+.field-card__parameter-set[data-columns='8'] .field-card__input {
+  padding-right: 6px;
+  padding-left: 8px;
+}
+
+.field-card__parameter-grid .field-card__item {
+  min-height: 100%;
 }
 
 .field-card__item.is-focused {
@@ -1331,8 +1407,13 @@
   }
 
   .field-card__item--medium,
+  .field-card__item--parameter,
   .field-card__item--long {
     grid-column: auto;
+  }
+
+  .field-card__parameter-set[data-columns] .field-card__parameter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1531,6 +1612,10 @@
   grid-column: span 1;
 }
 
+.field-card__item--parameter {
+  grid-column: span 1;
+}
+
 .field-card__item--long {
   grid-column: 1 / -1;
 }
@@ -1614,24 +1699,89 @@
 
 .field-card__value-row {
   position: relative;
+  width: 100%;
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 8px;
 }
 
 .field-card__value-row--judgement {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 0;
 }
 
 .field-card__value-row--diagnosis {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 8px;
+}
+
+.field-card__text-editor,
+.field-card__abnormal-editor {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #b9d0ef;
+  border-radius: 8px;
+  padding: 3px 8px 3px 3px;
+  background: #ffffff;
+}
+
+.field-card__text-editor .field-card__input,
+.field-card__abnormal-editor .field-card__input {
+  min-height: 30px;
+  border: 0;
+  padding: 4px 6px;
+  background: transparent;
+}
+
+.field-card__text-editor .field-card__review-check,
+.field-card__abnormal-editor .field-card__review-check {
+  justify-self: start;
+}
+
+.field-card__text-editor--placeholder {
+  border-style: dashed;
+  border-color: #d2dce9;
+  background: #f8fafc;
+}
+
+.field-card__text-editor--placeholder .field-card__placeholder {
+  border: 0;
+  padding: 4px 6px;
+  background: transparent;
+}
+
+.field-card__text-editor--diagnosis {
+  align-items: start;
+  width: 100%;
+  padding-top: 5px;
+}
+
+.field-card__parameter-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-card__unit {
+  min-width: max-content;
+  color: #4b5f7d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .field-card__input {
@@ -1733,12 +1883,17 @@
   }
 
   .field-card__item--medium,
+  .field-card__item--parameter,
   .field-card__item--long {
     grid-column: 1 / -1;
   }
+
+  .field-card__parameter-set[data-columns] .field-card__parameter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* FE-MVP-04-05: 重新抽取按钮 + 运行元数据条 */
+/* FE-MVP-04-05: 重新处理按钮 + 运行元数据条 */
 .review-reextract-button {
   border: 1px solid #2563eb;
   background: #eff6ff;
@@ -1830,16 +1985,23 @@
 
 /* ── Qwen J-type judgement segmented control ── */
 .field-card__judgement {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 24px;
   align-items: center;
   gap: 6px;
   width: 100%;
   overflow: hidden;
   border: 1px solid #b9d0ef;
   border-radius: 8px;
-  padding: 3px;
+  padding: 3px 8px 3px 3px;
   background: #ffffff;
+}
+
+.field-card__judgement.is-not-mentioned {
+  border-style: dashed;
+  border-color: #d2dce9;
+  background: #f8fafc;
 }
 
 .field-card__judgement-option {
@@ -1896,6 +2058,9 @@
 }
 
 .field-card__judgement-warning {
+  position: absolute;
+  top: -22px;
+  right: 0;
   width: 16px;
   height: 16px;
   display: inline-grid;
@@ -1909,7 +2074,7 @@
 }
 
 .field-card__judgement-warning--empty {
-  visibility: hidden;
+  display: none;
 }
 
 .field-card__judgement-option:disabled {
@@ -1917,7 +2082,13 @@
   opacity: 0.64;
 }
 
+.field-card__judgement .field-card__review-check {
+  justify-self: start;
+}
+
 .field-card__diagnosis-list {
+  width: 100%;
+  min-width: 0;
   display: grid;
   gap: 6px;
 }
@@ -1943,6 +2114,8 @@
 }
 
 .field-card__diagnosis-input {
+  width: 100%;
+  box-sizing: border-box;
   min-width: 0;
   height: 30px;
   border: 1px solid #dbe5f2;
