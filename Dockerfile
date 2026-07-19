@@ -18,6 +18,7 @@ RUN apt-get update \
         libgl1 \
         libglib2.0-0 \
         ninja-build \
+        poppler-utils \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,6 +30,7 @@ COPY app/backend /app/app/backend
 COPY app/config/default.yaml /app/app/config/default.yaml
 COPY app/config/schemas /app/app/config/schemas
 COPY app/frontend/dist /app/app/frontend/dist
+COPY algorithms/qwen_batch_engine /app/algorithms/qwen_batch_engine
 
 RUN mkdir -p /app/data /app/exports /app/logs /app/models
 

@@ -42,3 +42,19 @@ def test_qwen_batch_snapshot_contains_minimum_audit_files():
     ]
     for filename in expected:
         assert (snapshot / filename).is_file(), f"missing snapshot file: {filename}"
+
+
+def test_main_docker_image_includes_qwen_batch_runtime_dependencies():
+    requirements = (ROOT / "requirements.docker.txt").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    for package in [
+        "requests",
+        "Pillow",
+        "pdf2image",
+        "tqdm",
+        "opencv-python-headless",
+        "numpy",
+    ]:
+        assert package in requirements
+    assert "poppler-utils" in dockerfile

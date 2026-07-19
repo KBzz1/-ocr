@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-pushd "%~dp0" | exit /b 1
+pushd "%~dp0" || exit /b 1
 
 if not exist "deploy_debug_logs" md "deploy_debug_logs"
 for /f %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_ID=%%I"
@@ -26,6 +26,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
+call :require_image "manzufei-ocr:0.1.0"
+if errorlevel 1 exit /b 1
+call :require_image "qwen-vllm-openai:verified"
+if errorlevel 1 exit /b 1
+
 if not exist "app\config\local.yaml" (
   call :log "ERROR: Missing config file: app\config\local.yaml"
   call :log "Send this log file for troubleshooting: %LOG_FILE%"
@@ -49,7 +54,7 @@ call :log "Validating docker compose config"
 docker compose config >> "%LOG_FILE%" 2>&1
 
 call :log "Starting manzufei OCR workstation..."
-docker compose up -d >> "%LOG_FILE%" 2>&1
+docker compose up -d --pull never >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
   call :log "ERROR: Failed to start container."
   call :collect_failure_diagnostics
@@ -130,6 +135,25 @@ exit /b 0
 :validate_ipv4
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ip = $env:HOST_LAN_IP.Trim(); if ($ip -notmatch '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') { exit 1 }; $parts = $ip.Split('.') | ForEach-Object { [int]$_ }; if (($parts | Where-Object { $_ -lt 0 -or $_ -gt 255 }).Count -gt 0) { exit 1 }; exit 0" >nul 2>nul
 exit /b %ERRORLEVEL%
+
+:require_image
+set "REQUIRED_IMAGE=%~1"
+docker image inspect "%REQUIRED_IMAGE%" >nul 2>nul
+if errorlevel 1 (
+  call :log "ERROR: Missing local Docker image: %REQUIRED_IMAGE%"
+  call :log "Run 00_import_image.bat and wait until it finishes both OCR and Qwen image imports."
+  call :log "Do not close the window until you see: qwen-vllm-server image loaded successfully."
+  echo.
+  echo Missing local Docker image: %REQUIRED_IMAGE%
+  echo Run 00_import_image.bat first, and do not stop it before the Qwen image import finishes.
+  echo.
+  call :log "Current Docker images:"
+  docker images >> "%LOG_FILE%" 2>&1
+  pause
+  exit /b 1
+)
+call :log "Found local Docker image: %REQUIRED_IMAGE%"
+exit /b 0
 
 :wait_for_qwen_vllm
 set "QWEN_HEALTH_URL=http://127.0.0.1:8082/v1/models"

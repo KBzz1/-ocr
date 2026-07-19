@@ -10,11 +10,14 @@ services:
       - ./exports:/app/exports
       - ./logs:/app/logs
       - ./models:/app/models
+      - ./algorithms/qwen_batch_engine:/app/algorithms/qwen_batch_engine:ro
       - ./app/config/local.yaml:/app/app/config/local.yaml:ro
+      - ./app/frontend/dist:/app/app/frontend/dist:ro
       - ./vllm_cache:/root/.cache/vllm
     environment:
       MANZUFEI_BACKEND_DEBUG: "0"
       MANZUFEI_PUBLIC_BASE_URL: "${MANZUFEI_PUBLIC_BASE_URL:-}"
+      VLLM_SERVER_URL: "http://qwen-vision-vllm-server:8000/v1"
     depends_on:
       qwen-vision-vllm-server:
         condition: service_healthy

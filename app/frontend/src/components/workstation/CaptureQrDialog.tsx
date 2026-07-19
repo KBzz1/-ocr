@@ -24,13 +24,46 @@ function appendQrRefreshParam(value: string, version: number) {
   }
 }
 
+function hostFromMobileUrl(value: string) {
+  try {
+    return new URL(value).host;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeHostInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  try {
+    return new URL(trimmed).host;
+  } catch {
+    return trimmed.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  }
+}
+
+function buildMobileUrlWithHost(value: string, hostInput: string) {
+  const normalizedHost = normalizeHostInput(hostInput);
+  if (!normalizedHost) return value;
+
+  try {
+    const parsed = new URL(value);
+    parsed.host = normalizedHost.includes(':') ? normalizedHost : `${normalizedHost}:${parsed.port || '8081'}`;
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps) {
   const [qrSvgDataUrl, setQrSvgDataUrl] = useState<string | null>(null);
   const [qrVersion, setQrVersion] = useState(0);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const [manualUrl, setManualUrl] = useState('');
-  const qrValue = task?.mobile_upload_url ?? '';
+  const [mobileHostInput, setMobileHostInput] = useState('');
+  const baseQrValue = task?.mobile_upload_url ?? '';
+  const qrValue = baseQrValue ? buildMobileUrlWithHost(baseQrValue, mobileHostInput) : '';
   const qrRenderValue = qrValue ? appendQrRefreshParam(qrValue, qrVersion) : '';
 
   useEffect(() => {
@@ -60,7 +93,8 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
 
   useEffect(() => {
     if (isOpen) {
-      setManualUrl(task?.mobile_upload_url ?? '');
+      setMobileHostInput(hostFromMobileUrl(task?.mobile_upload_url ?? ''));
+      setQrVersion(0);
     }
   }, [isOpen, task?.mobile_upload_url]);
 
@@ -142,19 +176,30 @@ export function CaptureQrDialog({ isOpen, task, onClose }: CaptureQrDialogProps)
         <footer className="qr-dialog__footer">
           {isHelpOpen && task?.mobile_upload_url ? (
             <div className="qr-help-panel">
+              <label htmlFor="mobile-capture-host">电脑 IPv4 或访问地址</label>
+              <input
+                id="mobile-capture-host"
+                aria-label="电脑 IPv4 或访问地址"
+                value={mobileHostInput}
+                placeholder="例如 192.168.1.5"
+                onChange={(event) => {
+                  setMobileHostInput(event.currentTarget.value);
+                  setCopyStatus(null);
+                }}
+              />
               <label htmlFor="mobile-capture-url">手机访问链接</label>
               <div className="qr-help-panel__copy-row">
                 <input
                   id="mobile-capture-url"
                   aria-label="手机访问链接"
-                  value={manualUrl}
-                  onChange={(event) => setManualUrl(event.currentTarget.value)}
+                  value={qrValue}
+                  readOnly
                 />
                 <button className="secondary-action qr-help-panel__copy-button" type="button" onClick={() => void handleCopyLink()}>
                   复制链接
                 </button>
               </div>
-              <p>请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。</p>
+              <p>按 Windows 设置中的 IPv4 修改后，二维码会同步更新。</p>
               {copyStatus ? <span role="status">{copyStatus}</span> : null}
             </div>
           ) : null}

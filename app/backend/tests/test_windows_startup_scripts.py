@@ -555,6 +555,16 @@ def test_windows_import_script_loads_qwen_vllm_server_tar():
     assert "paddleocr-vlm-server" not in content
 
 
+def test_windows_import_script_always_loads_ocr_tar_for_bundle_updates():
+    """覆盖同步 manzufei-ocr.tar 后，00 导入脚本必须刷新本地 OCR 镜像。"""
+    content = Path("deploy/windows/00_import_image.bat").read_text(encoding="utf-8")
+    ocr_section = content.split('set "QWEN_IMAGE_TAR="', 1)[0]
+
+    assert "Loading OCR Docker image from tar" in ocr_section
+    assert 'docker load -i "%OCR_IMAGE_TAR%"' in ocr_section
+    assert "skipping load: manzufei-ocr:0.1.0" not in ocr_section
+
+
 def test_windows_start_script_checks_qwen_vllm_models_endpoint():
     """Windows 启动脚本必须检查 Qwen vLLM /v1/models 端点。"""
     content = Path("deploy/windows/01_start.bat").read_text(encoding="utf-8")

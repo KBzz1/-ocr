@@ -185,10 +185,23 @@ class QwenBatchAlgorithmPort:
         if exit_code != 0:
             error_payload = self._read_json(job_dir / "error.json")
             if isinstance(error_payload, dict):
+                logger.error(
+                    "task=%s qwen batch runner failed: reason=%s message=%s job_dir=%s",
+                    task_id,
+                    error_payload.get("reason", ""),
+                    str(error_payload.get("message", ""))[:500],
+                    job_dir,
+                )
                 return {
                     "status": "failed",
                     "error": error_payload,
                 }
+            logger.error(
+                "task=%s qwen batch runner exited without error.json: code=%s job_dir=%s",
+                task_id,
+                exit_code,
+                job_dir,
+            )
             return {
                 "status": "failed",
                 "error": {

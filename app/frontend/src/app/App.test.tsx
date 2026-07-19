@@ -358,6 +358,34 @@ describe('Workstation data integration', () => {
     );
   });
 
+  it('updates the visible QR code when the phone access IPv4 is edited', async () => {
+    const user = userEvent.setup();
+    server.use(mockSystemStatus(), mockTasks(taskFixtures), mockPatientSearch(), mockCreateTask());
+    render(<App />);
+
+    await screen.findByText('系统已启动');
+    await user.click(screen.getByRole('button', { name: /新建任务/ }));
+    await submitCreateTaskDialog(user, { recordTime: '09:30' });
+
+    const dialog = await screen.findByRole('dialog', { name: '手机扫码上传' });
+    await within(dialog).findByRole('img', { name: '任务上传二维码' });
+    await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
+
+    const hostInput = within(dialog).getByLabelText('电脑 IPv4 或访问地址') as HTMLInputElement;
+    expect(hostInput.value).toBe('127.0.0.1:8081');
+
+    await user.clear(hostInput);
+    await user.type(hostInput, '192.168.137.1');
+
+    await waitFor(() => {
+      const qrImage = within(dialog).getByRole('img', { name: '任务上传二维码' }) as HTMLImageElement;
+      expect(qrImage.dataset.qrValue).toBe('http://192.168.137.1:8081/mobile/upload/1?token=token_001');
+    });
+    expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
+      'http://192.168.137.1:8081/mobile/upload/1?token=token_001'
+    );
+  });
+
   it('shows only copy link guidance when the QR dialog help is opened', async () => {
     const user = userEvent.setup();
     server.use(mockSystemStatus(), mockTasks(taskFixtures), mockPatientSearch(), mockCreateTask());
@@ -371,11 +399,12 @@ describe('Workstation data integration', () => {
     await within(dialog).findByRole('img', { name: '任务上传二维码' });
     await user.click(within(dialog).getByRole('button', { name: '手机无法连接？' }));
 
+    expect((within(dialog).getByLabelText('电脑 IPv4 或访问地址') as HTMLInputElement).value).toBe('127.0.0.1:8081');
     expect((within(dialog).getByLabelText('手机访问链接') as HTMLInputElement).value).toBe(
       'http://127.0.0.1:8081/mobile/upload/1?token=token_001'
     );
     expect(within(dialog).getByRole('button', { name: '复制链接' })).toBeTruthy();
-    expect(within(dialog).getByText('请确认手机与电脑连接同一局域网或电脑热点，再在手机浏览器打开此链接。')).toBeTruthy();
+    expect(within(dialog).getByText('按 Windows 设置中的 IPv4 修改后，二维码会同步更新。')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: '192.168.1.5:8081' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '更新二维码' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '关闭' })).toBeNull();

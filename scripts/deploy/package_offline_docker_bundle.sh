@@ -46,6 +46,7 @@ echo "Creating offline bundle: $BUNDLE_DIR"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/images" \
   "$BUNDLE_DIR/app/config" \
+  "$BUNDLE_DIR/app/frontend" \
   "$BUNDLE_DIR/data" \
   "$BUNDLE_DIR/exports" \
   "$BUNDLE_DIR/logs"
@@ -55,11 +56,24 @@ echo "Copying Qwen vLLM server tar..."
 cp "$QWEN_VLLM_SERVER_TAR" "$BUNDLE_DIR/images/qwen-vllm-server.tar"
 cp "$ROOT_DIR/docker-compose.yml" "$BUNDLE_DIR/docker-compose.yml"
 cp "$ROOT_DIR/app/config/local.docker.yaml" "$BUNDLE_DIR/app/config/local.yaml"
+cp -a "$ROOT_DIR/app/frontend/dist" "$BUNDLE_DIR/app/frontend/dist"
 cp "$ROOT_DIR/deploy/windows/00_import_image.bat" "$BUNDLE_DIR/00_import_image.bat"
 cp "$ROOT_DIR/deploy/windows/01_start.bat" "$BUNDLE_DIR/01_start.bat"
 cp "$ROOT_DIR/deploy/windows/02_stop.bat" "$BUNDLE_DIR/02_stop.bat"
 cp "$ROOT_DIR/deploy/windows/03_logs.bat" "$BUNDLE_DIR/03_logs.bat"
 cp "$ROOT_DIR/deploy/windows/README_DEPLOY.txt" "$BUNDLE_DIR/README_DEPLOY.txt"
+
+mkdir -p "$BUNDLE_DIR/algorithms"
+tar \
+  --exclude='__pycache__' \
+  --exclude='*.pyc' \
+  --exclude='.pytest_cache' \
+  --exclude='upstream/input/*' \
+  --exclude='upstream/output/*' \
+  --exclude='upstream/logs/*' \
+  --exclude='upstream/model/*' \
+  --exclude='upstream/vllm_cache/*' \
+  -C "$ROOT_DIR" -cf - algorithms/qwen_batch_engine | tar -C "$BUNDLE_DIR" -xf -
 
 if [ -d "$ROOT_DIR/models" ]; then
   echo "Copying models..."
