@@ -92,7 +92,8 @@
 
 - 来源：现有 6 份金标样本跑真实抽取 + 复核，产出字段级 verdict（约 30-40 条/份，共约 180 条）；
 - 单位：字段级——人工对每条 verdict 裁定"该字段是否应被标记可疑"（与字段金标不同维度：金标裁值对错，校准集裁可疑性）；
-- 工具：`evaluation/calibrate.py`——跑复核 → 导出人工裁定模板（JSON/CSV，含 case_id/field_key/verdict/reason_code/comment/原文证据片段）→ 人工裁定 → 计算 Cohen's kappa（verdict 二值化：suspicious|fail vs pass，与人工裁定 2×2）。
+- 工具：`evaluation/calibrate.py`——跑复核 → 导出人工裁定模板（JSON，含 case_id/field_key/verdict/reason_code/comment/原文证据片段）→ 裁定 → 计算 Cohen's kappa（verdict 二值化：suspicious|fail vs pass，与裁定 2×2）；
+- 裁定执行方式：**由 Claude 子 agent 模拟人工裁定**（执行时开一个子 agent，逐条裁定"该字段是否应被标记可疑"，写入裁定文件）——大模型对小模型的可疑性裁定任务稳定，替代人工逐条标注；kappa 计算不变。
 
 ### 5.2 上岗门槛
 
