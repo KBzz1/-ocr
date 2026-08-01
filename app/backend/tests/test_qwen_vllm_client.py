@@ -291,6 +291,19 @@ def test_qwen_vllm_client_uses_local_base_url_when_constructed_without_injection
     assert captured["httpx_client_kwargs"] == {"trust_env": False}
 
 
+def test_complete_json_thinking_switch():
+    client = QwenVLLMClient(base_url="http://localhost:8000/v1", model="test-model",
+                            api_key="not-needed", timeout_seconds=30)
+    fake = FakeOpenAIClient('{"ok": true}')
+    client._client = fake
+    client.complete_json(prompt="p", max_tokens=10, temperature=0.0, enable_thinking=True)
+    kwargs = fake.chat.completions.calls[0]
+    assert kwargs["extra_body"]["chat_template_kwargs"] == {"enable_thinking": True}
+    client.complete_json(prompt="p", max_tokens=10, temperature=0.0)
+    kwargs2 = fake.chat.completions.calls[1]
+    assert kwargs2["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
 def test_qwen_vllm_client_image_path_missing_raises(tmp_path):
     client = QwenVLLMClient(
         base_url="http://qwen-vision-vllm-server:8000/v1",

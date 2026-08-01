@@ -175,6 +175,50 @@ def test_cli_golden_review_writes_separate_report(tmp_path, monkeypatch):
     assert review_report["by_pitfall"]["review_feedback"]["value_total"] == 1
 
 
+def test_cli_thinking_switch_flows_to_build_llm_client_and_meta(tmp_path, monkeypatch):
+    """--thinking → build_llm_client 收到 args.thinking=True，meta 记录 thinking=True。"""
+    schema_path = _write_schema(tmp_path)
+    golden_dir = _write_golden(tmp_path, ["case_001"])
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+
+    captured = {}
+
+    def spy_build_llm_client(args):
+        captured["thinking"] = args.thinking
+        return FakeClient()
+
+    monkeypatch.setattr(run_eval, "build_llm_client", spy_build_llm_client)
+    report_path = run_eval.main([
+        "--golden-dir", str(golden_dir),
+        "--schema", str(schema_path),
+        "--model", "fake-model",
+        "--report-dir", str(report_dir),
+        "--thinking",
+    ])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert captured["thinking"] is True
+    assert report["meta"]["thinking"] is True
+
+
+def test_cli_thinking_defaults_false_in_meta(tmp_path, monkeypatch):
+    """不带 --thinking 时 meta 记录 thinking=False（默认行为与现状一致）。"""
+    schema_path = _write_schema(tmp_path)
+    golden_dir = _write_golden(tmp_path, ["case_001"])
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+
+    monkeypatch.setattr(run_eval, "build_llm_client", lambda args: FakeClient())
+    report_path = run_eval.main([
+        "--golden-dir", str(golden_dir),
+        "--schema", str(schema_path),
+        "--model", "fake-model",
+        "--report-dir", str(report_dir),
+    ])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["meta"]["thinking"] is False
+
+
 def test_merge_j_annotations_from_batch_schema():
     # 构造 schema：v2 的 J 注解（qwen_type=J / review_control=judgement）按字段名
     # 合并到 v1 同名字段；非 J 字段、v1 独有字段不受影响；不引入 v2 独有字段。

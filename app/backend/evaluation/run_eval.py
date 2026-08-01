@@ -61,7 +61,10 @@ def build_llm_client(args) -> OpenAICompatibleJsonClient:
         api_key="not-needed",
         timeout_seconds=360,
     )
-    return OpenAICompatibleJsonClient(qwen_client, max_tokens=args.max_tokens, temperature=args.temperature)
+    return OpenAICompatibleJsonClient(
+        qwen_client, max_tokens=args.max_tokens, temperature=args.temperature,
+        enable_thinking=args.thinking,
+    )
 
 
 def load_golden_samples(golden_dir: Path) -> list[dict]:
@@ -106,6 +109,8 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--model", required=True)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--thinking", action="store_true",
+                        help="Qwen chat_template 开启 thinking(CoT)；缺省关闭，供消融实测")
     parser.add_argument("--report-dir", default="data/evaluation/reports")
     parser.add_argument("--golden-review", default=None,
                         help="review 金标活资产目录(如 data/evaluation/golden_review)，单独统计修正字段子集")
@@ -140,6 +145,7 @@ def main(argv: list[str] | None = None) -> Path:
         "schema_version": schema.get("version", ""),
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
+        "thinking": args.thinking,
         "ablation": {
             "quality_flags": not args.no_quality_flags,
             "contract": not args.no_contract,
