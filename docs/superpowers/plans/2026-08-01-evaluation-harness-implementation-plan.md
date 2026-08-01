@@ -120,11 +120,20 @@ Expected: 按章节标题输出 markdown，每章对应 ground_truth 中的一�
   `baseline_<prompt版本>.json` 作为回归基线。
 ```
 
+- [ ] **Step 3b: 把 data/evaluation/ 加入 .gitignore**（与 data/uploads/ 等现有模式一致）
+
+修改 `.gitignore` 第 39 行 `data/algorithm_jobs/*` 之后追加：
+
+```
+data/evaluation/*
+!data/evaluation/README.md
+```
+
 - [ ] **Step 4: 提交**
 
 ```bash
-git add scripts/maintenance/extract_golden_helpers.py data/evaluation/README.md
-git commit -m "feat:金标提炼辅助脚本(OCR差异清单/章节切分)"
+git add scripts/maintenance/extract_golden_helpers.py data/evaluation/README.md .gitignore
+git commit -m "feat:金标提炼辅助脚本(OCR差异清单/章节切分) 忽略data/evaluation"
 ```
 
 ---
