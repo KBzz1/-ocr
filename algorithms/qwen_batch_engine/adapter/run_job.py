@@ -399,8 +399,14 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
         evidence_text = None
         evidence_location = None
         qwen_status = None
+        # T 参数类字段(体温/脉搏/血压/身高体重/血气/血常规等)只接受数值语义:
+        # LLM 若误输出 J 判定格式(s/状态),忽略判定含义,只取 v/值 的数值部分;
+        # 无数值时不产出"正常",空缺交审核页核验。
+        is_parameter_field = field_key in _PARAMETER_VALUE_PATTERNS
         if isinstance(node, dict):
-            is_judgement_node = qwen_type == "J" or "状态" in node or "s" in node
+            is_judgement_node = (
+                qwen_type == "J" or "状态" in node or "s" in node
+            ) and not is_parameter_field
             if is_judgement_node:
                 status = node.get("状态", node.get("s"))
                 position = node.get("_position") or node.get("p")
@@ -497,6 +503,11 @@ def _normalize_review_fields(*, structured: dict, merged_text: str, schema: dict
         if extraction_status == "extracted" and not evidence:
             candidate["attention_required"] = True
             candidate["attention_message"] = "字段已抽取但缺少可定位证据，请核对原文"
+        # T 参数类字段:LLM 定位了证据但未输出数值 → 标 attention 交由审核页核验
+        # (value 为空时 extraction_status=not_found,evidence 列表为空,依据 evidence_location 判断)
+        if is_parameter_field and not value.strip() and evidence_location is not None:
+            candidate["attention_required"] = True
+            candidate["attention_message"] = "数值类字段未抽到数值，请核对原文"
         review_fields.append(candidate)
     return review_fields
 

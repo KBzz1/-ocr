@@ -347,6 +347,55 @@ def test_qwen_batch_run_job_falls_back_to_local_raw_leaf_parse(tmp_path):
     assert fields["personal_smoking_history"]["original_value"] == "无吸烟史"
 
 
+def test_qwen_batch_run_job_parameter_field_rejects_judgement_format(tmp_path):
+    """T 参数类字段(体温/脉搏/呼吸/血压/身高/体重)即使收到 LLM 的 J 判定格式节点
+    (s=0/v=null),也不得产出"正常"值;心率节点带数值则正常提取。
+    """
+    job_dir = tmp_path / "job"
+    upstream_group = job_dir / "upstream_output" / "_ungrouped"
+    upstream_group.mkdir(parents=True)
+    schema_path = Path("app/config/schemas/qwen_batch_admission_record.v2.yaml").resolve()
+    merged_text = "T36.5℃脉搏99次/分呼吸22次/分血压123/62mmHg身高160厘米体重66千克正常，"
+    (upstream_group / "merged_ocr.txt").write_text(merged_text, encoding="utf-8")
+    (upstream_group / "merged_structured.json").write_text(
+        json.dumps(
+            {
+                "体格检查": {
+                    "体温": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "脉搏": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "生命体征呼吸": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "血压": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "身高": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "体重": {"s": 0, "v": None, "p": ["<s1>", "<s1>"]},
+                    "心率": {"s": 1, "v": "108次/分;律绝对不齐", "p": ["<s1>", "<s1>"]},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    normalize_upstream_output(job_dir=job_dir, schema_path=schema_path)
+
+    result = json.loads((job_dir / "result.json").read_text(encoding="utf-8"))
+    fields = {field["field_key"]: field for field in result["review_fields"]}
+    # T 参数类字段:判定格式的"正常"不得当作字段值
+    for field_key in (
+        "pe_temperature",
+        "pe_pulse",
+        "pe_respiration_rate",
+        "pe_blood_pressure",
+        "pe_height",
+        "pe_weight",
+    ):
+        assert fields[field_key]["original_value"] == "", field_key
+        # LLM 已定位证据但无数值 → 标 attention 交由审核页核验
+        assert fields[field_key]["attention_required"] is True, field_key
+        assert fields[field_key]["attention_message"] == "数值类字段未抽到数值，请核对原文", field_key
+    # 心率节点带数值 → 按 T 语义提取数值
+    assert fields["pe_heart_rate"]["original_value"] == "108"
+
+
 def test_qwen_batch_run_job_normalize_only_writes_error_when_upstream_missing(tmp_path):
     schema_path = Path("app/config/schemas/qwen_batch_admission_record.v2.yaml").resolve()
 
