@@ -206,6 +206,7 @@ def create_backend_app(config_dir: str | None = None) -> Flask:
         prompt_version="qwen_batch_prompt.v1" if algorithm_engine == "qwen_batch" else ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
         field_port=qwen_batch_port if algorithm_engine == "qwen_batch" else field_port,
         quality_rule_profile="qwen_batch_admission_record" if algorithm_engine == "qwen_batch" else "copd_admission_record",
+        batch_excel_enabled=True,
     )
 
     document_profile_registry = DocumentProfileRegistry(
