@@ -35,7 +35,7 @@
   - `review_service.py` — 审核与字段结果更新
   - `cleanup_service.py`、`local_event_log.py`、`offline_check_service.py` 等 — 维护与日志
 - `storage/`：`json_store.py` 本地 JSON 持久化（任务、会话、字段结果、审核记录）
-- `evaluation/`：评估工具链（金标比对指标、管线组装、run_eval CLI），不参与生产路径；设计见 `docs/superpowers/specs/2026-08-01-evaluation-harness-design.md`，金标与报告在 `data/evaluation/`
+- `evaluation/`：评估工具链（金标比对指标、管线组装、run_eval CLI、复核器校准 calibrate.py、审核回流 feedback.py/desensitize.py），不参与生产路径；设计见 `docs/superpowers/specs/2026-08-01-evaluation-harness-design.md`、`docs/superpowers/specs/2026-08-01-verifier-normalization-design.md`，金标与报告在 `data/evaluation/`；复核器（`services/copd_extraction/verifier.py`）活动路径未默认注入（kappa 未达 0.7 上岗线，spec 5.2）
 - `tests/`：pytest 测试；可执行契约权威来源是 `test_api_contracts.py` 和 `test_backend_e2e.py`
 - `config.py`、`settings.py`：后端配置加载与校验；`../config/` 模板在仓库根 `app/config/`，**不在**本目录
 
