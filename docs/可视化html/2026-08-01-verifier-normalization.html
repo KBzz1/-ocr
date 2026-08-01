@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>验证器规范化设计 — 2026-08-01</title>
+<style>
+  /* ── 仿《深入理解 AI Agent》排版风格（与评估体系复盘同款）──
+     ElegantBook cyan theme 覆写为深海军蓝 structurecolor = RGB(30,58,107) */
+  :root {
+    --navy: #1e3a6b;
+    --accent: #1e3a6b;
+    --accentbg: #eef1f7;
+    --accentrule: #b8c4d8;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --codebg: #f7f7f4;
+    --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+    --sans: "Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: Menlo, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: var(--ink);
+    font-family: var(--serif);
+    line-height: 1.9;
+    font-size: 15.5px;
+  }
+  .page { max-width: 780px; margin: 0 auto; padding: 0 40px 100px; }
+
+  /* ── 封面区 ── */
+  .cover {
+    background: linear-gradient(180deg, #16294a 0%, #1e3a6b 75%, #1e3a6b 100%);
+    color: #fff;
+    padding: 90px 60px 70px;
+    margin: 0 -40px 60px;
+    text-align: center;
+    position: relative;
+    border-bottom: 4px solid #0f1e38;
+  }
+  .cover::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 0; height: 160px;
+    background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, transparent 100%);
+  }
+  .cover .kicker {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: .35em;
+    opacity: .75;
+    margin-bottom: 26px;
+  }
+  .cover h1 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 34px;
+    margin: 0 0 10px;
+    letter-spacing: .08em;
+  }
+  .cover .cn-sub { font-size: 17px; opacity: .92; margin-bottom: 30px; }
+  .cover .en-sub {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: .18em;
+    opacity: .6;
+  }
+  .cover .meta {
+    margin-top: 40px;
+    font-family: var(--sans);
+    font-size: 13px;
+    opacity: .8;
+  }
+  .cover .meta span { margin: 0 14px; }
+
+  /* ── 章标题 ── */
+  h2.chapter {
+    font-family: var(--sans);
+    color: var(--navy);
+    font-size: 24px;
+    font-weight: 700;
+    margin: 64px 0 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--accentrule);
+  }
+  h2.chapter .no {
+    display: block;
+    font-size: 13px;
+    letter-spacing: .3em;
+    color: var(--navy);
+    opacity: .6;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  h3 {
+    font-family: var(--sans);
+    color: var(--navy);
+    font-size: 17px;
+    font-weight: 700;
+    margin: 34px 0 10px;
+  }
+  h4 {
+    font-family: var(--sans);
+    color: var(--navy);
+    font-size: 15px;
+    font-weight: 700;
+    margin: 24px 0 8px;
+  }
+  p { margin: 10px 0; text-align: justify; }
+  strong { color: #111; }
+
+  /* ── 术语框 ── */
+  .term {
+    border: 1px solid var(--accentrule);
+    border-left: 4px solid var(--navy);
+    background: var(--accentbg);
+    border-radius: 3px;
+    padding: 12px 18px;
+    margin: 16px 0;
+    font-size: 14.5px;
+  }
+  .term .t-label {
+    font-family: var(--sans);
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 13px;
+    letter-spacing: .05em;
+  }
+  .term .t-en { font-family: var(--sans); color: var(--muted); font-size: 12.5px; }
+
+  /* ── 实验框 ── */
+  .experiment {
+    border: 1px solid var(--accentrule);
+    background: #fbfcfe;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .experiment .x-title {
+    font-family: var(--sans);
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  .experiment .x-title .star { color: #c9a227; }
+  .experiment p { margin: 6px 0; font-size: 14.5px; }
+
+  /* ── 代码框 ── */
+  pre {
+    background: var(--codebg);
+    border: 0.5px solid var(--accentrule);
+    border-left: 2.5px solid var(--accentrule);
+    border-radius: 2px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12.8px;
+    line-height: 1.65;
+    overflow-x: auto;
+    margin: 14px 0;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--accentbg);
+    border-radius: 3px;
+    padding: 0 5px;
+    color: #14315e;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* ── 表格 ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+    font-family: var(--sans);
+  }
+  th {
+    background: var(--accentbg);
+    color: var(--navy);
+    border-top: 1.5px solid var(--navy);
+    border-bottom: 1px solid var(--accentrule);
+    padding: 9px 12px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    border-bottom: 1px solid #e4e4e4;
+    padding: 8px 12px;
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: 1.5px solid var(--navy); }
+
+  /* ── 块引用 ── */
+  blockquote {
+    margin: 16px 0;
+    padding: 10px 20px;
+    border-left: 3px solid var(--accentrule);
+    color: #444;
+    font-size: 14.5px;
+    background: #fafbfc;
+  }
+
+  /* ── 流程示意（横向箭头流） ── */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--sans);
+    font-size: 13px;
+    margin: 14px 0 18px;
+  }
+  .flow .step {
+    background: var(--accentbg);
+    border: 1px solid var(--accentrule);
+    border-radius: 3px;
+    padding: 5px 10px;
+    color: var(--navy);
+  }
+  .flow .arrow { color: var(--muted); font-size: 15px; }
+  .flow .step.hot {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* ── 决策清单 ── */
+  .decision {
+    display: flex;
+    gap: 12px;
+    margin: 8px 0;
+    font-size: 14.5px;
+  }
+  .decision .d-no {
+    flex: none;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--navy);
+    color: #fff;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 4px;
+  }
+  .decision .d-body { padding-top: 4px; }
+  .decision .d-q { font-family: var(--sans); font-weight: 600; color: var(--navy); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════════ 封面 ═══════════ -->
+  <div class="cover">
+    <div class="kicker">EVALUATION SYSTEM · PHASE II</div>
+    <h1>验证器规范化</h1>
+    <div class="cn-sub">复核器接入 · 校准 · 审核数据回流 · 指标修正</div>
+    <div class="en-sub">VERIFIER NORMALIZATION</div>
+    <div class="meta">
+      <span>2026-08-01</span>
+      <span>评估体系 · 第二步</span>
+      <span>分支 eval-harness</span>
+    </div>
+  </div>
+
+  <!-- ═══════════ 第 1 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 1 章</span>为什么做这件事</h2>
+
+  <p>第一步评估体系跑出首个基线，数据摆在面前：</p>
+
+  <table>
+    <tr><th>指标</th><th>基线</th><th>暴露的问题</th></tr>
+    <tr><td>status 准确率</td><td>98.09%</td><td>7 处 status 误判</td></tr>
+    <tr><td>value 准确率</td><td>88.32%</td><td>34 处 value 误判——部分是判定逻辑冤枉了模型</td></tr>
+    <tr><td>幻觉数（veto）</td><td>43</td><td>24 处是"否定短语重建"误报——金标本身在原文不可定位</td></tr>
+    <tr><td>任务级成功</td><td>0/6</td><td>6 份样本全未达标，样本量小方差大，不作主线</td></tr>
+  </table>
+
+  <p>三个结构性问题浮出水面：</p>
+  <div class="decision">
+    <div class="d-no">1</div>
+    <div class="d-body"><span class="d-q">复核器是死代码。</span>prompts 里躺着两个写好的复核器 prompt（设计意图是让 LLM 再查一遍抽取结果），但从未接入活动路径——而审核链路（quality_flags → suspicious → 审核页）是活的。</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">2</div>
+    <div class="d-body"><span class="d-q">指标有误报。</span>幻觉判定冤枉"否定短语重建"；J 型字段"正常"vs"鼻腔通畅"语义等价被判错；长文本摘录范围差异判定过严。</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">3</div>
+    <div class="d-body"><span class="d-q">审核数据没有回流。</span>医生在审核页的修正值只留在本地 JSON 里，没有变成可复用的金标资产——最珍贵的学习信号在流失。</div>
+  </div>
+
+  <blockquote>
+    评估体系的最大价值不是一次性度量，而是让每一次 prompt / 模型变更都有度量支撑；
+    第二步让"复核器"这个评估出来的薄弱环节真正转起来，并让医生修正反哺评估。
+  </blockquote>
+
+  <!-- ═══════════ 第 2 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 2 章</span>目标与边界</h2>
+
+  <h3>2.1 六个目标</h3>
+  <div class="decision">
+    <div class="d-no">1</div>
+    <div class="d-body">复核器接入活动路径：抽取 → 复核 → 可疑字段进审核页，可消融对比（<code>--no-verifier</code>）</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">2</div>
+    <div class="d-body">验证器校准：kappa ≥ 0.7 才上岗</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">3</div>
+    <div class="d-body">审核数据回流：医生修正 → 脱敏 → 金标活资产（source: review，与 manual 分开统计）</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">4</div>
+    <div class="d-body">指标修正：幻觉豁免 / J 型语义归一 / 长文本核心句重合</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">5</div>
+    <div class="d-body">消息结构适配 Qwen ChatML：system（规则）+ user（数据）分层</div>
+  </div>
+  <div class="decision">
+    <div class="d-no">6</div>
+    <div class="d-body">thinking 消融开关（<code>--thinking</code>），用评估体系实测 CoT 收益——不拍脑袋</div>
+  </div>
+
+  <h3>2.2 明确不做</h3>
+  <table>
+    <tr><th>不做</th><th>为什么</th></tr>
+    <tr><td>分歧触发定向重抽取</td><td>复核意见只做标记，不做二次抽取——最窄边界，复用现有通道</td></tr>
+    <tr><td>复核意见原文展示给医生</td><td>LLM 复核文本不进前端（防误导），前端沿用规则化提示</td></tr>
+    <tr><td>抽取轨迹日志落盘</td><td>第三步的事</td></tr>
+    <tr><td>换模型 / 换温度制造复核独立性</td><td>本地单一 Qwen 模型、温度恒 0.0——可复现是校准的前提</td></tr>
+    <tr><td>复核 not_found 字段</td><td>漏抽由审核页兜底</td></tr>
+  </table>
+
+  <!-- ═══════════ 第 3 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 3 章</span>复核器设计</h2>
+
+  <h3>3.1 位置与形态</h3>
+  <p>新模块 <code>copd_extraction/verifier.py</code>，<code>FieldVerifier</code> 类。输入抽取结果 + 原文 + schema + LLM 客户端，输出按字段 verdict。复核范围：<strong>status=found 且 value 非空</strong> 的字段。</p>
+
+  <div class="flow">
+    <div class="step">抽取</div><span class="arrow">→</span>
+    <div class="step">薄规则 quality_checks</div><span class="arrow">→</span>
+    <div class="step hot">LLM 复核器</div><span class="arrow">→</span>
+    <div class="step">合并 flags</div><span class="arrow">→</span>
+    <div class="step">分歧字段 → suspicious → 审核页</div>
+  </div>
+
+  <p>verdict=suspicious/fail → 新增 quality_flags（<code>verifier_suspicious</code> + reason_code）→ <code>verification_status=suspicious</code> → <code>attention_required=True</code>，前端展示固定纯中文提示"复核器标记，请核对原文"。</p>
+
+  <div class="term">
+    <span class="t-label">接入挂点</span> <span class="t-en">wiring points</span><br>
+    生产路径 <code>port.extract</code> 增加可注入 verifier；评估路径 <code>run_pipeline</code> 增加 <code>apply_verify</code> 开关；<code>run_eval --no-verifier</code> 做"有复核 vs 无复核"对比——与第一步消融架构完全同构。
+  </div>
+
+  <h3>3.2 Prompt 结构：ChatML 分层 + 防锚定布局</h3>
+  <p><strong>system（完全固定，前缀缓存友好）</strong>：身份（字段级复核器）· 缺陷清单（否定翻转 / OCR 标签混淆 / 数值矛盾 / 纠偏合理性 / 生理范围）· verdict 契约（pass/suspicious/fail + reason_code + checks + comment ≤40 字 + <strong>必须引用 evidence 编号</strong>）· 对抗精神（先找茬，找不到才 pass）· few-shot（pass / suspicious 各一个结构示例）</p>
+  <p><strong>user（变量区）</strong>：evidence 在前（原文证据，带编号）→ 字段在后（field_key + 声称的 value + 引用的 evidence_ids）</p>
+
+  <div class="term">
+    <span class="t-label">为什么 evidence 在前、字段在后</span> <span class="t-en">anti-anchoring</span><br>
+    字段值在前会让复核器顺着值找证据支持（找补 / 确认偏误）；evidence 在前，模型先读原文事实、形成自己的判断，再看到"声称的值"——找补的路被堵死。同时 evidence 先出场引导注意力，第一遍 pass 就是扫原文。
+  </div>
+
+  <h3>3.3 同源模型缓解</h3>
+  <p>抽取与复核是同一 Qwen 模型、同一温度 0.0。系统性偏差无法消除，缓解全在上下文：</p>
+  <table>
+    <tr><th>手段</th><th>机制</th></tr>
+    <tr><td>evidence 前置</td><td>防锚定：先看原文再看到抽取值</td></tr>
+    <tr><td>缺陷清单</td><td>把已知易错点（否定翻转、OCR 标签、数值矛盾…）写进指令，告诉模型"去这里找"</td></tr>
+    <tr><td>引用 evidence 编号</td><td>可疑 verdict 必须拿原文说话，而不是顺着抽取值</td></tr>
+    <tr><td>verdict 型主干 + 对抗精神</td><td>可校准（kappa）+ 有锐度（先找茬再放行）</td></tr>
+  </table>
+
+  <h3>3.4 Thinking 消融（--thinking）</h3>
+  <div class="experiment">
+    <div class="x-title">实验 3-1 ★ CoT 收益实测</div>
+    <p>开 thinking（CoT）可能提升抽取/复核质量，但有三怕：thinking 挤占 61 字段 JSON 的输出预算（截断 → 契约非法）、json_object 与 thinking 的兼容性未验证（固定 digest 镜像）、响应变长（医生等待敏感）。</p>
+    <p>不拍脑袋：<code>--thinking</code> 消融开关，同一批金标跑两轮实测对比指标 + 契约非法数 + 时长。默认值：抽取先保守 off，复核倾向 on（verdict 输出小、推理任务收益大）——由实测数字决定。</p>
+  </div>
+
+  <!-- ═══════════ 第 4 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 4 章</span>消息结构改造：适配 Qwen ChatML</h2>
+
+  <p>现状问题：<code>complete_json</code> 把整个 prompt（身份+硬约束+字段表+原文）塞进<strong>一条 user 消息</strong>——Qwen 训练时 system / user / assistant 是三种有区分度的角色，官方最佳实践是角色规则放 system、实际数据放 user。讽刺的是 OCR 路径（<code>complete_text_from_image</code>）已是 system+user 双消息，抽取路径反而没有。</p>
+
+  <table>
+    <tr><th></th><th>改造前</th><th>改造后</th></tr>
+    <tr><td>system</td><td>—（无）</td><td>身份 + 硬约束 + 固定字段表 + 输出契约 + 再次强调</td></tr>
+    <tr><td>user</td><td>整个 prompt 字符串</td><td>evidence_units + OCR 原文（变量数据）</td></tr>
+  </table>
+
+  <p><code>complete_json</code> 签名扩展支持 system+user 分离，<strong>不传 system 时行为不变</strong>（向后兼容）。system 完全固定 → 前缀缓存命中率最大化（固定前缀变长）。</p>
+
+  <!-- ═══════════ 第 5 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 5 章</span>验证器校准：kappa ≥ 0.7 才上岗</h2>
+
+  <div class="term">
+    <span class="t-label">Cohen's kappa</span> <span class="t-en">一致度系数</span><br>
+    衡量复核器判定与人工裁定的一致性（扣除随机一致）。≥ 0.7 视为合格。单位是<strong>字段级</strong>：人工对每条 verdict 裁定"该字段是否应被标记可疑"——与字段金标不同维度（金标裁值对错，校准集裁可疑性）。
+  </div>
+
+  <p>校准流程：</p>
+  <div class="flow">
+    <div class="step">6 份金标样本跑真实抽取+复核</div><span class="arrow">→</span>
+    <div class="step">约 180 条字段级 verdict</div><span class="arrow">→</span>
+    <div class="step">导出人工裁定模板</div><span class="arrow">→</span>
+    <div class="step">人工逐条裁定</div><span class="arrow">→</span>
+    <div class="step hot">kappa ≥ 0.7？</div><span class="arrow">→</span>
+    <div class="step">达标 → 接入活动路径</div>
+  </div>
+
+  <p>工具：<code>evaluation/calibrate.py</code>（跑复核 → 导出裁定模板 → 算 kappa）。不达标就迭代 prompt（缺陷清单 / few-shot / 布局）重测，不达标不接入。校准集存 <code>data/evaluation/calibration/</code>（运行数据，不进 git）。</p>
+
+  <!-- ═══════════ 第 6 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 6 章</span>审核数据回流：金标活资产</h2>
+
+  <div class="flow">
+    <div class="step">审核确认（complete_review）</div><span class="arrow">→</span>
+    <div class="step">聚合 auto_value ≠ final_value 字段</div><span class="arrow">→</span>
+    <div class="step">回流文件（运行数据）</div><span class="arrow">→</span>
+    <div class="step hot">脱敏</div><span class="arrow">→</span>
+    <div class="step">金标活资产 source: review</div>
+  </div>
+
+  <h3>6.1 采集</h3>
+  <p>字段结构天然支持回流：<code>auto_value</code> 恒为抽取原值、<code>final_value</code> 为医生最终值，二者不等即"修正过"。确认时聚合写入 <code>data/evaluation/review_feedback/&lt;task_id&gt;.json</code>（含患者信息，不进 git）。status 规则：修正值非空记 <code>found</code>，修正值为空串（医生清空误值）记 <code>not_found</code>——"医生认为该字段不存在"本身是金标信号。</p>
+
+  <h3>6.2 脱敏</h3>
+  <p>轻量正则：手机号 / 身份证 / 住院号 / 11 位数字串；日期保留（病历日期是抽取语义的一部分）。回流原始文件不脱敏，<strong>脱敏发生在生成金标活资产时</strong>。</p>
+
+  <h3>6.3 金标活资产</h3>
+  <p>增量修正字段文件（不要求 61 字段全量），<code>data/evaluation/golden_review/&lt;task_id&gt;.json</code>，source: "review"。评估工具按 source 子集单独统计<strong>"修正字段错误率"</strong>——修正字段 = 抽取器易错字段，盯住它们就是盯住实际伤害。</p>
+
+  <div class="term">
+    <span class="t-label">为什么只回流修正字段</span> <span class="t-en">signal not noise</span><br>
+    医生确认的字段与抽取一致，不携带新信息；修正字段才是学习信号。全量回流只会把数据放大 4-5 倍、全是噪音。
+  </div>
+
+  <!-- ═══════════ 第 7 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 7 章</span>指标修正：三个冤枉好人的判定</h2>
+
+  <table>
+    <tr><th>误报场景</th><th>实例</th><th>修正机制</th></tr>
+    <tr>
+      <td><strong>幻觉误报</strong><br>否定短语重建不可定位</td>
+      <td>原文"否认'糖尿病'、'冠心病'等病史"，抽取按契约输出"否认糖尿病病史"——原文找不到这句话 → 判幻觉</td>
+      <td>先测<strong>金标 value</strong> 可定位性：金标不可定位 → 该字段跳过幻觉判定（期望输出本身就是重建短语）。真错误由 value_mismatch 兜底</td>
+    </tr>
+    <tr>
+      <td><strong>J 型粒度误判</strong><br>"正常" vs "鼻腔通畅"</td>
+      <td>pe_nose：金标"鼻腔通畅"、抽取"正常"，语义等价被判 mismatch</td>
+      <td>从 schema 加载 J 型字段清单（qwen_type=J / review_control=judgement），仅这些字段做"正常族"归一：正常/通畅/未见异常/无异常/阴性/无压痛 → 同一 token</td>
+    </tr>
+    <tr>
+      <td><strong>长文本摘录过严</strong><br>摘录范围差异</td>
+      <td>金标摘 A 段、抽取摘 B 段，内容都对，被判错（hpi_* 现病史类）</td>
+      <td>长文本字段（初始：hpi_* 类 + chief_complaint）改判<strong>核心句重合率</strong>：按句切分后共有句占比 ≥ 0.6 判对</td>
+    </tr>
+  </table>
+
+  <div class="experiment">
+    <div class="x-title">重要：口径影响</div>
+    <p>三处修正都改变 value_accuracy 统计口径——<strong>修正后基线必须重跑</strong>。报告 meta 记录指标版本号，对比时显式标注。</p>
+  </div>
+
+  <!-- ═══════════ 第 8 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 8 章</span>评估执行与消融矩阵</h2>
+
+  <pre><code>python -m app.backend.evaluation.run_eval \
+  --golden data/evaluation/golden \
+  --schema app/config/schemas/admission_record_structured_fields.v1.yaml \
+  --model &lt;模型名&gt; \
+  [--no-verifier] [--no-quality-flags] [--no-contract] [--thinking]</code></pre>
+
+  <table>
+    <tr><th>开关</th><th>含义</th></tr>
+    <tr><td><code>--no-quality-flags</code></td><td>跳过薄规则 quality_checks（第一步已有）</td></tr>
+    <tr><td><code>--no-contract</code></td><td>跳过契约校验（第一步已有）</td></tr>
+    <tr><td><code>--no-verifier</code></td><td>跳过复核器（本步新增）</td></tr>
+    <tr><td><code>--thinking</code></td><td>开启 Qwen thinking 模式（本步新增）</td></tr>
+  </table>
+
+  <p>典型对比：<code>--no-verifier</code> vs 默认（复核器对质量指标的影响）；<code>--thinking</code> vs 默认（CoT 收益与代价）。</p>
+
+  <!-- ═══════════ 第 9 章 ═══════════ -->
+  <h2 class="chapter"><span class="no">第 9 章</span>实施顺序</h2>
+
+  <table>
+    <tr><th>顺序</th><th>任务</th><th>理由</th></tr>
+    <tr><td>1</td><td>消息结构改造（complete_json system+user、prompt 拆层）</td><td>一切 prompt 工作的地基</td></tr>
+    <tr><td>2</td><td>指标修正（metrics.py 三处 + 单测）</td><td>重跑基线，得到修正后基线</td></tr>
+    <tr><td>3</td><td>复核器（verifier.py + prompt 激活 + 接入 + --no-verifier）</td><td>第二步主角</td></tr>
+    <tr><td>4</td><td>校准（calibrate.py + 人工裁定 + kappa）</td><td>合格才上岗</td></tr>
+    <tr><td>5</td><td>回流（review_service 聚合 + 脱敏 + 金标活资产 + 评估子集统计）</td><td>数据反哺</td></tr>
+    <tr><td>6</td><td>thinking 实测（--thinking 消融 + 报告对比）</td><td>数字说话</td></tr>
+  </table>
+
+  <blockquote>
+    好的设计原则穿越模型的迭代周期——它们描述的不是某个模型的用法，而是智能系统与世界交互的基本模式。
+    ——《深入理解 AI Agent》后记
+  </blockquote>
+
+  <p style="margin-top:40px; color: var(--muted); font-size: 13px; font-family: var(--sans);">
+    验证器规范化设计 · 2026-08-01 · 配套文档：docs/superpowers/specs/2026-08-01-verifier-normalization-design.md
+  </p>
+
+</div>
+</body>
+</html>
