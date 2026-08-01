@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>评估体系（Evaluation Harness）设计 — 2026-08-01</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --ink: #1f2933;
+    --muted: #6b7a8c;
+    --line: #e3e8ee;
+    --accent: #1a73e8;
+    --accent-soft: #e8f1fd;
+    --green: #1e8e5a;
+    --green-soft: #e6f6ee;
+    --red: #c62828;
+    --red-soft: #fdecea;
+    --amber: #b26a00;
+    --amber-soft: #fdf3e2;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    line-height: 1.75;
+  }
+  .page { max-width: 860px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.hero {
+    background: linear-gradient(135deg, #1a3a6b 0%, #1a73e8 100%);
+    color: #fff;
+    border-radius: 14px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .5px; }
+  header.hero .sub { opacity: .92; font-size: 15px; }
+  header.hero .meta { margin-top: 16px; font-size: 13px; opacity: .85; }
+  header.hero .meta span { margin-right: 18px; }
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 28px;
+    margin-bottom: 28px;
+  }
+  .toc h2 { margin: 0 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 26px 32px;
+    margin-bottom: 24px;
+  }
+  section.card h2 {
+    margin: 0 0 6px;
+    font-size: 19px;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  section.card h2 .no {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 2px 10px;
+  }
+  section.card h3 { font-size: 16px; margin: 22px 0 8px; border-left: 4px solid var(--accent); padding-left: 10px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0; padding-left: 24px; }
+  li { margin: 4px 0; }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: #f0f3f7;
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #0b3d91;
+  }
+  pre {
+    background: #0f1c2e;
+    color: #dce6f5;
+    border-radius: 10px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 12px 0;
+  }
+  pre .c { color: #7d94b5; }  /* comment */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  th {
+    background: var(--accent-soft);
+    color: var(--accent);
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+  }
+  td {
+    border-top: 1px solid var(--line);
+    padding: 10px 14px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #fafbfd; }
+  .tag {
+    display: inline-block;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 1px 10px;
+    margin-right: 6px;
+  }
+  .tag.green { background: var(--green-soft); color: var(--green); }
+  .tag.red { background: var(--red-soft); color: var(--red); }
+  .tag.amber { background: var(--amber-soft); color: var(--amber); }
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  .callout.info { background: var(--accent-soft); border-left: 4px solid var(--accent); }
+  .callout.warn { background: var(--amber-soft); border-left: 4px solid var(--amber); }
+  .callout.danger { background: var(--red-soft); border-left: 4px solid var(--red); }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <h1>评估体系（Evaluation Harness）设计</h1>
+  <div class="sub">把「准确性」从口头目标变成可度量的指标 —— 基于 ai-agent-book 第 6 章方法论</div>
+  <div class="meta">
+    <span>📅 2026-08-01</span>
+    <span>📌 状态：设计已批准</span>
+    <span>🔗 关联：实施计划待写</span>
+  </div>
+</header>
+
+<div class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">背景与动机</a></li>
+    <li><a href="#s2">目标与边界</a></li>
+    <li><a href="#s3">评估集（golden set）</a></li>
+    <li><a href="#s4">指标设计</a></li>
+    <li><a href="#s5">评估执行</a></li>
+    <li><a href="#s6">报告与回归机制</a></li>
+    <li><a href="#s7">与现有代码的关系</a></li>
+    <li><a href="#s8">测试约定</a></li>
+  </ol>
+</div>
+
+<section class="card" id="s1">
+  <h2><span class="no">01</span>背景与动机</h2>
+  <p>本项目是<strong>离线病历文书结构化采集与人工核验工作站</strong>，COPD 入院记录抽取核心位于 <code>app/backend/services/copd_extraction/</code>。当前管线形态为<strong>单次 LLM 调用</strong>：</p>
+  <pre>prompt 组装 → complete_json → 契约校验 → evidence 回填 → quality_flags → 人工审核页</pre>
+  <p>对照《AI Agent 实战营》教材第 6 章评估方法论，现状的关键缺口：</p>
+  <ul>
+    <li><strong>没有任何正确率度量</strong> —— 每次改 prompt 都是凭感觉，无法回答「这次改动真的变好了吗」；</li>
+    <li>本书核心公式「Agent = LLM + 上下文 + 工具」中，本项目无工具调用、无多 agent、无记忆需求，<strong>评估正是「准确性」的工程化度量</strong>；</li>
+    <li>已有黄金资源：医生审核修正后的字段结果、人工标注数据 <code>data/text_data/</code>（6 份干净病历 + 对应 OCR 结果）→ 可直接提炼为字段级金标。</li>
+  </ul>
+  <div class="callout info">📖 书上原话：「没有评估，就没有进步」—— 评估对象不是模型，而是「模型 + harness 的组合体」。</div>
+</section>
+
+<section class="card" id="s2">
+  <h2><span class="no">02</span>目标与边界</h2>
+  <h3>目标</h3>
+  <p>建立「评估 = 金标比对 + 字段级指标 + 回归基线」的最小闭环：</p>
+  <ol>
+    <li>一套字段级金标评估集（6 份起步，可扩展）；</li>
+    <li>五个确定性指标（<strong>不依赖 LLM 打分</strong>）；</li>
+    <li>可重复执行的评估脚本，支持模型替换实验与消融变体参数；</li>
+    <li>基线快照 + prompt 回归对比机制。</li>
+  </ol>
+  <h3>边界（明确不做）</h3>
+  <table>
+    <tr><th>不做</th><th>什么时候做</th></tr>
+    <tr><td>审核数据自动回流</td><td>第二步「验证器规范化」</td></tr>
+    <tr><td>复核器接入活动路径</td><td>第二步</td></tr>
+    <tr><td>抽取轨迹日志落盘</td><td>第三步</td></tr>
+    <tr><td>LLM-as-a-Judge 评分器</td><td>有金标，确定性比对优先，不做</td></tr>
+    <tr><td>多 agent / 记忆 / 上下文压缩 / 工具安全</td><td>本项目场景不需要</td></tr>
+  </table>
+</section>
+
+<section class="card" id="s3">
+  <h2><span class="no">03</span>评估集（golden set）</h2>
+  <h3>位置</h3>
+  <ul>
+    <li>金标目录：<code>data/evaluation/golden/case_001.json</code> ~ <code>case_006.json</code></li>
+    <li>报告目录：<code>data/evaluation/reports/</code></li>
+    <li><span class="tag green">不进 git</span><code>data/</code> 已在 .gitignore / .git/info/exclude 排除，金标为运行数据</li>
+  </ul>
+  <h3>样本格式</h3>
+  <pre>{
+  <span class="c">"case_id"</span>: "case_001",
+  <span class="c">"ocr_text"</span>: "&lt;ocr_results/1.txt 原文&gt;",
+  <span class="c">"pitfalls"</span>: ["negation", "ocr_typo"],
+  <span class="c">"golden"</span>: [
+    {"field_key": "chief_complaint", "status": "found", "value": "反复咳嗽、咳痰20年，喘累2年，加重10余天"},
+    {"field_key": "pmh_diabetes", "status": "found", "value": "否认糖尿病病史"}
+  ]
+}</pre>
+  <ul>
+    <li><code>status</code> 只允许 <code>found / not_found / uncertain</code>，与抽取契约一致；</li>
+    <li><code>golden</code> 必须覆盖 schema 全部 <strong>61 字段</strong>，未提及的字段为 <code>not_found</code> + 空 value。</li>
+  </ul>
+  <h3>金标生成流程</h3>
+  <ol>
+    <li>从 <code>data/text_data/ground_truth/*.txt</code> 干净病历文本提炼 61 字段初稿（提炼脚本放 <code>scripts/</code> 下，一次性使用）；</li>
+    <li>同时生成每份病历的 <strong>OCR 差异清单</strong>（ground_truth 与 ocr_results 的文本差异，供快速定位错读处）；</li>
+    <li><strong>用户（医生视角）复核初稿</strong>，重点裁定 OCR 错读处的预期输出（保留原文 / uncertain / ocr_correction）；</li>
+    <li>裁定结果回写金标，<strong>以裁定为准修正金标 value</strong>。</li>
+  </ol>
+  <h3>质量控制（宁少勿滥）</h3>
+  <p>6 份起步；每份标注 <code>pitfalls</code> 陷阱类别，指标报告按类别分组诊断：</p>
+  <p>
+    <span class="tag red">negation</span><span class="tag red">ocr_typo</span><span class="tag red">numeric_conflict</span><span class="tag red">diagnosis_numbering</span><span class="tag red">blood_gas_shared_evidence</span><span class="tag red">aux_missing</span>
+  </p>
+</section>
+
+<section class="card" id="s4">
+  <h2><span class="no">04</span>指标设计</h2>
+  <div class="callout info">核心原则：<strong>能用确定性比对就不用 LLM 打分</strong>。61 个字段按判定策略分三类。</div>
+
+  <h3>指标 1：status 判定准确率 <span class="tag green">完全确定性</span></h3>
+  <p><code>found / not_found / uncertain</code> 与金标一一比对，按字段、按陷阱类别分组统计。</p>
+  <ul>
+    <li>金标 found 而抽取 not_found = <strong>漏抽</strong>（召回损失）</li>
+    <li>金标 not_found 而抽取 found = <strong>多抽</strong>（幻觉风险）</li>
+  </ul>
+
+  <h3>指标 2：value 正确率 <span class="tag green">归一化两级判定</span></h3>
+  <table>
+    <tr><th>判定</th><th>规则</th><th>结果</th></tr>
+    <tr><td>归一化一致</td><td>去空白、全半角、标点后完全一致</td><td>✅ 正确</td></tr>
+    <tr><td>互为子串</td><td>归一化后预测值是金标的子串（或反之），截断摘录视为合理</td><td>✅ 正确</td></tr>
+    <tr><td>都不满足</td><td>疑似错误，进错误明细</td><td>⚠️ 人工裁定，裁定结果回写金标</td></tr>
+  </table>
+  <ul>
+    <li>金标 <code>not_found</code> 时不做 value 比对（预测 value 必须为空串，非空即错）；</li>
+    <li><code>uncertain</code> 的 value 不做严格比对，仅计入 status 指标。</li>
+  </ul>
+
+  <h3>指标 3：幻觉率（veto 维度，<strong>不需要金标就能判</strong>）</h3>
+  <p><strong>value 必须在 <code>ocr_text</code> 中可定位</strong>（归一化子串查找）。value 中出现 OCR 原文没有的内容 = 幻觉/补造，直接违反项目硬约束「不得补造字段」。</p>
+  <p>例外：该字段 <code>ocr_correction</code> 非空时，以修正链判定 —— 修正后的 value 与 OCR 原文 + 修正理由一致则不记幻觉（OCR 错读纠偏是受控行为，非补造）。</p>
+  <div class="callout danger">🚫 书里的「幻觉一票否决」：幻觉不是扣分项，是归零项 —— 与本项目「宁可 not_found 也不编造」完全同构。</div>
+
+  <h3>指标 4：任务级成功率 <span class="tag amber">仅参考</span></h3>
+  <p>61 字段 status 全对 + value 全对 = 成功。样本 6 份时方差极大，报告标注噪声带宽，<strong>不作为主线指标</strong>。</p>
+
+  <h3>指标 5：契约非法率</h3>
+  <p><code>validate_qwen_payload</code> 失败比例（任务进 <code>failed</code> 的源头之一）。</p>
+
+  <h3>统计显著性</h3>
+  <p>报告标注样本量与噪声带宽（√(p(1-p)/n)）；指标 diff 小于带宽不视为改进。<strong>主线盯字段级指标而非任务级</strong>。</p>
+</section>
+
+<section class="card" id="s5">
+  <h2><span class="no">05</span>评估执行</h2>
+  <h3>命令形态</h3>
+  <pre>python -m app.backend.evaluation.run_eval \
+  --golden data/evaluation/golden \
+  --model &lt;模型名&gt; \
+  [--no-quality-flags] [--no-contract]</pre>
+  <ul>
+    <li>复用 <code>COPDAdmissionQwenFieldPort</code>，注入真实 vLLM 客户端；</li>
+    <li>每条样本跑完整管线（prompt 构建 → LLM → 契约校验 → evidence 回填 → quality_flags），收集 payload / candidates，与金标比对；</li>
+    <li>评估脚本不引入业务代码侵入，与 pytest 单测（注入 fake client）互不干扰。</li>
+  </ul>
+  <h3>模型替换实验</h3>
+  <p><code>--model</code> 切参同命令跑两遍，报告直接可比 —— 这就是 ch6 归因实验的最小形态：固定 harness 只换模型。</p>
+  <h3>消融开关（第一步只立接口）</h3>
+  <div class="callout warn">诚实声明：当前活动管线这些层<strong>不改 value</strong>（质控只加标记、契约只拦失败），现有消融对比收益有限；接口先立是「消融开关必须从第一天设计进架构」的要求，真正用武之地是第二步复核器接入后的「有复核 vs 无复核」对比。</div>
+</section>
+
+<section class="card" id="s6">
+  <h2><span class="no">06</span>报告与回归机制</h2>
+  <h3>报告输出</h3>
+  <ul>
+    <li>控制台汇总：总表（5 指标）+ 按字段分组表 + 按陷阱类别分组表；</li>
+    <li>JSON 落盘 <code>data/evaluation/reports/&lt;日期&gt;_&lt;prompt版本&gt;_&lt;模型&gt;.json</code>，含逐字段错误明细；</li>
+    <li>报告头部记录：prompt 版本、模型名、schema 版本、参数、样本数。</li>
+  </ul>
+  <h3>回归流程（写进工作方式）</h3>
+  <pre>首次跑通 → 存为基线 baseline_&lt;prompt版本&gt;.json
+修改 prompts.py → 跑评估 → 对比基线（指标 diff + 字段错误明细 diff）→ 有收益才合入</pre>
+  <p>diff 小于噪声带宽不视为改进。</p>
+</section>
+
+<section class="card" id="s7">
+  <h2><span class="no">07</span>与现有代码的关系</h2>
+  <table>
+    <tr><th>复用</th><th>新增</th><th>不改动</th></tr>
+    <tr>
+      <td><code>COPDAdmissionQwenFieldPort</code><br><code>build_admission_structured_fields_prompt</code><br><code>validate_qwen_payload</code><br><code>map_qwen_fields_to_review_candidates</code><br><code>apply_quality_checks</code><br>schema loader</td>
+      <td><code>app/backend/evaluation/</code><br>（run_eval 脚本 + 指标比对模块）</td>
+      <td><code>copd_extraction/</code> 业务代码<br>pytest 测试<br>schema<br>prompt 契约</td>
+    </tr>
+  </table>
+  <p>金标提炼脚本放 <code>scripts/</code> 下（一次性），评估脚本放 <code>app/backend/evaluation/</code>（可重复）。</p>
+</section>
+
+<section class="card" id="s8">
+  <h2><span class="no">08</span>测试约定</h2>
+  <ul>
+    <li>指标比对逻辑（归一化、子串判定、幻觉定位、分组统计）需要有 pytest 单测，注入合成数据，<strong>不依赖真实 LLM</strong>；</li>
+    <li>评估脚本本身用手写 fixture 冒烟（不需要真实推理即可验证脚本链路），真实推理跑 <code>data/evaluation/golden/</code>。</li>
+  </ul>
+</section>
+
+<footer>文档：docs/superpowers/specs/2026-08-01-evaluation-harness-design.md · 本 HTML 为同内容可视化版</footer>
+
+</div>
+</body>
+</html>
