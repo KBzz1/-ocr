@@ -122,3 +122,10 @@ def test_uncaught_llm_error_marks_sample_error_and_continues(tmp_path, monkeypat
     assert report["metrics"]["contract_invalid_count"] == 1
     assert report["metrics"]["value_accuracy"] == 1.0
     assert report["meta"]["model"] == "fake-model"
+
+    # 失败样本详情落报告 errors 明细（--compare 错误集对比可见）
+    assert [e["kind"] for e in report["errors"]] == ["eval_llm_failure"]
+    failure = report["errors"][0]
+    assert failure["case_id"] == "case_001"
+    assert failure["field_key"] == ""
+    assert "connection refused" in failure["message"]

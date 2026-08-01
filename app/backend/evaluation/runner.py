@@ -77,6 +77,16 @@ def evaluate_sample(sample: dict, result: dict) -> dict:
     field_totals: list[dict] = []
     if result.get("error"):
         metrics["contract_invalid"] = 1
+        if result["error"].get("code") == "EVAL_LLM_FAILURE":
+            # CLI 兜底的 LLM 失败：样本详情落 errors 明细，使失败样本在报告
+            # JSON 与 --compare 错误集对比中可见。field_key 用空串占位，
+            # 保持 {case_id, field_key, kind} 三元组结构兼容（sorted 安全）。
+            metrics["errors"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": "",
+                "kind": "eval_llm_failure",
+                "message": result["error"].get("message", ""),
+            })
         return {"metrics": metrics, "field_totals": field_totals, "pitfalls": sample.get("pitfalls", [])}
     for field_key, golden in golden_by_key.items():
         candidate = candidates_by_key.get(field_key)
