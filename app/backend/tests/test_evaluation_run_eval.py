@@ -7,8 +7,10 @@
   把该样本记为 EVAL_LLM_FAILURE error 并继续下一个样本，不中断整个评估。
 """
 import json
+from pathlib import Path
 
 from app.backend.evaluation import run_eval
+from app.backend.services.schema_loader import load_schema
 
 SCHEMA_YAML = (
     "version: 1.0.0\n"
@@ -129,3 +131,87 @@ def test_uncaught_llm_error_marks_sample_error_and_continues(tmp_path, monkeypat
     assert failure["case_id"] == "case_001"
     assert failure["field_key"] == ""
     assert "connection refused" in failure["message"]
+
+
+def _field_map(schema):
+    return {f["field_key"]: f for g in schema["field_groups"] for f in g["fields"]}
+
+
+def test_merge_j_annotations_from_batch_schema():
+    # 构造 schema：v2 的 J 注解（qwen_type=J / review_control=judgement）按字段名
+    # 合并到 v1 同名字段；非 J 字段、v1 独有字段不受影响；不引入 v2 独有字段。
+    v1 = {
+        "version": "v1", "document_type": "copd_admission_record",
+        "field_groups": [
+            {"group_key": "pe", "group_label": "体格检查", "fields": [
+                {"field_key": "pe_nose", "label": "鼻部", "type": "string"},
+                {"field_key": "pe_chest", "label": "胸部", "type": "string"},
+            ]},
+            {"group_key": "v1_only", "group_label": "v1独有", "fields": [
+                {"field_key": "v1_only_field", "label": "独有", "type": "string"},
+            ]},
+        ],
+    }
+    v2 = {
+        "version": "v2", "document_type": "qwen_batch_admission_record",
+        "field_groups": [
+            {"group_key": "pe", "group_label": "体格检查", "fields": [
+                {"field_key": "pe_nose", "qwen_type": "J", "review_control": "judgement"},
+                {"field_key": "pe_chest", "qwen_type": "T", "review_control": "text"},
+            ]},
+            {"group_key": "v2_only", "group_label": "v2独有", "fields": [
+                {"field_key": "v2_only_field", "qwen_type": "J", "review_control": "judgement"},
+            ]},
+        ],
+    }
+    merged = run_eval._merge_j_annotations(v1, v2)
+    fields = _field_map(merged)
+    assert fields["pe_nose"]["qwen_type"] == "J"
+    assert fields["pe_nose"]["review_control"] == "judgement"
+    assert "qwen_type" not in fields["pe_chest"]  # 非 J 注解不合并
+    assert "qwen_type" not in fields["v1_only_field"]  # v1 独有字段不受影响
+    assert "v2_only_field" not in fields  # 不引入 v2 独有字段
+
+
+def test_real_v1_schema_merges_v2_j_annotations():
+    # 真实 v1（61 字段，无注解）合并真实 v2 后：共享 J 字段被标注，
+    # v1 独有字段（v2 无同名字段）不受影响。
+    root = Path(run_eval.__file__).resolve().parents[3]
+    v1 = load_schema(str(root / "app" / "config" / "schemas" / "admission_record_structured_fields.v1.yaml"))
+    v2 = load_schema(run_eval._BATCH_SCHEMA_PATH)
+    merged = run_eval._merge_j_annotations(v1, v2)
+    fields = _field_map(merged)
+    assert fields["pe_nose"]["qwen_type"] == "J"
+    assert fields["pe_nose"]["review_control"] == "judgement"
+    assert fields["pmh_hepatitis_b"]["qwen_type"] == "J"
+    assert fields["pmh_hepatitis_b"]["review_control"] == "judgement"
+    assert "qwen_type" not in fields["hpi_mental_status"]  # v1 独有字段不受影响
+    assert "qwen_type" not in fields["pe_respiratory_exam"]  # 与 v2 不同名，不受影响
+
+
+def test_main_passes_merged_schema_to_evaluate_sample(tmp_path, monkeypatch):
+    # 接线：run_eval 加载 v1 后合并 v2 J 注解，evaluate_sample 收到已标注 schema。
+    root = Path(run_eval.__file__).resolve().parents[3]
+    schema_path = root / "app" / "config" / "schemas" / "admission_record_structured_fields.v1.yaml"
+    golden_dir = _write_golden(tmp_path, ["case_001"])
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+
+    captured = {}
+    real_evaluate_sample = run_eval.evaluate_sample
+
+    def spy_evaluate_sample(sample, result, schema=None):
+        captured["schema"] = schema
+        return real_evaluate_sample(sample, result, schema)
+
+    monkeypatch.setattr(run_eval, "build_llm_client", lambda args: FakeClient())
+    monkeypatch.setattr(run_eval, "evaluate_sample", spy_evaluate_sample)
+    run_eval.main([
+        "--golden-dir", str(golden_dir),
+        "--schema", str(schema_path),
+        "--model", "fake-model",
+        "--report-dir", str(report_dir),
+    ])
+    fields = _field_map(captured["schema"])
+    assert fields["pe_nose"]["qwen_type"] == "J"
+    assert fields["chief_complaint"].get("qwen_type") != "J"  # T 字段不受影响

@@ -160,8 +160,15 @@ def evaluate_sample(sample: dict, result: dict, schema: dict | None = None) -> d
         # 已记录该字段失败，错误明细只保留真正"值对但不可定位"的 veto 个案。
         # 金标 value 本身在 OCR 不可定位（否定短语重建的期望输出不可定位）时
         # 跳过该字段的幻觉判定，真错误由 value_mismatch 兜底。
+        # J 型字段"正常族"语义等价（金标"鼻腔通畅"↔预测"正常"）时，预测 token
+        # 不必在原文逐字出现，跳过该字段的幻觉判定；语义不等价（如金标异常
+        # 描述被折叠为"正常"）仍按原逻辑判幻觉。
+        j_equivalent = (
+            field_key in j_fields
+            and j_judgement_normalize(golden_value) == j_judgement_normalize(predicted_value)
+        )
         golden_located = value_located_in_text(golden_value, ocr_text)
-        if not value_located_in_text(predicted_value, ocr_text, correction_applied) and golden_located:
+        if not j_equivalent and not value_located_in_text(predicted_value, ocr_text, correction_applied) and golden_located:
             metrics["hallucination"] += 1
             if verdict in ("exact", "substring"):
                 metrics["errors"].append(

@@ -86,6 +86,14 @@ class TestJJudgementNormalize:
         assert "异常" in j_judgement_normalize("双肺呼吸音粗，闻及异常干啰音")
         assert j_judgement_normalize("双肺呼吸音粗") != "正常"
 
+    def test_negated_normal_family_not_collapsed(self):
+        # 否定形态（欠/不/稍欠 等前缀）不属于"正常族"：保持原文，不折叠为"正常"
+        assert j_judgement_normalize("鼻腔欠通畅") == "鼻腔欠通畅"
+        assert j_judgement_normalize("鼻腔不通畅") == "鼻腔不通畅"
+        assert j_judgement_normalize("鼻黏膜稍欠通畅") == "鼻黏膜稍欠通畅"
+        # 无否定的"通畅"仍归一为"正常"
+        assert j_judgement_normalize("鼻腔通畅") == "正常"
+
 
 class TestSentenceOverlapRatio:
     def test_shared_sentences_ratio(self):
@@ -97,6 +105,13 @@ class TestSentenceOverlapRatio:
 
     def test_disjoint_sentences_zero(self):
         assert sentence_overlap_ratio("无发热。", "胸痛3天") == 0.0
+
+    def test_punctuation_only_segment_not_polluting(self):
+        # 预测含纯标点段（归一化后为空串）不得让全部金标句被判覆盖：
+        # 金标 2 句、预测 1 真句 + 1 纯标点段 → 0.5 而非 1.0
+        golden = "无发热。无咳嗽。"
+        predicted = "无发热。，，"
+        assert sentence_overlap_ratio(golden, predicted) == 0.5
 
 
 class TestJJudgementFields:

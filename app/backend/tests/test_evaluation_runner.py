@@ -154,6 +154,29 @@ class TestEvaluateSample:
         schema = make_schema_with_j_fields()
         out = evaluate_sample(sample, result, schema=schema)
         assert out["metrics"]["value_correct"] == 1
+        # J 型"正常族"语义等价（金标"鼻腔通畅"↔预测"正常"）：预测 token 不必
+        # 在原文逐字出现，不判幻觉
+        assert out["metrics"]["hallucination"] == 0
+
+    def test_j_abnormal_golden_predicted_normal_is_hallucination(self):
+        # 金标是异常描述（双肺呼吸音粗，OCR 可定位），预测折叠为"正常"→
+        # 语义不等价，按原逻辑判幻觉（value_mismatch + hallucination=1）
+        sample = {
+            "case_id": "case_001",
+            "ocr_text": "双肺呼吸音粗",
+            "golden": [{"field_key": "pe_nose", "status": "found", "value": "双肺呼吸音粗"}],
+        }
+        result = {
+            "payload": {},
+            "candidates": [{
+                "field_key": "pe_nose", "status": "found",
+                "value": "正常", "ocr_correction": {"applied": False},
+            }],
+            "error": None,
+        }
+        out = evaluate_sample(sample, result, schema=make_schema_with_j_fields())
+        assert out["metrics"]["value_correct"] == 0
+        assert out["metrics"]["hallucination"] == 1
 
 
 class TestBuildReport:

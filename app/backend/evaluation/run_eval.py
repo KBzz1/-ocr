@@ -10,6 +10,7 @@ RuntimeError 等非 AppError 异常，会穿透 run_pipeline 的内部捕获；�
 evaluate_sample 把它计为 contract_invalid，评估继续下一个样本。
 """
 import argparse
+import copy
 import json
 import sys
 from datetime import datetime, timezone
@@ -20,6 +21,36 @@ from ..services.copd_extraction.llm_client import OpenAICompatibleJsonClient
 from ..services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
 from ..services.schema_loader import load_schema
 from .runner import build_report, evaluate_sample, run_pipeline
+
+# 批处理 schema（含 qwen_type/review_control 注解），用于给 v1 评估 schema
+# 补同名 J 字段注解（见 _merge_j_annotations）。
+_BATCH_SCHEMA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "app" / "config" / "schemas" / "qwen_batch_admission_record.v2.yaml"
+)
+
+
+def _merge_j_annotations(schema: dict, batch_schema: dict) -> dict:
+    """把批处理 schema 中同名字段的 J 注解合并进评估 schema（仅评估路径）。
+
+    v1 评估 schema 无 qwen_type/review_control 注解，j_judgement_fields 对它会
+    返回空集，J 型"正常族"归一一度是死代码。本函数只把两 schema 共有的字段名
+    上、且批处理侧标注为 J（qwen_type=J 或 review_control=judgement）的注解
+    复制到 v1 同名字段；v1 独有字段不动，批处理独有字段不引入。
+    """
+    j_fields: dict[str, dict] = {}
+    for group in batch_schema.get("field_groups", []) or []:
+        for field in group.get("fields", []) or []:
+            if field.get("qwen_type") == "J" or field.get("review_control") == "judgement":
+                j_fields[field.get("field_key")] = field
+    merged = copy.deepcopy(schema)
+    for group in merged.get("field_groups", []) or []:
+        for field in group.get("fields", []) or []:
+            jf = j_fields.get(field.get("field_key"))
+            if jf:
+                field["qwen_type"] = jf["qwen_type"]
+                field["review_control"] = jf["review_control"]
+    return merged
 
 
 def build_llm_client(args) -> OpenAICompatibleJsonClient:
@@ -82,6 +113,13 @@ def main(argv: list[str] | None = None) -> Path:
     args = parser.parse_args(argv)
 
     schema = load_schema(args.schema)
+    try:
+        batch_schema = load_schema(_BATCH_SCHEMA_PATH)
+    except Exception as exc:  # noqa: BLE001 — 批处理 schema 缺失时降级为不合并，评估仍可跑
+        print(f"警告: 加载批处理 schema 失败({_BATCH_SCHEMA_PATH})，跳过 J 注解合并: {exc}", file=sys.stderr)
+        batch_schema = None
+    if batch_schema:
+        schema = _merge_j_annotations(schema, batch_schema)
     samples = load_golden_samples(Path(args.golden_dir))
     if not samples:
         print(f"未找到金标样本: {args.golden_dir}", file=sys.stderr)
