@@ -36,6 +36,12 @@ def build_verification_messages(
 6. 生理范围异常：体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）。
 7. 证据缺失/幻觉：字段值在下方证据中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
 
+【证据一致性硬约束 —— 任何指控必须逐字可查】
+- 任何 suspicious/fail 指控必须能在证据单元文本中逐字定位；字段值中已存在的内容不得指控为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
+- comment 禁止引用证据中不存在的内容，禁止编造原文（原文有某药名，不得说"原文无此药"）；引用同一段文本时不得自称"误读"。
+- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为指控依据。
+- 字段值完整摘录了证据内容（即使表述顺序略有不同）时，不得以"表述不一致""顺序不同"为由 flag。
+
 【verdict 契约】
 输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含：
 - field_key：被审查字段的 key
@@ -44,7 +50,7 @@ def build_verification_messages(
 - checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
 - comment：不超过 40 个汉字，只写必要原因；通过项写"一致"
 
-对抗要求：对每个字段先主动找茬；确实找到疑点才输出 suspicious/fail，**每条 suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述**；没有疑点才输出 pass。
+对抗要求：对每个字段先主动找茬；**找茬失败时必须输出 pass**——只有能指出具体、可逐字定位、非编造的矛盾才输出 suspicious/fail，否则必须 pass。宁可漏过一个小疑点，不可编造理由标记（误报会让医生信任度下降）。每条 suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述；没有疑点才输出 pass。
 
 输出示例：
 ```json
@@ -57,7 +63,16 @@ def build_verification_messages(
    "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}
 ]}
 ```
-示例仅示范结构，字段内容为占位，不得照抄。"""
+示例仅示范结构，字段内容为占位，不得照抄。
+
+反例（值正确，不得 flag）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核器错误找茬 → 正确输出应为 verdict=pass：
+```json
+{"verifications": [
+  {"field_key": "pe_lung", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"}
+]}
+```"""
 
     evidence_blocks = [
         f"- {unit.get('id', '')}：{unit.get('text', '')}"

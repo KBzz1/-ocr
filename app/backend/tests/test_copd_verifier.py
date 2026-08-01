@@ -17,6 +17,11 @@ def test_verification_messages_evidence_first_fields_after():
     assert "e001" not in system and "听力正常" not in system
     assert "verdict" in system and "pass" in system and "suspicious" in system
     assert "suspicious" in system  # few-shot 覆盖 suspicious 示例
+    # 校准迭代契约：证据一致性硬约束 + 找茬失败转 pass + 误报反例（仅文本契约，不含数据）
+    assert "证据一致性硬约束" in system
+    assert "逐字" in system
+    assert "找茬失败时必须输出 pass" in system
+    assert "反例" in system
     # user：evidence 编号块在字段块之前
     assert user.index("e001") < user.index("pe_ear")
     assert "pe_ear" in user and "正常" in user
