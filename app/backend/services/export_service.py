@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from typing import Callable
@@ -355,6 +356,84 @@ class ExportService:
             "success_tasks": success_tasks,
         }
 
+    def batch_excel_download_path(self, export_id: str) -> str | None:
+        if not isinstance(export_id, str) or len(export_id) != 32 or not export_id.isalnum():
+            return None
+        filepath = os.path.join(self._export_dir, "batch", f"batch-{export_id}.xlsx")
+        return filepath if os.path.isfile(filepath) else None
+
+    def export_batch_excel(self, document_type: str) -> dict:
+        if not isinstance(document_type, str) or not document_type.strip():
+            raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="document_type 必须为非空字符串")
+        if self._document_profiles is None:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="文书模板未注册或未完成接入，无法导出",
+                details={"document_type": document_type},
+            )
+        try:
+            profile = self._document_profiles.get_profile(document_type)
+        except AppError as exc:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="文书模板未注册或未完成接入，无法导出",
+                details={"document_type": document_type, "error_code": exc.code},
+            )
+        if not getattr(profile, "batch_excel_enabled", False):
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="文书模板未启用批量 Excel 导出",
+                details={"document_type": document_type},
+            )
+
+        candidates = self._candidate_tasks(document_type)
+        if not candidates:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="没有可导出的记录",
+                details={"document_type": document_type},
+            )
+
+        rows, skipped = self._build_batch_excel_rows(candidates, profile.schema)
+        if not rows:
+            raise AppError(
+                ErrorCode.EXPORT_VALIDATION_FAILED,
+                message="没有可导出的记录",
+                details={"document_type": document_type, "skipped": skipped},
+            )
+
+        export_id = uuid.uuid4().hex
+        filename = f"batch-{export_id}.xlsx"
+        relative_path = f"batch/{filename}"
+        filepath = os.path.join(self._export_dir, relative_path)
+        tmp_path = f"{filepath}.tmp"
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            self._write_batch_xlsx(tmp_path, rows)
+            os.replace(tmp_path, filepath)
+        except OSError as exc:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise AppError(
+                ErrorCode.EXPORT_FAILED,
+                message="导出文件写入失败",
+                details={"format": "batch_excel", "reason": str(exc)},
+            )
+
+        for row in rows:
+            self._task_service.record_export(row["task_id"], format="batch_excel", relative_path=relative_path)
+
+        return {
+            "format": "batch_excel",
+            "export_id": export_id,
+            "filename": filename,
+            "download_url": f"/api/tasks/export/batch-excel/{export_id}",
+            "candidate_count": len(candidates),
+            "exported_count": len(rows),
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+        }
+
     def _do_export(self, task_id: str, format: str, ext: str, writer: Callable) -> dict:
         task = self._task_service.get_task(task_id)
         model = self._build_export_model(task_id, task=task)
@@ -466,6 +545,10 @@ class ExportService:
     _HEADERS = ["字段 key", "字段名", "final_value", "状态", "来源页", "来源证据"]
     _COL_LETTERS = ["A", "B", "C", "D", "E", "F"]
 
+    _BATCH_SHEET_NAME = "批量导出"
+    _BATCH_HEADERS = ["序号", "姓名", "主诉", "新病史", "既往史", "个人史", "家族史", "体格检查", "任务编号"]
+    _BATCH_COL_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+
     # 批量 Excel 固定列:入院记录六大模块(group_key, 列名)
     _BATCH_MODULE_COLUMNS = [
         ("chief_complaint", "主诉"),
@@ -560,6 +643,70 @@ class ExportService:
         lines.append("</worksheet>")
         return "\n".join(lines)
 
+    @staticmethod
+    def _styles_xml() -> str:
+        """最小样式表:index 0 默认,index 1 wrapText + 顶端对齐(批量导出值列用)。"""
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n'
+            '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>\n'
+            '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>\n'
+            '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>\n'
+            '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\n'
+            '<cellXfs count="2">\n'
+            '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>\n'
+            '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">'
+            '<alignment wrapText="1" vertical="top"/></xf>\n'
+            '</cellXfs>\n'
+            '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>\n'
+            '</styleSheet>'
+        )
+
+    @classmethod
+    def _batch_sheet_xml(cls, rows: list[dict]) -> str:
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+            # 第 9 列"任务编号"隐藏,便于结果回查且不干扰医生
+            '<cols><col min="9" max="9" width="0" hidden="1"/></cols>',
+            "<sheetData>",
+        ]
+        lines.append('<row r="1">')
+        for i, header in enumerate(cls._BATCH_HEADERS):
+            escaped = escape(header)
+            lines.append(f'<c r="{cls._BATCH_COL_LETTERS[i]}1" t="inlineStr"><is><t>{escaped}</t></is></c>')
+        lines.append("</row>")
+
+        for row_idx, row in enumerate(rows, start=2):
+            lines.append(f'<row r="{row_idx}">')
+            values = [
+                str(row["serial"]),
+                row.get("patient_name", ""),
+            ]
+            for group_key, _ in cls._BATCH_MODULE_COLUMNS:
+                values.append(row.get("cells", {}).get(group_key, ""))
+            values.append(row["task_id"])
+            for i, val in enumerate(values):
+                letter = cls._BATCH_COL_LETTERS[i]
+                style = "" if i == 0 else ' s="1"'
+                escaped = escape(val)
+                lines.append(f'<c r="{letter}{row_idx}"{style} t="inlineStr"><is><t>{escaped}</t></is></c>')
+            lines.append("</row>")
+
+        lines.append("</sheetData>")
+        lines.append("</worksheet>")
+        return "\n".join(lines)
+
+    def _write_batch_xlsx(self, path: str, rows: list[dict]) -> None:
+        sheet_name = self._build_sheet_names([self._BATCH_SHEET_NAME])[0]
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("[Content_Types].xml", self._content_types_xml(1, include_styles=True))
+            z.writestr("_rels/.rels", self._rels_xml())
+            z.writestr("xl/workbook.xml", self._workbook_xml([sheet_name]))
+            z.writestr("xl/_rels/workbook.xml.rels", self._workbook_rels_xml([sheet_name]))
+            z.writestr("xl/styles.xml", self._styles_xml())
+            z.writestr("xl/worksheets/sheet1.xml", self._batch_sheet_xml(rows))
+
     def _build_sheet_names(self, raw_names: list[str]) -> list[str]:
         names = []
         seen = {}
@@ -582,7 +729,7 @@ class ExportService:
         return result
 
     @staticmethod
-    def _content_types_xml(sheet_count: int) -> str:
+    def _content_types_xml(sheet_count: int, include_styles: bool = False) -> str:
         types = [
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
@@ -590,6 +737,10 @@ class ExportService:
             '<Default Extension="xml" ContentType="application/xml"/>',
             '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
         ]
+        if include_styles:
+            types.append(
+                '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            )
         for i in range(1, sheet_count + 1):
             types.append(
                 f'<Override PartName="/xl/worksheets/sheet{i}.xml" '
