@@ -781,3 +781,110 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
+.batch-excel-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.batch-excel-dialog {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.batch-excel-dialog__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.batch-excel-dialog__hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #666;
+}
+
+.batch-excel-dialog__empty {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #999;
+}
+
+.batch-excel-dialog__templates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.batch-excel-dialog__template {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.batch-excel-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.batch-excel-dialog__cancel,
+.batch-excel-dialog__confirm {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.batch-excel-dialog__cancel {
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+.batch-excel-dialog__confirm {
+  background: #1677ff;
+  border: 1px solid #1677ff;
+  color: #fff;
+}
+
+.batch-excel-dialog__confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tasks-batch-excel-export {
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #1677ff;
+  color: #1677ff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tasks-batch-excel-export:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tasks-batch-skipped {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #f0c36d;
+  background: #fffbe6;
+  border-radius: 4px;
+  list-style: none;
+  font-size: 13px;
+  color: #8a6d3b;
+}

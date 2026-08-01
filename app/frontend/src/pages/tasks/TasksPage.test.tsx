@@ -820,3 +820,91 @@ describe('Batch export (FE-MVP-03-04)', () => {
     expect((checkboxAfter as HTMLInputElement).checked).toBe(true);
   });
 });
+
+const batchExcelTemplateFixture = {
+  document_type: 'qwen_batch_admission_record',
+  label: '入院记录'
+};
+const batchExcelReportFixture = {
+  format: 'batch_excel',
+  export_id: 'a'.repeat(32),
+  filename: `batch-${'a'.repeat(32)}.xlsx`,
+  download_url: `/api/tasks/export/batch-excel/${'a'.repeat(32)}`,
+  candidate_count: 3,
+  exported_count: 2,
+  skipped_count: 1,
+  skipped: [{ task_id: '3', reason: '目标模块中没有任何已确认字段，未生成导出行' }]
+};
+
+const mockBatchExcelTemplates = () =>
+  http.get('*/api/tasks/export/batch-excel/templates', () =>
+    HttpResponse.json({ success: true, data: { templates: [batchExcelTemplateFixture] } })
+  );
+const mockBatchExcelGenerate = () =>
+  http.post('*/api/tasks/export/batch-excel', () =>
+    HttpResponse.json({ success: true, data: batchExcelReportFixture })
+  );
+const mockBatchExcelDownload = () =>
+  http.get(`*/api/tasks/export/batch-excel/${'a'.repeat(32)}`, () =>
+    new HttpResponse(new Blob(['fake-xlsx']), {
+      headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+    })
+  );
+
+function mockCreateObjectURL() {
+  return vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake');
+}
+
+describe('Batch excel export (全部导出 Excel)', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/tasks');
+  });
+
+  it('exports all records to one excel via template dialog', async () => {
+    const user = userEvent.setup();
+    mockCreateObjectURL();
+    server.use(
+      mockTasks(),
+      mockBatchExcelTemplates(),
+      mockBatchExcelGenerate(),
+      mockBatchExcelDownload()
+    );
+    render(<TasksPage />);
+    await screen.findByRole('table', { name: '任务列表' });
+
+    await user.click(screen.getByRole('button', { name: '全部导出 Excel' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '全部导出 Excel' });
+    expect(within(dialog).getByText('入院记录')).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: '确认导出' }));
+
+    expect(await screen.findByText(/已导出 2 条，跳过 1 条/)).toBeTruthy();
+    expect(URL.createObjectURL).toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '查看跳过明细' }));
+    expect(screen.getByText(/任务 3：目标模块中没有任何已确认字段/)).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '全部导出 Excel' })).toBeNull();
+  });
+
+  it('shows error message when batch excel generation fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      mockTasks(),
+      mockBatchExcelTemplates(),
+      http.post('*/api/tasks/export/batch-excel', () =>
+        HttpResponse.json(
+          { success: false, error: { code: 'EXPORT_VALIDATION_FAILED', message: '没有可导出的记录', details: {} } },
+          { status: 400 }
+        )
+      )
+    );
+    render(<TasksPage />);
+    await screen.findByRole('table', { name: '任务列表' });
+
+    await user.click(screen.getByRole('button', { name: '全部导出 Excel' }));
+    await screen.findByRole('dialog', { name: '全部导出 Excel' });
+    await user.click(screen.getByRole('button', { name: '确认导出' }));
+
+    expect(await screen.findByText(/没有可导出的记录/)).toBeTruthy();
+  });
+});

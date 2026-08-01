@@ -54,3 +54,59 @@ export async function exportTasksBatchZip(taskIds: string[]) {
 
   return response.blob();
 }
+
+export type BatchExcelTemplate = {
+  document_type: string;
+  label: string;
+};
+
+export type BatchExcelSkippedItem = {
+  task_id: string;
+  reason: string;
+};
+
+export type BatchExcelReport = {
+  format: 'batch_excel';
+  export_id: string;
+  filename: string;
+  download_url: string;
+  candidate_count: number;
+  exported_count: number;
+  skipped_count: number;
+  skipped: BatchExcelSkippedItem[];
+};
+
+export async function fetchBatchExcelTemplates(): Promise<BatchExcelTemplate[]> {
+  const response = await fetch(new URL('/api/tasks/export/batch-excel/templates', window.location.origin).toString());
+  if (!response.ok) {
+    throw await parseBlobError(response, '获取导出模板失败');
+  }
+  const body = (await response.json()) as { data: { templates: BatchExcelTemplate[] } };
+  return body.data.templates;
+}
+
+export async function exportTasksBatchExcel(documentType: string): Promise<BatchExcelReport> {
+  const response = await fetch(new URL('/api/tasks/export/batch-excel', window.location.origin).toString(), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ document_type: documentType })
+  });
+  if (!response.ok) {
+    throw await parseBlobError(response, '批量导出失败');
+  }
+  const body = (await response.json()) as { data: BatchExcelReport };
+  return body.data;
+}
+
+export async function downloadBatchExcel(exportId: string): Promise<Blob> {
+  const response = await fetch(
+    new URL(`/api/tasks/export/batch-excel/${encodeURIComponent(exportId)}`, window.location.origin).toString()
+  );
+  if (!response.ok) {
+    throw await parseBlobError(response, '下载导出文件失败');
+  }
+  return response.blob();
+}
