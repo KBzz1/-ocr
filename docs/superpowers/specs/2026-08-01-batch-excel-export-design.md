@@ -59,7 +59,7 @@
 4. **跳过规则**：任务存在未确认字段（`is_field_blocking`）→ 跳过该任务，记录 `{task_id, reason: "存在未确认字段，未通过导出检查"}`，不影响其他行。
 5. 其余任务生成一行固定模板数据，追加写入 xlsx。
 6. 文件固定写 `exports/batch/batch-review-export.xlsx`，**覆盖式**（多次导出是同一个表）；文件目录与现有 batch zip 一致（`exports/batch/`）。
-7. 返回 `{ filename, relative_path, row_count, skipped: [{task_id, reason}] }`，并 `record_export` 记录批量导出。
+7. 返回 `{ filename, relative_path, row_count, skipped: [{task_id, reason}] }`；对每个成功导出的任务 `record_export(format="batch_excel", relative_path=...)`，与 batch-zip 的逐任务记录方式对齐。
 
 ### xlsx 写入
 
