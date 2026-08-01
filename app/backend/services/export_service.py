@@ -93,14 +93,17 @@ class ExportService:
 
     def _patient_metadata(self, task: dict) -> dict:
         """导出场景下的患者元数据。优先使用 task_service 提供的实现,
-        未提供时回落到 task.patient_snapshot。"""
+        未提供或结果缺姓名时,回落到 task.patient_snapshot
+        (list_tasks summary 形态时回落到 task.patient 汇总)。"""
         provider = getattr(self._task_service, "patient_export_metadata", None)
         if callable(provider):
             try:
-                return provider(task)
+                metadata = provider(task)
+                if metadata is not None and metadata.get("name"):
+                    return metadata
             except Exception:
                 pass
-        snapshot = task.get("patient_snapshot") or {}
+        snapshot = task.get("patient_snapshot") or task.get("patient") or {}
         return {
             "patient_id": task.get("patient_id"),
             "name": snapshot.get("name"),
@@ -232,6 +235,99 @@ class ExportService:
                 "model": model,
             })
         return models, failed_tasks
+
+    def batch_excel_templates(self) -> list[dict]:
+        if self._document_profiles is None:
+            return []
+        return self._document_profiles.get_batch_excel_available_document_types()
+
+    @staticmethod
+    def _task_sort_key(task: dict) -> tuple:
+        raw = task.get("task_id")
+        try:
+            return (0, int(raw))
+        except (TypeError, ValueError):
+            return (1, str(raw))
+
+    def _candidate_tasks(self, document_type: str) -> list[dict]:
+        tasks = self._task_service.list_tasks()
+        candidates = [
+            task
+            for task in tasks
+            if task.get("status") in (TaskStatus.REVIEW.value, TaskStatus.DONE.value)
+            and task.get("document_type") == document_type
+        ]
+        candidates.sort(key=self._task_sort_key)
+        return candidates
+
+    def _build_batch_excel_rows(self, candidate_tasks: list[dict], schema: dict) -> tuple[list[dict], list[dict]]:
+        module_group_keys = [group_key for group_key, _ in self._BATCH_MODULE_COLUMNS]
+        schema_group_fields = {
+            group.get("group_key"): list(group.get("fields") or [])
+            for group in (schema.get("field_groups") or [])
+        }
+        rows: list[dict] = []
+        skipped: list[dict] = []
+        serial = 0
+        for task in candidate_tasks:
+            task_id = task["task_id"]
+            try:
+                review = self._store.read(f"results/{task_id}/review_result.json")
+                if review is None or not isinstance(review.get("fields"), list) or not review["fields"]:
+                    raise AppError(
+                        ErrorCode.EXPORT_VALIDATION_FAILED,
+                        message="审核结果缺失或字段为空",
+                    )
+                schema_view = self._build_schema_view(review, schema)
+            except AppError as exc:
+                skipped.append({"task_id": task_id, "reason": exc.message})
+                continue
+            except (ValueError, OSError):
+                skipped.append({"task_id": task_id, "reason": "审核结果缺失或损坏"})
+                continue
+
+            confirmed_by_group = {group_key: [] for group_key in module_group_keys}
+            for field in schema_view:
+                group_key = field.get("group_key")
+                if group_key not in confirmed_by_group:
+                    continue
+                if field.get("status") not in (FieldStatus.CONFIRMED.value, FieldStatus.MODIFIED.value):
+                    continue
+                final_value = str(field.get("final_value") or "")
+                if not final_value.strip():
+                    continue
+                confirmed_by_group[group_key].append(field)
+
+            cells: dict[str, str] = {}
+            for group_key, _ in self._BATCH_MODULE_COLUMNS:
+                confirmed_fields = confirmed_by_group[group_key]
+                if not confirmed_fields:
+                    cells[group_key] = ""
+                    continue
+                group_fields = schema_group_fields.get(group_key, [])
+                # 单字段且字段与组同名(主诉/家族史等代表字段)才只写值,
+                # 其余形态(多字段或单字段不同名)写"字段名：值"
+                if len(group_fields) == 1 and group_fields[0].get("field_key") == group_key:
+                    cells[group_key] = str(confirmed_fields[0]["final_value"])
+                else:
+                    cells[group_key] = "\n".join(
+                        f"{field.get('field_name') or field['field_key']}：{field['final_value']}"
+                        for field in confirmed_fields
+                    )
+
+            if not any(cells.values()):
+                skipped.append({"task_id": task_id, "reason": "目标模块中没有任何已确认字段，未生成导出行"})
+                continue
+
+            serial += 1
+            patient = self._patient_metadata(task)
+            rows.append({
+                "serial": serial,
+                "patient_name": (patient or {}).get("name") or "",
+                "cells": cells,
+                "task_id": task_id,
+            })
+        return rows, skipped
 
     def _get_task_status_for_error(self, task_id: str) -> str | None:
         try:
@@ -369,6 +465,16 @@ class ExportService:
     _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     _HEADERS = ["字段 key", "字段名", "final_value", "状态", "来源页", "来源证据"]
     _COL_LETTERS = ["A", "B", "C", "D", "E", "F"]
+
+    # 批量 Excel 固定列:入院记录六大模块(group_key, 列名)
+    _BATCH_MODULE_COLUMNS = [
+        ("chief_complaint", "主诉"),
+        ("history_of_present_illness", "新病史"),
+        ("past_history", "既往史"),
+        ("personal_history", "个人史"),
+        ("family_history", "家族史"),
+        ("physical_exam", "体格检查"),
+    ]
 
     def _write_xlsx(self, path: str, model: dict) -> None:
         groups: dict[str, dict] = {}
