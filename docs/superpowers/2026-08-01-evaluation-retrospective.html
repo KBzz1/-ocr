@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>评估体系构建复盘 — 2026-08-01</title>
+<style>
+  /* ── 仿《深入理解 AI Agent》排版风格 ──
+     ElegantBook cyan theme 覆写为深海军蓝 structurecolor = RGB(30,58,107)
+     白纸底、章节式结构、实验/术语框、O'Reilly 风格代码框 */
+  :root {
+    --navy: #1e3a6b;            /* structurecolor */
+    --accent: #1e3a6b;
+    --accentbg: #eef1f7;        /* structurecolor!6 近似 */
+    --accentrule: #b8c4d8;      /* structurecolor!35 近似 */
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --codebg: #f7f7f4;          /* black!3 近似 */
+    --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+    --sans: "Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: Menlo, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: var(--ink);
+    font-family: var(--serif);
+    line-height: 1.9;
+    font-size: 15.5px;
+  }
+  .page { max-width: 780px; margin: 0 auto; padding: 0 40px 100px; }
+
+  /* ── 封面区：navy 色带 + 渐隐（仿 cover.tex titlefade） ── */
+  .cover {
+    background: linear-gradient(180deg, #16294a 0%, #1e3a6b 75%, #1e3a6b 100%);
+    color: #fff;
+    padding: 90px 60px 70px;
+    margin: 0 -40px 60px;
+    text-align: center;
+    position: relative;
+    border-bottom: 4px solid #0f1e38;
+  }
+  .cover::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 0; height: 160px;
+    background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, transparent 100%);
+  }
+  .cover .kicker {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: .35em;
+    opacity: .75;
+    margin-bottom: 26px;
+  }
+  .cover h1 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 34px;
+    margin: 0 0 10px;
+    letter-spacing: .08em;
+  }
+  .cover .cn-sub { font-size: 17px; opacity: .92; margin-bottom: 30px; }
+  .cover .en-sub {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: .18em;
+    opacity: .6;
+  }
+  .cover .meta {
+    margin-top: 40px;
+    font-family: var(--sans);
+    font-size: 13px;
+    opacity: .8;
+  }
+  .cover .meta span { margin: 0 14px; }
+
+  /* ── 章标题（书式：第N章 + 长横线） ── */
+  h2.chapter {
+    font-family: var(--sans);
+    color: var(--navy);
+    font-size: 24px;
+    font-weight: 700;
+    margin: 64px 0 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--accentrule);
+  }
+  h2.chapter .no {
+    display: block;
+    font-size: 13px;
+    letter-spacing: .3em;
+    color: var(--navy);
+    opacity: .6;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  h3 {
+    font-family: var(--sans);
+    color: var(--navy);
+    font-size: 17px;
+    font-weight: 700;
+    margin: 34px 0 10px;
+  }
+  p { margin: 10px 0; text-align: justify; }
+  strong { color: #111; }
+
+  /* ── 术语框（中英文对照，仿书内术语定义） ── */
+  .term {
+    border: 1px solid var(--accentrule);
+    border-left: 4px solid var(--navy);
+    background: var(--accentbg);
+    border-radius: 3px;
+    padding: 12px 18px;
+    margin: 16px 0;
+    font-size: 14.5px;
+  }
+  .term .t-label {
+    font-family: var(--sans);
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 13px;
+    letter-spacing: .05em;
+  }
+  .term .t-en { font-family: var(--sans); color: var(--muted); font-size: 12.5px; }
+
+  /* ── 实验框（仿 实验 X-Y ★） ── */
+  .experiment {
+    border: 1px solid var(--accentrule);
+    background: #fbfcfe;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .experiment .x-title {
+    font-family: var(--sans);
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  .experiment .x-title .star { color: #c9a227; }
+  .experiment p { margin: 6px 0; font-size: 14.5px; }
+
+  /* ── 代码框（O'Reilly 风格：浅底 + 左侧粗线 + 圆角） ── */
+  pre {
+    background: var(--codebg);
+    border: 0.5px solid var(--accentrule);
+    border-left: 2.5px solid var(--accentrule);
+    border-radius: 2px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12.8px;
+    line-height: 1.65;
+    overflow-x: auto;
+    margin: 14px 0;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--accentbg);
+    border-radius: 3px;
+    padding: 0 5px;
+    color: #14315e;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* ── 表格（书式：细线 + 表头海军蓝） ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+    font-family: var(--sans);
+  }
+  th {
+    background: var(--accentbg);
+    color: var(--navy);
+    border-top: 1.5px solid var(--navy);
+    border-bottom: 1px solid var(--accentrule);
+    padding: 9px 12px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    border-bottom: 1px solid #e4e4e4;
+    padding: 8px 12px;
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: 1.5px solid var(--navy); }
+
+  /* ── 块引用（书内引用风格） ── */
+  blockquote {
+    margin: 16px 0;
+    padding: 10px 20px;
+    border-left: 3px solid var(--accentrule);
+    color: #444;
+    font-size: 14.5px;
+    background: #fafbfc;
+  }
+  blockquote .src { font-family: var(--sans); font-size: 12px; color: var(--muted); }
+
+  ul, ol { margin: 8px 0; padding-left: 26px; }
+  li { margin: 5px 0; }
+
+  /* ── 图框（仿 figN-M 示意图：浅底 + 细边） ── */
+  .figure {
+    border: 1px solid var(--accentrule);
+    background: #fbfcfe;
+    border-radius: 4px;
+    padding: 22px;
+    margin: 20px 0;
+    text-align: center;
+  }
+  .figure .caption {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 12px;
+  }
+  .figure .caption b { color: var(--navy); }
+
+  /* ── 尾注/页脚 ── */
+  footer {
+    margin-top: 80px;
+    padding-top: 20px;
+    border-top: 1px solid var(--accentrule);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<!-- ══════════ 封面 ══════════ -->
+<div class="cover">
+  <div class="kicker">复 盘 · 第 一 步</div>
+  <h1>评估体系构建</h1>
+  <div class="cn-sub">把「准确性」从口头目标变成可度量的指标</div>
+  <div class="en-sub">EVALUATION HARNESS — A RETROSPECTIVE</div>
+  <div class="meta">
+    <span>2026-08-01</span>
+    <span>分支 eval-harness</span>
+    <span>5 commits · 24 tests</span>
+  </div>
+</div>
+
+<!-- ══════════ 第一章 ══════════ -->
+<h2 class="chapter"><span class="no">第 一 章</span>为什么是评估</h2>
+
+<p>一切始于一个直白的问题：<strong>怎么证明改 prompt 是变好了，而不是碰运气？</strong>项目的最大需求是准确性——病历字段抽取错一个数值，医生就要多花一分钟核验。但翻开代码，找到的却是这样一个 harness：</p>
+
+<pre>prompt 组装 → complete_json → 契约校验 → evidence 回填 → quality_flags → 人工审核页</pre>
+
+<p>链路干净，验证层（契约校验、薄规则、医生兜底）已成型。唯独缺少一件事：<strong>没有一把尺子</strong>。没有评估集、没有指标、没有基线——每一次 prompt 改动都是凭感觉，而"凭感觉"恰恰是准确性项目最昂贵的习惯。</p>
+
+<p>对照《深入理解 AI Agent》的评估方法论（第六章），这个判断变得明确：</p>
+
+<blockquote>
+「没有评估，就没有进步。」评估对象不是模型，而是「模型 + harness 的组合体」——分数下降时，问题可能不在模型，而在 harness。
+<span class="src">——《深入理解 AI Agent》引言 / 第六章</span>
+</blockquote>
+
+<div class="term">
+  <div class="t-label">HARNESS（马具） <span class="t-en">— harness</span></div>
+  LLM 之外的全部工程层：上下文、工具、约束、验证、纠正。生产系统中重心在后三者——"能做事"的部分要薄，"不做错事"的部分要厚。
+</div>
+
+<h3>1.1 一开始以为该做的是别的事</h3>
+
+<p>最初的两个候选是<strong>上下文工程</strong>和<strong>多 Agent 协作</strong>——它们是书里最引人注目的两章。但逐条对照项目现状后，两个都排除了：单次调用场景下，上下文管理已踩在正确范式上（固定字段表静态 + evidence 动态追加）；多 Agent 协作的判据是"协作是否引入单 Agent 无法获得的新信息"，而本项目的单次抽取 + 人工审核已经用上了唯一合理的形态。</p>
+
+<div class="term">
+  <div class="t-label">金标 GOLDEN SET <span class="t-en">— golden set</span></div>
+  带标准答案的测试样本。评估时把抽取结果与金标逐字段比对，算出指标。金标质量决定评估可信度——宁少勿滥。
+</div>
+
+<p>把"准确性"这个词工程化，落点只有一个：<strong>评估</strong>。而项目恰好拥有一份别处拿不到的黄金资源——医生审核修正后的字段结果，天然就是金标标注。</p>
+
+<!-- ══════════ 第二章 ══════════ -->
+<h2 class="chapter"><span class="no">第 二 章</span>设计：三个关键决策</h2>
+
+<h3>2.1 决策一：评估先行，不做上下文工程、不做多 Agent</h3>
+
+<p>三条路线（评估先行 / 验证器先行 / 文档先行）摆在面前。选定<strong>评估先行</strong>：先有尺子，再谈改进——验证器改动有没有效，也要靠评估来度量。这个顺序避免了"改进无法度量"的死循环。</p>
+
+<div class="experiment">
+  <div class="x-title">实验 0-1 ★ 金标语义的裁定</div>
+  <p><strong>问题</strong>：OCR 把"无"丢了（"呼吸困难"变阳性），金标该判什么？</p>
+  <p><strong>裁定</strong>：金标 = 「从这份 OCR 输入出发，期望抽取输出什么」。OCR 错读是 OCR 层的问题，不属于 agent 观测——agent 忠实摘录 OCR 阳性表述就是<strong>正确的</strong>。三个 agent 语义层裁定：乙肝否定算 found（保留否定词）；"血糖异常"未明说糖尿病 → uncertain；血气在现病史段仍算 found（抽取应不依赖文档顺序，OCR 拼接错序时模型要发挥泛化性）。</p>
+</div>
+
+<h3>2.2 决策二：五个确定性指标，不用 LLM 打分</h3>
+
+<table>
+  <tr><th>指标</th><th>判定方式</th><th>性质</th></tr>
+  <tr><td>status 准确率</td><td>found/not_found/uncertain 严格比对</td><td>完全确定性</td></tr>
+  <tr><td>value 准确率</td><td>归一化一致 / 互为子串 / 人工裁定</td><td>确定性两级</td></tr>
+  <tr><td>幻觉数（veto）</td><td>value 必须在 OCR 原文可定位</td><td><strong>一票否决</strong></td></tr>
+  <tr><td>任务级成功率</td><td>61 字段全对</td><td>仅参考（样本少方差大）</td></tr>
+  <tr><td>契约非法率</td><td>payload 校验失败比例</td><td>确定性</td></tr>
+</table>
+
+<div class="term">
+  <div class="t-label">否决项 VETO <span class="t-en">— veto dimension</span></div>
+  幻觉不是扣分项，是归零项。这与项目硬约束「不得补造字段，宁可 not_found」完全同构——书里叫"幻觉一票否决"，项目里叫"宁缺毋滥"。
+</div>
+
+<h3>2.3 决策三：最窄边界，审核回流留到下一步</h3>
+
+<p>医生审核数据回流（金标活资产）是明确的价值点，但第一步刻意不做——6 份人工金标先把体系立起来，回流机制等验证器规范化时一并设计。边界划清，scope 才能守住。</p>
+
+<!-- ══════════ 第三章 ══════════ -->
+<h2 class="chapter"><span class="no">第 三 章</span>实施：六个任务</h2>
+
+<div class="figure">
+  <table style="margin:0">
+    <tr><th>任务</th><th>产出</th><th>验证</th></tr>
+    <tr><td>1 金标辅助脚本</td><td>OCR 差异清单 + 章节切分 + .gitignore</td><td>冒烟（200+ 错读差异）</td></tr>
+    <tr><td>2 指标模块</td><td>metrics.py 归一化/比对/幻觉定位</td><td>15 tests</td></tr>
+    <tr><td>3 管线组装</td><td>runner.py 消融开关 + 报告生成</td><td>7 tests</td></tr>
+    <tr><td>4 评估 CLI</td><td>run_eval.py 模型替换 + 基线对比</td><td>2 tests</td></tr>
+    <tr><td>5 金标提炼</td><td>6 份 × 61 字段（人工复核 gate）</td><td>结构校验 + 医生裁定</td></tr>
+    <tr><td>6 真实运行</td><td>首份基线报告</td><td>vLLM 实测</td></tr>
+  </table>
+  <div class="caption"><b>图 3-1</b>　第一步的六个任务与验证方式</div>
+</div>
+
+<h3>3.1 过程中的工程决策</h3>
+
+<ul>
+  <li><strong>worktree + data 符号链接</strong>：金标提炼要读主工作区的 data/text_data，worktree 是分支副本不含数据——符号链接解决，数据不进 git，两不相扰。</li>
+  <li><strong>消融开关只立接口</strong>：诚实评估过——当前管线层不改 value，消融对比收益有限；但"消融开关必须从第一天设计进架构"（书里原话），接口先立，等复核器接入后才有用武之地。</li>
+  <li><strong>LLM 失败兜底</strong>：真实 QwenVLLMClient 服务不可用时抛 RuntimeError，会穿透整个评估循环——样本级兜底 + 失败详情落报告，评估永不因单样本中断。</li>
+</ul>
+
+<div class="experiment">
+  <div class="x-title">实验 1-1 ★ 计划缺陷的现场修复</div>
+  <p>实施中发现 3 处计划（brief）自身缺陷，实施者现场最小修正：相对导入路径错误（<code>...errors</code> → <code>..errors</code>）；消融模式下契约复验会抛异常（改为 error=None + 空 candidates）；幻觉错误明细与自带测试断言冲突（收敛为"纯 veto 个案才进明细"）。三处均经独立审查判定合理。</p>
+</div>
+
+<!-- ══════════ 第四章 ══════════ -->
+<h2 class="chapter"><span class="no">第 四 章</span>首个基线：尺子量出了什么</h2>
+
+<pre>评估报告  Qwen3.5-4B-AWQ-4bit / admission_record_structured_fields_prompt.v1
+──────────────────────────────────────────────
+样本数        : 6   (噪声带宽 ±0.2041)
+status 准确率 : 98.09%
+value 准确率  : 88.32%
+幻觉数(veto)  : 43
+契约非法数    : 0
+任务级成功    : 0/6
+最差字段 top5 : hpi_treatment_medications 0/6 · pe_nose 0/6
+                hpi_hospital_diagnosis 3/6 · hpi_subsequent_course 4/6 …</pre>
+
+<p>数字本身是次要的——<strong>这把尺子第一次让"哪里差"变成了可回答的问题</strong>。逐条核查错误明细后，三个改进方向浮出水面：</p>
+
+<div class="experiment">
+  <div class="x-title">实验 4-1 ★★ 幻觉判定误报：否定短语重建</div>
+  <p>金标 value「否认糖尿病病史」在 OCR 原文（<code>否认"糖尿病"、"冠心病"等病史</code>）<strong>同样不可定位</strong>——这类规范化重建是 prompt 契约明确要求的输出，幻觉判定对它系统性误报（24/43 条幻觉为此类）。</p>
+  <p><strong>修正方向</strong>：金标 value 本身不可定位的字段，应跳过幻觉判定（契约要求的重建 ≠ 编造）。</p>
+</div>
+
+<div class="experiment">
+  <div class="x-title">实验 4-2 ★★ J 型字段与长文本字段的判定粒度</div>
+  <p><code>pe_nose</code> 金标 value「正常」，抽取输出「鼻腔通畅」——语义等价，字面互不为子串，被判 mismatch（0/6）。<code>hpi_treatment_medications</code> 这类长摘录字段同理：摘录范围差异导致判定过严。</p>
+  <p><strong>修正方向</strong>：J 型字段的 value 判定放宽为语义等价；长文本字段改用关键词覆盖或人工裁定。</p>
+</div>
+
+<p>这三个观察，正是"评估让改进有依据"的最好注脚——<strong>不是模型不行，是指标本身需要进化</strong>。它们已记入工作记录，成为第二步验证器规范化的输入。</p>
+
+<!-- ══════════ 第五章 ══════════ -->
+<h2 class="chapter"><span class="no">第 五 章</span>复盘：什么做对了</h2>
+
+<h3>5.1 做对的事</h3>
+
+<ul>
+  <li><strong>先定语义再定指标</strong>："金标 = 从 OCR 输入出发的期望输出"（agent 观测）这一裁定，避免了整套评估建在错误的观测对象上；</li>
+  <li><strong>确定性优先</strong>：有金标就比对，不引入 LLM 打分——无长度偏差、无同源模型盲区、零额外成本；</li>
+  <li><strong>审查 gate 全程有效</strong>：6 个任务 × 独立审查，计划缺陷（导入路径、消融语义、断言冲突）在合入前被拦下，最终审查仅 1 条 Important（已修复）；</li>
+  <li><strong>基线是一次性投入</strong>：之后每次改 prompt、换模型，一条命令出对比——回归机制让 prompt 从"契约变更"升级为"可度量变更"。</li>
+</ul>
+
+<h3>5.2 留到下一步的事</h3>
+
+<table>
+  <tr><th>事项</th><th>归属</th></tr>
+  <tr><td>复核器接入活动路径 + 校准（kappa≥0.7）</td><td>第二步 · 验证器规范化</td></tr>
+  <tr><td>医生审核数据回流 → 金标活资产</td><td>第二步</td></tr>
+  <tr><td>幻觉判定修正（否定短语重建豁免）</td><td>第二步</td></tr>
+  <tr><td>J 型/长文本字段 value 判定放宽</td><td>第二步</td></tr>
+  <tr><td>抽取轨迹日志（失败样本可回放）</td><td>第三步</td></tr>
+</table>
+
+<blockquote>
+好的设计原则穿越模型的迭代周期——它们描述的不是某个模型的用法，而是智能系统与世界交互的基本模式。评估正是这样的原则。
+<span class="src">——《深入理解 AI Agent》后记</span>
+</blockquote>
+
+<footer>
+评估体系构建复盘 · 2026-08-01 · 配套文档：docs/superpowers/specs/2026-08-01-evaluation-harness-design.md · 实施计划：docs/superpowers/plans/2026-08-01-evaluation-harness-implementation-plan.md
+</footer>
+
+</div>
+</body>
+</html>
