@@ -11,10 +11,12 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
     class FakeLlmClient:
         def __init__(self):
             self.prompts: list[str] = []
+            self.system_prompts: list[str] = []
 
         def complete_json(self, prompt: str, **kwargs):
             self.prompts.append(prompt)
             captured_prompts.append(prompt)
+            self.system_prompts.append(kwargs.get("system_prompt", ""))
             # Return a full schema payload with one found + many not_found fields
             schema = current_schema()
             fields = []
@@ -89,10 +91,13 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
     })
 
     # Port must consume evidence_units and the schema via prompt builder
+    # （拆层后：证据单元在 user，schema 字段表在 system）
     assert fake_client.prompts, "LLM client must receive the prompt"
     prompt = fake_client.prompts[-1]
     assert "u001" in prompt, "evidence unit id must appear in the prompt"
-    assert "chief_complaint" in prompt, "schema field keys must appear in the prompt"
+    assert "chief_complaint" in fake_client.system_prompts[-1], (
+        "schema field keys must appear in the system prompt"
+    )
 
     # Port must return 61 candidates via admission_contract mapping
     assert isinstance(result, list)
@@ -425,3 +430,37 @@ def test_default_copd_field_port_module_has_no_llama_cpp_builder():
 
     assert not hasattr(llm_module, "build_llama_cpp_client")
     assert not hasattr(llm_module, "LlamaCppClient")
+
+
+def test_port_extract_runs_injected_verifier():
+    """端口注入 verifier 后，extract 在 quality_checks 之后调用一次 verify。"""
+    from app.backend.services.copd_extraction.port import COPDAdmissionQwenFieldPort
+
+    class FakeLlmClient:
+        def complete_json(self, prompt, **kwargs):
+            return _full_not_found_payload(current_schema())
+
+        def close(self):
+            pass
+
+    class RecordingVerifier:
+        def __init__(self):
+            self.called = 0
+
+        def verify(self, candidates, document_text=""):
+            self.called += 1
+            return []
+
+    recording_verifier = RecordingVerifier()
+    port = COPDAdmissionQwenFieldPort(
+        llm_client=FakeLlmClient(),
+        verifier=recording_verifier,
+    )
+    result = port.extract({
+        "schema": current_schema(),
+        "document_result": {"merged_text": "主诉：反复咳嗽、咳痰15年。"},
+        "evidence_units": [],
+    })
+    assert recording_verifier.called == 1
+    assert isinstance(result, list)
+    assert len(result) == 61

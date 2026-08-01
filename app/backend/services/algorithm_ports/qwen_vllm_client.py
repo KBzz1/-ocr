@@ -95,13 +95,13 @@ class QwenVLLMClient:
     def base_url(self) -> str:
         return self._base_url
 
-    def _common_kwargs(self, max_tokens: int, temperature: float) -> dict:
+    def _common_kwargs(self, max_tokens: int, temperature: float, enable_thinking: bool = False) -> dict:
         return {
             "model": self._model,
             "temperature": temperature,
             "top_p": 1.0,
             "max_tokens": max_tokens,
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": enable_thinking}},
         }
 
     def complete_text_from_image(
@@ -145,9 +145,25 @@ class QwenVLLMClient:
 
         return self._extract_text(response)
 
-    def complete_json(self, prompt: str, max_tokens: int, temperature: float) -> dict:
-        kwargs = self._common_kwargs(max_tokens=max_tokens, temperature=temperature)
-        kwargs["messages"] = [{"role": "user", "content": prompt}]
+    def complete_json(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        system_prompt: str | None = None,
+        enable_thinking: bool | None = None,
+    ) -> dict:
+        kwargs = self._common_kwargs(
+            max_tokens=max_tokens, temperature=temperature,
+            enable_thinking=bool(enable_thinking),
+        )
+        if system_prompt:
+            kwargs["messages"] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+        else:
+            kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs["response_format"] = {"type": "json_object"}
 
         try:

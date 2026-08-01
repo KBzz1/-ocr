@@ -1,9 +1,9 @@
 def test_verification_prompt_keeps_comments_short():
-    from app.backend.services.copd_extraction.prompts import build_verification_prompt
+    from app.backend.services.copd_extraction.prompts import build_verification_messages
 
-    prompt = build_verification_prompt([{"field_key": "bmi", "original_value": "24.2"}])
+    system, _ = build_verification_messages([], [])
 
-    assert "comment 不超过 40 个汉字" in prompt
+    assert "不超过 40 个汉字" in system
 
 
 def test_openai_compatible_json_client_uses_qwen_vllm_client():

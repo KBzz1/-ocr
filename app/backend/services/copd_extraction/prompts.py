@@ -13,31 +13,87 @@ _OCR_RISK_WARNINGS = (
 )
 
 
-def build_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
-    return f"""
-你是字段级复核器。
-任务：逐字段判断字段值是否能被提供的 OCR 事实支持。
-事实：
-- 原始 OCR 上下文：{document_context or "未提供"}
-- 来源分组中的 source_text 是主要证据；原始 OCR 上下文只用于理解同一病历的局部语境。
+def build_verification_messages(
+    evidence_units: list[dict], fields: list[dict],
+) -> tuple[str, str]:
+    """复核器 prompt：(system, user)。evidence 在前、字段在后（防锚定）。
 
-只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
-必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 ocr_quality_issue。
-药名、医学词和单位符号也必须检查 OCR 纠偏合理性，例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L。若字段值看起来依赖错读纠偏但未说明，输出 suspicious。
-同一字段附近出现前后矛盾数值时，例如脉搏：9次/分但同段另有心率99次/分，输出 suspicious，不得静默选值。
-体重下降/体重减轻字段若输出 0g、0kg、0克等数值，与字段含义明显矛盾；例如体重减轻0g 应输出 suspicious，并提示核对原文，不得主动改成其他数值。
-输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
-comment 不超过 40 个汉字，只写必要原因；通过项可以写 "一致"。
-verdict 只能是 pass、suspicious、fail。
-reason_code 只能是 ocr_quality_issue、extraction_mistake、evidence_insufficient、none。
-checks 必须是对象，且包含：
-- value_semantically_supported：字段值的语义是否被 OCR 事实支持（而非仅数值是否出现）
-- no_hallucination_or_inference：是否引入了 OCR 中没有的信息或做了医学推断
-- ocr_correction_justified：如有 OCR 纠偏，理由是否充分、原始 OCR 文本与修正后值的关系是否合理
+    system 完全固定（前缀缓存友好）：身份、缺陷清单、verdict 契约、few-shot。
+    user 为变量：编号证据块 + 字段块。
+    """
+    system = """你是字段级复核器。
+任务：审查已抽取的字段值是否被 OCR 原文事实支持，主动找出可能存在的问题。
 
-来源分组：
-{json.dumps(source_groups, ensure_ascii=False)}
-""".strip()
+审查方法：先通读下方 OCR 原文证据，形成你自己的判断；再对照字段声称的值。
+禁止顺着字段值在证据中找支撑（找补）；禁止使用医学常识补全字段值；禁止把否定或不确定表述改成确定阳性。
+
+【缺陷清单 —— 逐项核对】
+1. 否定翻转：evidence 中存在"无、否认、未见、可能、考虑、建议复查"等表述，但字段值被当作确定阳性抽取；字段值删掉了否定词。
+2. OCR 标签混淆：P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等血气项目名前缀疑似错读但被归入标准项目；药名和医学词近形错读（嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）；单位符号错读（+10^9/L/×10^9/L）。
+3. OCR 纠偏合理性：字段值依赖纠偏（ocr_correction）但理由不充分、原始 OCR 文本与修正后值关系不合理。
+4. 数值矛盾：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）。
+5. 体重下降零值矛盾：体重下降/减轻字段输出 0g、0kg、0克等反直觉数值。
+6. 生理范围异常：体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）。
+7. 证据缺失/幻觉：字段值在下方证据中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
+
+【证据一致性硬约束 —— 任何指控必须逐字可查】
+- 任何 suspicious/fail 指控必须能在证据单元文本中逐字定位；字段值中已存在的内容不得指控为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
+- comment 禁止引用证据中不存在的内容，禁止编造原文（原文有某药名，不得说"原文无此药"）；引用同一段文本时不得自称"误读"。
+- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为指控依据。
+- 字段值完整摘录了证据内容（即使表述顺序略有不同）时，不得以"表述不一致""顺序不同"为由 flag。
+
+【verdict 契约】
+输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含：
+- field_key：被审查字段的 key
+- verdict：只能是 pass / suspicious / fail
+- reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none
+- checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
+- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"
+
+对抗要求：对每个字段先主动找茬；**找茬失败时必须输出 pass**——只有能指出具体、可逐字定位、非编造的矛盾才输出 suspicious/fail，否则必须 pass。宁可漏过一个小疑点，不可编造理由标记（误报会让医生信任度下降）。每条 suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述；没有疑点才输出 pass。
+
+输出示例：
+```json
+{"verifications": [
+  {"field_key": "pe_ear", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"},
+  {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue",
+   "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}
+]}
+```
+示例仅示范结构，字段内容为占位，不得照抄。
+
+反例（值正确，不得 flag）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核器错误找茬 → 正确输出应为 verdict=pass：
+```json
+{"verifications": [
+  {"field_key": "pe_lung", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"}
+]}
+```"""
+
+    evidence_blocks = [
+        f"- {unit.get('id', '')}：{unit.get('text', '')}"
+        for unit in evidence_units or []
+    ]
+    evidence_section = "\n".join(evidence_blocks) if evidence_blocks else "（未提供证据）"
+
+    field_blocks = []
+    for field in fields or []:
+        fk = field.get("field_key", "")
+        value = field.get("value", "")
+        ids = ", ".join(str(i) for i in (field.get("evidence_ids") or []))
+        field_blocks.append(f"- {fk}：声称值 {value or '（空）'}；引用证据 {ids or '（无）'}")
+    fields_section = "\n".join(field_blocks) if field_blocks else "（无字段）"
+
+    user = f"""【OCR 原文证据（先读，编号引用）】
+{evidence_section}
+
+【字段声称值（后看，逐字段审查）】
+{fields_section}"""
+    return system, user
 
 
 def build_adversarial_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
@@ -92,25 +148,23 @@ def build_adversarial_verification_prompt(source_groups: list[dict], document_co
 # - 诊断字段仅摘录原文记录，禁止主观医学判断、推断、补充或改写。
 # - 允许多个字段共用同一条 evidence unit（特别是血气 6 项）。
 # - 未找到字段返回 status="not_found", value="", evidence_ids=[]，不得省略。
+#
+# Task 1（ChatML 消息结构改造）：prompt 拆成 (system, user) 两段返回，
+# system 只含身份/硬约束/字段表/契约等固定文本（不含任何 evidence_units
+# 或 document_text 变量数据），便于 vLLM 前缀缓存命中；变量数据全部进 user。
 
 
-def build_admission_structured_fields_prompt(
+def build_admission_structured_fields_messages(
     schema: dict,
     evidence_units: list[dict],
     document_text: str = "",
-) -> str:
-    """按 admission_record_structured_fields.v1 schema 构建 Qwen 结构化抽取 prompt。
+) -> tuple[str, str]:
+    """返回 (system, user) 两段消息。
 
-    Args:
-        schema: schema_loader.load_schema 规范化后的 dict，包含
-            version / document_type / field_groups。
-        evidence_units: 后端生成的轻量证据单元列表，每项包含 id / text，
-            可选 start_offset / end_offset / page_no / section_key。
-        document_text: 合并后的 OCR 原文。正常路径同时提供完整 OCR 上下文
-            与 evidence_units，便于模型理解跨片段语境但只通过 evidence_ids 定位。
-
-    Returns:
-        完整的 Qwen prompt 字符串。
+    system 固定承载身份/硬约束/字段表/契约，完全不含 evidence_units 与
+    document_text 变量数据（前缀缓存命中前提）；user 承载证据单元与
+    OCR 原文。旧函数 build_admission_structured_fields_prompt 保留为
+    兼容包装（两段拼接）。
     """
     schema_version = schema.get("version", "")
     document_type = schema.get("document_type", "")
@@ -143,8 +197,7 @@ def build_admission_structured_fields_prompt(
     else:
         document_text_section = "（未提供 document_text）"
 
-    return f"""
-你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
+    system = f"""你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
 
 schema_version：{schema_version}
 document_type：{document_type}
@@ -157,7 +210,7 @@ document_type：{document_type}
 - not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
 - uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
 
-每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从下方"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
 
 输出示例：
 ```json
@@ -169,7 +222,7 @@ document_type：{document_type}
       "field_key": "chief_complaint",
       "status": "found",
       "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
-      "evidence_ids": ["u001"]
+      "evidence_ids": ["u009"]
     }},
     {{
       "field_key": "hpi_initial_onset",
@@ -182,12 +235,12 @@ document_type：{document_type}
 ```
 
 【硬约束 — 字段与 key】
-- field_key 只允许使用下方"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
+- field_key 只允许使用"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
 - 字段章节和字段标签由后端按固定字段表回填；模型输出中禁止重复 section_key、section_label、field_label。
 - 字段顺序按固定字段表顺序输出，便于后端对齐。
 
 【硬约束 — evidence 与原文】
-- evidence_ids 只允许从下方编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
+- evidence_ids 只允许从编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
 - 不允许在 value 或 evidence_ids 之外再输出 evidence 原文片段、章节标题字符串作为定位依据，也不得输出任何章节定位字符串或历史版本遗留的来源元数据字段。新契约不要求算法直接输出旧版抽取元数据（章节定位字符串、原文短片段字段、置信度、抽取状态、复核状态、原始/修正对比、质控标记等一律不输出）。
 - value 必须是 OCR 原文中可定位的语义片段，不得根据医学常识补全、合并或重写。
 
@@ -224,18 +277,32 @@ document_type：{document_type}
 - 允许多个字段共用同一条 evidence unit；evidence_ids 可以包含 1 个或多个 ID。
 - 血气 6 个字段（血气pH、血气pCO2、血气pO2、血气Na+、血气FIO2、血气氧合指数）通常共享同一条血气分析证据单元，应当显式共享 evidence_ids。
 
+{_OCR_RISK_WARNINGS}
+
 【固定字段表】
 {fixed_field_table}
-
-【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
-{evidence_units_section}
-
-【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
-{document_text_section}
 
 【再次强调】
 - 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
 - 禁止 schema 外字段；禁止自由生成二级 key；禁止输出章节/标签重复字段或任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
 - 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
-- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。
-""".strip()
+- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。"""
+
+    user = f"""【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
+{evidence_units_section}
+
+【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
+{document_text_section}"""
+    return system, user
+
+
+def build_admission_structured_fields_prompt(
+    schema: dict,
+    evidence_units: list[dict],
+    document_text: str = "",
+) -> str:
+    """兼容包装：返回 system 与 user 两段拼接后的整体字符串，旧调用方继续可用。"""
+    system, user = build_admission_structured_fields_messages(
+        schema, evidence_units, document_text
+    )
+    return f"{system}\n\n{user}"
