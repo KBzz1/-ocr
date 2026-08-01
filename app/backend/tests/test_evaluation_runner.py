@@ -127,3 +127,55 @@ class TestBuildReport:
         assert report["by_field"]["chief_complaint"]["value_total"] == 1
         assert report["by_pitfall"]["negation"]["value_total"] == 1
         assert report["errors"] == [{"case_id": "case_001", "field_key": "chief_complaint", "kind": "value_mismatch"}]
+
+
+class FakeVerifier:
+    def __init__(self, verdicts):
+        self._verdicts = verdicts
+        self.called = 0
+
+    def verify(self, candidates, document_text=""):
+        self.called += 1
+        return [dict(v) for v in self._verdicts]
+
+    def close(self):
+        pass
+
+
+class TestRunPipelineVerifier:
+    def test_apply_verify_default_runs_verifier(self):
+        schema = make_schema()
+        verifier = FakeVerifier([
+            {"field_key": "chief_complaint", "verdict": "suspicious", "reason_code": "extraction_mistake",
+             "checks": {}, "comment": "原文无此值"},
+        ])
+        result = run_pipeline(
+            {"schema": schema, "document_result": {"merged_text": SAMPLE["ocr_text"]}, "evidence_units": []},
+            FakeLlmClient(make_golden_payload()),
+            verifier=verifier,
+        )
+        assert verifier.called == 1
+        candidates = result["candidates"]
+        assert candidates[0]["verification_status"] == "suspicious"
+
+    def test_no_verifier_skips_verifier(self):
+        schema = make_schema()
+        verifier = FakeVerifier([
+            {"field_key": "chief_complaint", "verdict": "suspicious", "reason_code": "extraction_mistake",
+             "checks": {}, "comment": "x"},
+        ])
+        result = run_pipeline(
+            {"schema": schema, "document_result": {"merged_text": SAMPLE["ocr_text"]}, "evidence_units": []},
+            FakeLlmClient(make_golden_payload()),
+            apply_verify=False,
+            verifier=verifier,
+        )
+        assert verifier.called == 0
+        # 注意：found+无 evidence_ids 的候选在 map 阶段即被标 suspicious
+        # （evidence_missing，与复核器无关），故不能断言 verification_status
+        # 不等于 suspicious；改为断言复核器专属痕迹（verifier_suspicious flag）不存在。
+        assert not any(
+            f.get("flag") == "verifier_suspicious"
+            for f in result["candidates"][0].get("quality_flags", [])
+            if isinstance(f, dict)
+        )

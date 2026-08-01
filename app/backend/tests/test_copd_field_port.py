@@ -430,3 +430,37 @@ def test_default_copd_field_port_module_has_no_llama_cpp_builder():
 
     assert not hasattr(llm_module, "build_llama_cpp_client")
     assert not hasattr(llm_module, "LlamaCppClient")
+
+
+def test_port_extract_runs_injected_verifier():
+    """端口注入 verifier 后，extract 在 quality_checks 之后调用一次 verify。"""
+    from app.backend.services.copd_extraction.port import COPDAdmissionQwenFieldPort
+
+    class FakeLlmClient:
+        def complete_json(self, prompt, **kwargs):
+            return _full_not_found_payload(current_schema())
+
+        def close(self):
+            pass
+
+    class RecordingVerifier:
+        def __init__(self):
+            self.called = 0
+
+        def verify(self, candidates, document_text=""):
+            self.called += 1
+            return []
+
+    recording_verifier = RecordingVerifier()
+    port = COPDAdmissionQwenFieldPort(
+        llm_client=FakeLlmClient(),
+        verifier=recording_verifier,
+    )
+    result = port.extract({
+        "schema": current_schema(),
+        "document_result": {"merged_text": "主诉：反复咳嗽、咳痰15年。"},
+        "evidence_units": [],
+    })
+    assert recording_verifier.called == 1
+    assert isinstance(result, list)
+    assert len(result) == 61

@@ -7,6 +7,7 @@ from .admission_contract import (
 )
 from .prompts import build_admission_structured_fields_messages
 from .quality_checks import apply_quality_checks
+from .verifier import apply_verdicts
 
 
 class COPDAdmissionQwenFieldPort:
@@ -23,10 +24,13 @@ class COPDAdmissionQwenFieldPort:
     4. ``map_qwen_fields_to_review_candidates`` — refill evidence arrays
        from backend-owned evidence_units, translate statuses and surface
        per-field attention flags.
+    5. 注入 ``verifier`` 时，quality_checks 之后执行 ``verifier.verify`` +
+       ``apply_verdicts`` 复核（复核失败由 verifier 静默降级，不改变抽取结果）。
     """
 
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, verifier=None):
         self._llm_client = llm_client
+        self._verifier = verifier
 
     def extract(self, input: dict) -> list[dict]:
         schema = input.get("schema") or {}
@@ -53,11 +57,15 @@ class COPDAdmissionQwenFieldPort:
             schema,
             evidence_units=evidence_units,
         )
-        return apply_quality_checks(
+        candidates = apply_quality_checks(
             candidates,
             document_text,
             include_document_flags=False,
         )
+        if self._verifier is not None:
+            verdicts = self._verifier.verify(candidates, document_text)
+            candidates = apply_verdicts(candidates, verdicts)
+        return candidates
 
 
 class _LazyCOPDAdmissionQwenFieldPort:

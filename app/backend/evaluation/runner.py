@@ -1,8 +1,9 @@
 """评估管线组装与报告生成。
 
 默认管线与 COPDAdmissionQwenFieldPort.extract 行为一致（prompt → LLM →
-契约校验 → evidence 回填 → quality_checks）；消融变体通过 check_contract /
-apply_quality 开关控制（spec 第 5 节）。契约失败不抛出，捕获为 error。
+契约校验 → evidence 回填 → quality_checks → verifier 复核）；消融变体通过
+check_contract / apply_quality / apply_verify 开关控制（spec 第 5 节）。
+契约失败不抛出，捕获为 error；复核失败由 FieldVerifier 静默降级，不改变指标。
 """
 from ..errors import AppError
 from ..services.copd_extraction.admission_contract import (
@@ -11,6 +12,7 @@ from ..services.copd_extraction.admission_contract import (
 )
 from ..services.copd_extraction.prompts import build_admission_structured_fields_messages
 from ..services.copd_extraction.quality_checks import apply_quality_checks
+from ..services.copd_extraction.verifier import FieldVerifier, apply_verdicts
 from .metrics import compare_value, status_matches, value_located_in_text
 
 FIELD_STATUSES = ("found", "not_found", "uncertain")
@@ -22,6 +24,8 @@ def run_pipeline(
     *,
     check_contract: bool = True,
     apply_quality: bool = True,
+    apply_verify: bool = True,
+    verifier=None,
 ) -> dict:
     """跑单条样本的抽取管线，返回 payload / candidates / error。"""
     schema = input.get("schema") or {}
@@ -56,6 +60,10 @@ def run_pipeline(
         candidates = apply_quality_checks(
             candidates, document_text, include_document_flags=False
         )
+    if apply_verify:
+        verifier = verifier or FieldVerifier(llm_client)
+        verdicts = verifier.verify(candidates, document_text)
+        candidates = apply_verdicts(candidates, verdicts)
     return {"payload": payload, "candidates": candidates, "error": None}
 
 

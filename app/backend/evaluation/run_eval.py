@@ -2,7 +2,7 @@
 
 用法见模块 docstring 与 docs/superpowers/plans/2026-08-01-evaluation-harness-implementation-plan.md
 Task 4。默认管线与 COPDAdmissionQwenFieldPort.extract 一致；消融参数
---no-quality-flags / --no-contract 走 run_pipeline 变体。
+--no-quality-flags / --no-contract / --no-verifier 走 run_pipeline 变体。
 
 真实 LLM 客户端（QwenVLLMClient.complete_json）在服务不可用/超时时抛
 RuntimeError 等非 AppError 异常，会穿透 run_pipeline 的内部捕获；本 CLI
@@ -60,6 +60,7 @@ def _run_pipeline_with_fallback(sample: dict, schema: dict, llm_client, args) ->
             llm_client,
             check_contract=not args.no_contract,
             apply_quality=not args.no_quality_flags,
+            apply_verify=not args.no_verifier,
         )
     except Exception as exc:  # noqa: BLE001 — LLM/HTTP 异常类型不可枚举，兜底为样本 error
         return {"payload": {}, "candidates": [], "error": {"code": "EVAL_LLM_FAILURE", "message": str(exc)}}
@@ -76,6 +77,7 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--report-dir", default="data/evaluation/reports")
     parser.add_argument("--no-quality-flags", action="store_true")
     parser.add_argument("--no-contract", action="store_true")
+    parser.add_argument("--no-verifier", action="store_true")
     parser.add_argument("--compare", default=None, help="基线报告 JSON 路径，输出指标 diff")
     args = parser.parse_args(argv)
 
@@ -97,7 +99,11 @@ def main(argv: list[str] | None = None) -> Path:
         "schema_version": schema.get("version", ""),
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
-        "ablation": {"quality_flags": not args.no_quality_flags, "contract": not args.no_contract},
+        "ablation": {
+            "quality_flags": not args.no_quality_flags,
+            "contract": not args.no_contract,
+            "verifier": not args.no_verifier,
+        },
         "sample_count": len(samples),
     }
     report = build_report(sample_results, meta)
