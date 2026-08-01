@@ -97,9 +97,9 @@ def test_uncaught_llm_error_marks_sample_error_and_continues(tmp_path, monkeypat
     captured = []
     real_evaluate_sample = run_eval.evaluate_sample
 
-    def spy_evaluate_sample(sample, result):
+    def spy_evaluate_sample(sample, result, schema=None):
         captured.append((sample.get("case_id"), result))
-        return real_evaluate_sample(sample, result)
+        return real_evaluate_sample(sample, result, schema)
 
     monkeypatch.setattr(run_eval, "build_llm_client", lambda args: FlakyClient())
     monkeypatch.setattr(run_eval, "evaluate_sample", spy_evaluate_sample)

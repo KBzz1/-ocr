@@ -13,7 +13,15 @@ from ..services.copd_extraction.admission_contract import (
 from ..services.copd_extraction.prompts import build_admission_structured_fields_messages
 from ..services.copd_extraction.quality_checks import apply_quality_checks
 from ..services.copd_extraction.verifier import FieldVerifier, apply_verdicts
-from .metrics import compare_value, status_matches, value_located_in_text
+from .metrics import (
+    LONG_TEXT_FIELDS,
+    compare_value,
+    j_judgement_fields,
+    j_judgement_normalize,
+    sentence_overlap_ratio,
+    status_matches,
+    value_located_in_text,
+)
 
 FIELD_STATUSES = ("found", "not_found", "uncertain")
 
@@ -67,16 +75,22 @@ def run_pipeline(
     return {"payload": payload, "candidates": candidates, "error": None}
 
 
-def evaluate_sample(sample: dict, result: dict) -> dict:
+def evaluate_sample(sample: dict, result: dict, schema: dict | None = None) -> dict:
     """单样本指标分量。candidates 与金标按 field_key 对齐。
 
     返回包裹结构 {"metrics", "field_totals", "pitfalls"}：metrics 含五指标
     分量与错误明细；field_totals 为逐字段 value 计数（build_report 按字段
     分组）；pitfalls 透传样本陷阱类别（build_report 按类别分组）。
+
+    schema 提供时，qwen_type=J / review_control=judgement 字段的 value 先做
+    "正常族"归一再比对（鼻腔通畅==正常）；长文本字段用核心句重合率替代
+    全串比对；幻觉判定前先测金标 value 可定位性——金标本身在 OCR 不可定位
+    （否定短语重建的期望输出）时跳过该字段的幻觉判定，真错误由 value_mismatch 兜底。
     """
     golden_by_key = {f["field_key"]: f for f in sample.get("golden", [])}
     candidates_by_key = {c["field_key"]: c for c in result.get("candidates", [])}
     ocr_text = sample.get("ocr_text") or ""
+    j_fields = j_judgement_fields(schema) if isinstance(schema, dict) else set()
     metrics = {
         "value_correct": 0, "value_total": 0,
         "status_correct": 0, "status_total": 0,
@@ -126,7 +140,15 @@ def evaluate_sample(sample: dict, result: dict) -> dict:
             continue
         metrics["value_total"] += 1
         field_totals.append({"field_key": field_key, "value_correct": 0, "value_total": 1})
-        verdict = compare_value(golden_value, predicted_value)
+        # value 判定：J 型字段先做"正常族"归一；长文本字段用核心句重合率；
+        # 其余字段走默认归一化两级判定。
+        if field_key in j_fields:
+            g_n, p_n = j_judgement_normalize(golden_value), j_judgement_normalize(predicted_value)
+            verdict = compare_value(g_n, p_n)
+        elif field_key in LONG_TEXT_FIELDS:
+            verdict = "exact" if sentence_overlap_ratio(golden_value, predicted_value) >= 0.6 else "mismatch"
+        else:
+            verdict = compare_value(golden_value, predicted_value)
         if verdict in ("exact", "substring"):
             metrics["value_correct"] += 1
             field_totals[-1]["value_correct"] = 1
@@ -136,7 +158,10 @@ def evaluate_sample(sample: dict, result: dict) -> dict:
             )
         # 幻觉（veto）：value 必须在 OCR 原文可定位。值本身已错时 value_mismatch
         # 已记录该字段失败，错误明细只保留真正"值对但不可定位"的 veto 个案。
-        if not value_located_in_text(predicted_value, ocr_text, correction_applied):
+        # 金标 value 本身在 OCR 不可定位（否定短语重建的期望输出不可定位）时
+        # 跳过该字段的幻觉判定，真错误由 value_mismatch 兜底。
+        golden_located = value_located_in_text(golden_value, ocr_text)
+        if not value_located_in_text(predicted_value, ocr_text, correction_applied) and golden_located:
             metrics["hallucination"] += 1
             if verdict in ("exact", "substring"):
                 metrics["errors"].append(

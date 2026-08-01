@@ -3,7 +3,10 @@ import pytest
 
 from app.backend.evaluation.metrics import (
     compare_value,
+    j_judgement_fields,
+    j_judgement_normalize,
     normalize_text,
+    sentence_overlap_ratio,
     status_matches,
     value_located_in_text,
 )
@@ -71,3 +74,40 @@ class TestStatusMatches:
     def test_uncertain_golden_compares_status_only(self):
         # uncertain 金标的 value 不做严格比对，仅 status 计入（spec 第 4 节）
         assert status_matches("uncertain", "uncertain")
+
+
+class TestJJudgementNormalize:
+    def test_maps_normal_family(self):
+        for text in ("正常", "鼻腔通畅", "未见异常", "无异常", "阴性", "无压痛"):
+            assert j_judgement_normalize(text) == "正常"
+
+    def test_keeps_abnormal_descriptions(self):
+        # 异常描述不做"正常族"折叠：原样保留，且不等于"正常"
+        assert "异常" in j_judgement_normalize("双肺呼吸音粗，闻及异常干啰音")
+        assert j_judgement_normalize("双肺呼吸音粗") != "正常"
+
+
+class TestSentenceOverlapRatio:
+    def test_shared_sentences_ratio(self):
+        golden = "反复咳嗽、咳痰20年。活动后喘息。无发热。"
+        predicted = "咳嗽、咳痰20年。活动后喘息。"
+        # 金标 3 句，预测 2 句都覆盖（"咳嗽、咳痰20年"是金标句的摘录）→
+        # 金标视角重合 2/3；取金标与预测覆盖的较小口径，至少过半
+        assert sentence_overlap_ratio(golden, predicted) >= 0.5
+
+    def test_disjoint_sentences_zero(self):
+        assert sentence_overlap_ratio("无发热。", "胸痛3天") == 0.0
+
+
+class TestJJudgementFields:
+    def test_extracts_from_schema(self):
+        schema = {
+            "field_groups": [
+                {"group_key": "pe", "fields": [
+                    {"field_key": "pe_nose", "qwen_type": "J"},
+                    {"field_key": "pe_ear", "review_control": "judgement"},
+                    {"field_key": "pe_skin", "qwen_type": "T"},
+                ]},
+            ]
+        }
+        assert j_judgement_fields(schema) == {"pe_nose", "pe_ear"}

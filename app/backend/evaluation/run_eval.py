@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> Path:
     sample_results = []
     for sample in samples:
         result = _run_pipeline_with_fallback(sample, schema, llm_client, args)
-        sample_results.append(evaluate_sample(sample, result))
+        sample_results.append(evaluate_sample(sample, result, schema))
 
     meta = {
         "model": args.model,

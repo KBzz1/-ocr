@@ -19,6 +19,14 @@ def make_schema():
     }
 
 
+def make_schema_with_j_fields():
+    schema = make_schema()
+    schema["field_groups"][0]["fields"].append(
+        {"field_key": "pe_nose", "label": "鼻部", "qwen_type": "J"}
+    )
+    return schema
+
+
 def make_golden_payload():
     return {
         "schema_version": "1.0.0",
@@ -109,6 +117,43 @@ class TestEvaluateSample:
             "error": {"code": "ALGORITHM_CONTRACT_INVALID", "message": "bad"},
         })
         assert result["metrics"]["contract_invalid"] == 1
+
+    def test_skips_hallucination_when_golden_not_located(self):
+        # 金标 value 在 ocr_text 不可定位（否定短语重建）→ 该字段不判幻觉
+        sample = {
+            "case_id": "case_001",
+            "ocr_text": "否认\"糖尿病\"、\"冠心病\"等病史",
+            "golden": [{"field_key": "pmh_diabetes", "status": "found", "value": "否认糖尿病病史"}],
+        }
+        result = {
+            "payload": {},
+            "candidates": [{
+                "field_key": "pmh_diabetes", "status": "found",
+                "value": "否认糖尿病病史", "ocr_correction": {"applied": False},
+            }],
+            "error": None,
+        }
+        out = evaluate_sample(sample, result)
+        assert out["metrics"]["hallucination"] == 0
+        assert out["metrics"]["value_correct"] == 1  # 值一致
+
+    def test_j_judgement_fields_use_normal_family_equivalence(self):
+        sample = {
+            "case_id": "case_001",
+            "ocr_text": "鼻腔通畅，各鼻窦区无压痛",
+            "golden": [{"field_key": "pe_nose", "status": "found", "value": "鼻腔通畅"}],
+        }
+        result = {
+            "payload": {},
+            "candidates": [{
+                "field_key": "pe_nose", "status": "found",
+                "value": "正常", "ocr_correction": {"applied": False},
+            }],
+            "error": None,
+        }
+        schema = make_schema_with_j_fields()
+        out = evaluate_sample(sample, result, schema=schema)
+        assert out["metrics"]["value_correct"] == 1
 
 
 class TestBuildReport:
