@@ -1269,3 +1269,21 @@ def test_export_batch_excel_records_export_for_each_task(tmp_path):
         summary = task_service.get_task(task_id)["export_summary"]
         assert "batch_excel" in summary["formats"]
         assert [f for f in summary["files"] if f["format"] == "batch_excel"][0]["relative_path"] == f"batch/batch-{report['export_id']}.xlsx"
+
+
+def test_export_batch_excel_write_failure_raises_and_cleans_tmp(tmp_path, monkeypatch):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [confirmed_field("chief_complaint", "主诉", "反复咳嗽")])
+
+    def _boom(path, rows):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(export_service, "_write_batch_xlsx", _boom)
+
+    with pytest.raises(AppError) as exc_info:
+        export_service.export_batch_excel("qwen_batch_admission_record")
+
+    assert exc_info.value.code == ErrorCode.EXPORT_FAILED.code
+    leftovers = [name for name in os.listdir(os.path.join(export_service._export_dir, "batch")) if name.endswith(".tmp")]
+    assert leftovers == []

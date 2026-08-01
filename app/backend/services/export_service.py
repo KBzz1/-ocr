@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import zipfile
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Callable
 from xml.sax.saxutils import escape
@@ -412,13 +413,15 @@ class ExportService:
             self._write_batch_xlsx(tmp_path, rows)
             os.replace(tmp_path, filepath)
         except OSError as exc:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
             raise AppError(
                 ErrorCode.EXPORT_FAILED,
                 message="导出文件写入失败",
                 details={"format": "batch_excel", "reason": str(exc)},
             )
+        finally:
+            if os.path.exists(tmp_path):
+                with suppress(OSError):
+                    os.remove(tmp_path)
 
         for row in rows:
             self._task_service.record_export(row["task_id"], format="batch_excel", relative_path=relative_path)
