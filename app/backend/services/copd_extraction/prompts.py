@@ -13,31 +13,72 @@ _OCR_RISK_WARNINGS = (
 )
 
 
-def build_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
-    return f"""
-你是字段级复核器。
-任务：逐字段判断字段值是否能被提供的 OCR 事实支持。
-事实：
-- 原始 OCR 上下文：{document_context or "未提供"}
-- 来源分组中的 source_text 是主要证据；原始 OCR 上下文只用于理解同一病历的局部语境。
+def build_verification_messages(
+    evidence_units: list[dict], fields: list[dict],
+) -> tuple[str, str]:
+    """复核器 prompt：(system, user)。evidence 在前、字段在后（防锚定）。
 
-只能根据 OCR 事实判断，不得使用医学常识补全、不得修改字段值、不得把否定或不确定表述改成确定阳性。
-必须检查 OCR 纠偏是否合理；血气项目名前缀出现 P62、P02、PC02 等疑似错读但字段被归入 PO2/PaO2/PCO2/PaCO2 时，若缺少合理 ocr_correction 或 evidence 仍不清晰，verdict 输出 suspicious，reason_code 输出 ocr_quality_issue。
-药名、医学词和单位符号也必须检查 OCR 纠偏合理性，例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L。若字段值看起来依赖错读纠偏但未说明，输出 suspicious。
-同一字段附近出现前后矛盾数值时，例如脉搏：9次/分但同段另有心率99次/分，输出 suspicious，不得静默选值。
-体重下降/体重减轻字段若输出 0g、0kg、0克等数值，与字段含义明显矛盾；例如体重减轻0g 应输出 suspicious，并提示核对原文，不得主动改成其他数值。
-输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含 field_key, verdict, reason_code, checks, comment。
-comment 不超过 40 个汉字，只写必要原因；通过项可以写 "一致"。
-verdict 只能是 pass、suspicious、fail。
-reason_code 只能是 ocr_quality_issue、extraction_mistake、evidence_insufficient、none。
-checks 必须是对象，且包含：
-- value_semantically_supported：字段值的语义是否被 OCR 事实支持（而非仅数值是否出现）
-- no_hallucination_or_inference：是否引入了 OCR 中没有的信息或做了医学推断
-- ocr_correction_justified：如有 OCR 纠偏，理由是否充分、原始 OCR 文本与修正后值的关系是否合理
+    system 完全固定（前缀缓存友好）：身份、缺陷清单、verdict 契约、few-shot。
+    user 为变量：编号证据块 + 字段块。
+    """
+    system = """你是字段级复核器。
+任务：审查已抽取的字段值是否被 OCR 原文事实支持，主动找出可能存在的问题。
 
-来源分组：
-{json.dumps(source_groups, ensure_ascii=False)}
-""".strip()
+审查方法：先通读下方 OCR 原文证据，形成你自己的判断；再对照字段声称的值。
+禁止顺着字段值在证据中找支撑（找补）；禁止使用医学常识补全字段值；禁止把否定或不确定表述改成确定阳性。
+
+【缺陷清单 —— 逐项核对】
+1. 否定翻转：evidence 中存在"无、否认、未见、可能、考虑、建议复查"等表述，但字段值被当作确定阳性抽取；字段值删掉了否定词。
+2. OCR 标签混淆：P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等血气项目名前缀疑似错读但被归入标准项目；药名和医学词近形错读（嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）；单位符号错读（+10^9/L/×10^9/L）。
+3. OCR 纠偏合理性：字段值依赖纠偏（ocr_correction）但理由不充分、原始 OCR 文本与修正后值关系不合理。
+4. 数值矛盾：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）。
+5. 体重下降零值矛盾：体重下降/减轻字段输出 0g、0kg、0克等反直觉数值。
+6. 生理范围异常：体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）。
+7. 证据缺失/幻觉：字段值在下方证据中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
+
+【verdict 契约】
+输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含：
+- field_key：被审查字段的 key
+- verdict：只能是 pass / suspicious / fail
+- reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none
+- checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
+- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"
+
+对抗要求：对每个字段先主动找茬；确实找到疑点才输出 suspicious/fail，**每条 suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述**；没有疑点才输出 pass。
+
+输出示例：
+```json
+{"verifications": [
+  {"field_key": "pe_ear", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"},
+  {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue",
+   "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}
+]}
+```
+示例仅示范结构，字段内容为占位，不得照抄。"""
+
+    evidence_blocks = [
+        f"- {unit.get('id', '')}：{unit.get('text', '')}"
+        for unit in evidence_units or []
+    ]
+    evidence_section = "\n".join(evidence_blocks) if evidence_blocks else "（未提供证据）"
+
+    field_blocks = []
+    for field in fields or []:
+        fk = field.get("field_key", "")
+        value = field.get("value", "")
+        ids = ", ".join(field.get("evidence_ids") or [])
+        field_blocks.append(f"- {fk}：声称值 {value or '（空）'}；引用证据 {ids or '（无）'}")
+    fields_section = "\n".join(field_blocks) if field_blocks else "（无字段）"
+
+    user = f"""【OCR 原文证据（先读，编号引用）】
+{evidence_section}
+
+【字段声称值（后看，逐字段审查）】
+{fields_section}"""
+    return system, user
 
 
 def build_adversarial_verification_prompt(source_groups: list[dict], document_context: str = "") -> str:
