@@ -6,6 +6,7 @@ import pytest
 
 from app.backend.enums import FieldStatus
 from app.backend.errors import AppError, ErrorCode
+from app.backend.services.document_profiles import DocumentProfile, DocumentProfileRegistry
 from app.backend.services.export_service import ExportService
 from app.backend.services.task_service import TaskService
 from app.backend.storage.json_store import JsonStore
@@ -961,3 +962,328 @@ def test_export_keeps_admission_schema_order_and_evidence_array(tmp_path):
     assert sheet1_xml.index("pe_temperature") < sheet1_xml.index("pe_pulse")
     # evidence 文本至少一项出现在 sheet1(脉搏文本稳定)
     assert "u010" in sheet1_xml
+
+
+# --- 批量 Excel 导出:字段级行构建与模板查询(Task 2) ---
+
+
+BATCH_SCHEMA = {
+    "version": "2.0.0",
+    "document_type": "qwen_batch_admission_record",
+    "field_groups": [
+        {"group_key": "chief_complaint", "group_label": "主诉",
+         "fields": [{"field_key": "chief_complaint", "label": "主诉"}]},
+        {"group_key": "history_of_present_illness", "group_label": "现病史",
+         "fields": [
+             {"field_key": "hpi_initial_onset", "label": "初次发病情况"},
+             {"field_key": "hpi_stool", "label": "大便情况"},
+         ]},
+        {"group_key": "past_history", "group_label": "既往史",
+         "fields": [{"field_key": "pmh_hypertension", "label": "高血压"}]},
+        {"group_key": "personal_history", "group_label": "个人史",
+         "fields": [{"field_key": "personal_smoking_history", "label": "吸烟史"}]},
+        {"group_key": "family_history", "group_label": "家族史",
+         "fields": [{"field_key": "family_history", "label": "家族史"}]},
+        {"group_key": "physical_exam", "group_label": "体格检查",
+         "fields": [{"field_key": "pe_temperature", "label": "体温"}]},
+        {"group_key": "diagnosis", "group_label": "诊断",
+         "fields": [{"field_key": "diagnosis_initial", "label": "初步诊断"}]},
+    ],
+}
+
+
+def make_batch_export_service(tmp_path):
+    store = JsonStore(str(tmp_path / "data"))
+    task_service = TaskService(store=store)
+    profile = DocumentProfile(
+        document_type="qwen_batch_admission_record",
+        label="入院记录",
+        schema=BATCH_SCHEMA,
+        prompt_version="prompt.v1",
+        field_port=object(),
+        batch_excel_enabled=True,
+    )
+    export_service = ExportService(
+        store=store,
+        export_dir=str(tmp_path / "exports"),
+        task_service=task_service,
+        document_profiles=DocumentProfileRegistry(
+            store=store, profiles=[profile], default_document_type="qwen_batch_admission_record"
+        ),
+    )
+    return export_service, task_service
+
+
+def write_batch_task(store, task_id, status="review", document_type="qwen_batch_admission_record", patient_name="张三"):
+    store.write(
+        f"tasks/{task_id}.json",
+        {
+            "task_id": task_id,
+            "display_name": task_id,
+            "status": status,
+            "created_at": "2026-07-01T10:00:00+00:00",
+            "updated_at": "2026-07-01T10:00:00+00:00",
+            "upload_token": "token",
+            "images": [],
+            "page_count": 1,
+            "error_code": None,
+            "error_message": None,
+            "failed_at": None,
+            "review_summary": None,
+            "export_summary": {"last_exported_at": None, "formats": [], "files": []},
+            "document_type": document_type,
+            "document_type_label": "入院记录",
+            "schema_version": "2.0.0",
+            "prompt_version": "prompt.v1",
+            "patient_id": "p1",
+            "patient_snapshot": {"patient_id": "p1", "name": patient_name},
+            "record_date": "2026-07-01",
+            "record_time": None,
+            "deleted_at": None,
+            "metadata_history": [],
+            "status_history": [],
+        },
+    )
+
+
+def write_batch_review(store, task_id, fields):
+    store.write(
+        f"results/{task_id}/review_result.json",
+        {"task_id": task_id, "schema_version": "2.0.0",
+         "document_type": "qwen_batch_admission_record", "fields": fields},
+    )
+
+
+def confirmed_field(field_key, label, value):
+    return {"field_key": field_key, "field_name": label, "final_value": value,
+            "status": FieldStatus.CONFIRMED.value}
+
+
+def unreviewed_field(field_key, label, value):
+    return {"field_key": field_key, "field_name": label, "final_value": value,
+            "status": FieldStatus.UNREVIEWED.value}
+
+
+def test_build_batch_excel_rows_field_level_rule(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [
+        confirmed_field("chief_complaint", "主诉", "反复咳嗽"),
+        unreviewed_field("hpi_initial_onset", "初次发病情况", "三个月前"),   # 未确认有值 → 不写入
+        confirmed_field("hpi_stool", "大便情况", "正常"),
+        confirmed_field("pmh_hypertension", "高血压", "有"),
+        confirmed_field("family_history", "家族史", "父亲慢阻肺"),
+    ])
+
+    rows, skipped = export_service._build_batch_excel_rows(
+        export_service._candidate_tasks("qwen_batch_admission_record"), BATCH_SCHEMA
+    )
+
+    assert len(rows) == 1 and skipped == []
+    row = rows[0]
+    assert row["serial"] == 1
+    assert row["patient_name"] == "张三"
+    assert row["task_id"] == "1"
+    assert row["cells"]["chief_complaint"] == "反复咳嗽"          # 单字段组只写值
+    assert row["cells"]["history_of_present_illness"] == "大便情况：正常"   # 未确认字段不出现
+    assert row["cells"]["past_history"] == "高血压：有"
+    assert row["cells"]["family_history"] == "父亲慢阻肺"
+    assert row["cells"]["personal_history"] == ""               # 无确认字段 → 留空
+    assert row["cells"]["physical_exam"] == ""
+
+
+def test_build_batch_excel_rows_skips_when_no_confirmed_field(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [
+        unreviewed_field("chief_complaint", "主诉", "反复咳嗽"),   # 未确认有值也不写入
+    ])
+
+    rows, skipped = export_service._build_batch_excel_rows(
+        export_service._candidate_tasks("qwen_batch_admission_record"), BATCH_SCHEMA
+    )
+
+    assert rows == []
+    assert skipped == [{"task_id": "1", "reason": "目标模块中没有任何已确认字段，未生成导出行"}]
+
+
+def test_build_batch_excel_rows_skips_corrupted_review(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    export_service._store.write(f"results/1/review_result.json", {"fields": "not-a-list"})
+
+    rows, skipped = export_service._build_batch_excel_rows(
+        export_service._candidate_tasks("qwen_batch_admission_record"), BATCH_SCHEMA
+    )
+
+    assert rows == []
+    assert skipped[0]["task_id"] == "1"
+    assert skipped[0]["reason"]
+
+
+def test_build_batch_excel_rows_missing_review_file(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+
+    rows, skipped = export_service._build_batch_excel_rows(
+        export_service._candidate_tasks("qwen_batch_admission_record"), BATCH_SCHEMA
+    )
+
+    assert rows == []
+    assert skipped[0]["task_id"] == "1"
+
+
+def test_candidate_tasks_filters_status_and_document_type_and_sorts(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "2", status="done")
+    write_batch_task(export_service._store, "1", status="review")
+    write_batch_task(export_service._store, "3", status="failed")
+    write_batch_task(export_service._store, "4", status="review", document_type="other_template")
+
+    candidates = export_service._candidate_tasks("qwen_batch_admission_record")
+
+    assert [t["task_id"] for t in candidates] == ["1", "2"]   # 数字升序、排除 failed 与异模板
+
+
+def test_batch_excel_templates_returns_enabled_profiles(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    assert export_service.batch_excel_templates() == [
+        {"document_type": "qwen_batch_admission_record", "label": "入院记录"}
+    ]
+
+
+# --- 批量 Excel 导出:唯一文件写入器与导出组装(Task 3) ---
+
+
+def _read_xlsx_parts(path):
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        styles_xml = archive.read("xl/styles.xml").decode("utf-8")
+        return names, sheet_xml, styles_xml
+
+
+def test_export_batch_excel_writes_unique_file_and_report(tmp_path):
+    export_service, task_service = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "2")
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [confirmed_field("chief_complaint", "主诉", "反复咳嗽")])
+    write_batch_review(export_service._store, "2", [confirmed_field("family_history", "家族史", "父亲慢阻肺")])
+
+    report = export_service.export_batch_excel("qwen_batch_admission_record")
+
+    assert report["candidate_count"] == 2
+    assert report["exported_count"] == 2
+    assert report["skipped_count"] == 0
+    assert report["skipped"] == []
+    assert len(report["export_id"]) == 32
+    assert report["filename"] == f"batch-{report['export_id']}.xlsx"
+    assert report["download_url"] == f"/api/tasks/export/batch-excel/{report['export_id']}"
+
+    filepath = export_service.batch_excel_download_path(report["export_id"])
+    assert filepath is not None
+    assert export_service.batch_excel_download_path("deadbeef") is None
+
+    names, sheet_xml, styles_xml = _read_xlsx_parts(filepath)
+    assert "xl/styles.xml" in names
+    assert "xl/worksheets/sheet1.xml" in names
+    assert "任务编号" in sheet_xml
+    assert "反复咳嗽" in sheet_xml
+    assert "父亲慢阻肺" in sheet_xml
+    assert 'hidden="1"' in sheet_xml
+    assert "wrapText" in styles_xml
+    # 表头 1 行 + 数据 2 行
+    assert sheet_xml.count('<row r="') == 3
+
+
+def test_export_batch_excel_all_skipped_raises(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [unreviewed_field("chief_complaint", "主诉", "反复咳嗽")])
+
+    with pytest.raises(AppError) as exc_info:
+        export_service.export_batch_excel("qwen_batch_admission_record")
+    assert exc_info.value.code == ErrorCode.EXPORT_VALIDATION_FAILED.code
+
+
+def test_export_batch_excel_no_candidates_raises(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1", status="failed")
+
+    with pytest.raises(AppError) as exc_info:
+        export_service.export_batch_excel("qwen_batch_admission_record")
+    assert exc_info.value.code == ErrorCode.EXPORT_VALIDATION_FAILED.code
+
+
+def test_export_batch_excel_disabled_template_raises(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    disabled_profile = DocumentProfile(
+        document_type="other",
+        label="其他",
+        schema=BATCH_SCHEMA,
+        prompt_version="prompt.v1",
+        field_port=object(),
+        batch_excel_enabled=False,
+    )
+    export_service._document_profiles = DocumentProfileRegistry(
+        store=export_service._store,
+        profiles=[disabled_profile],
+        default_document_type="other",
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        export_service.export_batch_excel("other")
+    assert exc_info.value.code == ErrorCode.EXPORT_VALIDATION_FAILED.code
+
+
+def test_export_batch_excel_twice_does_not_overwrite(tmp_path):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [confirmed_field("chief_complaint", "主诉", "反复咳嗽")])
+
+    first = export_service.export_batch_excel("qwen_batch_admission_record")
+    second = export_service.export_batch_excel("qwen_batch_admission_record")
+
+    assert first["export_id"] != second["export_id"]
+    path1 = export_service.batch_excel_download_path(first["export_id"])
+    path2 = export_service.batch_excel_download_path(second["export_id"])
+    assert path1 != path2
+    with open(path1, "rb") as f1, open(path2, "rb") as f2:
+        assert f1.read() == f2.read()   # 内容一致
+    # 两次导出都对任务记录 export_summary,最新指向第二次
+    task = export_service._task_service.get_task("1")
+    files = task["export_summary"]["files"]
+    assert [f for f in files if f["format"] == "batch_excel"][0]["relative_path"] == f"batch/batch-{second['export_id']}.xlsx"
+
+
+def test_export_batch_excel_records_export_for_each_task(tmp_path):
+    export_service, task_service = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_task(export_service._store, "2")
+    write_batch_review(export_service._store, "1", [confirmed_field("chief_complaint", "主诉", "反复咳嗽")])
+    write_batch_review(export_service._store, "2", [confirmed_field("family_history", "家族史", "父亲慢阻肺")])
+
+    report = export_service.export_batch_excel("qwen_batch_admission_record")
+
+    for task_id in ("1", "2"):
+        summary = task_service.get_task(task_id)["export_summary"]
+        assert "batch_excel" in summary["formats"]
+        assert [f for f in summary["files"] if f["format"] == "batch_excel"][0]["relative_path"] == f"batch/batch-{report['export_id']}.xlsx"
+
+
+def test_export_batch_excel_write_failure_raises_and_cleans_tmp(tmp_path, monkeypatch):
+    export_service, _ = make_batch_export_service(tmp_path)
+    write_batch_task(export_service._store, "1")
+    write_batch_review(export_service._store, "1", [confirmed_field("chief_complaint", "主诉", "反复咳嗽")])
+
+    def _boom(path, rows):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(export_service, "_write_batch_xlsx", _boom)
+
+    with pytest.raises(AppError) as exc_info:
+        export_service.export_batch_excel("qwen_batch_admission_record")
+
+    assert exc_info.value.code == ErrorCode.EXPORT_FAILED.code
+    leftovers = [name for name in os.listdir(os.path.join(export_service._export_dir, "batch")) if name.endswith(".tmp")]
+    assert leftovers == []

@@ -525,6 +525,7 @@ def test_export_batch_excel_writes_unique_file_and_report(tmp_path):
     assert "wrapText" in styles_xml
     # 表头 1 行 + 数据 2 行
     assert sheet_xml.count('<row r="') == 3
+```
 
 - [ ] **Step 2: 运行测试确认失败**
 

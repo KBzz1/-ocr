@@ -5,7 +5,7 @@ from app.backend import create_backend_app
 from app.backend.tests.fixtures.images import JPEG_BYTES
 
 
-def write_config(tmp_path):
+def write_config(tmp_path, enable_copd_extractor=False):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     config = f"""
@@ -26,12 +26,16 @@ upload:
   max_file_size_mb: 10
   min_quad_area_ratio: 0.01
 """
+    if enable_copd_extractor:
+        # 契约测试需要 active profile 处于"算法已配置"可用态(模板列表非空);
+        # 默认关闭保持"算法未配置"语义,供 e2e 失败路径用例使用。
+        config += "\nalgorithms:\n  enable_copd_extractor: true\n"
     (config_dir / "default.yaml").write_text(config, encoding="utf-8")
     return config_dir
 
 
-def make_client(tmp_path, monkeypatch):
-    config_dir = write_config(tmp_path)
+def make_client(tmp_path, monkeypatch, enable_copd_extractor=False):
+    config_dir = write_config(tmp_path, enable_copd_extractor=enable_copd_extractor)
     monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
     app = create_backend_app(str(config_dir))
     app.config["TESTING"] = True

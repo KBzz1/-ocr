@@ -90,3 +90,42 @@ def test_registry_hides_incomplete_profiles_from_mobile_choices(tmp_path):
             "schema_version": "copd_admission_record.v1",
         }
     ]
+
+
+def _profile(document_type, enabled=False, complete=True):
+    return DocumentProfile(
+        document_type=document_type,
+        label=f"模板{document_type}",
+        schema={"version": "1.0.0", "field_groups": []},
+        prompt_version="prompt.v1",
+        field_port=object() if complete else None,
+        batch_excel_enabled=enabled,
+    )
+
+
+def test_batch_excel_templates_only_returns_enabled_available_profiles(tmp_path):
+    store = JsonStore(str(tmp_path))
+    registry = DocumentProfileRegistry(
+        store=store,
+        profiles=[
+            _profile("admission", enabled=True),
+            _profile("disabled", enabled=False),
+            _profile("incomplete", enabled=True, complete=False),
+        ],
+        default_document_type="admission",
+    )
+
+    templates = registry.get_batch_excel_available_document_types()
+
+    assert templates == [{"document_type": "admission", "label": "模板admission"}]
+
+
+def test_batch_excel_enabled_defaults_to_false():
+    profile = DocumentProfile(
+        document_type="admission",
+        label="入院记录",
+        schema={"version": "1.0.0", "field_groups": []},
+        prompt_version="prompt.v1",
+        field_port=object(),
+    )
+    assert profile.batch_excel_enabled is False

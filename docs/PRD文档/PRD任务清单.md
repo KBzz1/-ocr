@@ -25,7 +25,7 @@
 | BE-MVP-04 OCR/文档解析和结构化字段抽取 | 已完成 | `app/backend/services/algorithm_ports/`、`app/backend/services/copd_extraction/` | OCR/文档解析和 LLM 结构化提取按可替换算法子系统接入；主代码维护字段契约、质量核验和审核流转 |
 | BE-MVP-05 审核结果保存 | 已完成 | `app/backend/services/review_service.py` | 字段状态保留 `unreviewed / confirmed / modified`，自动抽取元数据作为审核辅助 |
 | BE-MVP-06 导出服务 | 已完成 | `app/backend/services/export_service.py` | `review` 和 `done` 可导出 JSON/Excel，导出来自人工最终值；空占位字段不阻断导出 |
-| BE-MVP-07 批量导出与重新处理框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 支持批量 JSON zip；审核页重新处理优先复用 OCR，缺 OCR 时基于已有图片重新 OCR + 抽取；不做汇总 Excel |
+| BE-MVP-07 批量导出与重新处理框架 | 已完成 | `app/backend/services/export_service.py`、`app/backend/services/reextraction_service.py` | 支持批量 JSON zip；审核页重新处理优先复用 OCR，缺 OCR 时基于已有图片重新 OCR + 抽取；批量 Excel 汇总导出见 BE-MVP-05-08 |
 | FE-MVP-01 工作台总览 | 已完成 | `app/frontend/src/pages/workstation/` | 新建任务、二维码、最近任务、状态统计 |
 | FE-MVP-02 手机上传页 | 已完成 | `app/frontend/src/pages/mobile-capture/` | 只做拍照/选择图片、多图上传、完成上传 |
 | FE-MVP-03 任务管理 | 已完成 | `app/frontend/src/pages/tasks/` | 任务列表、筛选、状态操作 |
@@ -188,6 +188,12 @@
   - 范围：批量 zip 内增加 manifest 或导出摘要，记录任务数、成功任务、跳过/失败原因和生成时间。
   - 边界：不引入独立 `exported` 状态；导出失败不修改审核数据。
 
+- [x] **BE-MVP-05-08 批量 Excel 汇总导出**
+  - 范围：按文书模板一键导出全部 `review` / `done` 任务到同一张 Excel 表；字段级只写已确认字段(`confirmed` / `modified` 且 `final_value` 非空)，占位字段留空不阻断；生成与下载接口分离(`POST /api/tasks/export/batch-excel` 生成并返回 `export_id`，`GET /api/tasks/export/batch-excel/{export_id}` 下载)；导出文件以唯一 `export_id` 命名、临时文件原子写；模板显式启用 `batch_excel_enabled` 才可导出。
+  - 边界：只纳入 `review` / `done` 任务；模板未注册/未完成接入、未启用批量导出或无记录可导出时返回 `EXPORT_VALIDATION_FAILED`；不引入独立 `exported` 状态；导出失败不修改审核数据；导出在 `record_export` 中按 `batch_excel` 格式记录。
+  - 设计：`docs/superpowers/specs/2026-08-01-batch-excel-export-design.md`。
+  - 计划：`docs/superpowers/plans/2026-08-01-batch-excel-export.md`。
+
 ## 前端任务
 
 ### FE-MVP-01 工作台总览
@@ -238,8 +244,14 @@
 
 - [x] **FE-MVP-03-04 批量导出多选入口**
   - 范围：任务管理页支持选择多个 `review` / `done` 任务并调用批量 zip 下载 API。
-  - 边界：多选 UI、禁用态(非可导出任务不可勾选)、下载触发、失败提示和导出摘要条已落地；批量 zip 仍为 JSON-only。
+  - 边界：多选 UI、禁用态(非可导出任务不可勾选)、下载触发、失败提示和导出摘要条已落地；批量 zip 仍为 JSON-only；批量 Excel 汇总导出见 FE-MVP-03-06。
   - 设计：`docs/superpowers/specs/2026-06-05-mvp-export-reextract-ui-design.md`。
+
+- [x] **FE-MVP-03-06 批量 Excel 全部导出入口**
+  - 范围：任务管理页提供"全部导出 Excel"入口：先按模板列表选择文书模板(`batch_excel_enabled` 启用项)，调用批量生成 API，展示导出/跳过计数与跳过明细，再触发下载。
+  - 边界：不在前端拼 Excel；模板未启用批量导出或无记录可导出时展示后端 `EXPORT_VALIDATION_FAILED` 错误提示；生成与下载分离，下载使用返回的 `export_id`。
+  - 设计：`docs/superpowers/specs/2026-08-01-batch-excel-export-design.md`。
+  - 计划：`docs/superpowers/plans/2026-08-01-batch-excel-export.md`。
 
 - [ ] **FE-MVP-03-05 字段方案管理入口占位**
   - 范围：为后续字段方案/版本选择预留入口，展示当前 schema/prompt 版本和重抽取来源。

@@ -13,6 +13,7 @@ class DocumentProfile:
     prompt_version: str
     field_port: Any
     quality_rule_profile: str | None = None
+    batch_excel_enabled: bool = False
 
     @property
     def schema_version(self) -> str:
@@ -53,6 +54,14 @@ class DocumentProfileRegistry:
             }
             for profile in self._profiles.values()
             if profile.is_available
+        ]
+
+    def get_batch_excel_available_document_types(self) -> list[dict]:
+        """仅返回显式启用批量 Excel 且已完整接入的模板。"""
+        return [
+            {"document_type": profile.document_type, "label": profile.label}
+            for profile in self._profiles.values()
+            if profile.is_available and profile.batch_excel_enabled
         ]
 
     def get_default_document_type(self) -> str:

@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { getApiErrorMessage } from '../../api/client';
-import { exportTasksBatchZip } from '../../api/export';
+import {
+  downloadBatchExcel,
+  exportTasksBatchExcel,
+  exportTasksBatchZip,
+  fetchBatchExcelTemplates,
+  type BatchExcelReport,
+  type BatchExcelTemplate
+} from '../../api/export';
 import { deleteTask, getTasks, updateTaskMetadata, type TaskStatus, type TaskSummary } from '../../api/tasks';
 import { WorkstationLayout } from '../../components/layout/WorkstationLayout';
 import { TaskList } from '../../components/tasks/TaskList';
+import { BatchExcelExportDialog } from '../../components/tasks/BatchExcelExportDialog';
 import { CaptureQrDialog } from '../../components/workstation/CaptureQrDialog';
 import { useSilentPolling } from '../../hooks/useSilentPolling';
 import type { TaskUploadSummary } from '../workstation/workstation.types';
@@ -70,6 +78,12 @@ export function TasksPage() {
   const [selectedTaskIds, setSelectedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [lastBatchExport, setLastBatchExport] = useState<BatchExportSummary | null>(null);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
+  const [isBatchExcelDialogOpen, setIsBatchExcelDialogOpen] = useState(false);
+  const [batchExcelTemplates, setBatchExcelTemplates] = useState<BatchExcelTemplate[]>([]);
+  const [selectedBatchTemplate, setSelectedBatchTemplate] = useState('');
+  const [isBatchExcelExporting, setIsBatchExcelExporting] = useState(false);
+  const [batchExcelReport, setBatchExcelReport] = useState<BatchExcelReport | null>(null);
+  const [showBatchExcelSkipped, setShowBatchExcelSkipped] = useState(false);
 
   const loadTasks = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'refresh') => {
     if (mode === 'initial') {
@@ -216,6 +230,48 @@ export function TasksPage() {
     setLastBatchExport(null);
   }
 
+  async function handleOpenBatchExcelDialog() {
+    setError(null);
+    try {
+      const templates = await fetchBatchExcelTemplates();
+      setBatchExcelTemplates(templates);
+      setSelectedBatchTemplate(templates[0]?.document_type ?? '');
+      setBatchExcelReport(null);
+      setShowBatchExcelSkipped(false);
+      setIsBatchExcelDialogOpen(true);
+    } catch (templateError: unknown) {
+      setError(getApiErrorMessage(templateError, '获取导出模板失败，请稍后重试'));
+    }
+  }
+
+  function handleCloseBatchExcelDialog() {
+    if (isBatchExcelExporting) return;
+    setIsBatchExcelDialogOpen(false);
+  }
+
+  async function handleConfirmBatchExcelExport() {
+    if (isBatchExcelExporting || !selectedBatchTemplate) return;
+    setIsBatchExcelExporting(true);
+    try {
+      const report = await exportTasksBatchExcel(selectedBatchTemplate);
+      const blob = await downloadBatchExcel(report.export_id);
+      triggerBlobDownload(blob, report.filename);
+      setBatchExcelReport(report);
+      setShowBatchExcelSkipped(false);
+      setIsBatchExcelDialogOpen(false);
+      setError(null);
+    } catch (exportError: unknown) {
+      setError(getApiErrorMessage(exportError, '批量导出失败，请稍后重试'));
+    } finally {
+      setIsBatchExcelExporting(false);
+    }
+  }
+
+  function handleDismissBatchExcelSummary() {
+    setBatchExcelReport(null);
+    setShowBatchExcelSkipped(false);
+  }
+
   return (
     <WorkstationLayout
       activeRouteId="tasks"
@@ -263,7 +319,49 @@ export function TasksPage() {
                 </button>
               </div>
             ) : null}
+            <button
+              type="button"
+              className="tasks-batch-excel-export"
+              disabled={isBatchExcelExporting}
+              onClick={() => void handleOpenBatchExcelDialog()}
+            >
+              全部导出 Excel
+            </button>
           </div>
+          {batchExcelReport ? (
+            <div className="tasks-batch-summary" role="status">
+              <span>
+                已导出 {batchExcelReport.exported_count} 条
+                {batchExcelReport.skipped_count > 0 ? `，跳过 ${batchExcelReport.skipped_count} 条` : ''}
+              </span>
+              {batchExcelReport.skipped_count > 0 ? (
+                <button
+                  type="button"
+                  className="tasks-batch-summary__detail"
+                  onClick={() => setShowBatchExcelSkipped((current) => !current)}
+                >
+                  {showBatchExcelSkipped ? '收起跳过明细' : '查看跳过明细'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-label="关闭批量导出摘要"
+                className="tasks-batch-summary__close"
+                onClick={handleDismissBatchExcelSummary}
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
+          {showBatchExcelSkipped && batchExcelReport ? (
+            <ul className="tasks-batch-skipped" aria-label="跳过明细">
+              {batchExcelReport.skipped.map((item) => (
+                <li key={item.task_id}>
+                  任务 {item.task_id}：{item.reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <TaskList
             activeFilter={activeFilter}
@@ -292,6 +390,16 @@ export function TasksPage() {
         isOpen={Boolean(qrTask)}
         task={qrTask}
         onClose={() => setQrTask(null)}
+      />
+
+      <BatchExcelExportDialog
+        isOpen={isBatchExcelDialogOpen}
+        templates={batchExcelTemplates}
+        selectedDocumentType={selectedBatchTemplate}
+        isExporting={isBatchExcelExporting}
+        onSelectTemplate={setSelectedBatchTemplate}
+        onConfirm={() => void handleConfirmBatchExcelExport()}
+        onClose={handleCloseBatchExcelDialog}
       />
     </WorkstationLayout>
   );

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, send_file
 
-from ..errors import AppError, ErrorCode
+from ..errors import AppError, ErrorCode, abort
 from ..responses import success
 from . import _get_export_service, _safe_event
 
@@ -67,4 +67,47 @@ def export_batch_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=info["filename"],
+    )
+
+
+@export_bp.route("/api/tasks/export/batch-excel/templates")
+def batch_excel_templates():
+    svc = _get_export_service()
+    return success(data={"templates": svc.batch_excel_templates()})
+
+
+@export_bp.route("/api/tasks/export/batch-excel", methods=["POST"])
+def export_batch_excel():
+    payload = request.get_json(silent=True) or {}
+    document_type = payload.get("document_type")
+    if not isinstance(document_type, str) or not document_type.strip():
+        raise AppError(ErrorCode.INVALID_REQUEST_PARAMS, message="document_type 必须为非空字符串")
+
+    svc = _get_export_service()
+    try:
+        report = svc.export_batch_excel(document_type)
+    except AppError as exc:
+        _safe_event("export_failed", level="ERROR", format="batch_excel", error_code=exc.code, document_type=document_type)
+        raise
+    _safe_event(
+        "export_succeeded",
+        format="batch_excel",
+        export_id=report["export_id"],
+        exported_count=report["exported_count"],
+        skipped_count=report["skipped_count"],
+    )
+    return success(data=report)
+
+
+@export_bp.route("/api/tasks/export/batch-excel/<export_id>")
+def download_batch_excel(export_id: str):
+    svc = _get_export_service()
+    filepath = svc.batch_excel_download_path(export_id)
+    if filepath is None:
+        abort(ErrorCode.REQUEST_NOT_FOUND, message="导出文件不存在或已失效")
+    return send_file(
+        filepath,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"batch-{export_id}.xlsx",
     )
