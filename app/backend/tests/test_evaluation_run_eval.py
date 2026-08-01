@@ -137,6 +137,44 @@ def _field_map(schema):
     return {f["field_key"]: f for g in schema["field_groups"] for f in g["fields"]}
 
 
+def test_cli_golden_review_writes_separate_report(tmp_path, monkeypatch):
+    """--golden-review：review 活资产单独统计，报告与 manual 分开落盘。"""
+    schema_path = _write_schema(tmp_path)
+    golden_dir = _write_golden(tmp_path, ["case_001"])
+    review_golden_dir = tmp_path / "golden_review"
+    review_golden_dir.mkdir()
+    (review_golden_dir / "r001.json").write_text(json.dumps({
+        "case_id": "r001", "source": "review",
+        "schema_version": "1.0.0",
+        "golden": [{"field_key": "chief_complaint", "status": "found",
+                    "value": "反复咳嗽、咳痰20年"}],
+    }, ensure_ascii=False), encoding="utf-8")
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+
+    monkeypatch.setattr(run_eval, "build_llm_client", lambda args: FakeClient())
+    report_path = run_eval.main([
+        "--golden-dir", str(golden_dir),
+        "--golden-review", str(review_golden_dir),
+        "--schema", str(schema_path),
+        "--model", "fake-model",
+        "--report-dir", str(report_dir),
+    ])
+
+    # manual 主报告不混入 review 样本
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["metrics"]["sample_count"] == 1
+    assert report["meta"].get("source") is None
+
+    # review 子集单独成报告,meta 标注 source=review
+    review_report_path = next(p for p in report_dir.glob("*_review.json"))
+    review_report = json.loads(review_report_path.read_text(encoding="utf-8"))
+    assert review_report["meta"]["source"] == "review"
+    assert review_report["metrics"]["sample_count"] == 1
+    assert review_report["metrics"]["value_accuracy"] == 1.0
+    assert review_report["by_pitfall"]["review_feedback"]["value_total"] == 1
+
+
 def test_merge_j_annotations_from_batch_schema():
     # 构造 schema：v2 的 J 注解（qwen_type=J / review_control=judgement）按字段名
     # 合并到 v1 同名字段；非 J 字段、v1 独有字段不受影响；不引入 v2 独有字段。

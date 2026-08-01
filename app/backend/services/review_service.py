@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Callable
@@ -11,6 +12,8 @@ from ._review_field_factory import (
     is_field_blocking,
 )
 from .copd_extraction.quality_checks import apply_quality_checks
+
+logger = logging.getLogger(__name__)
 
 MVP_FIELD_STATUSES = {
     FieldStatus.UNREVIEWED.value,
@@ -579,7 +582,41 @@ class ReviewService:
                     "missing_evidence_count": summary["missing_evidence_count"],
                 },
             )
-        return self._task_service.complete_review(task_id, review_summary=summary)
+        result = self._task_service.complete_review(task_id, review_summary=summary)
+        self._collect_review_feedback(task_id, review)
+        return result
+
+    def _collect_review_feedback(self, task_id: str, review: dict) -> None:
+        """聚合医生修正字段（auto_value≠final_value）写入回流文件；失败降级不阻断。"""
+        fields = review.get("fields")
+        if not isinstance(fields, list):
+            return
+        items = []
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            original = str(field.get("auto_value") or "")
+            corrected = str(field.get("final_value") or "")
+            if original == corrected:
+                continue
+            items.append({
+                "field_key": field.get("field_key", ""),
+                "status": "found" if corrected.strip() else "not_found",
+                "original_value": original,
+                "corrected_value": corrected,
+            })
+        if not items:
+            return
+        feedback = {
+            "task_id": task_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "schema_version": review.get("schema_version"),
+            "fields": items,
+        }
+        try:
+            self._store.write(f"evaluation/review_feedback/{task_id}.json", feedback)
+        except Exception:  # noqa: BLE001 — 回流失败不阻断审核确认
+            logger.warning("审核回流写入失败 task_id=%s", task_id, exc_info=True)
 
     def _find_field(self, review: dict, field_key: str) -> dict:
         for field in review["fields"]:

@@ -10,24 +10,26 @@ from app.backend.services._review_field_factory import (
 from app.backend.storage.json_store import JsonStore
 
 
+_MVP_SCHEMA = {
+    "version": "medical_record.v1",
+    "document_type": "medical_record",
+    "field_groups": [
+        {
+            "group_key": "basic",
+            "group_label": "基本信息",
+            "fields": [
+                {"field_key": "patient_name", "label": "姓名"},
+                {"field_key": "department", "label": "科室"},
+            ],
+        }
+    ],
+}
+
+
 def make_services(tmp_path):
     store = JsonStore(str(tmp_path))
     task_service = TaskService(store)
-    schema = {
-        "version": "medical_record.v1",
-        "document_type": "medical_record",
-        "field_groups": [
-            {
-                "group_key": "basic",
-                "group_label": "基本信息",
-                "fields": [
-                    {"field_key": "patient_name", "label": "姓名"},
-                    {"field_key": "department", "label": "科室"},
-                ],
-            }
-        ],
-    }
-    review_service = ReviewService(store, task_service, schema_provider=lambda: schema)
+    review_service = ReviewService(store, task_service, schema_provider=lambda: _MVP_SCHEMA)
     return review_service, task_service, store
 
 
@@ -715,3 +717,79 @@ def test_existing_review_result_gets_quality_warning_on_read(tmp_path):
     assert field["verification_status"] == "suspicious"
     assert any(flag["flag"] == "ocr_numeric_conflict" for flag in field["quality_flags"])
     assert review["summary"]["suspicious_count"] == 1
+
+
+# --- Task 6 (评估体系第二步): 审核数据回流聚合 ---
+
+
+def test_confirm_collects_modified_fields_feedback(tmp_path):
+    """Task 6: confirm 聚合 auto_value != final_value 的修正字段写入回流文件。
+
+    - feedback["fields"] 只含 auto_value != final_value 的字段
+    - 每项 {field_key, status, original_value, corrected_value}
+    - 修正值非空 → status=found；修正值为空串 → status=not_found
+    """
+    review_service, task_service, store = make_services(tmp_path)
+    write_review_task(store)
+    write_candidates(store)
+    review_service.save(
+        "task_001",
+        {
+            "fields": [
+                # auto_value=张三(候选 original_value) → final_value=张四
+                {"field_key": "patient_name", "value": "张四", "status": "modified"},
+                # auto_value=骨科 → final_value 清空(医生确认找不到)
+                {"field_key": "department", "value": "", "status": "modified"},
+            ]
+        },
+    )
+
+    review_service.confirm("task_001")
+
+    feedback = store.read("evaluation/review_feedback/task_001.json")
+    assert feedback["task_id"] == "task_001"
+    assert feedback["schema_version"] == "medical_record.v1"
+    assert feedback["created_at"]
+    assert [f["field_key"] for f in feedback["fields"]] == ["patient_name", "department"]
+    assert feedback["fields"][0] == {
+        "field_key": "patient_name",
+        "status": "found",
+        "original_value": "张三",
+        "corrected_value": "张四",
+    }
+    assert feedback["fields"][1] == {
+        "field_key": "department",
+        "status": "not_found",
+        "original_value": "骨科",
+        "corrected_value": "",
+    }
+
+
+def test_confirm_feedback_write_failure_degrades_gracefully(tmp_path):
+    """Task 6: 回流文件写失败(如磁盘异常)不阻断审核确认，confirm 正常完成。"""
+    class _FeedbackFailingStore(JsonStore):
+        def write(self, relative_path, data):
+            if "review_feedback" in relative_path:
+                raise OSError("模拟磁盘写入失败")
+            return super().write(relative_path, data)
+
+    store = _FeedbackFailingStore(str(tmp_path))
+    task_service = TaskService(store)
+    review_service = ReviewService(store, task_service, schema_provider=lambda: _MVP_SCHEMA)
+    write_review_task(store)
+    write_candidates(store)
+    review_service.save(
+        "task_001",
+        {
+            "fields": [
+                {"field_key": "patient_name", "value": "张四", "status": "modified"},
+                # department 确认不改值,避免未审核字段阻断 confirm
+                {"field_key": "department", "value": "骨科", "status": "confirmed"},
+            ]
+        },
+    )
+
+    task = review_service.confirm("task_001")
+
+    assert task["status"] == "done"
+    assert store.exists("evaluation/review_feedback/task_001.json") is False

@@ -20,6 +20,7 @@ from ..services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
 from ..services.copd_extraction.llm_client import OpenAICompatibleJsonClient
 from ..services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
 from ..services.schema_loader import load_schema
+from .feedback import load_review_golden
 from .runner import build_report, evaluate_sample, run_pipeline
 
 # 批处理 schema（含 qwen_type/review_control 注解），用于给 v1 评估 schema
@@ -106,6 +107,8 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--report-dir", default="data/evaluation/reports")
+    parser.add_argument("--golden-review", default=None,
+                        help="review 金标活资产目录(如 data/evaluation/golden_review)，单独统计修正字段子集")
     parser.add_argument("--no-quality-flags", action="store_true")
     parser.add_argument("--no-contract", action="store_true")
     parser.add_argument("--no-verifier", action="store_true")
@@ -153,6 +156,21 @@ def main(argv: list[str] | None = None) -> Path:
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     _print_console_summary(report)
+    if args.golden_review:
+        review_samples = load_review_golden(Path(args.golden_review))
+        if review_samples:
+            review_results = []
+            for sample in review_samples:
+                result = _run_pipeline_with_fallback(sample, schema, llm_client, args)
+                review_results.append(evaluate_sample(sample, result, schema))
+            review_meta = dict(meta, source="review", sample_count=len(review_samples))
+            review_report = build_report(review_results, review_meta)
+            review_path = report_dir / f"{stamp}_{meta['prompt_version']}_{args.model.replace('/', '_')}_review.json"
+            review_path.write_text(json.dumps(review_report, ensure_ascii=False, indent=2), encoding="utf-8")
+            _print_review_summary(review_report)
+            print(f"review 报告已写入: {review_path}")
+        else:
+            print(f"未找到 review 活资产: {args.golden_review}", file=sys.stderr)
     if args.compare:
         _print_compare(Path(args.compare), report)
     print(f"\n报告已写入: {report_path}")
@@ -175,6 +193,20 @@ def _print_console_summary(report: dict) -> None:
         print("\n最差字段 top5:")
         for key, d in worst:
             print(f"  {key}: {d['value_correct']}/{d['value_total']}")
+
+
+def _print_review_summary(review_report: dict) -> None:
+    """控制台打印 review 子集统计（修正字段错误率，与 manual 分开）。"""
+    value_total = sum(d["value_total"] for d in review_report["by_field"].values())
+    value_correct = sum(d["value_correct"] for d in review_report["by_field"].values())
+    error_rate = (value_total - value_correct) / value_total if value_total else 0.0
+    print("\n" + "=" * 46)
+    print(f"review 子集  {review_report['meta']['model']} / {review_report['meta']['prompt_version']}")
+    print("=" * 46)
+    print(f"样本数          : {review_report['metrics']['sample_count']}")
+    print(f"修正字段总数    : {value_total}")
+    print(f"命中修正值      : {value_correct}")
+    print(f"review 修正字段错误率: {error_rate:.2%}")
 
 
 def _print_compare(baseline_path: Path, report: dict) -> None:
