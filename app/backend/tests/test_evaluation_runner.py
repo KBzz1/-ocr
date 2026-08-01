@@ -224,7 +224,17 @@ class TestRunPipelineVerifier:
         )
         assert verifier.called == 1
         candidates = result["candidates"]
-        assert candidates[0]["verification_status"] == "suspicious"
+        # found+无 evidence_ids 的候选在 map 阶段即被标 suspicious
+        # （evidence_missing，与复核器无关），故不能断言 verification_status；
+        # 改为断言复核器专属痕迹（verifier_suspicious flag）存在——该 dict flag
+        # 只由 apply_verdicts 添加，能捕获"复核器已跑但 verdict 未应用"的回归。
+        # 注意 quality_flags 中还有字符串 flag（map 阶段的 evidence_missing），
+        # 需 isinstance(dict) 过滤（与 test_no_verifier_skips_verifier 对称）。
+        assert any(
+            f.get("flag") == "verifier_suspicious"
+            for f in candidates[0].get("quality_flags", [])
+            if isinstance(f, dict)
+        )
 
     def test_no_verifier_skips_verifier(self):
         schema = make_schema()

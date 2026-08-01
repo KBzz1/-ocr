@@ -84,7 +84,7 @@ def build_verification_messages(
     for field in fields or []:
         fk = field.get("field_key", "")
         value = field.get("value", "")
-        ids = ", ".join(field.get("evidence_ids") or [])
+        ids = ", ".join(str(i) for i in (field.get("evidence_ids") or []))
         field_blocks.append(f"- {fk}：声称值 {value or '（空）'}；引用证据 {ids or '（无）'}")
     fields_section = "\n".join(field_blocks) if field_blocks else "（无字段）"
 

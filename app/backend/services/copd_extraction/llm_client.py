@@ -3,7 +3,17 @@ from abc import ABC, abstractmethod
 
 class LlmClient(ABC):
     @abstractmethod
-    def complete_json(self, prompt: str) -> dict:
+    def complete_json(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        enable_thinking: bool | None = None,
+    ) -> dict:
+        """调用 LLM 并以 JSON 返回结果。
+
+        prompt 为用户消息；system_prompt / enable_thinking 可选，
+        非空（非 None）时才透传，缺省保持具体客户端默认行为一致。
+        """
         ...
 
     def close(self) -> None:
