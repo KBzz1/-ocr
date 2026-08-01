@@ -16,6 +16,17 @@ def test_desensitize_masks_phone_id_and_long_numbers():
     assert "联系电话" in out and "住院号" in out
 
 
+def test_desensitize_masks_id_starting_with_mobile_prefix():
+    # 河北/山西/内蒙古地区码(13/14/15 开头)的 18 位身份证：前 11 位恰似手机号，
+    # 若手机号正则先执行会把 18 位整串拦腰截断、尾段(7 位)原样泄漏。
+    # 长数字串必须整体先于手机号掩码，且掩码后不得残留任何数字。
+    text = "身份证130101199003078858，电话13812345678。"
+    out = desensitize_text(text)
+    assert "130101199003078858" not in out
+    assert "13812345678" not in out
+    assert not any(ch.isdigit() for ch in out)
+
+
 def test_desensitize_keeps_dates():
     text = "2023-12-22 入院，体温36.5℃"
     assert desensitize_text(text) == text
