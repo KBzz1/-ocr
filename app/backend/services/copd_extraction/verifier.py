@@ -19,7 +19,11 @@ class FieldVerifier:
         self._llm_client = llm_client
 
     def verify(self, candidates: list[dict], document_text: str = "") -> list[dict]:
-        """对 found + value 非空的字段执行复核，返回意见列表；失败降级为空列表。"""
+        """对 found + value 非空的字段执行复核，返回其意见列表；失败降级为空列表。
+
+        返回的 verdict 只保留复核范围内字段（status=found 且 value 非空）；
+        LLM 对范围外字段的输出按静默降级过滤。
+        """
         targets = [
             c for c in candidates
             if isinstance(c, dict)
@@ -45,7 +49,8 @@ class FieldVerifier:
         except Exception:  # noqa: BLE001 — 复核器失败必须静默降级
             logger.warning("复核器调用失败，已降级为空意见", exc_info=True)
             return []
-        return _parse_verdicts(payload)
+        target_keys = {c.get("field_key") for c in targets}
+        return [v for v in _parse_verdicts(payload) if v.get("field_key") in target_keys]
 
 
 def _collect_evidence(candidates: list[dict], document_text: str) -> list[dict]:

@@ -48,6 +48,21 @@ def make_candidates():
             "quality_flags": [], "verification_status": "not_checked",
             "attention_required": False, "attention_message": "",
         },
+        {
+            "field_key": "pe_mouth", "original_value": "口腔黏膜正常",
+            "value": "口腔黏膜正常", "status": "not_found",
+            "evidence": [], "evidence_ids": [],
+            "quality_flags": [], "verification_status": "not_checked",
+            "attention_required": False, "attention_message": "",
+        },
+        {
+            "field_key": "pe_face", "original_value": "无面瘫",
+            "value": "", "status": "found",
+            "evidence": [{"id": "e003", "text": "无面瘫"}],
+            "evidence_ids": ["e003"],
+            "quality_flags": [], "verification_status": "not_checked",
+            "attention_required": False, "attention_message": "",
+        },
     ]
 
 
@@ -58,9 +73,14 @@ def test_verify_returns_verdicts_for_found_fields_only():
              "checks": {}, "comment": "一致"},
             {"field_key": "pe_nose", "verdict": "suspicious", "reason_code": "extraction_mistake",
              "checks": {}, "comment": "e002无异常表述，值与原文不符"},
+            {"field_key": "pe_mouth", "verdict": "suspicious", "reason_code": "extraction_mistake",
+             "checks": {}, "comment": "not_found 字段不应送审"},
+            {"field_key": "pe_face", "verdict": "suspicious", "reason_code": "extraction_mistake",
+             "checks": {}, "comment": "空值字段不应送审"},
         ]
     }))
     verdicts = verifier.verify(make_candidates(), document_text="")
+    # 复核范围过滤：只返回 status=found 且 value 非空 字段的 verdict
     assert [v["field_key"] for v in verdicts] == ["pe_ear", "pe_nose"]
     assert verdicts[1]["verdict"] == "suspicious"
 
