@@ -145,9 +145,21 @@ class QwenVLLMClient:
 
         return self._extract_text(response)
 
-    def complete_json(self, prompt: str, max_tokens: int, temperature: float) -> dict:
+    def complete_json(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        system_prompt: str | None = None,
+    ) -> dict:
         kwargs = self._common_kwargs(max_tokens=max_tokens, temperature=temperature)
-        kwargs["messages"] = [{"role": "user", "content": prompt}]
+        if system_prompt:
+            kwargs["messages"] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+        else:
+            kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs["response_format"] = {"type": "json_object"}
 
         try:

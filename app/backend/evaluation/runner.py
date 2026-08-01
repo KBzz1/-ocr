@@ -9,7 +9,7 @@ from ..services.copd_extraction.admission_contract import (
     map_qwen_fields_to_review_candidates,
     validate_qwen_payload,
 )
-from ..services.copd_extraction.prompts import build_admission_structured_fields_prompt
+from ..services.copd_extraction.prompts import build_admission_structured_fields_messages
 from ..services.copd_extraction.quality_checks import apply_quality_checks
 from .metrics import compare_value, status_matches, value_located_in_text
 
@@ -29,13 +29,13 @@ def run_pipeline(
     evidence_units = input.get("evidence_units") or []
     document_text = document_result.get("merged_text") or ""
 
-    prompt = build_admission_structured_fields_prompt(
+    system, user = build_admission_structured_fields_messages(
         schema=schema,
         evidence_units=evidence_units,
         document_text=document_text,
     )
     try:
-        payload = llm_client.complete_json(prompt)
+        payload = llm_client.complete_json(user, system_prompt=system)
     except AppError as exc:
         return {"payload": {}, "candidates": [], "error": {"code": exc.code, "message": str(exc)}}
     if check_contract:

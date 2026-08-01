@@ -190,6 +190,38 @@ def test_qwen_vllm_client_strips_think_blocks_from_text(tmp_path):
     assert text == "主诉：咳嗽"
 
 
+def test_complete_json_accepts_system_prompt():
+    fake = FakeOpenAIClient('{"ok": true}')
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+    client.complete_json(
+        prompt="user 内容", max_tokens=100, temperature=0.0,
+        system_prompt="system 规则",
+    )
+    kwargs = fake.chat.completions.calls[0]
+    assert kwargs["messages"] == [
+        {"role": "system", "content": "system 规则"},
+        {"role": "user", "content": "user 内容"},
+    ]
+
+
+def test_complete_json_without_system_prompt_keeps_single_user_message():
+    fake = FakeOpenAIClient('{"ok": true}')
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+    client.complete_json(prompt="仅 user", max_tokens=100, temperature=0.0)
+    kwargs = fake.chat.completions.calls[0]
+    assert kwargs["messages"] == [{"role": "user", "content": "仅 user"}]
+
+
 def test_qwen_vllm_client_raises_on_empty_response():
     fake = FakeOpenAIClient(content="")
     client = QwenVLLMClient(

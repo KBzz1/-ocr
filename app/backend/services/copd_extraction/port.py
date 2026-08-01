@@ -5,7 +5,7 @@ from .admission_contract import (
     map_qwen_fields_to_review_candidates,
     validate_qwen_payload,
 )
-from .prompts import build_admission_structured_fields_prompt
+from .prompts import build_admission_structured_fields_messages
 from .quality_checks import apply_quality_checks
 
 
@@ -14,8 +14,8 @@ class COPDAdmissionQwenFieldPort:
 
     Wires the contract stack implemented by Tasks 3-4:
 
-    1. ``build_admission_structured_fields_prompt`` — schema + evidence_units
-       only, no per-field prompts.
+    1. ``build_admission_structured_fields_messages`` — schema + evidence_units
+       only, no per-field prompts; system/user 分两段交给 complete_json。
     2. ``llm_client.complete_json`` — single LLM call returning the strict
        ``{schema_version, document_type, fields:[…]}`` payload.
     3. ``validate_qwen_payload`` — structural contract enforcement (raises
@@ -39,12 +39,12 @@ class COPDAdmissionQwenFieldPort:
         )
         document_text = document_result.get("merged_text") or ""
 
-        prompt = build_admission_structured_fields_prompt(
+        system, user = build_admission_structured_fields_messages(
             schema=schema,
             evidence_units=evidence_units,
             document_text=document_text,
         )
-        payload = self._llm_client.complete_json(prompt)
+        payload = self._llm_client.complete_json(user, system_prompt=system)
         # Structural validation raises AppError(ALGORITHM_CONTRACT_INVALID) on
         # any contract violation (missing fields, bad statuses, wrong types).
         validate_qwen_payload(payload, schema)

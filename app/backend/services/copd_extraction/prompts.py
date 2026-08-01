@@ -92,25 +92,23 @@ def build_adversarial_verification_prompt(source_groups: list[dict], document_co
 # - 诊断字段仅摘录原文记录，禁止主观医学判断、推断、补充或改写。
 # - 允许多个字段共用同一条 evidence unit（特别是血气 6 项）。
 # - 未找到字段返回 status="not_found", value="", evidence_ids=[]，不得省略。
+#
+# Task 1（ChatML 消息结构改造）：prompt 拆成 (system, user) 两段返回，
+# system 只含身份/硬约束/字段表/契约等固定文本（不含任何 evidence_units
+# 或 document_text 变量数据），便于 vLLM 前缀缓存命中；变量数据全部进 user。
 
 
-def build_admission_structured_fields_prompt(
+def build_admission_structured_fields_messages(
     schema: dict,
     evidence_units: list[dict],
     document_text: str = "",
-) -> str:
-    """按 admission_record_structured_fields.v1 schema 构建 Qwen 结构化抽取 prompt。
+) -> tuple[str, str]:
+    """返回 (system, user) 两段消息。
 
-    Args:
-        schema: schema_loader.load_schema 规范化后的 dict，包含
-            version / document_type / field_groups。
-        evidence_units: 后端生成的轻量证据单元列表，每项包含 id / text，
-            可选 start_offset / end_offset / page_no / section_key。
-        document_text: 合并后的 OCR 原文。正常路径同时提供完整 OCR 上下文
-            与 evidence_units，便于模型理解跨片段语境但只通过 evidence_ids 定位。
-
-    Returns:
-        完整的 Qwen prompt 字符串。
+    system 固定承载身份/硬约束/字段表/契约，完全不含 evidence_units 与
+    document_text 变量数据（前缀缓存命中前提）；user 承载证据单元与
+    OCR 原文。旧函数 build_admission_structured_fields_prompt 保留为
+    兼容包装（两段拼接）。
     """
     schema_version = schema.get("version", "")
     document_type = schema.get("document_type", "")
@@ -143,8 +141,7 @@ def build_admission_structured_fields_prompt(
     else:
         document_text_section = "（未提供 document_text）"
 
-    return f"""
-你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
+    system = f"""你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
 
 schema_version：{schema_version}
 document_type：{document_type}
@@ -157,7 +154,7 @@ document_type：{document_type}
 - not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
 - uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
 
-每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从下方"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
 
 输出示例：
 ```json
@@ -169,7 +166,7 @@ document_type：{document_type}
       "field_key": "chief_complaint",
       "status": "found",
       "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
-      "evidence_ids": ["u001"]
+      "evidence_ids": ["u009"]
     }},
     {{
       "field_key": "hpi_initial_onset",
@@ -182,12 +179,12 @@ document_type：{document_type}
 ```
 
 【硬约束 — 字段与 key】
-- field_key 只允许使用下方"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
+- field_key 只允许使用"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
 - 字段章节和字段标签由后端按固定字段表回填；模型输出中禁止重复 section_key、section_label、field_label。
 - 字段顺序按固定字段表顺序输出，便于后端对齐。
 
 【硬约束 — evidence 与原文】
-- evidence_ids 只允许从下方编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
+- evidence_ids 只允许从编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
 - 不允许在 value 或 evidence_ids 之外再输出 evidence 原文片段、章节标题字符串作为定位依据，也不得输出任何章节定位字符串或历史版本遗留的来源元数据字段。新契约不要求算法直接输出旧版抽取元数据（章节定位字符串、原文短片段字段、置信度、抽取状态、复核状态、原始/修正对比、质控标记等一律不输出）。
 - value 必须是 OCR 原文中可定位的语义片段，不得根据医学常识补全、合并或重写。
 
@@ -224,18 +221,32 @@ document_type：{document_type}
 - 允许多个字段共用同一条 evidence unit；evidence_ids 可以包含 1 个或多个 ID。
 - 血气 6 个字段（血气pH、血气pCO2、血气pO2、血气Na+、血气FIO2、血气氧合指数）通常共享同一条血气分析证据单元，应当显式共享 evidence_ids。
 
+{_OCR_RISK_WARNINGS}
+
 【固定字段表】
 {fixed_field_table}
-
-【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
-{evidence_units_section}
-
-【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
-{document_text_section}
 
 【再次强调】
 - 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
 - 禁止 schema 外字段；禁止自由生成二级 key；禁止输出章节/标签重复字段或任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
 - 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
-- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。
-""".strip()
+- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。"""
+
+    user = f"""【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
+{evidence_units_section}
+
+【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
+{document_text_section}"""
+    return system, user
+
+
+def build_admission_structured_fields_prompt(
+    schema: dict,
+    evidence_units: list[dict],
+    document_text: str = "",
+) -> str:
+    """兼容包装：返回 system 与 user 两段拼接后的整体字符串，旧调用方继续可用。"""
+    system, user = build_admission_structured_fields_messages(
+        schema, evidence_units, document_text
+    )
+    return f"{system}\n\n{user}"

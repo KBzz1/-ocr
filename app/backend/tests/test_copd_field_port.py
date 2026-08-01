@@ -11,10 +11,12 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
     class FakeLlmClient:
         def __init__(self):
             self.prompts: list[str] = []
+            self.system_prompts: list[str] = []
 
         def complete_json(self, prompt: str, **kwargs):
             self.prompts.append(prompt)
             captured_prompts.append(prompt)
+            self.system_prompts.append(kwargs.get("system_prompt", ""))
             # Return a full schema payload with one found + many not_found fields
             schema = current_schema()
             fields = []
@@ -89,10 +91,13 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
     })
 
     # Port must consume evidence_units and the schema via prompt builder
+    # （拆层后：证据单元在 user，schema 字段表在 system）
     assert fake_client.prompts, "LLM client must receive the prompt"
     prompt = fake_client.prompts[-1]
     assert "u001" in prompt, "evidence unit id must appear in the prompt"
-    assert "chief_complaint" in prompt, "schema field keys must appear in the prompt"
+    assert "chief_complaint" in fake_client.system_prompts[-1], (
+        "schema field keys must appear in the system prompt"
+    )
 
     # Port must return 61 candidates via admission_contract mapping
     assert isinstance(result, list)

@@ -142,6 +142,24 @@ def _sample_evidence_units():
 # ---------------------------------------------------------------------------
 
 
+def test_admission_messages_split_system_and_user():
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _sample_admission_schema()
+    system, user = build_admission_structured_fields_messages(
+        schema=schema, evidence_units=[{"id": "u001", "text": "主诉：咳嗽20年"}], document_text="全文"
+    )
+    # system 承载身份与固定规则，不含证据/原文数据
+    assert "结构化抽取助手" in system
+    assert "u001" not in system and "咳嗽20年" not in system
+    assert "硬约束" in system
+    # user 承载证据与原文
+    assert "u001：主诉：咳嗽20年" in user
+    assert "全文" in user
+
+
 def test_admission_prompt_requires_fixed_schema_fields_and_not_free_keys():
     from app.backend.services.copd_extraction.prompts import (
         ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,

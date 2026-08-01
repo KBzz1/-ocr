@@ -14,8 +14,8 @@ class OpenAICompatibleJsonClient(LlmClient):
     """Qwen vLLM OpenAI-compatible 客户端的 LlmClient 适配。
 
     真实延迟 / 超时 / 模型 / base_url 都由注入的 QwenVLLMClient 持有。
-    本类只负责把 LlmClient.complete_json(prompt) 签名翻译成
-    ``QwenVLLMClient.complete_json(prompt, max_tokens, temperature)``。
+    本类只负责把 LlmClient.complete_json(prompt, system_prompt) 签名翻译成
+    ``QwenVLLMClient.complete_json(prompt, max_tokens, temperature, system_prompt)``。
     """
 
     def __init__(self, qwen_client, max_tokens: int = 8192, temperature: float = 0.0):
@@ -23,12 +23,15 @@ class OpenAICompatibleJsonClient(LlmClient):
         self._max_tokens = max_tokens
         self._temperature = temperature
 
-    def complete_json(self, prompt: str) -> dict:
-        return self._qwen_client.complete_json(
-            prompt=prompt,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-        )
+    def complete_json(self, prompt: str, system_prompt: str | None = None) -> dict:
+        kwargs = {
+            "prompt": prompt,
+            "max_tokens": self._max_tokens,
+            "temperature": self._temperature,
+        }
+        if system_prompt:
+            kwargs["system_prompt"] = system_prompt
+        return self._qwen_client.complete_json(**kwargs)
 
     def close(self) -> None:
         close = getattr(self._qwen_client, "close", None)
