@@ -15,8 +15,9 @@ _ALLOWED_VERDICTS = {"pass", "suspicious", "fail"}
 
 
 class FieldVerifier:
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, append_reminder: bool = False):
         self._llm_client = llm_client
+        self._append_reminder = append_reminder
 
     def verify(self, candidates: list[dict], document_text: str = "") -> list[dict]:
         """对 found + value 非空的字段执行复核，返回其意见列表；失败降级为空列表。
@@ -44,7 +45,9 @@ class FieldVerifier:
                 }
                 for c in targets
             ]
-            system, user = build_verification_messages(evidence_units, fields)
+            system, user = build_verification_messages(
+                evidence_units, fields, append_reminder=self._append_reminder
+            )
             payload = self._llm_client.complete_json(user, system_prompt=system)
         except Exception:  # noqa: BLE001 — 复核器失败必须静默降级
             logger.warning("复核器调用失败，已降级为空意见", exc_info=True)

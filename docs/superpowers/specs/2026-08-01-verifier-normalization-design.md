@@ -46,12 +46,15 @@
 
 ### 3.2 Prompt 结构（ChatML 分层 + 防锚定布局）
 
-**system（完全固定，前缀缓存友好）**：
-- 身份：字段级复核器；
-- 缺陷清单：否定翻转、OCR 标签混淆（P62/P02、嗜托溴铵/噻托溴铵、单位符号）、数值矛盾（单数字脉率/呼吸、体重下降零值）、OCR 纠偏合理性、生理范围；
-- verdict 契约：pass/suspicious/fail + reason_code（ocr_quality_issue / extraction_mistake / evidence_insufficient / none）+ checks（value_semantically_supported / no_hallucination_or_inference / ocr_correction_justified）+ comment（≤40 汉字）+ **必须引用 evidence 编号作为依据**；
-- 中性核验（2026-08-02 裁决替代原"对抗精神"）：只做事实核验，无实质矛盾即 pass；宁可漏过疑点不可无据标记（误报损害医生信任）。缺陷清单显式收敛为五类，其余情形一律 pass。OCR 识别错误（含 OCR 错读导致的病句/残缺用字）是复核器显式职责，标记即可、不要求给出修正值（纠偏由抽取环节 ocr_correction 负责，复核器只负责识别与判定合理性）；
-- few-shot：pass 和 suspicious 各一个结构示例（占位内容，防照抄）。
+**system（完全固定，前缀缓存友好）**——2026-08-02 精简重构后骨架：角色+任务（2 句）→ 通用原则 6 条（每条一句话，替代原缺陷清单五类）→ 输出契约 → 1 个输出示例 + 1 个反例：
+- 身份与任务：字段级复核器，对照编号证据（eXXX）核验已抽取字段值是否被 OCR 原文事实支持，输出 verdict 意见；
+- 通用原则（每条一句话，宁少勿滥；"必须可逐字定位"全文仅保留 1 处；"双向标准"改直白句：值与证据一致（语义等价即可）→ pass；证据可逐字定位的实质矛盾或文本确系 OCR 错读 → 标记）：
+  - 双向标准：值证一致即 pass；确凿问题必须标记（证据与值同源，一致不能证明文本没错；不编造理由标记，误报损害医生信任）；
+  - 只标记可逐字定位：含否定翻转（禁止把否定/不确定表述改成确定阳性）、禁止编造原文、医学推断或补全；
+  - OCR 错读：含 1 行 3 例常见模式（叠字如"舌舌居中"、近形替换如"回流证/回流征"、残缺如"古手/左手"，注明"常见模式而非全部"）；标记即可、不要求给出修正值（纠偏由抽取环节负责）；长文本字段逐句扫读并入此条；
+  - 数值矛盾或异常、证据缺失/幻觉、OCR 纠偏依据不充分各一条；
+- 输出契约：pass/suspicious/fail + reason_code（ocr_quality_issue / extraction_mistake / evidence_insufficient / none）+ checks（value_semantically_supported / no_hallucination_or_inference / ocr_correction_justified）+ comment（≤40 汉字）+ **必须引用 evidence 编号作为依据**；
+- few-shot：1 个输出示例（pass+suspicious 结构）+ 1 个反例（值正确不得标记，防误报的关键）；示例内容为占位，防照抄。
 
 **user（变量区）**：evidence 在前（原文证据，带编号）→ 字段在后（field_key + 声称的 value + 引用的 evidence_ids）。
 布局理由：

@@ -21,71 +21,43 @@ def _split_sentences(text: str, max_len: int = _SENTENCE_MAX_CHARS) -> list[str]
     return sents or [text]
 
 def build_verification_messages(
-    evidence_units: list[dict], fields: list[dict],
+    evidence_units: list[dict], fields: list[dict], append_reminder: bool = False,
 ) -> tuple[str, str]:
     """复核器 prompt：(system, user)。evidence 在前、字段在后（防锚定）。
 
-    system 完全固定（前缀缓存友好）：身份、缺陷清单、verdict 契约、few-shot。
-    user 为变量：编号证据块 + 字段块。
+    system 完全固定（前缀缓存友好）：角色任务 2 句、通用原则 6 条、输出契约、few-shot。
+    user 为变量：编号证据块 + 字段块。append_reminder=True（变体 B）时在 user
+    末尾追加结构提醒句，位于前缀之后不影响前缀缓存；默认 False（变体 A）。
     """
-    system = """你是字段级复核器，负责核对已抽取的字段值是否被 OCR 原文事实支持。
+    system = """你是字段级复核器。任务：对照编号证据（eXXX）核验已抽取字段值是否被 OCR 原文事实支持，输出 JSON verdict 意见。
 
-职责与边界：
-- 只做事实核验：对照证据，指出字段值中与原文矛盾、无法在证据中定位、或明显由 OCR 识别错误造成的内容。
-- 只标记可逐字定位的问题：每条 suspicious/fail 必须能在证据单元文本中找到原文依据；禁止编造原文、禁止用医学常识推断或补全字段值、禁止把否定或不确定表述改成确定阳性。
-- 双向标准：字段值完整摘录了证据内容（即使表述顺序略有不同）、或与证据语义等价时输出 pass；不编造理由标记（误报会损害医生信任）。反之，缺陷清单所列的确凿问题必须标记，不得以"证据与值一致"为由放行——尤其是 OCR 识别错误：证据与值来自同一 OCR 源，两者一致恰恰不能说明文本没错。
-- 不顺着字段值在证据中找支撑（找补）：先独立读证据，再对照声称值。
+先独立读证据再对照声称值，不顺着字段值找支撑。
 
-核验步骤：
-1. 先通读证据单元（eXXX 编号），独立形成对原文的理解；
-2. 再逐字段对照声称值，检查两件事：(a) 值与证据是否逐字一致（矛盾、缺失、幻觉）；(b) 文本本身质量（疑似 OCR 错读、病句、残缺用字）；
-3. 仅在证据可逐字定位到实质矛盾、或文本本身可确证为 OCR 错读时输出 suspicious/fail。
+【通用原则】
+- 值与证据一致（语义等价即可）→ pass；证据可逐字定位的实质矛盾或文本确系 OCR 错读 → 标记。不编造理由标记（误报损害医生信任）；确凿问题不得以"证据与值一致"为由放行——证据与值同源，一致不能证明文本没错。
+- 只标记可逐字定位的问题：每条 suspicious/fail 必须可逐字定位到证据单元文本中的原文依据；禁止编造原文、医学推断或补全、把否定或不确定表述改成确定阳性；不得标记值中已存在的内容（如值里已有"偏"字，不得说"删掉了'偏'字"）。
+- OCR 识别错误：项目名/药名/单位近形错读（P62/P02、嗜托溴铵/噻托溴铵、+10^9/L/×10^9/L）及错读导致的病句、残缺用字均须标记为 ocr_quality_issue，提示原文片段即可，不要求给出修正值（纠偏由抽取环节负责）。对照医学规范用词逐字检查，常见模式而非全部：叠字如"舌舌居中"、近形替换如"回流证/回流征"、残缺如"古手/左手"。长文本字段按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。
+- 数值矛盾或异常：同段存在与字段值不一致的数值（如脉搏 9 次/分但另有心率 99 次/分）、数值超出合理范围疑似 OCR 截断（99→9、36.7→3.7）、体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值，均应标记。
+- 证据缺失/幻觉：字段值在证据单元中找不到对应文本，或引入 OCR 原文没有的信息、做医学推断，应标记。
+- OCR 纠偏依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住，应标记。
 
-【缺陷清单 —— 仅限以下五类，其余情形一律 pass】
-1. 否定翻转：证据含"无、否认、未见、可能、考虑、建议复查"等否定/不确定表述，字段值却为确定阳性（删除了否定词）。
-2. OCR 识别错误：项目名/药名/单位近形错读（P62/P02/PC02/PCO2、嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L）；OCR 错读导致的病句或残缺用字（如"粗侧/粗测""回流证/回流征""眼测"）。**本类不看值与证据是否一致**：证据与值来自同一 OCR 源，值完整复制了错读文本时两者完全一致，但只要文本本身明显不是规范医学表述（非规范用字、病句、残缺），即须标记。标记字段为 ocr_quality_issue 并提示原文片段即可，不必给出修正值（纠偏由抽取环节负责，这里只负责识别）。
-   长文本字段（体格检查等整段摘录）已按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。典型错读模式（对照医学规范用词逐字检查，以下为常见示例而非全部）：
-   - 叠字/重复字：如"舌舌居中""触及及""克格征征"；
-   - 近形替换：如"未扣及/未扪及""回流证/回流征""杂音/余音""语音额/语颤""胸状胸/桶状胸""腹股部/腹部"；
-   - 语序倒置：如"舌伸居中/伸舌居中"；
-   - 残缺断句：如"回流征性/回流征阴性""古手/左手"。
-3. 数值矛盾或异常：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）；体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）；体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值。
-4. 证据缺失/幻觉：字段值在下方证据单元中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
-5. OCR 纠偏（ocr_correction）依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住。
-
-【证据一致性硬约束 —— 任何标记必须逐字可查】
-- 任何 suspicious/fail 标记必须能在证据单元文本中逐字定位；字段值中已存在的内容不得标记为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
-- comment 禁止引用证据中不存在的内容，禁止编造原文（原文有某药名，不得说"原文无此药"）；引用同一段文本时不得自称"误读"。
-- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为标记依据。
-
-【verdict 契约】
-输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组，与字段一一对应（每个字段有且仅有一条，不重复、不遗漏）。每项包含：
+【输出契约】
+输出 JSON 对象，顶层键 `verifications` 为数组，与字段一一对应（每个字段恰好一条，不重复、不遗漏）。每项包含：
 - field_key：被审查字段的 key
 - verdict：只能是 pass / suspicious / fail
 - reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none（pass 固定为 none）
 - checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
-- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"；suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述
+- comment：不超过 40 个汉字；通过项写"一致"；suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述
 
 输出示例：
 ```json
-{"verifications": [
-  {"field_key": "pe_ear", "verdict": "pass", "reason_code": "none",
-   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
-   "comment": "一致"},
-  {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue",
-   "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
-   "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}
-]}
+{"verifications": [{"field_key": "pe_ear", "verdict": "pass", "reason_code": "none", "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "一致"}, {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}]}
 ```
 示例仅示范结构，字段内容为占位，不得照抄。
 
-反例（值正确，不得标记）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核员错误找茬 → 正确输出应为 verdict=pass：
+反例（值正确，不得标记）：值完整摘录证据内容（即使顺序略有不同），复核员错误找茬 → 应为 pass：
 ```json
-{"verifications": [
-  {"field_key": "pe_lung", "verdict": "pass", "reason_code": "none",
-   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
-   "comment": "一致"}
-]}
+{"verifications": [{"field_key": "pe_lung", "verdict": "pass", "reason_code": "none", "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "一致"}]}
 ```"""
 
     evidence_blocks = [
@@ -114,6 +86,8 @@ def build_verification_messages(
 
 【字段声称值（后看，逐字段审查）】
 {fields_section}"""
+    if append_reminder:
+        user += "\n\n请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
     return system, user
 
 

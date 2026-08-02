@@ -31,22 +31,45 @@ def test_verification_messages_evidence_first_fields_after():
         evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
         fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
     )
-    # system：身份 + 缺陷清单 + verdict 契约 + few-shot，不含数据
+    # system：身份/任务 2 句 + 通用原则 + 输出契约 + few-shot，不含数据
     assert "复核器" in system
     assert "e001" not in system and "听力正常" not in system
     assert "verdict" in system and "pass" in system and "suspicious" in system
     assert "suspicious" in system  # few-shot 覆盖 suspicious 示例
-    # 校准迭代契约：证据一致性硬约束 + 中性核验（双向标准，无实质矛盾即 pass）+ OCR 识别职责 + 误报反例（仅文本契约，不含数据）
-    assert "证据一致性硬约束" in system
+    # 校准迭代契约：只标记可逐字定位 + 双向标准直白句（值证一致即 pass，可逐字定位的实质矛盾才标记）+ OCR 识别职责 + 误报反例（仅文本契约，不含数据）
+    assert "只标记可逐字定位" in system
     assert "逐字" in system
-    assert "双向标准" in system
+    assert "证据可逐字定位的实质矛盾" in system and "语义等价即可" in system
     assert "反例" in system
-    # OCR 识别错误是复核器显式职责（缺陷清单第 2 类），且不要求给出修正值（纠偏归抽取环节）
+    # OCR 识别错误是复核器显式职责（通用原则），且不要求给出修正值（纠偏归抽取环节）
     assert "OCR 识别错误" in system
     assert "纠偏由抽取环节负责" in system
     # user：evidence 编号块在字段块之前
     assert user.index("e001") < user.index("pe_ear")
     assert "pe_ear" in user and "正常" in user
+
+
+def test_verification_messages_append_reminder_default_absent():
+    """变体 A：默认（append_reminder=False）时 system 与 user 均无提醒句。"""
+    system, user = build_verification_messages(
+        evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
+        fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
+    )
+    assert "请严格遵守" not in user
+    assert "请严格遵守" not in system
+
+
+def test_verification_messages_append_reminder_true_appends_at_user_end():
+    """变体 B：append_reminder=True 时提醒句恰好出现一次且位于 user 末尾，system 不含提醒句。"""
+    reminder = "请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
+    system, user = build_verification_messages(
+        evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
+        fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
+        append_reminder=True,
+    )
+    assert user.endswith(reminder)
+    assert user.count(reminder) == 1
+    assert "请严格遵守" not in system
 
 
 class FakeLlmClient:
@@ -110,6 +133,25 @@ def test_verify_returns_verdicts_for_found_fields_only():
     # 复核范围过滤：只返回 status=found 且 value 非空 字段的 verdict
     assert [v["field_key"] for v in verdicts] == ["pe_ear", "pe_nose"]
     assert verdicts[1]["verdict"] == "suspicious"
+
+
+def test_verifier_threads_append_reminder_into_user_message():
+    """FieldVerifier(append_reminder=...) 透传两态：True 时 user 尾部含提醒句，False 时无；system 两态一致。"""
+    calls = []
+
+    class RecordingClient:
+        def complete_json(self, prompt: str, system_prompt=None):
+            calls.append((prompt, system_prompt))
+            return {"verifications": []}
+
+    on = FieldVerifier(RecordingClient(), append_reminder=True)
+    assert on.verify(make_candidates(), document_text="") == []
+    off = FieldVerifier(RecordingClient(), append_reminder=False)
+    assert off.verify(make_candidates(), document_text="") == []
+    reminder = "请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
+    assert calls[0][0].endswith(reminder)
+    assert "请严格遵守" not in calls[1][0]
+    assert calls[0][1] == calls[1][1]  # system 不受提醒开关影响
 
 
 def test_verify_llm_failure_degrades_to_empty_verdicts():

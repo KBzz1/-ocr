@@ -75,7 +75,9 @@ def run_pipeline(
             candidates, document_text, include_document_flags=False
         )
     if apply_verify:
-        verifier = verifier or FieldVerifier(llm_client)
+        verifier = verifier or FieldVerifier(
+            llm_client, append_reminder=append_reminder
+        )
         verdicts = verifier.verify(candidates, document_text)
         candidates = apply_verdicts(candidates, verdicts)
     return {"payload": payload, "candidates": candidates, "error": None}
