@@ -210,3 +210,27 @@ def test_apply_verdicts_does_not_downgrade_failed_fields():
         {"field_key": "pe_nose", "verdict": "suspicious", "reason_code": "extraction_mistake", "checks": {}, "comment": "x"},
     ])
     assert candidates[1]["verification_status"] == "failed"
+
+
+def test_verifier_principle_threshold_for_expression_noise():
+    system, _ = build_verification_messages([], [])
+    assert "影响理解或产生歧义 → 必须标记" in system
+    assert "值忠实摘录原文不豁免错读检查" in system
+
+
+def test_verifier_principle_logic_consistency():
+    system, _ = build_verification_messages([], [])
+    assert "数值矛盾或逻辑不一致" in system
+    assert "时间归属错误、否定翻转、体征互斥" in system
+
+
+def test_verifier_principle_boundary_no_evidence_exemption():
+    system, _ = build_verification_messages([], [])
+    assert "字段越界不因值有证据支持而豁免" in system
+
+
+def test_verifier_fewshot_recall_examples_present():
+    system, _ = build_verification_messages([], [])
+    assert "'粗侧'为 OCR 错读（应为'粗测'）" in system
+    assert "值却写'腹部移动性浊音阳性'，两处矛盾" in system
+    assert system.count("示例仅示范结构，字段内容为占位，不得照抄") >= 2

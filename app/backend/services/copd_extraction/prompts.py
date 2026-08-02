@@ -36,11 +36,11 @@ def build_verification_messages(
 【通用原则】
 - 值与证据一致（语义等价即可）→ pass；证据可逐字定位的实质矛盾或文本确系 OCR 错读 → 标记。不编造理由标记（误报损害医生信任）；确凿问题不得以"证据与值一致"为由放行——证据与值同源，一致不能证明文本没错。
 - 只标记可逐字定位的问题：每条 suspicious/fail 必须可逐字定位到证据单元文本中的原文依据；禁止编造原文、医学推断或补全、把否定或不确定表述改成确定阳性；不得标记值中已存在的内容（如值里已有"偏"字，不得说"删掉了'偏'字"）。
-- OCR 识别错误：项目名/药名/单位近形错读（P62/P02、嗜托溴铵/噻托溴铵、+10^9/L/×10^9/L）及错读导致的病句、残缺用字均须标记为 ocr_quality_issue，提示原文片段即可，不要求给出修正值（纠偏由抽取环节负责）。对照医学规范用词逐字检查，常见模式而非全部：叠字如"舌舌居中"、近形替换如"回流证/回流征"、残缺如"古手/左手"。长文本字段按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。
-- 数值矛盾或异常：同段存在与字段值不一致的数值（如脉搏 9 次/分但另有心率 99 次/分）、数值超出合理范围疑似 OCR 截断（99→9、36.7→3.7）、体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值，均应标记。
+- OCR 识别错误：项目名/药名/单位近形错读（P62/P02、嗜托溴铵/噻托溴铵、+10^9/L/×10^9/L）及错读导致的病句、残缺用字均须标记为 ocr_quality_issue，提示原文片段即可，不要求给出修正值（纠偏由抽取环节负责）。对照医学规范用词逐字检查，常见模式而非全部：叠字如"舌舌居中"、近形替换如"回流证/回流征"、残缺如"古手/左手"。长文本字段按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。错读/病句/叠字等表达瑕疵：影响理解或产生歧义 → 必须标记；不影响语义理解的轻微重复可不标。值忠实摘录原文不豁免错读检查——值一致只证明抄得对，不证明文本本身没问题。
+- 数值矛盾或逻辑不一致：同段存在与字段值不一致的数值、数值超出合理范围疑似 OCR 截断（99→9）、反直觉数值（体重下降 0g）；值内部自相矛盾、值与他句/他证据矛盾（时间归属错误、否定翻转、体征互斥）、数值关系不合理（如氧合指数与 PO2/FiO2 明显不符）→ 均应标记。
 - 证据缺失/幻觉：字段值在证据单元中找不到对应文本，或引入 OCR 原文没有的信息、做医学推断，应标记。
 - OCR 纠偏依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住，应标记。
-- 字段越界：值的内容域与字段对应部位明显不符（如眼部字段出现一般情况内容）→ 标记为 extraction_mistake，引用原文片段即可。
+- 字段越界：值的内容域与字段对应部位明显不符（如眼部字段出现一般情况内容）→ 标记为 extraction_mistake，引用原文片段即可。字段越界不因值有证据支持而豁免——证据同源只证明原文有这段话，不证明它属于该字段。
 
 【输出契约】
 输出 JSON 对象，顶层键 `verifications` 为数组，与字段一一对应（每个字段恰好一条，不重复、不遗漏）。每项包含：
@@ -53,6 +53,16 @@ def build_verification_messages(
 输出示例：
 ```json
 {"verifications": [{"field_key": "pe_ear", "verdict": "pass", "reason_code": "none", "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "一致"}, {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}]}
+```
+示例仅示范结构，字段内容为占位，不得照抄。
+
+```json
+{"verifications": [{"field_key": "pe_eyes", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "e005 值忠实摘录原文，但'双眼粗侧视力正常'中'粗侧'为 OCR 错读（应为'粗测'）"}]}
+```
+示例仅示范结构，字段内容为占位，不得照抄。
+
+```json
+{"verifications": [{"field_key": "pe_abdomen", "verdict": "suspicious", "reason_code": "extraction_mistake", "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true}, "comment": "e012 同段既有'腹部正常，肝脾肋缘下未扪及'，值却写'腹部移动性浊音阳性'，两处矛盾，疑否定翻转"}]}
 ```
 示例仅示范结构，字段内容为占位，不得照抄。
 
