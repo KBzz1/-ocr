@@ -1,6 +1,24 @@
 import json
+import re
 
 ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION = "admission_record_structured_fields_prompt.v1"
+
+_LONG_FIELD_CHARS = 150
+_SENTENCE_MAX_CHARS = 60
+
+
+def _split_sentences(text: str, max_len: int = _SENTENCE_MAX_CHARS) -> list[str]:
+    """长文本按句末标点拆句；单句仍超长时按逗号续拆（逐句核验用，不留空句）。"""
+    chunks = [c for c in re.split(r"(?<=[。；;！？])", text) if c.strip()]
+    sents: list[str] = []
+    for chunk in chunks:
+        if len(chunk) <= max_len:
+            sents.append(chunk)
+            continue
+        for sub in re.split(r"(?<=[,，、])", chunk):
+            if sub.strip():
+                sents.append(sub)
+    return sents or [text]
 
 _OCR_RISK_WARNINGS = (
     "OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、"
@@ -21,36 +39,43 @@ def build_verification_messages(
     system 完全固定（前缀缓存友好）：身份、缺陷清单、verdict 契约、few-shot。
     user 为变量：编号证据块 + 字段块。
     """
-    system = """你是字段级复核器。
-任务：审查已抽取的字段值是否被 OCR 原文事实支持，主动找出可能存在的问题。
+    system = """你是字段级复核器，负责核对已抽取的字段值是否被 OCR 原文事实支持。
 
-审查方法：先通读下方 OCR 原文证据，形成你自己的判断；再对照字段声称的值。
-禁止顺着字段值在证据中找支撑（找补）；禁止使用医学常识补全字段值；禁止把否定或不确定表述改成确定阳性。
+职责与边界：
+- 只做事实核验：对照证据，指出字段值中与原文矛盾、无法在证据中定位、或明显由 OCR 识别错误造成的内容。
+- 只标记可逐字定位的问题：每条 suspicious/fail 必须能在证据单元文本中找到原文依据；禁止编造原文、禁止用医学常识推断或补全字段值、禁止把否定或不确定表述改成确定阳性。
+- 双向标准：字段值完整摘录了证据内容（即使表述顺序略有不同）、或与证据语义等价时输出 pass；不编造理由标记（误报会损害医生信任）。反之，缺陷清单所列的确凿问题必须标记，不得以"证据与值一致"为由放行——尤其是 OCR 识别错误：证据与值来自同一 OCR 源，两者一致恰恰不能说明文本没错。
+- 不顺着字段值在证据中找支撑（找补）：先独立读证据，再对照声称值。
 
-【缺陷清单 —— 逐项核对】
-1. 否定翻转：evidence 中存在"无、否认、未见、可能、考虑、建议复查"等表述，但字段值被当作确定阳性抽取；字段值删掉了否定词。
-2. OCR 标签混淆：P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等血气项目名前缀疑似错读但被归入标准项目；药名和医学词近形错读（嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）；单位符号错读（+10^9/L/×10^9/L）。
-3. OCR 纠偏合理性：字段值依赖纠偏（ocr_correction）但理由不充分、原始 OCR 文本与修正后值关系不合理。
-4. 数值矛盾：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）。
-5. 体重下降零值矛盾：体重下降/减轻字段输出 0g、0kg、0克等反直觉数值。
-6. 生理范围异常：体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）。
-7. 证据缺失/幻觉：字段值在下方证据中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
+核验步骤：
+1. 先通读证据单元（eXXX 编号），独立形成对原文的理解；
+2. 再逐字段对照声称值，检查两件事：(a) 值与证据是否逐字一致（矛盾、缺失、幻觉）；(b) 文本本身质量（疑似 OCR 错读、病句、残缺用字）；
+3. 仅在证据可逐字定位到实质矛盾、或文本本身可确证为 OCR 错读时输出 suspicious/fail。
 
-【证据一致性硬约束 —— 任何指控必须逐字可查】
-- 任何 suspicious/fail 指控必须能在证据单元文本中逐字定位；字段值中已存在的内容不得指控为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
+【缺陷清单 —— 仅限以下五类，其余情形一律 pass】
+1. 否定翻转：证据含"无、否认、未见、可能、考虑、建议复查"等否定/不确定表述，字段值却为确定阳性（删除了否定词）。
+2. OCR 识别错误：项目名/药名/单位近形错读（P62/P02/PC02/PCO2、嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L）；OCR 错读导致的病句或残缺用字（如"粗侧/粗测""回流证/回流征""眼测"）。**本类不看值与证据是否一致**：证据与值来自同一 OCR 源，值完整复制了错读文本时两者完全一致，但只要文本本身明显不是规范医学表述（非规范用字、病句、残缺），即须标记。标记字段为 ocr_quality_issue 并提示原文片段即可，不必给出修正值（纠偏由抽取环节负责，这里只负责识别）。
+   长文本字段（体格检查等整段摘录）已按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。典型错读模式（对照医学规范用词逐字检查，以下为常见示例而非全部）：
+   - 叠字/重复字：如"舌舌居中""触及及""克格征征"；
+   - 近形替换：如"未扣及/未扪及""回流证/回流征""杂音/余音""语音额/语颤""胸状胸/桶状胸""腹股部/腹部"；
+   - 语序倒置：如"舌伸居中/伸舌居中"；
+   - 残缺断句：如"回流征性/回流征阴性""古手/左手"。
+3. 数值矛盾或异常：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）；体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）；体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值。
+4. 证据缺失/幻觉：字段值在下方证据单元中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
+5. OCR 纠偏（ocr_correction）依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住。
+
+【证据一致性硬约束 —— 任何标记必须逐字可查】
+- 任何 suspicious/fail 标记必须能在证据单元文本中逐字定位；字段值中已存在的内容不得标记为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
 - comment 禁止引用证据中不存在的内容，禁止编造原文（原文有某药名，不得说"原文无此药"）；引用同一段文本时不得自称"误读"。
-- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为指控依据。
-- 字段值完整摘录了证据内容（即使表述顺序略有不同）时，不得以"表述不一致""顺序不同"为由 flag。
+- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为标记依据。
 
 【verdict 契约】
-输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组。每项包含：
+输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组，与字段一一对应（每个字段有且仅有一条，不重复、不遗漏）。每项包含：
 - field_key：被审查字段的 key
 - verdict：只能是 pass / suspicious / fail
-- reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none
+- reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none（pass 固定为 none）
 - checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
-- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"
-
-对抗要求：对每个字段先主动找茬；**找茬失败时必须输出 pass**——只有能指出具体、可逐字定位、非编造的矛盾才输出 suspicious/fail，否则必须 pass。宁可漏过一个小疑点，不可编造理由标记（误报会让医生信任度下降）。每条 suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述；没有疑点才输出 pass。
+- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"；suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述
 
 输出示例：
 ```json
@@ -65,7 +90,7 @@ def build_verification_messages(
 ```
 示例仅示范结构，字段内容为占位，不得照抄。
 
-反例（值正确，不得 flag）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核器错误找茬 → 正确输出应为 verdict=pass：
+反例（值正确，不得标记）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核员错误找茬 → 正确输出应为 verdict=pass：
 ```json
 {"verifications": [
   {"field_key": "pe_lung", "verdict": "pass", "reason_code": "none",
@@ -85,7 +110,14 @@ def build_verification_messages(
         fk = field.get("field_key", "")
         value = field.get("value", "")
         ids = ", ".join(str(i) for i in (field.get("evidence_ids") or []))
-        field_blocks.append(f"- {fk}：声称值 {value or '（空）'}；引用证据 {ids or '（无）'}")
+        if len(value) > _LONG_FIELD_CHARS:
+            sents = _split_sentences(value)
+            value_part = "（长文本已按句拆分，逐句检查）" + "".join(
+                f"{i}「{s}」" for i, s in enumerate(sents, 1)
+            )
+        else:
+            value_part = f"声称值 {value or '（空）'}"
+        field_blocks.append(f"- {fk}：{value_part}；引用证据 {ids or '（无）'}")
     fields_section = "\n".join(field_blocks) if field_blocks else "（无字段）"
 
     user = f"""【OCR 原文证据（先读，编号引用）】

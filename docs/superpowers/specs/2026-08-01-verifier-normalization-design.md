@@ -50,7 +50,7 @@
 - 身份：字段级复核器；
 - 缺陷清单：否定翻转、OCR 标签混淆（P62/P02、嗜托溴铵/噻托溴铵、单位符号）、数值矛盾（单数字脉率/呼吸、体重下降零值）、OCR 纠偏合理性、生理范围；
 - verdict 契约：pass/suspicious/fail + reason_code（ocr_quality_issue / extraction_mistake / evidence_insufficient / none）+ checks（value_semantically_supported / no_hallucination_or_inference / ocr_correction_justified）+ comment（≤40 汉字）+ **必须引用 evidence 编号作为依据**；
-- 对抗精神：对每个字段先主动找茬，找不到茬才给 pass（吸收对抗性复核的锐度，保持 verdict 可校准形态）；
+- 中性核验（2026-08-02 裁决替代原"对抗精神"）：只做事实核验，无实质矛盾即 pass；宁可漏过疑点不可无据标记（误报损害医生信任）。缺陷清单显式收敛为五类，其余情形一律 pass。OCR 识别错误（含 OCR 错读导致的病句/残缺用字）是复核器显式职责，标记即可、不要求给出修正值（纠偏由抽取环节 ocr_correction 负责，复核器只负责识别与判定合理性）；
 - few-shot：pass 和 suspicious 各一个结构示例（占位内容，防照抄）。
 
 **user（变量区）**：evidence 在前（原文证据，带编号）→ 字段在后（field_key + 声称的 value + 引用的 evidence_ids）。
@@ -66,7 +66,7 @@
 1. evidence 前置防锚定（3.2）；
 2. 缺陷清单显式枚举已知易错点；
 3. 每条可疑 verdict 必须引用 evidence 编号（拿原文说话）；
-4. verdict 型主干 + 对抗精神（先找茬再放行）。
+4. verdict 型主干 + 中性核验（无实质矛盾即 pass，仅标记可逐字定位的矛盾）。
 
 ### 3.4 Thinking 消融（--thinking）
 

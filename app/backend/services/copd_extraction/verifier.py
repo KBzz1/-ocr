@@ -71,6 +71,24 @@ def _collect_evidence(candidates: list[dict], document_text: str) -> list[dict]:
     return units
 
 
+def _clip_comment(comment) -> str:
+    """comment 限制 40 字符；截断时保持引号成对、不切出半句残片。
+
+    LLM 输出的 comment 可能超长（契约要求 ≤40 汉字），直接切片会切在
+    引号中间（如"应为'…"），导致人工读不懂。截断后若引号不成对，
+    回退到最后一个成对引号之后，再补省略号。
+    """
+    text = str(comment or "")
+    if len(text) <= 40:
+        return text
+    clipped = text[:40]
+    if clipped.count("'") % 2 == 1:
+        last_pair = clipped.rfind("'")
+        if last_pair > 0:
+            clipped = clipped[:last_pair]
+    return clipped + "…"
+
+
 def _parse_verdicts(payload) -> list[dict]:
     """容错解析 LLM 输出；任何异常/非法项跳过，不抛出。"""
     if not isinstance(payload, dict):
@@ -94,7 +112,7 @@ def _parse_verdicts(payload) -> list[dict]:
             "verdict": verdict,
             "reason_code": item.get("reason_code") or "none",
             "checks": item.get("checks") or {},
-            "comment": str(item.get("comment") or "")[:40],
+            "comment": _clip_comment(item.get("comment")),
         })
     return verdicts
 

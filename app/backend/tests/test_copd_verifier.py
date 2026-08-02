@@ -7,6 +7,25 @@ from app.backend.services.copd_extraction.prompts import build_verification_mess
 from app.backend.services.copd_extraction.verifier import FieldVerifier, apply_verdicts
 
 
+def test_verification_messages_long_field_split_into_sentences():
+    """超长字段按句拆分编号（逐句核验，防整段一致性放行）；短字段保持原样。"""
+    long_value = "唇色发绀。" + "口腔粘膜无溃疡，张口正常。" * 12
+    system, user = build_verification_messages(
+        evidence_units=[{"id": "e001", "text": long_value}],
+        fields=[
+            {"field_key": "pe_oral", "value": long_value, "evidence_ids": ["e001"]},
+            {"field_key": "pe_short", "value": "正常", "evidence_ids": ["e001"]},
+        ],
+    )
+    # 长字段拆句编号 + 提示；短字段保持"声称值"原样
+    assert "已按句拆分，逐句检查" in user
+    assert "1「唇色发绀。」" in user
+    assert "pe_short：声称值 正常" in user
+    # system 包含错读模式特征信号与"逐句扫读"要求（仅文本契约，不含数据）
+    assert "逐句扫读" in system
+    assert "叠字" in system and "近形替换" in system
+
+
 def test_verification_messages_evidence_first_fields_after():
     system, user = build_verification_messages(
         evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
@@ -17,11 +36,14 @@ def test_verification_messages_evidence_first_fields_after():
     assert "e001" not in system and "听力正常" not in system
     assert "verdict" in system and "pass" in system and "suspicious" in system
     assert "suspicious" in system  # few-shot 覆盖 suspicious 示例
-    # 校准迭代契约：证据一致性硬约束 + 找茬失败转 pass + 误报反例（仅文本契约，不含数据）
+    # 校准迭代契约：证据一致性硬约束 + 中性核验（双向标准，无实质矛盾即 pass）+ OCR 识别职责 + 误报反例（仅文本契约，不含数据）
     assert "证据一致性硬约束" in system
     assert "逐字" in system
-    assert "找茬失败时必须输出 pass" in system
+    assert "双向标准" in system
     assert "反例" in system
+    # OCR 识别错误是复核器显式职责（缺陷清单第 2 类），且不要求给出修正值（纠偏归抽取环节）
+    assert "OCR 识别错误" in system
+    assert "纠偏由抽取环节负责" in system
     # user：evidence 编号块在字段块之前
     assert user.index("e001") < user.index("pe_ear")
     assert "pe_ear" in user and "正常" in user
