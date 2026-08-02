@@ -20,17 +20,6 @@ def _split_sentences(text: str, max_len: int = _SENTENCE_MAX_CHARS) -> list[str]
                 sents.append(sub)
     return sents or [text]
 
-_OCR_RISK_WARNINGS = (
-    "OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、"
-    "血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、"
-    "药名和医学词近形/同音/缺字错读（例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）、"
-    "单位断裂、单位符号错读（例如 +10^9/L 可能是 ×10^9/L）、"
-    "表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。"
-    "硬约束：不得静默修正 OCR；不得改写数值；不得医学换算；"
-    "不得把“无、否认、未见、可能、考虑、建议复查”等表达改成确定阳性。"
-)
-
-
 def build_verification_messages(
     evidence_units: list[dict], fields: list[dict],
 ) -> tuple[str, str]:
@@ -182,21 +171,26 @@ def build_adversarial_verification_prompt(source_groups: list[dict], document_co
 # - 未找到字段返回 status="not_found", value="", evidence_ids=[]，不得省略。
 #
 # Task 1（ChatML 消息结构改造）：prompt 拆成 (system, user) 两段返回，
-# system 只含身份/硬约束/字段表/契约等固定文本（不含任何 evidence_units
-# 或 document_text 变量数据），便于 vLLM 前缀缓存命中；变量数据全部进 user。
+# system 只含身份/输出契约/通用原则/领域规则/固定字段表等固定文本
+# （不含任何 evidence_units 或 document_text 变量数据），便于 vLLM 前缀
+# 缓存命中；变量数据全部进 user。append_reminder 控制 user 尾部结构提醒句
+# （变体 B），默认 False（变体 A）。
 
 
 def build_admission_structured_fields_messages(
     schema: dict,
     evidence_units: list[dict],
     document_text: str = "",
+    append_reminder: bool = False,
 ) -> tuple[str, str]:
     """返回 (system, user) 两段消息。
 
-    system 固定承载身份/硬约束/字段表/契约，完全不含 evidence_units 与
-    document_text 变量数据（前缀缓存命中前提）；user 承载证据单元与
-    OCR 原文。旧函数 build_admission_structured_fields_prompt 保留为
-    兼容包装（两段拼接）。
+    system 固定承载身份/输出契约/通用原则/领域规则/固定字段表，完全不含
+    evidence_units 与 document_text 变量数据（前缀缓存命中前提）；user
+    承载证据单元与 OCR 原文。append_reminder=True（变体 B）时在 user 末尾
+    追加结构提醒句，位于前缀之后不影响前缀缓存；默认 False（变体 A）。
+    旧函数 build_admission_structured_fields_prompt 保留为兼容包装
+    （两段拼接）。
     """
     schema_version = schema.get("version", "")
     document_type = schema.get("document_type", "")
@@ -229,20 +223,16 @@ def build_admission_structured_fields_messages(
     else:
         document_text_section = "（未提供 document_text）"
 
-    system = f"""你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
+    system = f"""你是慢阻肺/呼吸系统入院记录结构化抽取助手。任务：读取编号证据单元与合并 OCR 原文，按固定字段表输出结构化抽取结果。
 
 schema_version：{schema_version}
 document_type：{document_type}
 
-【硬约束 — 输出 JSON 形状】
-输出必须是单个 JSON 对象，顶层键固定为 `schema_version`、`document_type`、`fields`，不得新增顶层键。`fields` 是数组，每个 schema 字段对应一项，不得增删。
-
-字段状态枚举仅允许：`found` / `not_found` / `uncertain`。
-- found：原文中明确出现该字段语义，`value` 非空，`evidence_ids` 应非空。
-- not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
-- uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
-
-每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+【输出契约】
+- 输出必须是单个 JSON 对象，顶层键固定为 `schema_version`、`document_type`、`fields`，不得新增顶层键；`fields` 是数组，每个 schema 字段对应一项，不得增删。
+- 字段状态枚举仅允许：`found` / `not_found` / `uncertain`。found：原文中明确出现该字段语义，`value` 非空、`evidence_ids` 应非空；not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段；uncertain：疑似找到但 OCR 或上下文不确定，`value` 可空、`evidence_ids` 可空。
+- 每项字段固定输出四键：field_key、status、value、evidence_ids。field_key 只允许使用"固定字段表"中的 key，禁止自由生成 schema 外字段或二级 key；字段顺序按固定字段表顺序输出，便于后端对齐；章节、字段标签、审核状态由后端按 schema 回填，模型不得重复输出。
+- `evidence_ids` 必须是字符串列表（list[str]），只允许从"证据单元编号"中选择现有 ID，禁止编造 ID 或自填 evidence 文本。
 
 输出示例：
 ```json
@@ -266,65 +256,26 @@ document_type：{document_type}
 }}
 ```
 
-【硬约束 — 字段与 key】
-- field_key 只允许使用"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
-- 字段章节和字段标签由后端按固定字段表回填；模型输出中禁止重复 section_key、section_label、field_label。
-- 字段顺序按固定字段表顺序输出，便于后端对齐。
+【通用原则】
+- 只摘录 OCR 原文可定位的语义片段，禁止医学推断、补全、合并、重写。
+- 不得静默修正 OCR 文本（数值、单位、标签疑似错读如 P62/P02、10^9/L 与 ×10^9/L 保持原文），不得重排页序。
+- 保留否定词（否认/无/未见），禁止翻转；字段被明确否定时 `value` 保留否定表述。
+- 诊断字段只摘录原文已写出的诊断，禁止主观判断、推断、合并、添加。
+- 允许多个字段共用同一条证据单元（血气 6 项通常共享）。
 
-【硬约束 — evidence 与原文】
-- evidence_ids 只允许从编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
-- 不允许在 value 或 evidence_ids 之外再输出 evidence 原文片段、章节标题字符串作为定位依据，也不得输出任何章节定位字符串或历史版本遗留的来源元数据字段。新契约不要求算法直接输出旧版抽取元数据（章节定位字符串、原文短片段字段、置信度、抽取状态、复核状态、原始/修正对比、质控标记等一律不输出）。
-- value 必须是 OCR 原文中可定位的语义片段，不得根据医学常识补全、合并或重写。
-
-【硬约束 — 否定表达与既往史】
-- 对既往史、个人史、家族史中的疾病字段，必须先判断否定范围；`否认A、B等病史`、`无A、B史`、`未见A、B` 均表示 A、B 是明确否定事实。
-- 字段被明确否定时，不得输出阳性值；应输出 `status="found"`，并在 `value` 中保留否定词，例如 `否认糖尿病病史`、`否认冠心病病史`，同时引用对应 evidence_ids。
-- 保留否定词是硬要求：不得把 `否认/无/未见` 从 value 中删掉；删掉否定词会把否定事实变成模型幻觉。
-- OCR 示例 `否认“糖尿病”、“冠心病”等病史`：`pmh_diabetes` 应输出 `否认糖尿病病史`，`pmh_coronary_heart_disease` 应输出 `否认冠心病病史`；不得输出“有糖尿病病史”，不得输出“有冠心病病史”。
-- OCR 示例 `否认肝炎、结核等传染病史`：不得改成有肝炎、乙肝或结核病史；对 `pmh_hepatitis_b` 如无法确认乙肝精确语义，使用 `uncertain` 或保留 OCR 否定短语，绝不能输出阳性。
-- 若同一句存在混合事实，例如 `否认糖尿病，既往有冠心病`，只允许把冠心病输出为阳性，糖尿病仍必须保留否定。
-
-【硬约束 — J 型状态字段判定】
-- qwen_type 为 J 或 review_control 为 judgement 的字段：正常时输出 `value="正常"`；异常时必须在 `value` 中摘录 OCR 原文里的具体异常描述；未提及时输出 `status="not_found"`、`value=""`；不确定时输出 `status="uncertain"`。
-- 原文明确描述该部位/项目正常或阴性时，必须输出 `status="found"`、`value="正常"`，并引用对应 evidence_ids；不得因为是阴性描述而输出 not_found。
-- 正常/阴性证据包括但不限于：`正常`、`未见异常`、`无异常`、`无压痛`、`无肿大`、`无充血水肿`、`无黄染`、`未闻及病理性杂音`、`阴性`。
-- 例如 `外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常` 明确表示 `耳部=正常`；`鼻腔通畅，各鼻窦区无压痛` 明确表示 `鼻部=正常`。
-- 只有原文完全没有该部位/项目信息时才输出 `status="not_found"`、`value=""`、`evidence_ids=[]`。
-- 原文明确描述异常、阳性、肿大、压痛、发绀、皮疹、水肿、杂音等异常事实时，输出 `status="found"`，`value` 填写对应异常原文短描述，并引用对应 evidence_ids；不要只输出 `value="异常"`，也不要把否定词约束范围内的项目误判为异常。
-
-【硬约束 — OCR 原文保持原样】
-- 不得静默修正 OCR 文本；不得把 1/I/l、0/O/o、P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等疑似错读标签自动改成标准标签。
-- 不得纠正章节标题错字；例如 `品后诊断` 必须保留原文写法，禁止替换为 `最后诊断`；同样禁止为单个错字写专门规则。
-- 不得重排页序或重新组织 OCR 原文；raw OCR 顺序即真相。
-- 字段归属不得依赖 OCR 是否正确识别章节标题；按固定字段表从全文/证据单元抽取。
-
-【硬约束 — 诊断字段禁止主观】
-- diagnosis_preliminary（初步诊断）和 diagnosis_final（最终诊断）只能摘录 OCR 原文中已经写出的诊断文本。
-- 禁止对诊断字段做主观医学判断、推断、改写、合并、添加诊断或医学推理。
-- 诊断字段不可结合其他字段或常识推断"应该是"什么诊断；证据缺失时输出 not_found。
-- 如果初步诊断或最终诊断在原文中是编号列表，`value` 必须按编号分行保留，例如 `1慢性阻塞性肺疾病急性加重\n2高血压2级中危\n3慢性胃炎`；不得合并成一句，不得丢失编号，便于审核页逐条展示、编辑和导出。
-- 诊断编号是原文结构，不是新增诊断；只允许拆分原文已有编号项，禁止补充或重排。
-
-【硬约束 — 共享证据单元】
-- 允许多个字段共用同一条 evidence unit；evidence_ids 可以包含 1 个或多个 ID。
-- 血气 6 个字段（血气pH、血气pCO2、血气pO2、血气Na+、血气FIO2、血气氧合指数）通常共享同一条血气分析证据单元，应当显式共享 evidence_ids。
-
-{_OCR_RISK_WARNINGS}
+【领域规则 — J 型判定】
+- qwen_type 为 J 或 review_control 为 judgement 的字段（体格检查部位/项目）：原文明确正常或阴性（正常、未见异常、无压痛等）时输出 `status="found"`、`value="正常"`，不得因阴性描述输出 not_found；异常时输出 `status="found"`，`value` 摘录原文的具体异常描述；原文完全未提及时输出 `status="not_found"`、`value=""`；不确定时输出 `status="uncertain"`。
 
 【固定字段表】
-{fixed_field_table}
-
-【再次强调】
-- 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
-- 禁止 schema 外字段；禁止自由生成二级 key；禁止输出章节/标签重复字段或任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
-- 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
-- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。"""
+{fixed_field_table}"""
 
     user = f"""【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
 {evidence_units_section}
 
 【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
 {document_text_section}"""
+    if append_reminder:
+        user += "\n\n请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
     return system, user
 
 

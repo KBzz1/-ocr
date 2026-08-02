@@ -34,8 +34,13 @@ def run_pipeline(
     apply_quality: bool = True,
     apply_verify: bool = True,
     verifier=None,
+    append_reminder: bool = False,
 ) -> dict:
-    """跑单条样本的抽取管线，返回 payload / candidates / error。"""
+    """跑单条样本的抽取管线，返回 payload / candidates / error。
+
+    append_reminder=True（变体 B）时 user 末尾追加结构提醒句，默认 False
+    保持与生产端口行为一致（变体 A）。
+    """
     schema = input.get("schema") or {}
     document_result = input.get("document_result") or {}
     evidence_units = input.get("evidence_units") or []
@@ -45,6 +50,7 @@ def run_pipeline(
         schema=schema,
         evidence_units=evidence_units,
         document_text=document_text,
+        append_reminder=append_reminder,
     )
     try:
         payload = llm_client.complete_json(user, system_prompt=system)

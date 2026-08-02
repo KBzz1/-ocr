@@ -151,13 +151,68 @@ def test_admission_messages_split_system_and_user():
     system, user = build_admission_structured_fields_messages(
         schema=schema, evidence_units=[{"id": "u001", "text": "主诉：咳嗽20年"}], document_text="全文"
     )
-    # system 承载身份与固定规则，不含证据/原文数据
+    # system 承载身份与固定规则（输出契约/通用原则/领域规则/固定字段表），不含证据/原文数据
     assert "结构化抽取助手" in system
     assert "u001" not in system and "咳嗽20年" not in system
-    assert "硬约束" in system
+    assert "输出契约" in system
+    assert "通用原则" in system
+    assert "领域规则" in system
     # user 承载证据与原文
     assert "u001：主诉：咳嗽20年" in user
     assert "全文" in user
+
+
+def test_admission_prompt_refactored_six_segment_skeleton():
+    """重构骨架断言：输出契约/通用原则/领域规则/固定字段表各段存在，
+    删【再次强调】与独立 OCR 风险段，通用原则保留 P62/P02、×10^9/L 例。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _sample_admission_schema()
+    system, _ = build_admission_structured_fields_messages(schema, _sample_evidence_units())
+
+    assert "你是慢阻肺/呼吸系统入院记录结构化抽取助手" in system
+    assert "【输出契约】" in system
+    assert "【通用原则】" in system
+    assert "【领域规则" in system
+    assert "【固定字段表】" in system
+    # 已删除的冗余段
+    assert "【再次强调】" not in system
+    assert "OCR 风险提示" not in system
+    # 通用原则保留的错读示例
+    assert "P62/P02" in system
+    assert "×10^9/L" in system
+
+
+def test_admission_messages_append_reminder_default_absent():
+    """变体 A：默认（append_reminder=False）时 system 与 user 均无提醒句。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _sample_admission_schema()
+    system, user = build_admission_structured_fields_messages(schema, _sample_evidence_units())
+
+    assert "请严格遵守" not in user
+    assert "请严格遵守" not in system
+
+
+def test_admission_messages_append_reminder_true_appends_at_user_end():
+    """变体 B：append_reminder=True 时提醒句恰好出现一次且位于 user 末尾，system 不含提醒句。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    reminder = "请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
+    schema = _sample_admission_schema()
+    system, user = build_admission_structured_fields_messages(
+        schema, _sample_evidence_units(), append_reminder=True
+    )
+
+    assert user.endswith(reminder)
+    assert user.count(reminder) == 1
+    assert "请严格遵守" not in system
 
 
 def test_admission_prompt_requires_fixed_schema_fields_and_not_free_keys():
@@ -211,9 +266,9 @@ def test_admission_prompt_requests_compact_field_payload_without_repeated_schema
     prompt = build_admission_structured_fields_prompt(schema, units)
 
     assert "field_key、status、value、evidence_ids" in prompt
-    assert "后端按 schema 回填章节" in prompt
+    assert "后端按 schema 回填" in prompt
 
-    output_example = prompt.split("输出示例：", 1)[1].split("【硬约束 — 字段与 key】", 1)[0]
+    output_example = prompt.split("输出示例：", 1)[1].split("【通用原则】", 1)[0]
     for forbidden in ('"section_key"', '"section_label"', '"field_label"'):
         assert forbidden not in output_example, (
             f"Qwen 输出示例不应重复 schema 可回填字段 {forbidden}"
@@ -267,13 +322,13 @@ def test_admission_prompt_requires_normal_status_for_negative_physical_exam_j_fi
     units = _sample_evidence_units()
     prompt = build_admission_structured_fields_prompt(schema, units)
 
-    assert "J 型状态字段判定" in prompt
-    assert "外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常" in prompt
-    assert "耳部=正常" in prompt
-    assert "不得因为是阴性描述而输出 not_found" in prompt
-    assert "只有原文完全没有该部位/项目信息时" in prompt
-    assert "异常时必须" in prompt
-    assert "具体异常描述" in prompt or "异常原文短描述" in prompt
+    # 领域规则：J 型判定（压缩措辞）——正常→"正常"、异常→摘录异常原文、未提及→not_found
+    assert "J 型判定" in prompt
+    assert "不得因阴性描述输出 not_found" in prompt
+    assert "具体异常描述" in prompt
+    assert "未提及" in prompt
+    assert 'status="not_found"' in prompt
+    assert 'status="uncertain"' in prompt
 
 
 def test_admission_prompt_forbids_subjective_diagnosis():
@@ -289,27 +344,12 @@ def test_admission_prompt_forbids_subjective_diagnosis():
     diagnosis_field_keys = ("diagnosis_preliminary", "diagnosis_final")
     for field_key in diagnosis_field_keys:
         assert field_key in prompt
-    # 禁止推断、补充、改写诊断
+    # 禁止推断、补充、改写诊断（"改写/重写"压缩进通用原则与诊断原则）
     assert "推断" in prompt
-    assert "改写" in prompt
+    assert "改写" in prompt or "重写" in prompt
     assert "添加" in prompt or "补充" in prompt
     # 暗示诊断字段必须摘录原文，不能医学推理
     assert "主观" in prompt or "医学判断" in prompt or "医学推理" in prompt
-
-
-def test_admission_prompt_requires_numbered_diagnosis_items_to_remain_separate():
-    from app.backend.services.copd_extraction.prompts import (
-        build_admission_structured_fields_prompt,
-    )
-
-    schema = _sample_admission_schema()
-    units = _sample_evidence_units()
-    prompt = build_admission_structured_fields_prompt(schema, units)
-
-    assert "按编号分行保留" in prompt
-    assert "不得合并成一句" in prompt
-    assert "便于审核页逐条展示、编辑和导出" in prompt
-    assert "1慢性阻塞性肺疾病急性加重\n2高血压2级中危\n3慢性胃炎" in prompt
 
 
 def test_admission_prompt_allows_shared_evidence_ids():
@@ -349,8 +389,9 @@ def test_admission_prompt_does_not_instruct_title_correction_or_page_reorder():
     assert "页" in prompt
     # 必须保留原始 OCR 证据片段，不静默改写。
     assert "raw" in prompt or "原始" in prompt or "原文" in prompt
-    # 必须列举具体的标题错字示例（品后诊断），避免诱导模型做样本特异性纠正。
-    assert "品后诊断" in prompt
+    # 通用原则保留 P62/P02、10^9/L 与 ×10^9/L 错读例，其余 case 级示例按宁少勿滥删减。
+    assert "P62/P02" in prompt
+    assert "10^9/L" in prompt
     # 提示词必须禁止重排页面。
     assert "重排" in prompt or "重新排序" in prompt or "页序" in prompt
 
@@ -378,14 +419,14 @@ def test_admission_prompt_preserves_negated_past_medical_history_values():
 
     prompt = build_admission_structured_fields_prompt(schema, units, document_text=ocr_text)
 
+    # 原文（user 部分）保留
     assert ocr_text in prompt
-    assert "否定范围" in prompt
+    # 通用原则：否定词规则压缩措辞（否认/无/未见、禁止翻转、value 保留否定表述）
     assert "保留否定词" in prompt
-    assert "否认糖尿病病史" in prompt
-    assert "否认冠心病病史" in prompt
-    assert "不得输出“有糖尿病病史”" in prompt
-    assert "不得输出“有冠心病病史”" in prompt
-    assert "否认肝炎、结核等传染病史" in prompt
+    assert "否认" in prompt and "无" in prompt and "未见" in prompt
+    assert "禁止翻转" in prompt
+    assert "保留否定表述" in prompt
+    # 既往史疾病字段仍在固定字段表中
     assert "pmh_diabetes" in prompt
     assert "pmh_coronary_heart_disease" in prompt
     assert "pmh_hepatitis_b" in prompt

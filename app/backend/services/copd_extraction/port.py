@@ -32,7 +32,7 @@ class COPDAdmissionQwenFieldPort:
         self._llm_client = llm_client
         self._verifier = verifier
 
-    def extract(self, input: dict) -> list[dict]:
+    def extract(self, input: dict, append_reminder: bool = False) -> list[dict]:
         schema = input.get("schema") or {}
         document_result = input.get("document_result") or {}
         evidence_units = (
@@ -47,6 +47,7 @@ class COPDAdmissionQwenFieldPort:
             schema=schema,
             evidence_units=evidence_units,
             document_text=document_text,
+            append_reminder=append_reminder,
         )
         payload = self._llm_client.complete_json(user, system_prompt=system)
         # Structural validation raises AppError(ALGORITHM_CONTRACT_INVALID) on
@@ -98,11 +99,11 @@ class _LazyCOPDAdmissionQwenFieldPort:
         self._llm_client = None
         self._lock = threading.Lock()
 
-    def extract(self, input: dict) -> list[dict]:
+    def extract(self, input: dict, append_reminder: bool = False) -> list[dict]:
         with self._lock:
             if self._port is None:
                 self._build_port()
-            return self._port.extract(input)
+            return self._port.extract(input, append_reminder=append_reminder)
 
     def _build_port(self) -> None:
         if self._llm_client_factory is not None:

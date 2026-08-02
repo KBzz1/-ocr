@@ -96,6 +96,7 @@ def _run_pipeline_with_fallback(sample: dict, schema: dict, llm_client, args) ->
             check_contract=not args.no_contract,
             apply_quality=not args.no_quality_flags,
             apply_verify=not args.no_verifier,
+            append_reminder=args.append_reminder,
         )
     except Exception as exc:  # noqa: BLE001 — LLM/HTTP 异常类型不可枚举，兜底为样本 error
         return {"payload": {}, "candidates": [], "error": {"code": "EVAL_LLM_FAILURE", "message": str(exc)}}
@@ -117,6 +118,8 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--no-quality-flags", action="store_true")
     parser.add_argument("--no-contract", action="store_true")
     parser.add_argument("--no-verifier", action="store_true")
+    parser.add_argument("--append-reminder", action="store_true",
+                        help="变体 B：抽取 user 末尾追加结构提醒句（默认变体 A，不追加）")
     parser.add_argument("--compare", default=None, help="基线报告 JSON 路径，输出指标 diff")
     args = parser.parse_args(argv)
 
@@ -150,6 +153,7 @@ def main(argv: list[str] | None = None) -> Path:
             "quality_flags": not args.no_quality_flags,
             "contract": not args.no_contract,
             "verifier": not args.no_verifier,
+            "append_reminder": args.append_reminder,
         },
         "sample_count": len(samples),
     }
