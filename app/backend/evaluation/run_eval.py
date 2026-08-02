@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--no-contract", action="store_true")
     parser.add_argument("--no-verifier", action="store_true")
     parser.add_argument("--append-reminder", action="store_true",
-                        help="变体 B：抽取 user 末尾追加结构提醒句（默认变体 A，不追加）")
+                        help="变体 B：抽取与复核 user 末尾追加结构提醒句（默认变体 A，不追加）")
     parser.add_argument("--compare", default=None, help="基线报告 JSON 路径，输出指标 diff")
     args = parser.parse_args(argv)
 

@@ -364,6 +364,8 @@ def test_admission_prompt_forbids_subjective_diagnosis():
     assert "添加" in prompt or "补充" in prompt
     # 暗示诊断字段必须摘录原文，不能医学推理
     assert "主观" in prompt or "医学判断" in prompt or "医学推理" in prompt
+    # 诊断编号列表项按编号分行保留（value 格式契约：不得合并成一句或丢失编号）
+    assert "按编号分行保留，不得合并成一句或丢失编号" in prompt
 
 
 def test_admission_prompt_allows_shared_evidence_ids():
