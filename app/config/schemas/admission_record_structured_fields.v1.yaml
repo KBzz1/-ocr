@@ -124,42 +124,55 @@ field_groups:
       - field_key: pe_skin
         label: 皮肤
         type: string
+        description: 皮肤项目：颜色、皮疹、弹性、毛发、淋巴结；不含一般情况内容
       - field_key: pe_eyes
         label: 眼部
         type: string
+        description: 眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容
       - field_key: pe_ears
         label: 耳部
         type: string
+        description: 耳部项目：外耳道、鼓膜、听力、乳突；不含眼、鼻、口咽内容
       - field_key: pe_nose
         label: 鼻部
         type: string
+        description: 鼻部项目：鼻腔、鼻窦、鼻翼、鼻通气；不含耳、口腔内容
       - field_key: pe_oral_cavity
         label: 口腔
         type: string
+        description: 口腔咽喉项目：唇、齿、龈、舌、口腔黏膜、咽、扁桃体；不含颈部、耳鼻内容
       - field_key: pe_neck
         label: 颈部
         type: string
+        description: 颈部项目：颈静脉、颈动脉、甲状腺、气管、颈软、淋巴结；不含口腔、胸部内容
       - field_key: pe_chest
         label: 胸部
         type: string
+        description: 胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验；双肺内容归呼吸系统检查，乳房内容归乳房字段
       - field_key: pe_breast
         label: 乳房
         type: string
+        description: 乳房项目：对称、发育、乳头、皮肤、包块；不含胸廓、双肺内容
       - field_key: pe_respiratory_exam
         label: 呼吸系统查体
         type: string
+        description: 呼吸系统项目：呼吸动度、语颤、叩诊音、呼吸音、啰音；不含胸廓形态、乳房内容
       - field_key: pe_cardiac_exam
         label: 心脏查体
         type: string
+        description: 心脏项目：心前区、心尖搏动、心界、心率、心律、心音、杂音
       - field_key: pe_abdomen
         label: 腹部
         type: string
+        description: 腹部项目：腹壁、压痛、肝脾、移动性浊音、Murphy 征
       - field_key: pe_limbs
         label: 四肢
         type: string
+        description: 四肢脊柱项目：脊柱、关节、肌力、水肿、静脉曲张、病理征
       - field_key: pe_neurological_exam
         label: 神经
         type: string
+        description: 神经系统项目：神志、精神、对答、反射、病理征；一般情况（发育/营养/体型/体位/表情）不属本字段
   - group_key: ancillary_tests
     group_label: 辅助检查
     fields:

@@ -188,9 +188,15 @@ def build_admission_structured_fields_messages(
         for field in group.get("fields", []):
             field_key = field.get("field_key", "")
             field_label = field.get("label", "")
-            table_lines.append(
-                f"- [{group_key}/{group_label}] {field_key}（{field_label}）"
-            )
+            description = field.get("description", "")
+            if description:
+                table_lines.append(
+                    f"- [{group_key}/{group_label}] {field_key}（{field_label}）；仅：{description}"
+                )
+            else:
+                table_lines.append(
+                    f"- [{group_key}/{group_label}] {field_key}（{field_label}）"
+                )
     fixed_field_table = "\n".join(table_lines)
 
     # ---- 2. 编号证据单元 ----

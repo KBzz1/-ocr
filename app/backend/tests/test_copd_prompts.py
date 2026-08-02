@@ -1,5 +1,9 @@
 def _sample_admission_schema():
     """按 admission_record_structured_fields.v1.yaml 真实 schema 构造最小可用结构。"""
+    field_descriptions = {
+        "pe_eyes": "眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容",
+        "pe_chest": "胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验；双肺内容归呼吸系统检查，乳房内容归乳房字段",
+    }
     groups = [
         ("chief_complaint", "主诉", [("chief_complaint", "主诉")]),
         (
@@ -107,7 +111,14 @@ def _sample_admission_schema():
                 "group_key": gk,
                 "group_label": gl,
                 "fields": [
-                    {"field_key": fk, "label": fl, "type": "string", "required": False, "hint": ""}
+                    {
+                        "field_key": fk,
+                        "label": fl,
+                        "type": "string",
+                        "required": False,
+                        "hint": "",
+                        "description": field_descriptions.get(fk, ""),
+                    }
                     for fk, fl in fields
                 ],
             }
@@ -490,3 +501,76 @@ def test_prompts_module_exposes_only_active_prompt_version_constants():
         assert not hasattr(prompts, name), (
             f"prompts 不应再导出旧 builder {name}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 2：字段表 description 渲染契约（pe_* 字段边界精确化）
+# ---------------------------------------------------------------------------
+
+
+def _load_real_schema():
+    """加载真实 schema 文件（app/config/schemas/admission_record_structured_fields.v1.yaml）。"""
+    import yaml
+    from pathlib import Path
+
+    schema_path = (
+        Path(__file__).resolve().parents[3]
+        / "app" / "config" / "schemas" / "admission_record_structured_fields.v1.yaml"
+    )
+    with open(schema_path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def test_field_table_description_rendered_from_schema_metadata():
+    """fixture schema：有 description 的字段渲染为「；仅：<description>」后缀，
+    无 description 的字段（含数值型）渲染保持原样（向后兼容）。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _sample_admission_schema()
+    system, _ = build_admission_structured_fields_messages(schema, [])
+
+    assert "pe_eyes（眼部）；仅：眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容" in system
+    assert "pe_chest（胸部）；仅：胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验" in system
+    # 无 description 字段渲染不变：数值型与缺省字段均不含「；仅：」
+    assert "pe_temperature（体温）；仅：" not in system
+    assert "pe_temperature（体温）" in system
+    assert "pe_cardiac_exam（心脏查体）" in system
+
+
+def test_field_table_description_rendered_with_real_schema():
+    """真实 schema：内容型 pe_* 字段的 description 渲染进 system 固定字段表。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _load_real_schema()
+    system, _ = build_admission_structured_fields_messages(schema, [])
+
+    assert "pe_eyes（眼部）；仅：眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容" in system
+    assert "pe_chest（胸部）；仅：胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验" in system
+    assert "pe_neurological_exam（神经）；仅：神经系统项目：神志、精神、对答、反射、病理征" in system
+
+
+def test_numeric_fields_have_no_description_with_real_schema():
+    """真实 schema：数值型 7 字段（体温/脉搏/呼吸/血压/身高/体重/BMI）不加 description，
+    渲染不含「；仅：」后缀。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _load_real_schema()
+    system, _ = build_admission_structured_fields_messages(schema, [])
+
+    for numeric_field in (
+        "pe_temperature（体温）",
+        "pe_pulse（脉搏）",
+        "pe_respiration_rate（生命体征呼吸）",
+        "pe_blood_pressure（血压）",
+        "pe_height（身高）",
+        "pe_weight（体重）",
+        "pe_bmi（BMI）",
+    ):
+        assert f"{numeric_field}；仅：" not in system, f"{numeric_field} 不应渲染 description"
+        assert numeric_field in system
