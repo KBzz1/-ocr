@@ -49,6 +49,18 @@ def test_verification_messages_evidence_first_fields_after():
     assert "pe_ear" in user and "正常" in user
 
 
+def test_verification_messages_general_principle_field_boundary():
+    """通用原则新增字段越界一句：内容域与字段对应部位明显不符 → extraction_mistake。"""
+    system, _ = build_verification_messages(
+        evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
+        fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
+    )
+    assert "字段越界" in system
+    assert "内容域与字段对应部位明显不符" in system
+    assert "extraction_mistake" in system
+    assert "引用原文片段即可" in system
+
+
 def test_verification_messages_append_reminder_default_absent():
     """变体 A：默认（append_reminder=False）时 system 与 user 均无提醒句。"""
     system, user = build_verification_messages(

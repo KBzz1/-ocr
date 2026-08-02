@@ -25,7 +25,7 @@ def build_verification_messages(
 ) -> tuple[str, str]:
     """复核器 prompt：(system, user)。evidence 在前、字段在后（防锚定）。
 
-    system 完全固定（前缀缓存友好）：角色任务 2 句、通用原则 6 条、输出契约、few-shot。
+    system 完全固定（前缀缓存友好）：角色任务 2 句、通用原则 7 条、输出契约、few-shot。
     user 为变量：编号证据块 + 字段块。append_reminder=True（变体 B）时在 user
     末尾追加结构提醒句，位于前缀之后不影响前缀缓存；默认 False（变体 A）。
     """
@@ -40,6 +40,7 @@ def build_verification_messages(
 - 数值矛盾或异常：同段存在与字段值不一致的数值（如脉搏 9 次/分但另有心率 99 次/分）、数值超出合理范围疑似 OCR 截断（99→9、36.7→3.7）、体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值，均应标记。
 - 证据缺失/幻觉：字段值在证据单元中找不到对应文本，或引入 OCR 原文没有的信息、做医学推断，应标记。
 - OCR 纠偏依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住，应标记。
+- 字段越界：值的内容域与字段对应部位明显不符（如眼部字段出现一般情况内容）→ 标记为 extraction_mistake，引用原文片段即可。
 
 【输出契约】
 输出 JSON 对象，顶层键 `verifications` 为数组，与字段一一对应（每个字段恰好一条，不重复、不遗漏）。每项包含：
@@ -237,8 +238,9 @@ document_type：{document_type}
 - 诊断字段只摘录原文已写出的诊断，禁止主观判断、推断、合并、添加。
 - 允许多个字段共用同一条证据单元（血气 6 项通常共享）。
 
-【领域规则 — J 型判定】
-- qwen_type 为 J 或 review_control 为 judgement 的字段（体格检查部位/项目）：原文明确正常或阴性（正常、未见异常、无压痛等）时输出 `status="found"`、`value="正常"`，不得因阴性描述输出 not_found；异常时输出 `status="found"`，`value` 摘录原文的具体异常描述；原文完全未提及时输出 `status="not_found"`、`value=""`；不确定时输出 `status="uncertain"`。
+【领域规则】
+- 字段边界：每个字段只抽取字段表对应部位/项目的内容；字段表未收录的内容（如一般情况：发育/营养/体型/神志/表情/体位）不写入任何字段、不引用为证据。
+- J 型判定：qwen_type 为 J 或 review_control 为 judgement 的字段（体格检查部位/项目）：原文明确正常或阴性（正常、未见异常、无压痛等）时输出 `status="found"`、`value="正常"`，不得因阴性描述输出 not_found；异常时输出 `status="found"`，`value` 摘录原文的具体异常描述；原文完全未提及时输出 `status="not_found"`、`value=""`；不确定时输出 `status="uncertain"`。
 
 【固定字段表】
 {fixed_field_table}"""

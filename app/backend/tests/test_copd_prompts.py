@@ -185,6 +185,20 @@ def test_admission_prompt_refactored_six_segment_skeleton():
     assert "×10^9/L" in system
 
 
+def test_admission_prompt_domain_rule_field_boundary():
+    """领域规则新增字段边界一句：不收录内容（一般情况）不写入任何字段、不引用为证据。"""
+    from app.backend.services.copd_extraction.prompts import (
+        build_admission_structured_fields_messages,
+    )
+
+    schema = _sample_admission_schema()
+    system, _ = build_admission_structured_fields_messages(schema, _sample_evidence_units())
+
+    assert "字段边界" in system
+    assert "不写入任何字段" in system and "不引用为证据" in system
+    assert "发育/营养/体型/神志/表情/体位" in system
+
+
 def test_admission_messages_append_reminder_default_absent():
     """变体 A：默认（append_reminder=False）时 system 与 user 均无提醒句。"""
     from app.backend.services.copd_extraction.prompts import (
