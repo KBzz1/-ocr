@@ -19,11 +19,13 @@ class FieldVerifier:
         self._llm_client = llm_client
         self._append_reminder = append_reminder
 
-    def verify(self, candidates: list[dict], document_text: str = "") -> list[dict]:
-        """对 found + value 非空的字段执行复核，返回其意见列表；失败降级为空列表。
+    def verify(self, candidates: list[dict], document_text: str = "", group_by: str | None = None) -> list[dict]:
+        """对 found + value 非空字段执行复核，返回其意见列表；失败降级为空列表。
 
-        返回的 verdict 只保留复核范围内字段（status=found 且 value 非空）；
-        LLM 对范围外字段的输出按静默降级过滤。
+        group_by=None（默认）：一次请求审全部字段，任何异常整体降级为空（现状）。
+        group_by="field"/"section"（实验形态）：按字段/字段簇分组，每组独立
+        try-catch——失败组静默跳过、其余组正常；全组失败时 verdicts 为空（降级为空）。
+        分组模式不改变输出契约；verdicts 按 field_key 合并后由调用方统一过滤。
         """
         targets = [
             c for c in candidates
@@ -36,24 +38,34 @@ class FieldVerifier:
         try:
             from .prompts import build_verification_messages
 
-            evidence_units = _collect_evidence(targets, document_text)
-            fields = [
-                {
-                    "field_key": c.get("field_key", ""),
-                    "value": c.get("value", ""),
-                    "evidence_ids": c.get("evidence_ids") or [],
-                }
-                for c in targets
-            ]
-            system, user = build_verification_messages(
-                evidence_units, fields, append_reminder=self._append_reminder
-            )
-            payload = self._llm_client.complete_json(user, system_prompt=system)
+            if group_by is None:
+                evidence_units = _collect_evidence(targets, document_text)
+                fields = _to_field_dicts(targets)
+                system, user = build_verification_messages(
+                    evidence_units, fields, append_reminder=self._append_reminder
+                )
+                payload = self._llm_client.complete_json(user, system_prompt=system)
+                return [v for v in _parse_verdicts(payload)
+                        if v.get("field_key") in {c.get("field_key") for c in targets}]
+            # 分组模式：每组独立 try，失败组跳过，其余组正常；全组失败 → 空
+            verdicts = []
+            for group in _split_groups(targets, group_by):
+                group_keys = {f.get("field_key") for f in group["fields"]}
+                try:
+                    system, user = build_verification_messages(
+                        group["units"], _to_field_dicts(group["fields"]),
+                        append_reminder=self._append_reminder,
+                    )
+                    payload = self._llm_client.complete_json(user, system_prompt=system)
+                    verdicts.extend(
+                        v for v in _parse_verdicts(payload) if v.get("field_key") in group_keys
+                    )
+                except Exception:  # noqa: BLE001 — 分组复核失败静默跳过该组
+                    logger.warning("复核器分组调用失败，跳过该组（%s）", group_keys, exc_info=True)
+            return verdicts
         except Exception:  # noqa: BLE001 — 复核器失败必须静默降级
             logger.warning("复核器调用失败，已降级为空意见", exc_info=True)
             return []
-        target_keys = {c.get("field_key") for c in targets}
-        return [v for v in _parse_verdicts(payload) if v.get("field_key") in target_keys]
 
 
 def _collect_evidence(candidates: list[dict], document_text: str) -> list[dict]:
@@ -71,6 +83,55 @@ def _collect_evidence(candidates: list[dict], document_text: str) -> list[dict]:
     if not units and document_text:
         # evidence 缺失时用原文全文兜底，保证复核器仍有事实可依
         units.append({"id": "doc", "text": document_text[:8000]})
+    return units
+
+
+def _to_field_dicts(targets: list[dict]) -> list[dict]:
+    """把候选字段压缩为复核字段视图（field_key/value/evidence_ids 三键）。"""
+    return [
+        {
+            "field_key": c.get("field_key", ""),
+            "value": c.get("value", ""),
+            "evidence_ids": c.get("evidence_ids") or [],
+        }
+        for c in targets
+    ]
+
+
+def _split_groups(candidates: list[dict], group_by: str) -> list[dict]:
+    """按 group_by 把字段分成若干组，每组携带该组字段的 evidence units（去重保序）。
+
+    group_by="field"：每字段一组，units = 该字段 evidence 数组。
+    group_by="section"：按字段证据首条含 section_key 的 unit 归组，同 section 一组；
+    evidence 为空或全部无 section_key 的字段归 "__no_section__" 一组。
+    """
+    if group_by == "field":
+        return [{"fields": [c], "units": _collect_units([c])} for c in candidates]
+    groups: dict[str, list[dict]] = {}
+    for c in candidates:
+        key = next(
+            (u.get("section_key") for u in (c.get("evidence") or []) if u.get("section_key")),
+            "__no_section__",
+        )
+        groups.setdefault(key, []).append(c)
+    return [
+        {"fields": fields, "units": _collect_units(fields)}
+        for _, fields in sorted(groups.items())
+    ]
+
+
+def _collect_units(fields: list[dict]) -> list[dict]:
+    """聚合一组字段的 evidence units（去重保序）；无则返回空列表。"""
+    seen: set[str] = set()
+    units: list[dict] = []
+    for c in fields:
+        for ev in c.get("evidence") or []:
+            if not isinstance(ev, dict):
+                continue
+            key = ev.get("id") or ev.get("text") or ""
+            if key and key not in seen:
+                seen.add(key)
+                units.append({"id": ev.get("id") or f"e{len(units) + 1:03d}", "text": ev.get("text", "")})
     return units
 
 

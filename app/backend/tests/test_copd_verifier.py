@@ -234,3 +234,102 @@ def test_verifier_fewshot_recall_examples_present():
     assert "'粗侧'为 OCR 错读（应为'粗测'）" in system
     assert "值却写'腹部移动性浊音阳性'，两处矛盾" in system
     assert system.count("示例仅示范结构，字段内容为占位，不得照抄") >= 2
+
+
+class _RecordingClient:
+    """记录每次调用 (user, system_prompt)，按序返回预设响应；raise 抛错模拟单组失败。"""
+    def __init__(self, responses, fail_at=None):
+        self.responses = list(responses)
+        self.fail_at = fail_at
+        self.calls = []
+    def complete_json(self, user, system_prompt=None, **kwargs):
+        self.calls.append((user, system_prompt))
+        idx = len(self.calls) - 1
+        if self.fail_at is not None and idx in self.fail_at:
+            raise RuntimeError("模拟失败")
+        return self.responses.pop(0)
+
+def _mk_field(fk, value, units, section=None):
+    return {
+        "field_key": fk, "status": "found", "value": value,
+        "evidence_ids": [u["id"] for u in units],
+        "evidence": [dict(u, section_key=section) for u in units] if section else [dict(u) for u in units],
+    }
+
+def _mk_unit(uid, text):
+    return {"id": uid, "text": text}
+
+def test_verify_group_by_field_one_request_per_field():
+    units = [_mk_unit("u001", "体温36.5℃，脉搏88次/分。")]
+    candidates = [
+        _mk_field("pe_temperature", "36.5℃", [units[0]]),
+        _mk_field("pe_pulse", "88次/分", [units[0]]),
+    ]
+    client = _RecordingClient([
+        {"verifications": [{"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"}]},
+        {"verifications": [{"field_key": "pe_pulse", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"}]},
+    ])
+    verifier = FieldVerifier(client)
+    result = verifier.verify(candidates, document_text="全文", group_by="field")
+    assert len(client.calls) == 2
+    # 每条请求的字段声称值只含自己字段的值，不含其他字段
+    # （两字段共享同一证据单元 u001，其原文文本可合法出现于任一组证据块）
+    assert "声称值 36.5℃" in client.calls[0][0] and "声称值 88次/分" not in client.calls[0][0]
+    assert "声称值 88次/分" in client.calls[1][0] and "声称值 36.5℃" not in client.calls[1][0]
+    # system 逐字节相同
+    assert client.calls[0][1] == client.calls[1][1]
+    assert len(result) == 2
+
+def test_verify_group_by_section_groups_same_section():
+    units = [_mk_unit("u001", "颈部：颈软，气管居中。"), _mk_unit("u002", "胸部：胸廓对称。")]
+    candidates = [
+        _mk_field("pe_neck", "颈软", [units[0]], section="physical_examination"),
+        _mk_field("pe_chest", "胸廓对称", [units[1]], section="physical_examination"),
+    ]
+    client = _RecordingClient([
+        {"verifications": [
+            {"field_key": "pe_neck", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
+            {"field_key": "pe_chest", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
+        ]},
+    ])
+    verifier = FieldVerifier(client)
+    result = verifier.verify(candidates, group_by="section")
+    assert len(client.calls) == 1  # 同 section 合并为一条请求
+    assert "颈软" in client.calls[0][0] and "胸廓对称" in client.calls[0][0]
+    assert len(result) == 2
+
+def test_verify_group_failure_isolation():
+    units = [_mk_unit("u001", "腹部：腹部正常。"), _mk_unit("u002", "肺部：呼吸音清。")]
+    candidates = [
+        _mk_field("pe_abdomen", "腹部正常", [units[0]]),
+        _mk_field("pe_lung", "呼吸音清", [units[1]]),
+    ]
+    client = _RecordingClient(
+        [{"verifications": [{"field_key": "pe_lung", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {}, "comment": "疑"}]}],
+        fail_at={0},
+    )
+    verifier = FieldVerifier(client)
+    result = verifier.verify(candidates, group_by="field")
+    assert len(client.calls) == 2  # 失败组不中断后续组
+    assert len(result) == 1 and result[0]["field_key"] == "pe_lung"
+
+def test_verify_group_all_failed_returns_empty():
+    units = [_mk_unit("u001", "体温36.5℃。"), _mk_unit("u002", "脉搏88次/分。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]]), _mk_field("pe_pulse", "88次/分", [units[1]])]
+    client = _RecordingClient([], fail_at={0, 1})
+    verifier = FieldVerifier(client)
+    result = verifier.verify(candidates, group_by="field")
+    assert result == []
+
+def test_verify_group_filters_out_of_scope_fields():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    client = _RecordingClient([
+        {"verifications": [
+            {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
+            {"field_key": "pe_eyes", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {}, "comment": "越界"},
+        ]},
+    ])
+    verifier = FieldVerifier(client)
+    result = verifier.verify(candidates, group_by="field")
+    assert [v["field_key"] for v in result] == ["pe_temperature"]  # 范围外字段按现状契约过滤
