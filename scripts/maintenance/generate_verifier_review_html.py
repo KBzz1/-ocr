@@ -6,6 +6,12 @@
 HTML 内实时统计 Cohen's kappa 并可导出裁定 JSON（格式与 calibrate.load_adjudications
 兼容），最终用 calibrate kappa 命令做官方统计。
 
+展示层净化（不动 verdict 统计口径，n 仍为全部条目）：
+- 同键同疑点去重：复核 LLM 偶发对同一处错读重复输出意见（如 pe_skin 一处错读
+  两条、逐字相同的两条），按 原文'…' 定位键判重，保留信息最全（非截断/更长）一条。
+- 截断残句标记：comment 由 verifier 以 [:40] 硬截断，截断点常落在半句
+  （"应为'…'或"），检测残句结尾并加"（原文截断）"提示。
+
 用法（worktree/仓库根）:
     conda run -n manzufei_ocr python scripts/maintenance/generate_verifier_review_html.py \
       --verdicts data/evaluation/calibration/20260801_1330_verdicts.json \
@@ -17,7 +23,39 @@ HTML 内实时统计 Cohen's kappa 并可导出裁定 JSON（格式与 calibrate
 """
 import argparse
 import json
+import re
 from pathlib import Path
+
+_TRUNC_TAIL = re.compile(r"('[^']*'?)?[或、，；;]$")
+
+
+def _looks_truncated(comment: str) -> bool:
+    """截断判定：引号不成对（应为'…'缺闭合引号）或以'或'等残句结尾。"""
+    return comment.count("'") % 2 == 1 or bool(_TRUNC_TAIL.search(comment))
+
+
+def _dedup_opinions(ops: list[dict]) -> list[dict]:
+    """同键内按疑点去重：优先按 comment 中的 原文'X' 定位键，退化为同 comment 判重。
+
+    保留信息最全的一条（非截断优先，同截断状态取更长）；其余字段原样保留。
+    """
+    seen: dict[str, dict] = {}
+    for op in ops:
+        comment = op.get("comment", "")
+        m = re.search(r"原文'([^']*)'", comment)
+        key = m.group(1) if m else comment
+        truncated = _looks_truncated(comment)
+        item = {**op, "truncated": truncated}
+        prev = seen.get(key)
+        if prev is None:
+            seen[key] = item
+            continue
+        prev_trunc = prev.get("truncated", False)
+        if (prev_trunc and not truncated) or (
+            prev_trunc == truncated and len(prev.get("comment", "")) < len(comment)
+        ):
+            seen[key] = item
+    return list(seen.values())
 
 
 def _load_verdicts(path: Path) -> list[dict]:
@@ -63,6 +101,8 @@ def _build_data(items: list[dict], ocr_texts: dict[str, str],
             "value": item.get("value", ""),
             "evidence_text": item.get("evidence_text", ""),
         })
+    for key in opinions:
+        opinions[key] = _dedup_opinions(opinions[key])
     cards = []
     for case_id, field_key in ordered_keys:
         ops = opinions[(case_id, field_key)]
@@ -171,6 +211,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .nav .jump {{ display: flex; gap: 4px; align-items: center; }}
   .nav input {{ width: 56px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }}
   .llm-note {{ font-size: 12px; color: var(--muted); margin-top: 4px; }}
+  .trunc {{ font-size: 11px; color: var(--sus); font-style: italic; }}
 </style>
 </head>
 <body>
@@ -201,12 +242,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <input type="file" id="adjFile" accept=".json" style="display:none" onchange="onImportFile(event)">
 <script>
 const DATA = {data_json};
-const STORE_KEY = "verifier-manual-review-" + "{stamp}";
+const STORE_KEY = "verifier-manual-review";
+const LEGACY_KEY = "verifier-manual-review-" + "{stamp}";
 let idx = 0;
 
 // ---- 状态 ----
 function loadState() {{
-  try {{ return JSON.parse(localStorage.getItem(STORE_KEY) || "{{}}"); }}
+  // 新固定 key 为空时，从旧时间戳 key 迁移已评进度（覆盖重生成时进度不丢）
+  try {{
+    const cur = JSON.parse(localStorage.getItem(STORE_KEY) || "{{}}");
+    if (Object.keys(cur).length) return cur;
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || "{{}}");
+    if (Object.keys(legacy).length) {{
+      localStorage.setItem(STORE_KEY, JSON.stringify(legacy));
+      return legacy;
+    }}
+    return {{}};
+  }}
   catch (e) {{ return {{}}; }}
 }}
 let state = loadState();
@@ -229,8 +281,9 @@ function renderCard(c, i) {{
   const sel = state[k];
   const llm = (c.llm_should_flag === undefined) ? "" :
     '<div class="llm-note">LLM 裁定：' + (c.llm_should_flag ? "应标可疑" : "无需复核") + '</div>';
-  const comments = c.comments.filter(x => x).map(x =>
-    '<div class="comment">复核器意见：' + escapeHtml(x) + '</div>').join("");
+  const comments = (c.opinions || []).filter(o => o && o.comment).map(o =>
+    '<div class="comment">复核器意见：' + escapeHtml(o.comment) +
+    (o.truncated ? ' <span class="trunc">（原文截断）</span>' : '') + '</div>').join("");
   return '<div class="card ' + (rated ? "done" : "undone") + '" id="card-' + i + '">' +
     '<div class="head"><span class="fk">' + escapeHtml(c.field_key) + '</span>' +
     '<span class="case">' + escapeHtml(c.case_id) + '（第 ' + (i + 1) + ' / ' + DATA.cards.length + ' 题）</span></div>' +
