@@ -242,8 +242,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <input type="file" id="adjFile" accept=".json" style="display:none" onchange="onImportFile(event)">
 <script>
 const DATA = {data_json};
-const STORE_KEY = "verifier-manual-review";
-const LEGACY_KEY = "verifier-manual-review-" + "{stamp}";
+const STORE_KEY = "{store_key}";
+const LEGACY_KEY = "{store_key}-" + "{stamp}";
 let idx = 0;
 
 // ---- 状态 ----
@@ -440,6 +440,8 @@ def main() -> None:
     parser.add_argument("--golden-dir", default="data/evaluation/golden")
     parser.add_argument("--llm-adjudications", default=None, help="可选：LLM 裁定 JSON，用于人工 vs LLM 对比")
     parser.add_argument("--out", required=True, help="输出 HTML 路径（建议 data/evaluation/calibration/）")
+    parser.add_argument("--store-key", default="verifier-manual-review",
+                        help="浏览器进度存储键；不同评测集用不同 key 避免进度互相覆盖")
     args = parser.parse_args()
 
     items = _load_verdicts(Path(args.verdicts))
@@ -450,6 +452,7 @@ def main() -> None:
     html = HTML_TEMPLATE.format(
         data_json=json.dumps(data, ensure_ascii=False),
         stamp=stamp,
+        store_key=args.store_key,
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
