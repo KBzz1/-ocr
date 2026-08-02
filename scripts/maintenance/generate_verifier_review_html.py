@@ -34,6 +34,28 @@ def _looks_truncated(comment: str) -> bool:
     return comment.count("'") % 2 == 1 or bool(_TRUNC_TAIL.search(comment))
 
 
+def _find_ocr_hit(value: str, ocr_text: str) -> dict | None:
+    """在 OCR 原文中定位字段声称值的片段（用于评价时对照原文）。
+
+    评估管线不回填 evidence（golden 无 evidence_units），评价人看不到字段
+    在病历里的原始内容。取声称值的前 8 个连续汉字去原文找，找不到逐级缩到
+    4 字；命中后返回前后文 + 命中词，页面高亮展示。
+    """
+    if not value or not ocr_text:
+        return None
+    # 按 value 出现顺序定位（优先字段开头内容），每段从长到短降级尝试
+    words = [w for w in re.split(r"[，。；、：,.!?（）()\s0-9]+", value) if len(w) >= 4]
+    for w in words:
+        for n in (len(w), 6, 4):
+            probe = w if n >= len(w) else w[:n]
+            idx = ocr_text.find(probe)
+            if idx >= 0:
+                before = ocr_text[max(0, idx - 30):idx]
+                after = ocr_text[idx + len(probe): idx + len(probe) + 40]
+                return {"before": before, "hit": probe, "after": after}
+    return None
+
+
 def _dedup_opinions(ops: list[dict]) -> list[dict]:
     """同键内按疑点去重：优先按 comment 中的 原文'X' 定位键，退化为同 comment 判重。
 
@@ -116,6 +138,7 @@ def _build_data(items: list[dict], ocr_texts: dict[str, str],
             "reason_code": ops[0].get("reason_code", ""),
             "comments": [o.get("comment", "") for o in ops],
             "ocr_text": ocr_texts.get(case_id, ""),
+            "ocr_hit": _find_ocr_hit(ops[0].get("value", ""), ocr_texts.get(case_id, "")),
             "llm_should_flag": llm_adj.get((case_id, field_key)),
         }
         cards.append(card)
@@ -212,6 +235,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .nav input {{ width: 56px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }}
   .llm-note {{ font-size: 12px; color: var(--muted); margin-top: 4px; }}
   .trunc {{ font-size: 11px; color: var(--sus); font-style: italic; }}
+  .hit {{ font-size: 13px; line-height: 1.7; color: var(--ink); background: var(--accentbg); border-radius: 8px; padding: 8px 12px; }}
+  .hit mark {{ background: #ffe08a; padding: 1px 4px; border-radius: 4px; font-weight: 600; }}
 </style>
 </head>
 <body>
@@ -289,7 +314,9 @@ function renderCard(c, i) {{
     '<span class="case">' + escapeHtml(c.case_id) + '（第 ' + (i + 1) + ' / ' + DATA.cards.length + ' 题）</span></div>' +
     verdictBadge(c.verdict) + (c.reason_code ? ' <span class="llm-note">' + escapeHtml(c.reason_code) + '</span>' : '') + llm +
     '<div class="sec"><div class="lbl">字段声称值</div><div class="value">' + escapeHtml(c.value || "（空）") + '</div></div>' +
-    '<div class="sec"><div class="lbl">证据（eXXX 编号引用）</div><div class="evidence">' + escapeHtml(c.evidence_text || "（无证据）") + '</div></div>' +
+    '<div class="sec"><div class="lbl">证据（eXXX 编号引用）</div><div class="evidence">' + escapeHtml(c.evidence_text || "（无证据引用，以下方原文定位为准）") + '</div></div>' +
+    (c.ocr_hit ? '<div class="sec"><div class="lbl">原文定位（病历原文里该字段对应的内容）</div><div class="hit">…' + escapeHtml(c.ocr_hit.before) + '<mark>' + escapeHtml(c.ocr_hit.hit) + '</mark>' + escapeHtml(c.ocr_hit.after) + '…</div></div>'
+      : (c.ocr_text ? '<div class="sec"><div class="lbl">原文定位</div><div class="hit" style="color:var(--muted)">（未能在 OCR 原文中定位到该字段的对应内容）</div></div>' : '')) +
     comments +
     (c.ocr_text ? '<details class="ocr"><summary>查看完整 OCR 原文（' + escapeHtml(c.case_id) + '）</summary><pre>' +
       escapeHtml(c.ocr_text) + '</pre></details>' : '') +
