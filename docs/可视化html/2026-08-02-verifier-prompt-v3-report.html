@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>复核器改造报告 — 去掉"爱找茬"，专盯 OCR 认错字</title>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --blue: #3b6ef5;
+    --bluebg: #e8efff;
+    --teal: #0d9488;
+    --tealbg: #e6f7f5;
+    --orange: #f59e0b;
+    --orangebg: #fef3e2;
+    --red: #ef4444;
+    --redbg: #feecec;
+    --green: #10b981;
+    --greenbg: #e7f8f1;
+    --border: #e5e7eb;
+    --sans: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.8;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px 90px; }
+
+  /* ── 顶部 ── */
+  .hero {
+    background: linear-gradient(135deg, #1e2a4a 0%, #2b3f78 55%, #3b6ef5 130%);
+    color: #fff;
+    border-radius: 0 0 22px 22px;
+    padding: 52px 32px 44px;
+    margin-bottom: 34px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute; right: -70px; top: -70px;
+    width: 260px; height: 260px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,.14) 0%, transparent 65%);
+  }
+  .hero .tag {
+    display: inline-block;
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: .12em;
+    padding: 4px 14px;
+    margin-bottom: 18px;
+  }
+  .hero h1 { font-size: 30px; font-weight: 700; letter-spacing: .01em; }
+  .hero .sub { margin-top: 10px; font-size: 15px; opacity: .88; max-width: 640px; }
+  .hero .meta { margin-top: 18px; font-size: 12.5px; opacity: .6; font-family: var(--mono); }
+
+  /* ── 一句话结论 ── */
+  .verdict-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--blue);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 34px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .verdict-bar .lbl { font-size: 12px; color: var(--muted); letter-spacing: .08em; margin-bottom: 6px; }
+  .verdict-bar .txt { font-size: 16.5px; font-weight: 600; }
+  .verdict-bar .txt b { color: var(--green); }
+
+  /* ── 章节 ── */
+  .sec { margin-bottom: 44px; }
+  .sec-h {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 21px; font-weight: 700; margin-bottom: 6px;
+  }
+  .sec-h .no {
+    background: var(--blue); color: #fff;
+    width: 30px; height: 30px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .sec-desc { color: var(--muted); font-size: 14px; margin: 0 0 18px 40px; }
+
+  /* ── 科普卡片 ── */
+  .cards3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .kcard {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 18px 16px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .kcard .ico { font-size: 22px; }
+  .kcard h4 { font-size: 15.5px; margin: 8px 0 6px; }
+  .kcard p { font-size: 13.5px; color: #4b5563; }
+  .kcard .ex {
+    margin-top: 10px; padding: 8px 10px;
+    background: var(--bluebg); border-radius: 8px;
+    font-size: 12.5px; color: #1e3a8a;
+    font-family: var(--mono);
+  }
+
+  /* ── 数据卡片 ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .stat .k { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .stat .v { font-size: 30px; font-weight: 800; letter-spacing: -.01em; }
+  .stat .d { font-size: 12.5px; margin-top: 6px; }
+  .up { color: var(--green); } .down { color: var(--red); }
+  .stat.good .v { color: var(--green); }
+  .stat.bad .v { color: var(--red); }
+  .stat.mid .v { color: var(--orange); }
+  .stat.blue .v { color: var(--blue); }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  th, td { padding: 11px 14px; text-align: left; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  th { background: #f8fafc; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.bad { background: var(--redbg); color: var(--red); }
+  .pill.warn { background: var(--orangebg); color: #b45309; }
+  .pill.good { background: var(--greenbg); color: #047857; }
+  .pill.blue { background: var(--bluebg); color: #1d4ed8; }
+  .right { text-align: right; } .center { text-align: center; }
+
+  /* ── kappa 刻度条 ── */
+  .gauge { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .gauge .track { position: relative; height: 14px; background: linear-gradient(90deg, #fde8e8, #fef3e2 40%, #e7f8f1 70%, #d1fae5); border-radius: 999px; margin: 14px 0 8px; }
+  .gauge .dot { position: absolute; top: -6px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 4px solid var(--blue); box-shadow: 0 1px 5px rgba(0,0,0,.25); transform: translateX(-50%); }
+  .gauge .gate { position: absolute; top: -8px; height: 30px; width: 3px; background: var(--green); transform: translateX(-1.5px); }
+  .gauge .gatelbl { position: absolute; top: -26px; transform: translateX(-50%); font-size: 11.5px; color: var(--green); font-weight: 700; white-space: nowrap; }
+  .gauge .lbls { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .gauge .note { margin-top: 14px; font-size: 13px; color: #4b5563; }
+
+  /* ── 2×2 表 ── */
+  .matrix { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 0; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .matrix .c { padding: 16px; text-align: center; border-bottom: 1px solid var(--border); }
+  .matrix .c:nth-child(3n+2), .matrix .c:nth-child(3n+3) { border-left: 1px solid var(--border); }
+  .matrix .hd { background: #f8fafc; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  .matrix .num { font-size: 26px; font-weight: 800; }
+  .matrix .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── 案例卡 ── */
+  .cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .case { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .case .t { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .case p { font-size: 13px; color: #4b5563; }
+  .case .pair {
+    margin-top: 10px; padding: 9px 12px; border-radius: 9px;
+    font-size: 13px; font-family: var(--mono);
+  }
+  .pair.wrong { background: var(--redbg); color: #991b1b; text-decoration: line-through; opacity: .85; }
+  .pair.right { background: var(--greenbg); color: #065f46; margin-top: 4px; }
+  .case.ok { border-left: 4px solid var(--green); }
+  .case.fail { border-left: 4px solid var(--red); }
+  .case.info { border-left: 4px solid var(--blue); }
+
+  /* ── 时间线 ── */
+  .timeline { position: relative; padding-left: 26px; }
+  .timeline::before { content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 20px; }
+  .tl-item::before {
+    content: ""; position: absolute; left: -24px; top: 7px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--blue); border: 3px solid var(--bluebg);
+  }
+  .tl-item.bad::before { background: var(--red); border-color: var(--redbg); }
+  .tl-item.good::before { background: var(--green); border-color: var(--greenbg); }
+  .tl-item .h { font-size: 15px; font-weight: 700; }
+  .tl-item .h .vtag { font-size: 11.5px; font-family: var(--mono); color: var(--muted); margin-left: 8px; font-weight: 400; }
+  .tl-item p { font-size: 13.5px; color: #4b5563; margin-top: 4px; }
+
+  /* ── 结论 ── */
+  .concl { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .concl li { font-size: 14px; margin: 8px 0 8px 18px; }
+  .concl b.g { color: var(--green); } .concl b.r { color: var(--red); } .concl b.o { color: #b45309; }
+
+  /* ── 名词速查（折叠） ── */
+  details.gloss {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 10px;
+  }
+  details.gloss summary { cursor: pointer; font-weight: 700; font-size: 14.5px; }
+  details.gloss .g-body { margin-top: 10px; font-size: 13.5px; color: #4b5563; }
+  details.gloss .g-body p { margin: 6px 0; }
+  details.gloss b { color: var(--ink); }
+
+  .footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); text-align: center; }
+  .kv { font-size: 13px; color: #4b5563; }
+  .kv b { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="tag">评估体系 · 复核器改造实验</div>
+  <h1>复核器"去对抗"改造报告</h1>
+  <div class="sub">给自动检查员换个性格：以前它什么都标可疑，现在只盯真正的毛病。这份报告用大白话讲清我们干了什么、结果如何、下一步怎么办。</div>
+  <div class="meta">2026-08-02 · 6 份真实病历 · 295 个字段 · 本地模型实测</div>
+</div>
+
+<div class="wrap">
+
+  <!-- 一句话结论 -->
+  <div class="verdict-bar">
+    <div class="lbl">一句话结论</div>
+    <div class="txt">去对抗<b>成功了</b>：误报从 30 处降到 4 处；OCR 认错字也能标出来了。但新问题出现——<b>该标的有不少没标到</b>。整体一致性打分 kappa≈0.2，距离"允许上岗"的 0.7 还很远，所以<b>复核器继续保持不上岗</b>（不自动进入医生工作流），和之前的决定一致。</div>
+  </div>
+
+  <!-- 第一章：背景科普 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">1</span>先认识几个词（30 秒速成）</div>
+    <div class="sec-desc">后面的内容全靠这几个概念，先花 30 秒建立共同语言。</div>
+    <div class="cards3">
+      <div class="kcard">
+        <div class="ico">📄</div>
+        <h4>OCR 认错字</h4>
+        <p>系统把病历照片变成文字，机器认字偶尔会认错。比如"粗测"被读成"粗侧"，"回流征"被读成"回流证"。</p>
+        <div class="ex">例：双眼粗测视力正常 → 双眼<b>粗侧</b>视力正常</div>
+      </div>
+      <div class="kcard">
+        <div class="ico">🔍</div>
+        <h4>复核器 = 自动检查员</h4>
+        <p>从病历里抽出的每个字段（心率、体格检查、用药……）再让 AI 过一遍，发现可疑就在字段上贴一张"请医生重点看"的标签。</p>
+        <div class="ex">贴了标签的字段 → 进人工审核页</div>
+      </div>
+      <div class="kcard">
+        <div class="ico">📏</div>
+        <h4>校准 = 验收考试 + kappa = 打分</h4>
+        <p>检查员标得准不准，得考试：拿一批字段让它标，再找权威（这里用 AI 模拟医生）逐条裁判"该不该标"。裁判和检查员意见越一致，分越高。</p>
+        <div class="ex">kappa：0~1 的分数，0.7 及格才能上岗</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二章：问题 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">2</span>旧检查员的问题：太爱找茬</div>
+    <div class="sec-desc">你之前说"复核器是不是太对抗了"——数据支持这个感觉。</div>
+    <div class="stats">
+      <div class="stat bad">
+        <div class="k">旧版：100 个字段里标了多少可疑</div>
+        <div class="v">62.5%</div>
+        <div class="d">接近 2/3 的字段被贴"可疑"标签</div>
+      </div>
+      <div class="stat">
+        <div class="k">但真正有问题的</div>
+        <div class="v">约 22%</div>
+        <div class="d">大部分标签是虚惊一场</div>
+      </div>
+    </div>
+    <p class="kv" style="margin-top:10px">后果就是<b>"狼来了"</b>：医生每次审核页都塞满标签，点开一看大多是正常字段，慢慢就不信任这些标签了。同时意见文本会被机器截断成半句话（"应为'…'或"），人根本看不懂在说什么。</p>
+  </div>
+
+  <!-- 第三章：做了什么 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">3</span>这次干了什么：给检查员换"说明书"</div>
+    <div class="sec-desc">检查员是 AI，行为由一份"说明书"（prompt）决定。我们按你的两个决定改了它，改一版考一次试，共三轮。</div>
+    <div class="timeline">
+      <div class="tl-item bad">
+        <div class="h">第 1 版（v2）<span class="vtag">你的决定 1：去掉"爱找茬"性格</span></div>
+        <p>删掉"每个字段都要主动挑毛病"的要求，改成"只做事实核对，没毛病就说没毛病"。同时保留并写明了"标记 OCR 认错字"这个职责。</p>
+        <p>结果：<b>矫枉过正</b>——295 个字段只标了 1 个，等于检查员罢工了。真实存在的错字（"粗侧""回流证"）一个都没标。</p>
+      </div>
+      <div class="tl-item good">
+        <div class="h">第 2 版（v3）<span class="vtag">修复：长字段拆句 + 错字模式清单</span></div>
+        <p>找出罢工原因：体格检查这类字段特别长（几百字），AI 扫一眼觉得"整体通顺"就放行了。改成把长字段<b>拆成一句一句</b>让它逐句看，再给它一份<b>常见错字模式清单</b>（叠字"舌舌"、近形字"扣及/扪及"等）。</p>
+        <p>结果：能标出问题了（11 处），但离及格还远。</p>
+      </div>
+      <div class="tl-item">
+        <div class="h">每次考试怎么考<span class="vtag">3 个 AI 质检员 × 295 个字段</span></div>
+        <p>每版都跑 6 份真实病历（本地 Qwen 模型，每轮约 15 分钟），产出 295 个字段的检查结果；再派 3 个 AI 质检员，像医生一样逐条判断"这个字段该不该标"，算一致性打分。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第四章：结果 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">4</span>结果：好坏各一半</div>
+    <div class="sec-desc">三版对比（同一批 295 个字段、同一考试标准下才公平，下表用同一套裁判口径）。</div>
+    <table>
+      <tr><th>版本</th><th class="center">标可疑的比例</th><th class="center">误报（虚惊）</th><th class="center">命中（真抓到）</th><th class="center">一致性打分 kappa</th></tr>
+      <tr>
+        <td>旧版（对抗型）</td>
+        <td class="center"><span class="pill bad">62.5%</span></td>
+        <td class="center">约 30 处</td>
+        <td class="center">—</td>
+        <td class="center">0.40</td>
+      </tr>
+      <tr>
+        <td>v2（去对抗）</td>
+        <td class="center"><span class="pill bad">0.3%</span></td>
+        <td class="center">2 处</td>
+        <td class="center">4 处</td>
+        <td class="center">0.18</td>
+      </tr>
+      <tr>
+        <td><b>v3（拆句+错字清单）</b></td>
+        <td class="center"><span class="pill warn">3.7%</span></td>
+        <td class="center"><b>4 处</b></td>
+        <td class="center"><b>6~7 处</b></td>
+        <td class="center"><b>0.20~0.24</b></td>
+      </tr>
+    </table>
+
+    <div class="gauge" style="margin-top:18px">
+      <div style="font-size:13px;color:var(--muted)">一致性打分（kappa）位置：越靠右越好，绿线 = 上岗线</div>
+      <div class="track">
+        <div class="gate" style="left:70%"></div>
+        <div class="gatelbl" style="left:70%">上岗线 0.7</div>
+        <div class="dot" style="left:24%"></div>
+      </div>
+      <div class="lbls"><span>0（纯瞎猜）</span><span>0.5</span><span>1（完全一致）</span></div>
+      <div class="note">当前 0.20~0.24（蓝点），远没到 0.7。0.7 的意思是：检查员和医生的意见高度一致，此时让检查员上岗才有意义。</div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">误报 / 命中 / 漏报 的结构（v3 轮，295 个字段）</h3>
+    <div class="matrix">
+      <div class="c hd"></div>
+      <div class="c hd">检查员说：没问题（286 个）</div>
+      <div class="c hd">检查员说：可疑（9 个）</div>
+      <div class="c hd">裁判说：没问题</div>
+      <div class="c"><div class="num" style="color:var(--green)">258</div><div class="sub">✅ 都没问题，放行正确</div></div>
+      <div class="c"><div class="num" style="color:var(--orange)">5</div><div class="sub">⚠️ 虚惊：正常字段被贴标签</div></div>
+      <div class="c hd">裁判说：有问题</div>
+      <div class="c"><div class="num" style="color:var(--red)">26</div><div class="sub">❌ 漏网：有错字却没被标出来</div></div>
+      <div class="c"><div class="num" style="color:var(--blue)">6</div><div class="sub">🎯 真抓到：有错字且被标出</div></div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">它抓到的，和它误报的（真实例子）</h3>
+    <div class="cases">
+      <div class="case ok">
+        <div class="t">✅ 真抓到了（v3）</div>
+        <p>"粗侧""回流证""舌舌""齿辅"这类 OCR 错字，跨多个病历被标出。</p>
+        <div class="pair wrong">原文：双眼粗侧视力正常</div>
+        <div class="pair right">应为：双眼粗测视力正常</div>
+      </div>
+      <div class="case fail">
+        <div class="t">⚠️ 误报 1：把正常词当错字</div>
+        <p>"鼻翼无煽动"是正常医学表述（鼻翼、煽动都是规范词），检查员却标了可疑。</p>
+      </div>
+      <div class="case info">
+        <div class="t">🧑‍⚕️ 有意思的案例：AI 没医生懂</div>
+        <p>检查员发现"脉搏 99 次/分但心率 108 次/分"标了可疑——表面看是矛盾。但裁判（模拟医生）知道：这病人是房颤，脉搏本来就跟心率不齐，这是正常现象，不该标。这类判断只有懂医学的才能做。</p>
+      </div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">最大的短板：漏网之鱼太多</h3>
+    <p class="kv">该标出的 32 处里只标出 6~7 处（<b>约两成</b>）。原因：OCR 错字变体太多——同一处错读在不同病历里可能长成"粗侧""相测""粗测"三种样子，检查员记不住所有变体，说明书里写了的模式它有时也对不上号。这就像让人背字典，永远背不全。</p>
+  </div>
+
+  <!-- 第五章：结论 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">5</span>结论与下一步</div>
+    <div class="concl">
+      <li><b class="g">你的两个决定都验证有效</b>：去掉对抗后误报从 30 处降到 4 处（医生的信任不再被消耗）；"标记 OCR 认错字"成为检查员的明确职责且能干活。</li>
+      <li><b class="r">但整体还不能上岗</b>：漏报太多，kappa≈0.2 远低于 0.7 门槛。现在让它自动进医生工作流，反而漏掉真问题，比没有它还危险。</li>
+      <li><b class="o">保持现状</b>：复核器继续"不上岗"（不自动接入），和之前的处理一致。三版实验数据全部存档，随时可复查。</li>
+      <li><b class="g">未来可选方案</b>：把长字段拆成句子后<b>每句强制判定</b>（漏网之鱼无处可藏），能把召回做上去，但要改动检查员和考试工具的一整套约定，工程量大。等需要时再做。</li>
+    </div>
+  </div>
+
+  <!-- 附录：名词速查 -->
+  <div class="sec">
+    <div class="sec-h"><span class="no">6</span>名词速查（点开看）</div>
+    <div class="sec-desc">正文里用过的词，忘了随时回来查。</div>
+    <details class="gloss"><summary>OCR / 字段 / 抽取</summary>
+      <div class="g-body">
+        <p><b>OCR</b>：把照片里的字变成电脑文字的程序。会认错字，尤其手写体和模糊的字。</p>
+        <p><b>字段</b>：病历里的一个个格子，比如"心率""体格检查""既往史"。</p>
+        <p><b>抽取</b>：从一整段病历文字里，把每个格子该填的内容自动填好。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>复核器 / 标可疑 / verdict</summary>
+      <div class="g-body">
+        <p><b>复核器</b>：抽完字段后再用 AI 检查一遍的自动检查员。发现可疑就贴标签，让医生在审核页重点看。</p>
+        <p><b>标可疑（suspicious）</b>：贴"请医生重点看"的标签。<b>通过（pass）</b>：没问题。<b>失败（fail）</b>：问题严重。</p>
+        <p><b>verdict</b>：检查员对每个字段给出的结论（通过 / 可疑 / 失败）。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>校准 / kappa / 上岗线</summary>
+      <div class="g-body">
+        <p><b>校准</b>：给检查员"验收考试"——拿真实病历让它标，再找权威逐条裁判它对不对，算一致性。</p>
+        <p><b>kappa</b>：检查员和裁判的意见重合度，0~1。0.7 以上算高度一致（上岗线）；0.4 以下基本等于各说各的。</p>
+        <p><b>上岗</b>：检查员合格后，才允许自动接入医生日常工作流。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>误报 / 漏报 / 召回</summary>
+      <div class="g-body">
+        <p><b>误报</b>：没问题的字段被贴了标签（虚惊一场，消耗医生信任）。</p>
+        <p><b>漏报</b>：有问题的字段没被贴标签（漏网之鱼，比虚惊更危险）。</p>
+        <p><b>召回</b>：该抓的问题抓到了几成。两成 = 10 个真问题只抓到 2 个。</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="footer">复核器改造实验报告 · 2026-08-02 · 数据存档于 data/evaluation/calibration/</div>
+</div>
+
+</body>
+</html>
