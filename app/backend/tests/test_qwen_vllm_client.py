@@ -320,3 +320,38 @@ def test_qwen_vllm_client_image_path_missing_raises(tmp_path):
             max_tokens=1024,
             temperature=0.0,
         )
+
+
+def test_complete_json_recovers_truncated_string():
+    # 模拟模型复读烧光 max_tokens：最后一个 comment 字符串未闭合（截断恢复救回截断前字段）
+    fake = FakeOpenAIClient(
+        content=(
+            '{"verifications": ['
+            '{"field_key": "pe_temperature", "verdict": "pass", "comment": "一致"},'
+            '{"field_key": "pe_eyes", "verdict": "suspicious", "comment": "此处眼测疑似眼测之误，但更可能'
+        )
+    )
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+    result = client.complete_json("prompt", max_tokens=8192, temperature=0.0)
+    assert result["verifications"][0]["field_key"] == "pe_temperature"
+    assert result["verifications"][0]["verdict"] == "pass"
+    assert result["verifications"][1]["field_key"] == "pe_eyes"
+    assert result["verifications"][1]["verdict"] == "suspicious"
+    assert "眼测" in result["verifications"][1]["comment"]
+
+
+def test_complete_json_keeps_raising_on_invalid_json():
+    fake = FakeOpenAIClient(content="这不是 JSON 也不是截断形态")
+    client = QwenVLLMClient(
+        base_url="http://qwen-vision-vllm-server:8000/v1",
+        model="Qwen3.5-4B-AWQ-4bit",
+        openai_client=fake,
+        timeout_seconds=360,
+    )
+    with pytest.raises(RuntimeError, match="Qwen vLLM 返回非 JSON"):
+        client.complete_json("prompt", max_tokens=8192, temperature=0.0)

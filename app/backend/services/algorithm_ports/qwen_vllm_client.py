@@ -182,12 +182,19 @@ class QwenVLLMClient:
         try:
             parsed = json.loads(normalized)
         except json.JSONDecodeError as exc:
-            tail = normalized[-200:] if len(normalized) > 200 else normalized
-            logger.error(
-                "Qwen vLLM JSON 解析失败 model=%s tail=%s",
-                self._model, tail,
+            recovered = _recover_truncated_json(normalized)
+            if recovered is None:
+                tail = normalized[-200:] if len(normalized) > 200 else normalized
+                logger.error(
+                    "Qwen vLLM JSON 解析失败 model=%s tail=%s",
+                    self._model, tail,
+                )
+                raise RuntimeError(f"Qwen vLLM 返回非 JSON: {exc}") from exc
+            logger.warning(
+                "Qwen vLLM JSON 被 max_tokens 截断，已宽容恢复（截断前字段有效）model=%s",
+                self._model,
             )
-            raise RuntimeError(f"Qwen vLLM 返回非 JSON: {exc}") from exc
+            parsed = recovered
         if not isinstance(parsed, dict):
             raise RuntimeError("Qwen vLLM JSON 顶层必须是对象")
         return parsed
@@ -203,6 +210,21 @@ class QwenVLLMClient:
             )
             raise RuntimeError(f"Qwen vLLM 响应结构非法: {exc}") from exc
         return strip_think_blocks(content)
+
+
+def _recover_truncated_json(text: str) -> dict | None:
+    """尝试恢复被 max_tokens 截断的 JSON（典型：模型复读烧光 token，字符串未闭合）。
+
+    截断通常发生在某个字符串中间（如复读的 comment），补全引号与结构闭合
+    后可救回截断前的完整字段；非截断类语法错误（真正的非法 JSON）返回 None。
+    恢复成功的部分字段 comment 可能为复读产物，由调用方按需处理。
+    """
+    for suffix in ('"', '"}', '"]', '"}]', '"}]}', '}]}', ']}', '}'):
+        try:
+            return json.loads(text + suffix)
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 def _normalize_json_response(content: str) -> str:
