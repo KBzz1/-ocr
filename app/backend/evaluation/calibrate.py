@@ -89,12 +89,18 @@ def main(argv: list[str] | None = None) -> None:
     p_export.add_argument("--model", required=True)
     p_export.add_argument("--max-tokens", type=int, default=8192)
     p_export.add_argument("--out", required=True, help="裁定模板 JSON 路径")
+    p_export.add_argument("--inject-evidence", action="store_true",
+                          help="复核前按字段值定位回填证据 units（评估口径修正：复核器吃字段证据=生产形态）")
+    p_export.add_argument("--group-by", choices=["field", "section"], default=None,
+                          help="复核器分组形态（需与 --inject-evidence 同用；None=一次全量）")
 
     p_kappa = sub.add_parser("kappa", help="裁定文件 → kappa")
     p_kappa.add_argument("--verdicts", required=True)
     p_kappa.add_argument("--adjudications", required=True)
 
     args = parser.parse_args(argv)
+    if args.command == "export" and args.group_by and not args.inject_evidence:
+        parser.error("--group-by 需要同时指定 --inject-evidence（分组模式以字段证据为输入）")
     if args.command == "kappa":
         verdicts = json.loads(Path(args.verdicts).read_text(encoding="utf-8"))["items"]
         result = compute_kappa(verdicts, load_adjudications(Path(args.adjudications)))
@@ -106,14 +112,20 @@ def main(argv: list[str] | None = None) -> None:
         qwen = QwenVLLMClient(base_url=args.base_url, model=args.model, api_key="not-needed", timeout_seconds=360)
         llm_client = OpenAICompatibleJsonClient(qwen, max_tokens=args.max_tokens, temperature=0.0)
         from ..services.copd_extraction.verifier import FieldVerifier
+        from .chunked_review import inject_field_evidence, units_from_ocr_text
         verifier = FieldVerifier(llm_client)
         items = []
         for sample in samples:
             result = run_pipeline(_input_for(sample, schema), llm_client, verifier=verifier)
             if result.get("error"):
                 continue
-            by_key = {c["field_key"]: c for c in result["candidates"]}
-            for v in verifier.verify(result["candidates"], sample.get("ocr_text") or ""):
+            candidates = result["candidates"]
+            if args.inject_evidence:
+                candidates = inject_field_evidence(
+                    candidates, units_from_ocr_text(sample.get("ocr_text") or "")
+                )
+            by_key = {c["field_key"]: c for c in candidates}
+            for v in verifier.verify(candidates, sample.get("ocr_text") or "", group_by=args.group_by):
                 field = by_key.get(v["field_key"]) or {}
                 items.append({
                     "case_id": sample.get("case_id"),
