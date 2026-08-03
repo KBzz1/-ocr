@@ -7,8 +7,8 @@ from app.backend.services.copd_extraction.prompts import build_verification_mess
 from app.backend.services.copd_extraction.verifier import FieldVerifier, apply_verdicts
 
 
-def test_verification_messages_long_field_split_into_sentences():
-    """超长字段按句拆分编号（逐句核验，防整段一致性放行）；短字段保持原样。"""
+def test_verification_messages_claim_manifest_keeps_evidence_once():
+    """复核 claim 使用 JSON，长证据正文只在证据区出现一次。"""
     long_value = "唇色发绀。" + "口腔粘膜无溃疡，张口正常。" * 12
     system, user = build_verification_messages(
         evidence_units=[{"id": "e001", "text": long_value}],
@@ -17,13 +17,14 @@ def test_verification_messages_long_field_split_into_sentences():
             {"field_key": "pe_short", "value": "正常", "evidence_ids": ["e001"]},
         ],
     )
-    # 长字段拆句编号 + 提示；短字段保持"声称值"原样
-    assert "已按句拆分，逐句检查" in user
-    assert "1「唇色发绀。」" in user
-    assert "pe_short：声称值 正常" in user
-    # system 包含错读模式特征信号与"逐句扫读"要求（仅文本契约，不含数据）
-    assert "逐句扫读" in system
-    assert "叠字" in system and "近形替换" in system
+    assert '"claims"' in user
+    assert '"field_key":"pe_oral"' in user
+    assert '"value":"正常"' in user
+    # 长文本作为 claim value 本身出现一次，证据正文出现一次；没有第三份
+    # cited_text 或按值重新定位的证据副本。
+    assert user.count(long_value) == 2
+    assert "cited_text" not in user
+    assert "普通逗号、顿号列表不拆开" in system
 
 
 def test_verification_messages_evidence_first_fields_after():
@@ -31,22 +32,14 @@ def test_verification_messages_evidence_first_fields_after():
         evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
         fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
     )
-    # system：身份/任务 2 句 + 通用原则 + 输出契约 + few-shot，不含数据
+    # system：身份/任务 + 审核顺序 + 裁定边界，不含输入数据（证据 ID 与请求文本）
     assert "复核器" in system
-    assert "e001" not in system and "听力正常" not in system
+    assert "e001" not in system and "双耳粗测听力正常" not in system
     assert "verdict" in system and "pass" in system and "suspicious" in system
     assert "suspicious" in system  # few-shot 覆盖 suspicious 示例
-    # 校准迭代契约：只标记可逐字定位 + 双向标准直白句（值证一致即 pass，可逐字定位的实质矛盾才标记）+ OCR 识别职责 + 误报反例（仅文本契约，不含数据）
-    assert "只标记可逐字定位" in system
-    assert "逐字" in system
-    assert "证据可逐字定位的实质矛盾" in system and "语义等价即可" in system
-    assert "反例" in system
-    # OCR 识别错误是复核器显式职责（通用原则），且不要求给出修正值（纠偏归抽取环节）
-    assert "OCR 识别错误" in system
-    assert "纠偏由抽取环节负责" in system
-    # user：evidence 编号块在字段块之前
-    assert user.index("e001") < user.index("pe_ear")
-    assert "pe_ear" in user and "正常" in user
+    # user：evidence 块在 claims JSON 之前，证据 ID 保留原样
+    assert user.index("<evidence>") < user.index("<claims>")
+    assert '"field_key":"pe_ear"' in user and '"value":"正常"' in user
 
 
 def test_verification_messages_general_principle_field_boundary():
@@ -56,9 +49,7 @@ def test_verification_messages_general_principle_field_boundary():
         fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
     )
     assert "字段越界" in system
-    assert "内容域与字段对应部位明显不符" in system
     assert "extraction_mistake" in system
-    assert "引用原文片段即可" in system
 
 
 def test_verification_messages_append_reminder_default_absent():
@@ -73,7 +64,7 @@ def test_verification_messages_append_reminder_default_absent():
 
 def test_verification_messages_append_reminder_true_appends_at_user_end():
     """变体 B：append_reminder=True 时提醒句恰好出现一次且位于 user 末尾，system 不含提醒句。"""
-    reminder = "请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
+    reminder = "再次检查：每个 verdict 的 field_key 必须来自 claims，引用必须来自上面的 [uXXX]。"
     system, user = build_verification_messages(
         evidence_units=[{"id": "e001", "text": "双耳粗测听力正常"}],
         fields=[{"field_key": "pe_ear", "value": "正常", "evidence_ids": ["e001"]}],
@@ -97,16 +88,16 @@ def make_candidates():
         {
             "field_key": "pe_ear", "original_value": "正常",
             "value": "正常", "status": "found",
-            "evidence": [{"id": "e001", "text": "双耳粗测听力正常"}],
-            "evidence_ids": ["e001"],
+            "evidence": [{"id": "u001", "text": "双耳粗测听力正常"}],
+            "evidence_ids": ["u001"],
             "quality_flags": [], "verification_status": "not_checked",
             "attention_required": False, "attention_message": "",
         },
         {
             "field_key": "pe_nose", "original_value": "鼻腔通畅",
             "value": "鼻腔通畅", "status": "found",
-            "evidence": [{"id": "e002", "text": "鼻腔通畅，各鼻窦区无压痛"}],
-            "evidence_ids": ["e002"],
+            "evidence": [{"id": "u002", "text": "鼻腔通畅，各鼻窦区无压痛"}],
+            "evidence_ids": ["u002"],
             "quality_flags": [], "verification_status": "not_checked",
             "attention_required": False, "attention_message": "",
         },
@@ -120,8 +111,8 @@ def make_candidates():
         {
             "field_key": "pe_face", "original_value": "无面瘫",
             "value": "", "status": "found",
-            "evidence": [{"id": "e003", "text": "无面瘫"}],
-            "evidence_ids": ["e003"],
+            "evidence": [{"id": "u003", "text": "无面瘫"}],
+            "evidence_ids": ["u003"],
             "quality_flags": [], "verification_status": "not_checked",
             "attention_required": False, "attention_message": "",
         },
@@ -132,13 +123,13 @@ def test_verify_returns_verdicts_for_found_fields_only():
     verifier = FieldVerifier(FakeLlmClient({
         "verifications": [
             {"field_key": "pe_ear", "verdict": "pass", "reason_code": "none",
-             "checks": {}, "comment": "一致"},
+             "checks": {"grounding_supported": True, "field_scope_valid": True,
+                        "text_standard": True, "logic_consistent": True},
+             "comment": "一致"},
             {"field_key": "pe_nose", "verdict": "suspicious", "reason_code": "extraction_mistake",
-             "checks": {}, "comment": "e002无异常表述，值与原文不符"},
-            {"field_key": "pe_mouth", "verdict": "suspicious", "reason_code": "extraction_mistake",
-             "checks": {}, "comment": "not_found 字段不应送审"},
-            {"field_key": "pe_face", "verdict": "suspicious", "reason_code": "extraction_mistake",
-             "checks": {}, "comment": "空值字段不应送审"},
+             "checks": {"grounding_supported": False, "field_scope_valid": True,
+                        "text_standard": True, "logic_consistent": True},
+             "comment": "u002无异常表述，值与原文不符"},
         ]
     }))
     verdicts = verifier.verify(make_candidates(), document_text="")
@@ -160,7 +151,7 @@ def test_verifier_threads_append_reminder_into_user_message():
     assert on.verify(make_candidates(), document_text="") == []
     off = FieldVerifier(RecordingClient(), append_reminder=False)
     assert off.verify(make_candidates(), document_text="") == []
-    reminder = "请严格遵守 system prompt 中的【输出契约】【通用原则】【领域规则】。"
+    reminder = "再次检查：每个 verdict 的 field_key 必须来自 claims，引用必须来自上面的 [uXXX]。"
     assert calls[0][0].endswith(reminder)
     assert "请严格遵守" not in calls[1][0]
     assert calls[0][1] == calls[1][1]  # system 不受提醒开关影响
@@ -214,26 +205,24 @@ def test_apply_verdicts_does_not_downgrade_failed_fields():
 
 def test_verifier_principle_threshold_for_expression_noise():
     system, _ = build_verification_messages([], [])
-    assert "影响理解或产生歧义 → 必须标记" in system
-    assert "值忠实摘录原文不豁免错读检查" in system
+    assert "影响理解或造成歧义" in system
 
 
 def test_verifier_principle_logic_consistency():
     system, _ = build_verification_messages([], [])
-    assert "数值矛盾或逻辑不一致" in system
-    assert "时间归属错误、否定翻转、体征互斥" in system
+    assert "数值关系" in system
+    assert "否定翻转" in system
 
 
 def test_verifier_principle_boundary_no_evidence_exemption():
     system, _ = build_verification_messages([], [])
-    assert "字段越界不因值有证据支持而豁免" in system
+    assert "原文支持但字段越界仍应标记" in system
 
 
 def test_verifier_fewshot_recall_examples_present():
     system, _ = build_verification_messages([], [])
-    assert "'粗侧'为 OCR 错读（应为'粗测'）" in system
-    assert "值却写'腹部移动性浊音阳性'，两处矛盾" in system
-    assert system.count("示例仅示范结构，字段内容为占位，不得照抄") >= 2
+    assert "pe_eyes" in system and "pe_respiratory_exam" in system
+    assert "示例仅展示结构与裁定边界" in system
 
 
 class _RecordingClient:
@@ -266,16 +255,18 @@ def test_verify_group_by_field_one_request_per_field():
         _mk_field("pe_pulse", "88次/分", [units[0]]),
     ]
     client = _RecordingClient([
-        {"verifications": [{"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"}]},
-        {"verifications": [{"field_key": "pe_pulse", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"}]},
+        {"verifications": [{"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+          "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": True, "logic_consistent": True}, "comment": "一致"}]},
+        {"verifications": [{"field_key": "pe_pulse", "verdict": "pass", "reason_code": "none",
+          "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": True, "logic_consistent": True}, "comment": "一致"}]},
     ])
     verifier = FieldVerifier(client)
     result = verifier.verify(candidates, document_text="全文", group_by="field")
     assert len(client.calls) == 2
     # 每条请求的字段声称值只含自己字段的值，不含其他字段
     # （两字段共享同一证据单元 u001，其原文文本可合法出现于任一组证据块）
-    assert "声称值 36.5℃" in client.calls[0][0] and "声称值 88次/分" not in client.calls[0][0]
-    assert "声称值 88次/分" in client.calls[1][0] and "声称值 36.5℃" not in client.calls[1][0]
+    assert '"value":"36.5℃"' in client.calls[0][0] and '"value":"88次/分"' not in client.calls[0][0]
+    assert '"value":"88次/分"' in client.calls[1][0] and '"value":"36.5℃"' not in client.calls[1][0]
     # system 逐字节相同
     assert client.calls[0][1] == client.calls[1][1]
     assert len(result) == 2
@@ -288,8 +279,10 @@ def test_verify_group_by_section_groups_same_section():
     ]
     client = _RecordingClient([
         {"verifications": [
-            {"field_key": "pe_neck", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
-            {"field_key": "pe_chest", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
+            {"field_key": "pe_neck", "verdict": "pass", "reason_code": "none",
+             "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": True, "logic_consistent": True}, "comment": "一致"},
+            {"field_key": "pe_chest", "verdict": "pass", "reason_code": "none",
+             "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": True, "logic_consistent": True}, "comment": "一致"},
         ]},
     ])
     verifier = FieldVerifier(client)
@@ -305,7 +298,9 @@ def test_verify_group_failure_isolation():
         _mk_field("pe_lung", "呼吸音清", [units[1]]),
     ]
     client = _RecordingClient(
-        [{"verifications": [{"field_key": "pe_lung", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {}, "comment": "疑"}]}],
+        [{"verifications": [{"field_key": "pe_lung", "verdict": "suspicious", "reason_code": "nonstandard_expression",
+          "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": False, "logic_consistent": True},
+          "comment": "u002 疑为错读"}]}],
         fail_at={0},
     )
     verifier = FieldVerifier(client)
@@ -321,15 +316,226 @@ def test_verify_group_all_failed_returns_empty():
     result = verifier.verify(candidates, group_by="field")
     assert result == []
 
-def test_verify_group_filters_out_of_scope_fields():
+def test_verify_group_out_of_scope_field_rejects_group():
+    """verifier.v2 语义契约：组外字段 = 该组响应整体非法，整组拒绝。"""
     units = [_mk_unit("u001", "体温36.5℃。")]
     candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
     client = _RecordingClient([
         {"verifications": [
-            {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none", "checks": {}, "comment": "一致"},
-            {"field_key": "pe_eyes", "verdict": "suspicious", "reason_code": "ocr_quality_issue", "checks": {}, "comment": "越界"},
+            {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+             "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": True, "logic_consistent": True}, "comment": "一致"},
+            {"field_key": "pe_eyes", "verdict": "suspicious", "reason_code": "nonstandard_expression",
+             "checks": {"grounding_supported": True, "field_scope_valid": True, "text_standard": False, "logic_consistent": True}, "comment": "u001 越界"},
         ]},
     ])
     verifier = FieldVerifier(client)
     result = verifier.verify(candidates, group_by="field")
-    assert [v["field_key"] for v in result] == ["pe_temperature"]  # 范围外字段按现状契约过滤
+    assert result == []  # 组外字段 → 整组拒绝
+
+
+# —— verifier.v2：4 个 JSON 微例与后端语义契约 ——
+
+def _four_checks(grounding=True, scope=True, text=True, logic=True):
+    return {
+        "grounding_supported": grounding,
+        "field_scope_valid": scope,
+        "text_standard": text,
+        "logic_consistent": logic,
+    }
+
+
+def test_verifier_v2_four_json_micro_examples_present_and_parseable():
+    """三类核心微例 + 粗测不误报对照：存在、可解析、顶层仅 verifications。"""
+    import re
+
+    system, _ = build_verification_messages([], [])
+    blocks = re.findall(r"```json\n(.*?)```", system, re.S)
+    assert len(blocks) == 4
+    for block in blocks:
+        data = json.loads(block)
+        assert sorted(data.keys()) == ["verifications"]
+        assert len(data["verifications"]) == 1
+        v = data["verifications"][0]
+        assert set(v.keys()) == {"field_key", "verdict", "reason_code", "checks", "comment"}
+    # 对照形态：越界示例、OCR 病句示例、粗测不误报示例
+    assert "粗测" in system and "古手" in system
+    assert "u911" in system and "u912" in system
+    assert "禁止复制到输出" in system
+
+
+def test_verify_skips_group_with_missing_cited_ids_without_llm_call():
+    """cited ID 缺失/为空：调用前拦截，不调用复核 LLM。"""
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [])]  # evidence_ids 空
+
+    class NeverClient:
+        def complete_json(self, prompt, **kwargs):
+            raise AssertionError("不应调用复核 LLM")
+
+    result = FieldVerifier(NeverClient()).verify(
+        candidates, evidence_units=[units[0]]
+    )
+    assert result == []
+
+
+def test_semantic_contract_duplicate_field_key_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    client = FakeLlmClient({"verifications": [
+        {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+         "checks": _four_checks(), "comment": "一致"},
+        {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+         "checks": _four_checks(), "comment": "一致"},
+    ]})
+    assert FieldVerifier(client).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_missing_field_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。"), _mk_unit("u002", "脉搏88次/分。")]
+    candidates = [
+        _mk_field("pe_temperature", "36.5℃", [units[0]]),
+        _mk_field("pe_pulse", "88次/分", [units[1]]),
+    ]
+    client = FakeLlmClient({"verifications": [
+        {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+         "checks": _four_checks(), "comment": "一致"},
+        # 缺 pe_pulse → 整组拒绝
+    ]})
+    assert FieldVerifier(client).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_pass_with_false_check_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    client = FakeLlmClient({"verifications": [
+        {"field_key": "pe_temperature", "verdict": "pass", "reason_code": "none",
+         "checks": _four_checks(grounding=False), "comment": "一致"},
+    ]})
+    assert FieldVerifier(client).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_suspicious_all_true_or_reason_none_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    for payload in (
+        # suspicious 但四项全 true
+        {"verifications": [{"field_key": "pe_temperature", "verdict": "suspicious",
+          "reason_code": "extraction_mistake", "checks": _four_checks(), "comment": "u001 疑"}]},
+        # suspicious 但 reason=none
+        {"verifications": [{"field_key": "pe_temperature", "verdict": "suspicious",
+          "reason_code": "none", "checks": _four_checks(grounding=False), "comment": "u001 疑"}]},
+    ):
+        assert FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_reason_check_mismatch_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    # nonstandard_expression 但 text_standard=true
+    payload1 = {"verifications": [{"field_key": "pe_temperature", "verdict": "suspicious",
+        "reason_code": "nonstandard_expression", "checks": _four_checks(), "comment": "u001 疑"}]}
+    assert FieldVerifier(FakeLlmClient(payload1)).verify(candidates, document_text="") == []
+    # extraction_mistake 但 grounding/scope/logic 全 true
+    payload2 = {"verifications": [{"field_key": "pe_temperature", "verdict": "suspicious",
+        "reason_code": "extraction_mistake", "checks": _four_checks(text=False), "comment": "u001 疑"}]}
+    assert FieldVerifier(FakeLlmClient(payload2)).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_suspicious_comment_unknown_id_rejected():
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    payload = {"verifications": [{"field_key": "pe_temperature", "verdict": "suspicious",
+        "reason_code": "extraction_mistake", "checks": _four_checks(grounding=False),
+        "comment": "u999 不存在的证据"}]}
+    assert FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="") == []
+
+
+def test_semantic_contract_legit_pass_scope_ocr_parsed():
+    """合法 pass、字段越界、OCR 病句三类均能解析。"""
+    units = [_mk_unit("u001", "双耳粗测听力正常。"), _mk_unit("u002", "双眼粗测视力正常。")]
+    candidates = [
+        _mk_field("pe_ears", "正常", [units[0]]),
+        _mk_field("pe_eyes", "正常", [units[1]]),
+    ]
+    client = FakeLlmClient({"verifications": [
+        {"field_key": "pe_ears", "verdict": "pass", "reason_code": "none",
+         "checks": _four_checks(), "comment": "一致"},
+        {"field_key": "pe_eyes", "verdict": "suspicious", "reason_code": "nonstandard_expression",
+         "checks": _four_checks(text=False), "comment": "u002 '粗侧'疑为'粗测'错读"},
+    ]})
+    result = FieldVerifier(client).verify(candidates, document_text="")
+    assert len(result) == 2
+    assert result[0]["verdict"] == "pass"
+    assert result[1]["reason_code"] == "nonstandard_expression"
+
+
+def test_semantic_contract_legacy_fail_still_parsed():
+    """历史 fail 响应（旧 checks 键名）仍可解析，不套用新语义。"""
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    payload = {"verifications": [{"field_key": "pe_temperature", "verdict": "fail",
+        "reason_code": "extraction_mistake", "checks": {"value_semantically_supported": False},
+        "comment": "u001 证据不支持"}]}
+    result = FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="")
+    assert len(result) == 1 and result[0]["verdict"] == "fail"
+
+
+def test_semantic_contract_bad_group_does_not_affect_other_section():
+    """一组语义违规整组拒绝，不影响其他 section 组。"""
+    units1 = [_mk_unit("u001", "主诉：反复咳嗽。")]
+    units2 = [_mk_unit("u002", "肺部：呼吸音清。")]
+    candidates = [
+        _mk_field("chief_complaint", "反复咳嗽", [units1[0]], section="chief_complaint"),
+        _mk_field("pe_lung", "呼吸音清", [units2[0]], section="physical_examination"),
+    ]
+    responses = [
+        {"verifications": [{"field_key": "chief_complaint", "verdict": "pass", "reason_code": "none",
+          "checks": _four_checks(), "comment": "一致"}]},
+        {"verifications": [{"field_key": "pe_lung", "verdict": "suspicious", "reason_code": "extraction_mistake",
+          "checks": _four_checks(grounding=False), "comment": "u999 不存在的证据"}]},  # 违规
+    ]
+    client = _RecordingClient(responses)
+    result = FieldVerifier(client).verify(candidates, group_by="section")
+    assert len(result) == 1 and result[0]["field_key"] == "chief_complaint"
+
+
+def test_v3_contract_new_keys_accepted():
+    """verifier.v3：新 checks 键 text_standard + 新 reason nonstandard_expression 可解析。"""
+    units = [_mk_unit("u001", "胸状胸。")]
+    candidates = [_mk_field("pe_chest", "胸状胸", [units[0]])]
+    payload = {"verifications": [{"field_key": "pe_chest", "verdict": "suspicious",
+        "reason_code": "nonstandard_expression",
+        "checks": _four_checks(text=False), "comment": "u001 胸状胸非标准表述"}]}
+    result = FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="")
+    assert len(result) == 1
+    assert result[0]["reason_code"] == "nonstandard_expression"
+    assert result[0]["checks"]["text_standard"] is False
+
+
+def test_v3_contract_old_check_key_renormalized():
+    """历史数据：旧 checks 键 ocr_text_clear 解析时归一化为 text_standard。"""
+    units = [_mk_unit("u001", "体温36.5℃。")]
+    candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
+    payload = {"verifications": [{"field_key": "pe_temperature", "verdict": "pass",
+        "reason_code": "none",
+        "checks": {"grounding_supported": True, "field_scope_valid": True,
+                   "ocr_text_clear": True, "logic_consistent": True},
+        "comment": "一致"}]}
+    result = FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="")
+    assert len(result) == 1
+    assert "text_standard" in result[0]["checks"] and "ocr_text_clear" not in result[0]["checks"]
+
+
+def test_v3_contract_legacy_reason_still_parsed_with_old_check():
+    """历史数据：reason=ocr_quality_issue + 旧键 ocr_text_clear=false 组合可解析（不误拒）。"""
+    units = [_mk_unit("u001", "古手中指断指再植术后5年。")]
+    candidates = [_mk_field("pmh_surgery_history", "古手中指断指再植术后5年", [units[0]])]
+    payload = {"verifications": [{"field_key": "pmh_surgery_history", "verdict": "suspicious",
+        "reason_code": "ocr_quality_issue",
+        "checks": {"grounding_supported": True, "field_scope_valid": True,
+                   "ocr_text_clear": False, "logic_consistent": True},
+        "comment": "u001 古手疑为左手错读"}]}
+    result = FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="")
+    assert len(result) == 1
+    assert result[0]["reason_code"] == "ocr_quality_issue"
+    assert result[0]["checks"]["text_standard"] is False
