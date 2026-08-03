@@ -1,10 +1,6 @@
-"""评估管线组装与报告生成。
+"""Evaluation pipeline, atomic grounding diagnostics and report assembly."""
+from __future__ import annotations
 
-默认管线与 COPDAdmissionQwenFieldPort.extract 行为一致（prompt → LLM →
-契约校验 → evidence 回填 → quality_checks → verifier 复核）；消融变体通过
-check_contract / apply_quality / apply_verify 开关控制（spec 第 5 节）。
-契约失败不抛出，捕获为 error；复核失败由 FieldVerifier 静默降级，不改变指标。
-"""
 from ..errors import AppError
 from ..services.copd_extraction.admission_contract import (
     map_qwen_fields_to_review_candidates,
@@ -12,15 +8,18 @@ from ..services.copd_extraction.admission_contract import (
 )
 from ..services.copd_extraction.prompts import build_admission_structured_fields_messages
 from ..services.copd_extraction.quality_checks import apply_quality_checks
+from ..services.copd_extraction.response_schemas import build_extraction_json_schema
 from ..services.copd_extraction.verifier import FieldVerifier, apply_verdicts
 from .metrics import (
     LONG_TEXT_FIELDS,
+    METRIC_VERSION,
+    compare_j_value,
     compare_value,
+    grounding_result,
     j_judgement_fields,
-    j_judgement_normalize,
+    project_stool_urine_value,
     sentence_overlap_ratio,
     status_matches,
-    value_located_in_text,
 )
 
 FIELD_STATUSES = ("found", "not_found", "uncertain")
@@ -36,16 +35,11 @@ def run_pipeline(
     verifier=None,
     append_reminder: bool = False,
 ) -> dict:
-    """跑单条样本的抽取管线，返回 payload / candidates / error。
-
-    append_reminder=True（变体 B）时 user 末尾追加结构提醒句，默认 False
-    保持与生产端口行为一致（变体 A）。
-    """
+    """Run extraction → contract → evidence refill → quality → verification."""
     schema = input.get("schema") or {}
     document_result = input.get("document_result") or {}
     evidence_units = input.get("evidence_units") or []
     document_text = document_result.get("merged_text") or ""
-
     system, user = build_admission_structured_fields_messages(
         schema=schema,
         evidence_units=evidence_units,
@@ -53,7 +47,11 @@ def run_pipeline(
         append_reminder=append_reminder,
     )
     try:
-        payload = llm_client.complete_json(user, system_prompt=system)
+        payload = llm_client.complete_json(
+            user,
+            system_prompt=system,
+            json_schema=build_extraction_json_schema(schema),
+        )
     except AppError as exc:
         return {"payload": {}, "candidates": [], "error": {"code": exc.code, "message": str(exc)}}
     if check_contract:
@@ -62,11 +60,10 @@ def run_pipeline(
         except AppError as exc:
             return {"payload": payload, "candidates": [], "error": {"code": exc.code, "message": str(exc)}}
     try:
-        candidates = map_qwen_fields_to_review_candidates(payload, schema, evidence_units=evidence_units)
+        candidates = map_qwen_fields_to_review_candidates(
+            payload, schema, evidence_units=evidence_units
+        )
     except AppError as exc:
-        # map 内部会再做一次结构校验（与 validate 共用同一校验循环）。
-        # --no-contract 消融语义：契约层被移除，该失败不算 error，样本无候选；
-        # 开启契约时理论上到不了这里（validate 已先拦下），兜底记录 error。
         if check_contract:
             return {"payload": payload, "candidates": [], "error": {"code": exc.code, "message": str(exc)}}
         return {"payload": payload, "candidates": [], "error": None}
@@ -75,49 +72,93 @@ def run_pipeline(
             candidates, document_text, include_document_flags=False
         )
     if apply_verify:
-        verifier = verifier or FieldVerifier(
-            llm_client, append_reminder=append_reminder
-        )
-        verdicts = verifier.verify(candidates, document_text)
+        verifier = verifier or FieldVerifier(llm_client, append_reminder=append_reminder)
+        verdicts = _verify_with_context(verifier, candidates, document_text, evidence_units)
         candidates = apply_verdicts(candidates, verdicts)
     return {"payload": payload, "candidates": candidates, "error": None}
 
 
+def _verify_with_context(verifier, candidates, document_text, evidence_units):
+    try:
+        return verifier.verify(
+            candidates,
+            document_text,
+            group_by="field",          # verifier.v3：字段级分组，单字段一请求
+            evidence_units=evidence_units,
+        )
+    except TypeError as exc:
+        if "evidence_units" not in str(exc) and "group_by" not in str(exc):
+            raise
+        return verifier.verify(candidates, document_text)
+
+
+def _initial_metrics() -> dict:
+    return {
+        "value_correct": 0,
+        "value_total": 0,
+        "status_correct": 0,
+        "status_total": 0,
+        "literal_unlocated_count": 0,
+        "unsupported_claim_candidate": 0,
+        "unsupported_claim_candidate_count": 0,
+        "confirmed_hallucination": 0,
+        "confirmed_hallucination_count": 0,
+        # Compatibility alias: it now means confirmed hallucinations only.
+        "hallucination": 0,
+        "extraction_fn": 0,
+        "over_extraction_fp": 0,
+        "contract_invalid": 0,
+        "errors": [],
+        "grounding_details": [],
+    }
+
+
+def _evidence_texts(candidate: dict) -> list[str]:
+    evidence_items = [
+        evidence for evidence in candidate.get("evidence") or []
+        if isinstance(evidence, dict) and isinstance(evidence.get("text", ""), str)
+    ]
+    evidence_items.sort(
+        key=lambda item: item.get("start_offset")
+        if isinstance(item.get("start_offset"), int) else 10**12
+    )
+    return [evidence.get("text", "") for evidence in evidence_items]
+
+
 def evaluate_sample(sample: dict, result: dict, schema: dict | None = None) -> dict:
-    """单样本指标分量。candidates 与金标按 field_key 对齐。
+    """Evaluate status/value and report three grounding layers.
 
-    返回包裹结构 {"metrics", "field_totals", "pitfalls"}：metrics 含五指标
-    分量与错误明细；field_totals 为逐字段 value 计数（build_report 按字段
-    分组）；pitfalls 透传样本陷阱类别（build_report 按类别分组）。
-
-    schema 提供时，qwen_type=J / review_control=judgement 字段的 value 先做
-    "正常族"归一再比对（鼻腔通畅==正常）；长文本字段用核心句重合率替代
-    全串比对；幻觉判定前先测金标 value 可定位性——金标本身在 OCR 不可定位
-    （否定短语重建的期望输出）时跳过该字段的幻觉判定，真错误由 value_mismatch 兜底。
+    ``literal_unlocated_count`` is a diagnostic for a non-contiguous whole
+    value.  ``unsupported_claim_candidate`` is intentionally not a veto.
+    Only the deterministic, high-confidence over-extraction case (gold
+    ``not_found`` + predicted ``found`` + absent from cited/full OCR) is counted
+    as ``confirmed_hallucination``.
     """
-    golden_by_key = {f["field_key"]: f for f in sample.get("golden", [])}
-    candidates_by_key = {c["field_key"]: c for c in result.get("candidates", [])}
+    golden_by_key = {field["field_key"]: field for field in sample.get("golden", [])}
+    candidates_by_key = {
+        candidate["field_key"]: candidate
+        for candidate in result.get("candidates", [])
+        if isinstance(candidate, dict) and candidate.get("field_key")
+    }
     ocr_text = sample.get("ocr_text") or ""
     j_fields = j_judgement_fields(schema) if isinstance(schema, dict) else set()
-    metrics = {
-        "value_correct": 0, "value_total": 0,
-        "status_correct": 0, "status_total": 0,
-        "hallucination": 0, "contract_invalid": 0, "errors": [],
-    }
+    metrics = _initial_metrics()
     field_totals: list[dict] = []
     if result.get("error"):
         metrics["contract_invalid"] = 1
         if result["error"].get("code") == "EVAL_LLM_FAILURE":
-            # CLI 兜底的 LLM 失败：样本详情落 errors 明细，使失败样本在报告
-            # JSON 与 --compare 错误集对比中可见。field_key 用空串占位，
-            # 保持 {case_id, field_key, kind} 三元组结构兼容（sorted 安全）。
             metrics["errors"].append({
                 "case_id": sample.get("case_id"),
                 "field_key": "",
                 "kind": "eval_llm_failure",
                 "message": result["error"].get("message", ""),
             })
-        return {"metrics": metrics, "field_totals": field_totals, "pitfalls": sample.get("pitfalls", [])}
+        return {
+            "metrics": metrics,
+            "field_totals": field_totals,
+            "pitfalls": sample.get("pitfalls", []),
+        }
+
     for field_key, golden in golden_by_key.items():
         candidate = candidates_by_key.get(field_key)
         if candidate is None:
@@ -126,113 +167,190 @@ def evaluate_sample(sample: dict, result: dict, schema: dict | None = None) -> d
         predicted_status = candidate.get("status")
         if golden_status not in FIELD_STATUSES:
             continue
-        # status 指标
         metrics["status_total"] += 1
         if status_matches(golden_status, predicted_status):
             metrics["status_correct"] += 1
         else:
-            metrics["errors"].append(
-                {"case_id": sample.get("case_id"), "field_key": field_key, "kind": "status_mismatch"}
-            )
-        # value 指标（not_found 金标不做 value 比对；uncertain 仅 status）
-        golden_value = golden.get("value", "")
-        predicted_value = candidate.get("value", "")
-        correction_applied = bool((candidate.get("ocr_correction") or {}).get("applied"))
-        if golden_status == "not_found":
-            if predicted_value != "":
-                metrics["errors"].append(
-                    {"case_id": sample.get("case_id"), "field_key": field_key, "kind": "value_not_empty_when_not_found"}
-                )
+            metrics["errors"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "kind": "status_mismatch",
+            })
+
+        golden_value = golden.get("value", "") or ""
+        predicted_value = candidate.get("value", "") or ""
+        if golden_status == "found" and predicted_status == "not_found":
+            metrics["extraction_fn"] += 1
+        if golden_status == "not_found" and predicted_status == "found":
+            metrics["over_extraction_fp"] += 1
+            metrics["errors"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "kind": "value_not_empty_when_not_found",
+            })
+
+        # Value accuracy is defined over every gold ``found`` field.  Reserve
+        # its denominator before any predicted-status shortcut so a predicted
+        # not_found/uncertain cannot disappear from value metrics.
+        value_item = None
+        if golden_status == "found":
+            metrics["value_total"] += 1
+            value_item = {"field_key": field_key, "value_correct": 0, "value_total": 1}
+            field_totals.append(value_item)
+
+        if predicted_status != "found" or not predicted_value.strip():
+            if golden_status == "found":
+                metrics["errors"].append({
+                    "case_id": sample.get("case_id"),
+                    "field_key": field_key,
+                    "kind": "value_mismatch",
+                })
             continue
-        if golden_status == "uncertain":
+
+        # Ground every predicted found value, including gold not_found.  This
+        # is the deliberate fix for the previous false-negative accounting.
+        grounding = grounding_result(
+            predicted_value,
+            _evidence_texts(candidate),
+            ocr_text,
+            normal_allowed=field_key in j_fields,
+            correction=candidate.get("ocr_correction"),
+        )
+        if grounding.get("literal_unlocated"):
+            metrics["literal_unlocated_count"] += 1
+        unsupported = grounding.get("unsupported_fragments") or []
+        metrics["unsupported_claim_candidate"] += len(unsupported)
+        metrics["unsupported_claim_candidate_count"] += len(unsupported)
+        if unsupported:
+            for fragment in unsupported:
+                metrics["grounding_details"].append({
+                    "case_id": sample.get("case_id"),
+                    "field_key": field_key,
+                    "level": "unsupported_claim_candidate",
+                    "fragment": fragment,
+                })
+        if grounding.get("literal_unlocated"):
+            metrics["grounding_details"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "level": "literal_unlocated",
+                "status": grounding.get("status"),
+            })
+
+        # A gold not_found field that has a found value absent from both cited
+        # evidence and full OCR is an unambiguous new-fact over-extraction.
+        if golden_status == "not_found" and unsupported:
+            metrics["confirmed_hallucination"] += 1
+            metrics["confirmed_hallucination_count"] += 1
+            metrics["hallucination"] += 1
+            metrics["grounding_details"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "level": "confirmed_hallucination",
+                "fragment": unsupported[0],
+            })
+            metrics["errors"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "kind": "confirmed_hallucination",
+            })
+
+        if golden_status == "not_found" or golden_status == "uncertain":
             continue
-        metrics["value_total"] += 1
-        field_totals.append({"field_key": field_key, "value_correct": 0, "value_total": 1})
-        # value 判定：J 型字段先做"正常族"归一；长文本字段用核心句重合率；
-        # 其余字段走默认归一化两级判定。
         if field_key in j_fields:
-            g_n, p_n = j_judgement_normalize(golden_value), j_judgement_normalize(predicted_value)
-            verdict = compare_value(g_n, p_n)
+            # v2 非对称 J 比较：投影（大小便）→ 按金标内容分族 → exact/substring
+            verdict = compare_j_value(golden_value, predicted_value, field_key)
         elif field_key in LONG_TEXT_FIELDS:
             verdict = "exact" if sentence_overlap_ratio(golden_value, predicted_value) >= 0.6 else "mismatch"
         else:
-            verdict = compare_value(golden_value, predicted_value)
+            # hpi_stool_status 走 T 分支，但同样支持大小便投影（金标与预测统一投影）
+            verdict = compare_value(
+                project_stool_urine_value(golden_value, field_key),
+                project_stool_urine_value(predicted_value, field_key),
+            )
         if verdict in ("exact", "substring"):
             metrics["value_correct"] += 1
-            field_totals[-1]["value_correct"] = 1
+            if value_item is not None:
+                value_item["value_correct"] = 1
         else:
-            metrics["errors"].append(
-                {"case_id": sample.get("case_id"), "field_key": field_key, "kind": "value_mismatch"}
-            )
-        # 幻觉（veto）：value 必须在 OCR 原文可定位。值本身已错时 value_mismatch
-        # 已记录该字段失败，错误明细只保留真正"值对但不可定位"的 veto 个案。
-        # 金标 value 本身在 OCR 不可定位（否定短语重建的期望输出不可定位）时
-        # 跳过该字段的幻觉判定，真错误由 value_mismatch 兜底。
-        # J 型字段"正常族"语义等价（金标"鼻腔通畅"↔预测"正常"）时，预测 token
-        # 不必在原文逐字出现，跳过该字段的幻觉判定；语义不等价（如金标异常
-        # 描述被折叠为"正常"）仍按原逻辑判幻觉。
-        j_equivalent = (
-            field_key in j_fields
-            and j_judgement_normalize(golden_value) == j_judgement_normalize(predicted_value)
-        )
-        golden_located = value_located_in_text(golden_value, ocr_text)
-        if not j_equivalent and not value_located_in_text(predicted_value, ocr_text, correction_applied) and golden_located:
-            metrics["hallucination"] += 1
-            if verdict in ("exact", "substring"):
-                metrics["errors"].append(
-                    {"case_id": sample.get("case_id"), "field_key": field_key, "kind": "hallucination"}
-                )
-    return {"metrics": metrics, "field_totals": field_totals, "pitfalls": sample.get("pitfalls", [])}
+            metrics["errors"].append({
+                "case_id": sample.get("case_id"),
+                "field_key": field_key,
+                "kind": "value_mismatch",
+            })
+
+    return {
+        "metrics": metrics,
+        "field_totals": field_totals,
+        "pitfalls": sample.get("pitfalls", []),
+    }
 
 
 def build_report(sample_results: list[dict], meta: dict) -> dict:
-    """汇总五指标 + 按字段分组 + 按陷阱类别分组 + 错误明细。"""
-    total = {
-        "value_correct": 0, "value_total": 0,
-        "status_correct": 0, "status_total": 0,
-        "hallucination": 0, "contract_invalid": 0,
-    }
+    """Aggregate accuracy, grounding layers and status FN/FP counters.
+
+    Report meta is always stamped with ``metric_version=evaluator.v2``
+    (DESIGN §4.4); cross-version comparisons must not emit comparable deltas.
+    """
+    meta = dict(meta)
+    meta["metric_version"] = METRIC_VERSION
+    total = _initial_metrics()
     by_field: dict[str, dict] = {}
     by_pitfall: dict[str, dict] = {}
     errors: list[dict] = []
-
-    # sample_results 需要携带 sample（case_id/pitfalls）与指标分量；由调用方在
-    # evaluate_sample 后补上 pitfalls 再传入，见 run_eval 的组装（Task 4）。
-    for r in sample_results:
-        metrics = r["metrics"]
-        for key in total:
+    grounding_details: list[dict] = []
+    numeric_keys = [
+        "value_correct", "value_total", "status_correct", "status_total",
+        "literal_unlocated_count", "unsupported_claim_candidate",
+        "unsupported_claim_candidate_count", "confirmed_hallucination",
+        "confirmed_hallucination_count", "hallucination", "extraction_fn",
+        "over_extraction_fp", "contract_invalid",
+    ]
+    for result in sample_results:
+        metrics = result["metrics"]
+        for key in numeric_keys:
             total[key] += metrics.get(key, 0)
         errors.extend(metrics.get("errors", []))
-        for f in r.get("field_totals", []):
-            d = by_field.setdefault(f["field_key"], {"value_correct": 0, "value_total": 0})
-            d["value_total"] += f["value_total"]
-            d["value_correct"] += f["value_correct"]
-        for pitfall in r.get("pitfalls", []):
-            d = by_pitfall.setdefault(pitfall, {"value_correct": 0, "value_total": 0})
-            d["value_total"] += r["metrics"]["value_total"]
-            d["value_correct"] += r["metrics"]["value_correct"]
+        grounding_details.extend(metrics.get("grounding_details", []))
+        for field in result.get("field_totals", []):
+            item = by_field.setdefault(field["field_key"], {"value_correct": 0, "value_total": 0})
+            item["value_total"] += field["value_total"]
+            item["value_correct"] += field["value_correct"]
+        for pitfall in result.get("pitfalls", []):
+            item = by_pitfall.setdefault(pitfall, {"value_correct": 0, "value_total": 0})
+            item["value_total"] += metrics["value_total"]
+            item["value_correct"] += metrics["value_correct"]
 
+    task_success_count = sum(
+        1 for result in sample_results
+        if result["metrics"]["contract_invalid"] == 0
+        and result["metrics"]["status_total"] > 0
+        and result["metrics"]["status_correct"] == result["metrics"]["status_total"]
+        and result["metrics"]["value_correct"] == result["metrics"]["value_total"]
+    )
+    report_metrics = {
+        "status_accuracy": _safe_div(total["status_correct"], total["status_total"]),
+        "value_accuracy": _safe_div(total["value_correct"], total["value_total"]),
+        "literal_unlocated_count": total["literal_unlocated_count"],
+        "unsupported_claim_candidate": total["unsupported_claim_candidate"],
+        "unsupported_claim_candidate_count": total["unsupported_claim_candidate_count"],
+        "confirmed_hallucination": total["confirmed_hallucination"],
+        "confirmed_hallucination_count": total["confirmed_hallucination_count"],
+        "hallucination_count": total["confirmed_hallucination"],
+        "extraction_fn": total["extraction_fn"],
+        "over_extraction_fp": total["over_extraction_fp"],
+        "contract_invalid_count": total["contract_invalid"],
+        "task_success_count": task_success_count,
+        "sample_count": len(sample_results),
+        "noise_bandwidth": _noise_bandwidth(len(sample_results)),
+    }
     return {
         "meta": meta,
-        "metrics": {
-            "status_accuracy": _safe_div(total["status_correct"], total["status_total"]),
-            "value_accuracy": _safe_div(total["value_correct"], total["value_total"]),
-            "hallucination_count": total["hallucination"],
-            "contract_invalid_count": total["contract_invalid"],
-            "task_success_count": sum(
-                1 for r in sample_results
-                if r["metrics"]["contract_invalid"] == 0
-                and r["metrics"]["status_total"] > 0
-                and r["metrics"]["status_correct"] == r["metrics"]["status_total"]
-                and r["metrics"]["value_correct"] == r["metrics"]["value_total"]
-                and r["metrics"]["hallucination"] == 0
-            ),
-            "sample_count": len(sample_results),
-            "noise_bandwidth": _noise_bandwidth(len(sample_results)),
-        },
+        "metrics": report_metrics,
         "by_field": by_field,
         "by_pitfall": by_pitfall,
         "errors": errors,
+        "grounding_details": grounding_details,
     }
 
 
@@ -241,5 +359,4 @@ def _safe_div(num: int, den: int) -> float:
 
 
 def _noise_bandwidth(n: int) -> float:
-    """√(p(1-p)/n) 取 p=0.5 的最大带宽，标注样本量级噪声。"""
     return round(0.5 / (n ** 0.5), 4) if n else 0.0

@@ -32,6 +32,7 @@ def export_verdicts_file(verdicts: list[dict], out_path: Path) -> None:
             "field_key": v.get("field_key"),
             "verdict": v.get("verdict"),
             "reason_code": v.get("reason_code"),
+            "checks": v.get("checks") or {},
             "comment": v.get("comment"),
             "value": v.get("value"),
             "evidence_text": (v.get("evidence_text") or "")[:200],
@@ -65,7 +66,25 @@ def compute_kappa(
         verifier_flagged = v.get("verdict") in ("suspicious", "fail")
         should_flag = adjudications[key]
         table[1 if verifier_flagged else 0][1 if should_flag else 0] += 1
-    return {"kappa": cohen_kappa(table) if n else 0.0, "n": n, "table": table}
+    true_positive = table[1][1]
+    false_positive = table[1][0]
+    false_negative = table[0][1]
+    true_negative = table[0][0]
+    precision = true_positive / (true_positive + false_positive) if true_positive + false_positive else 0.0
+    recall = true_positive / (true_positive + false_negative) if true_positive + false_negative else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "kappa": cohen_kappa(table) if n else 0.0,
+        "n": n,
+        "table": table,
+        "TP": true_positive,
+        "FP": false_positive,
+        "FN": false_negative,
+        "TN": true_negative,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+    }
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -99,12 +118,16 @@ def main(argv: list[str] | None = None) -> None:
     p_kappa.add_argument("--adjudications", required=True)
 
     args = parser.parse_args(argv)
-    if args.command == "export" and args.group_by and not args.inject_evidence:
-        parser.error("--group-by 需要同时指定 --inject-evidence（分组模式以字段证据为输入）")
+    # ``--inject-evidence`` remains accepted for old scripts, but the value
+    # based injector is no longer used. Every request now uses the original
+    # evidence registry assembled by ``_input_for``.
     if args.command == "kappa":
         verdicts = json.loads(Path(args.verdicts).read_text(encoding="utf-8"))["items"]
         result = compute_kappa(verdicts, load_adjudications(Path(args.adjudications)))
-        print(f"kappa={result['kappa']} n={result['n']} table={result['table']}")
+        print(
+            "TP={TP} FP={FP} FN={FN} TN={TN} precision={precision} "
+            "recall={recall} F1={f1} kappa={kappa} n={n} table={table}".format(**result)
+        )
         return
     if args.command == "export":
         schema = load_schema(args.schema)
@@ -112,26 +135,28 @@ def main(argv: list[str] | None = None) -> None:
         qwen = QwenVLLMClient(base_url=args.base_url, model=args.model, api_key="not-needed", timeout_seconds=360)
         llm_client = OpenAICompatibleJsonClient(qwen, max_tokens=args.max_tokens, temperature=0.0)
         from ..services.copd_extraction.verifier import FieldVerifier
-        from .chunked_review import inject_field_evidence, units_from_ocr_text
         verifier = FieldVerifier(llm_client)
         items = []
         for sample in samples:
-            result = run_pipeline(_input_for(sample, schema), llm_client, verifier=verifier)
+            sample_input = _input_for(sample, schema)
+            result = run_pipeline(sample_input, llm_client, apply_verify=False)
             if result.get("error"):
                 continue
             candidates = result["candidates"]
-            if args.inject_evidence:
-                candidates = inject_field_evidence(
-                    candidates, units_from_ocr_text(sample.get("ocr_text") or "")
-                )
             by_key = {c["field_key"]: c for c in candidates}
-            for v in verifier.verify(candidates, sample.get("ocr_text") or "", group_by=args.group_by):
+            for v in verifier.verify(
+                candidates,
+                sample.get("ocr_text") or "",
+                group_by=args.group_by or "field",
+                evidence_units=sample_input.get("evidence_units") or [],
+            ):
                 field = by_key.get(v["field_key"]) or {}
                 items.append({
                     "case_id": sample.get("case_id"),
                     "field_key": v["field_key"],
                     "verdict": v["verdict"],
                     "reason_code": v["reason_code"],
+                    "checks": v.get("checks") or {},
                     "comment": v["comment"],
                     "value": field.get("value", ""),
                     "evidence_text": "；".join(
