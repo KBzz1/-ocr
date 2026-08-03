@@ -7,6 +7,7 @@ from .admission_contract import (
 )
 from .prompts import build_admission_structured_fields_messages
 from .quality_checks import apply_quality_checks
+from .response_schemas import build_extraction_json_schema
 from .verifier import apply_verdicts
 
 
@@ -49,7 +50,11 @@ class COPDAdmissionQwenFieldPort:
             document_text=document_text,
             append_reminder=append_reminder,
         )
-        payload = self._llm_client.complete_json(user, system_prompt=system)
+        payload = self._llm_client.complete_json(
+            user,
+            system_prompt=system,
+            json_schema=build_extraction_json_schema(schema),
+        )
         # Structural validation raises AppError(ALGORITHM_CONTRACT_INVALID) on
         # any contract violation (missing fields, bad statuses, wrong types).
         validate_qwen_payload(payload, schema)
@@ -64,9 +69,26 @@ class COPDAdmissionQwenFieldPort:
             include_document_flags=False,
         )
         if self._verifier is not None:
-            verdicts = self._verifier.verify(candidates, document_text)
+            verdicts = _verify_with_context(
+                self._verifier, candidates, document_text, evidence_units
+            )
             candidates = apply_verdicts(candidates, verdicts)
         return candidates
+
+
+def _verify_with_context(verifier, candidates, document_text, evidence_units):
+    """Pass the production evidence registry while retaining old test doubles."""
+    try:
+        return verifier.verify(
+            candidates,
+            document_text,
+            group_by="field",          # verifier.v3：字段级分组，单字段一请求
+            evidence_units=evidence_units,
+        )
+    except TypeError as exc:
+        if "evidence_units" not in str(exc) and "group_by" not in str(exc):
+            raise
+        return verifier.verify(candidates, document_text)
 
 
 class _LazyCOPDAdmissionQwenFieldPort:

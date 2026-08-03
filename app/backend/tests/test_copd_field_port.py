@@ -25,20 +25,14 @@ def test_qwen_admission_port_sends_schema_and_evidence_units(monkeypatch):
                     fk = field["field_key"]
                     if fk == "chief_complaint":
                         fields.append({
-                            "section_key": group["group_key"],
-                            "section_label": group["group_label"],
                             "field_key": fk,
-                            "field_label": field["label"],
                             "status": "found",
                             "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
                             "evidence_ids": ["u001"],
                         })
                     else:
                         fields.append({
-                            "section_key": group["group_key"],
-                            "section_label": group["group_label"],
                             "field_key": fk,
-                            "field_label": field["label"],
                             "status": "not_found",
                             "value": "",
                             "evidence_ids": [],
@@ -182,8 +176,8 @@ def test_default_copd_field_port_builds_qwen_vllm_json_client():
     assert captured["model"] == "Qwen3.5-4B-AWQ-4bit"
 
 
-def test_qwen_admission_port_preserves_merged_ocr_context_with_evidence_units():
-    """即使已有 evidence_units，prompt 仍保留完整 merged OCR 供模型理解跨片段上下文。"""
+def test_qwen_admission_port_does_not_duplicate_merged_ocr_with_evidence_units():
+    """已有 evidence_units 时，抽取 prompt 只发送一份证据流。"""
     from app.backend.services.copd_extraction.port import build_default_copd_field_port
 
     captured_prompts: list[str] = []
@@ -232,7 +226,7 @@ def test_qwen_admission_port_preserves_merged_ocr_context_with_evidence_units():
     assert len(result) == 61
     prompt = captured_prompts[-1]
     assert evidence_units[0]["text"] in prompt
-    assert merged_only_text in prompt
+    assert merged_only_text not in prompt
 
 
 def test_qwen_admission_port_marks_quality_risks_as_suspicious():
@@ -446,9 +440,11 @@ def test_port_extract_runs_injected_verifier():
     class RecordingVerifier:
         def __init__(self):
             self.called = 0
+            self.group_by = None
 
-        def verify(self, candidates, document_text=""):
+        def verify(self, candidates, document_text="", group_by=None, evidence_units=None):
             self.called += 1
+            self.group_by = group_by
             return []
 
     recording_verifier = RecordingVerifier()
@@ -462,5 +458,74 @@ def test_port_extract_runs_injected_verifier():
         "evidence_units": [],
     })
     assert recording_verifier.called == 1
+    assert recording_verifier.group_by == "field"
     assert isinstance(result, list)
     assert len(result) == 61
+
+
+def test_qwen_admission_port_still_sends_json_schema_constraint():
+    """约束解码不动：抽取路径传给 LLM 客户端的 json_schema 仍等于
+    build_extraction_json_schema 的完整结构约束（name/strict/schema）。"""
+    from app.backend.services.copd_extraction.port import build_default_copd_field_port
+    from app.backend.services.copd_extraction.response_schemas import (
+        build_extraction_json_schema,
+    )
+
+    captured: dict = {}
+
+    class FakeLlmClient:
+        def complete_json(self, prompt: str, **kwargs):
+            captured.update(kwargs)
+            return _full_not_found_payload(current_schema())
+
+        def close(self):
+            pass
+
+    port = build_default_copd_field_port(
+        config={
+            "qwen_vllm_server_url": "http://qwen-vision-vllm-server:8000/v1",
+            "qwen_vllm_model_name": "Qwen3.5-4B-AWQ-4bit",
+            "qwen_extraction_max_tokens": 8192,
+            "qwen_extraction_temperature": 0.0,
+            "qwen_extraction_timeout_seconds": 360,
+            "llm_client_factory": lambda *a, **k: FakeLlmClient(),
+        },
+        field_keys_provider=lambda: list(current_schema_field_keys()),
+    )
+
+    schema = current_schema()
+    port.extract({
+        "schema": schema,
+        "document_result": {"merged_text": "主诉：反复咳嗽、咳痰15年。"},
+        "evidence_units": [],
+    })
+
+    assert "json_schema" in captured, "抽取路径必须继续传递 json_schema 约束"
+    assert captured["json_schema"] == build_extraction_json_schema(schema)
+    assert captured["json_schema"]["name"] == "admission_record_structured_fields"
+    assert captured["json_schema"]["strict"] is True
+    assert captured["json_schema"]["schema"]["properties"]["fields"]["minItems"] == 61
+
+
+def test_llm_client_without_schema_omits_json_schema_for_json_object_fallback():
+    """旧无 schema 调用仍走 json_object：OpenAICompatibleJsonClient 不传 json_schema 时，
+    底层 Qwen 客户端收不到 json_schema 键（由 qwen_vllm_client 回落到 json_object）。"""
+    from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+
+    captured: dict = {}
+
+    class FakeQwenClient:
+        def complete_json(self, **kwargs):
+            captured.clear()
+            captured.update(kwargs)
+            return {"ok": True}
+
+    client = OpenAICompatibleJsonClient(FakeQwenClient())
+
+    # 无 json_schema 调用：不传该键
+    client.complete_json("旧调用")
+    assert "json_schema" not in captured
+
+    # 带 json_schema 调用：透传该键
+    client.complete_json("新调用", json_schema={"name": "x", "schema": {"type": "object"}})
+    assert captured["json_schema"] == {"name": "x", "schema": {"type": "object"}}
