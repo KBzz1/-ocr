@@ -317,7 +317,7 @@ def test_verify_group_all_failed_returns_empty():
     assert result == []
 
 def test_verify_group_out_of_scope_field_rejects_group():
-    """verifier.v2 语义契约：组外字段 = 该组响应整体非法，整组拒绝。"""
+    """verifier.v3 语义契约：组外字段 = 该组响应整体非法，整组拒绝。"""
     units = [_mk_unit("u001", "体温36.5℃。")]
     candidates = [_mk_field("pe_temperature", "36.5℃", [units[0]])]
     client = _RecordingClient([
