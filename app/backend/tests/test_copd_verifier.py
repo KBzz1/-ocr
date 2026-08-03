@@ -539,3 +539,15 @@ def test_v3_contract_legacy_reason_still_parsed_with_old_check():
     assert len(result) == 1
     assert result[0]["reason_code"] == "ocr_quality_issue"
     assert result[0]["checks"]["text_standard"] is False
+
+
+def test_v3_contract_legacy_e_prefixed_cited_id_parsed():
+    """历史数据：comment 引用 e 前缀 ID（v2 前格式）且该 ID 在请求 evidence_ids 内可解析。"""
+    units = [_mk_unit("e001", "双耳粗测听力正常。")]
+    candidates = [_mk_field("pe_ears", "正常", [units[0]])]
+    payload = {"verifications": [{"field_key": "pe_ears", "verdict": "suspicious",
+        "reason_code": "nonstandard_expression",
+        "checks": _four_checks(text=False), "comment": "e001 '粗侧'疑为'粗测'错读"}]}
+    result = FieldVerifier(FakeLlmClient(payload)).verify(candidates, document_text="")
+    assert len(result) == 1
+    assert result[0]["reason_code"] == "nonstandard_expression"

@@ -209,8 +209,11 @@ def _clip_comment(comment) -> str:
 
 
 def _comment_cited_ids(comment: str) -> list[str]:
-    """提取 comment 中形如 uXXX 的引用 ID（证据编号三位数起）。"""
-    return re.findall(r"u\d{3}", comment or "")
+    """提取 comment 中形如 uXXX/eXXX 的引用 ID（证据编号三位数起）。
+
+    e 前缀兼容 v2 前历史格式（e001 等），现行格式为 uXXX。
+    """
+    return re.findall(r"[eu]\d{3}", comment or "")
 
 
 def _semantic_violations(
