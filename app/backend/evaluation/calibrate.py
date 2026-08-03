@@ -109,9 +109,9 @@ def main(argv: list[str] | None = None) -> None:
     p_export.add_argument("--max-tokens", type=int, default=8192)
     p_export.add_argument("--out", required=True, help="裁定模板 JSON 路径")
     p_export.add_argument("--inject-evidence", action="store_true",
-                          help="复核前按字段值定位回填证据 units（评估口径修正：复核器吃字段证据=生产形态）")
+                          help="已无实际效果（不再回填证据），仅保留以兼容旧脚本")
     p_export.add_argument("--group-by", choices=["field", "section"], default=None,
-                          help="复核器分组形态（需与 --inject-evidence 同用；None=一次全量）")
+                          help="复核器分组形态：field=字段级、section=章节级；默认 field")
 
     p_kappa = sub.add_parser("kappa", help="裁定文件 → kappa")
     p_kappa.add_argument("--verdicts", required=True)

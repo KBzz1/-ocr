@@ -371,14 +371,14 @@ def test_verify_skips_group_with_missing_cited_ids_without_llm_call():
     units = [_mk_unit("u001", "体温36.5℃。")]
     candidates = [_mk_field("pe_temperature", "36.5℃", [])]  # evidence_ids 空
 
-    class NeverClient:
-        def complete_json(self, prompt, **kwargs):
-            raise AssertionError("不应调用复核 LLM")
-
-    result = FieldVerifier(NeverClient()).verify(
+    # 不用抛错型 client：verify 外层会吞掉 LLM 异常并返回 []，抛错证明不了
+    # "从未调用"；改用计数型 client，断言 calls 为空才是拦截本身的证据。
+    client = _RecordingClient([])
+    result = FieldVerifier(client).verify(
         candidates, evidence_units=[units[0]]
     )
     assert result == []
+    assert client.calls == []  # 预检拦截：从未调用复核 LLM
 
 
 def test_semantic_contract_duplicate_field_key_rejected():
