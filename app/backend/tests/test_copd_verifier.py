@@ -24,7 +24,7 @@ def test_verification_messages_claim_manifest_keeps_evidence_once():
     # cited_text 或按值重新定位的证据副本。
     assert user.count(long_value) == 2
     assert "cited_text" not in user
-    assert "普通逗号、顿号列表不拆开" in system
+    assert "value 超过 40 字时，按逗号、顿号补充拆分" in system
 
 
 def test_verification_messages_evidence_first_fields_after():
@@ -205,7 +205,7 @@ def test_apply_verdicts_does_not_downgrade_failed_fields():
 
 def test_verifier_principle_threshold_for_expression_noise():
     system, _ = build_verification_messages([], [])
-    assert "影响理解或造成歧义" in system
+    assert "可定位的非标准表述" in system
 
 
 def test_verifier_principle_logic_consistency():
@@ -333,7 +333,7 @@ def test_verify_group_out_of_scope_field_rejects_group():
     assert result == []  # 组外字段 → 整组拒绝
 
 
-# —— verifier.v2：4 个 JSON 微例与后端语义契约 ——
+# —— verifier.v3：5 个 JSON 微例与后端语义契约 ——
 
 def _four_checks(grounding=True, scope=True, text=True, logic=True):
     return {
@@ -344,22 +344,25 @@ def _four_checks(grounding=True, scope=True, text=True, logic=True):
     }
 
 
-def test_verifier_v2_four_json_micro_examples_present_and_parseable():
-    """三类核心微例 + 粗测不误报对照：存在、可解析、顶层仅 verifications。"""
+def test_verifier_v3_five_json_micro_examples_present_and_parseable():
+    """三类核心微例 + 术语陌生 pass + 错读形似规范词对照：存在、可解析、顶层仅 verifications。"""
     import re
 
     system, _ = build_verification_messages([], [])
     blocks = re.findall(r"```json\n(.*?)```", system, re.S)
-    assert len(blocks) == 4
+    assert len(blocks) == 5
     for block in blocks:
         data = json.loads(block)
         assert sorted(data.keys()) == ["verifications"]
         assert len(data["verifications"]) == 1
         v = data["verifications"][0]
         assert set(v.keys()) == {"field_key", "verdict", "reason_code", "checks", "comment"}
-    # 对照形态：越界示例、OCR 病句示例、粗测不误报示例
+        assert set(v["checks"].keys()) == {
+            "grounding_supported", "field_scope_valid", "text_standard", "logic_consistent"}
+    # 对照形态：越界示例、错读形似规范词示例、术语陌生 pass 示例
     assert "粗测" in system and "古手" in system
-    assert "u911" in system and "u912" in system
+    assert "胸状胸" in system
+    assert "u911" in system and "u912" in system and "u913" in system
     assert "禁止复制到输出" in system
 
 
