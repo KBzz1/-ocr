@@ -518,7 +518,7 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests -q
 - 08-01/02 历史数据（adjudications/verdicts 旧系列）随合并留存于 calibration/reports 原位，不迁移不删除。
 ```
 
-`data/evaluation/README.md` 是仓库跟踪文件（.gitignore 特例），Task 1 合并脚本已把其内容复制到 `evaluation/data/README.md`。此处直接 `git rm data/evaluation/README.md`（旧位置删除，新位置已有副本），然后编辑 `evaluation/data/README.md` 补充内容（若新位置文件缺失则直接新建）。
+`data/evaluation/README.md` 是仓库跟踪文件（.gitignore 特例），Task 1 合并脚本已把其内容复制到 `evaluation/data/README.md`（主仓库 untracked 状态）。此处：`git rm data/evaluation/README.md`（旧位置删除）→ 编辑 `evaluation/data/README.md` 补充内容 → **`git add evaluation/data/README.md`**（README 为特例需被跟踪，`!evaluation/data/README.md` 规则才生效）。若新位置文件缺失则直接新建并 add。
 
 - [ ] **Step 4: 提交**
 
@@ -875,7 +875,20 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests app/backend/tests -q
 
 Expected: 全绿。
 
-- [ ] **Step 2: 合并分支到 master**
+- [ ] **Step 2: 合并前对齐主仓库 untracked 文件**
+
+主仓库 `evaluation/data/README.md` 是 Task 1 的 untracked 复制产物，分支合入将引入同名 tracked 文件——内容不同会导致 git 拒绝 checkout/merge。先比对，内容不同则备份后移除（git 合并会提供 tracked 版）：
+
+```bash
+cd /home/kbzz1/manzufei_ocr
+git diff --no-index evaluation/data/README.md <(git -C .claude/worktrees/prompt-refactor-field-boundary show HEAD:evaluation/data/README.md 2>/dev/null) >/dev/null 2>&1 \
+  && echo "内容一致,无需处理" \
+  || { cp evaluation/data/README.md /tmp/eval_migration/README.main.bak; rm evaluation/data/README.md; echo "已备份并移除 untracked README"; }
+```
+
+Expected: 输出"内容一致,无需处理"或"已备份并移除 untracked README"。
+
+- [ ] **Step 3: 合并分支到 master**
 
 ```bash
 cd /home/kbzz1/manzufei_ocr
