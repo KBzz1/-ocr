@@ -3,7 +3,7 @@ import json
 
 from pathlib import Path
 
-from app.backend.evaluation.calibrate import (
+from evaluation.code.calibrate import (
     cohen_kappa,
     compute_kappa,
     export_verdicts_file,

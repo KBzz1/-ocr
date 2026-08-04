@@ -9,7 +9,7 @@
 import json
 from pathlib import Path
 
-from app.backend.evaluation import run_eval
+from evaluation.code import run_eval
 from app.backend.services.schema_loader import load_schema
 
 SCHEMA_YAML = (
@@ -258,7 +258,7 @@ def test_merge_j_annotations_from_batch_schema():
 def test_real_v1_schema_merges_v2_j_annotations():
     # 真实 v1（61 字段，无注解）合并真实 v2 后：共享 J 字段被标注，
     # v1 独有字段（v2 无同名字段）不受影响。
-    root = Path(run_eval.__file__).resolve().parents[3]
+    root = Path(run_eval.__file__).resolve().parents[2]
     v1 = load_schema(str(root / "app" / "config" / "schemas" / "admission_record_structured_fields.v1.yaml"))
     v2 = load_schema(run_eval._BATCH_SCHEMA_PATH)
     merged = run_eval._merge_j_annotations(v1, v2)
@@ -273,7 +273,7 @@ def test_real_v1_schema_merges_v2_j_annotations():
 
 def test_main_passes_merged_schema_to_evaluate_sample(tmp_path, monkeypatch):
     # 接线：run_eval 加载 v1 后合并 v2 J 注解，evaluate_sample 收到已标注 schema。
-    root = Path(run_eval.__file__).resolve().parents[3]
+    root = Path(run_eval.__file__).resolve().parents[2]
     schema_path = root / "app" / "config" / "schemas" / "admission_record_structured_fields.v1.yaml"
     golden_dir = _write_golden(tmp_path, ["case_001"])
     report_dir = tmp_path / "reports"

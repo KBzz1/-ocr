@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.backend.evaluation.runner import build_report, evaluate_sample, run_pipeline
+from evaluation.code.runner import build_report, evaluate_sample, run_pipeline
 
 
 def make_schema():
@@ -518,7 +518,7 @@ CASE_005_ADJUDICATED = {
     'aux_renal_function': ('found', '肾小球滤过率(eGFR)35ml/min/1L↓、尿素(UREA)19.01mmol/L↑、肌酐(CREA)123.4umol/L↑、尿酸(UA)508umol/L↑'),
 }
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestCase005GoldenIntegrity:

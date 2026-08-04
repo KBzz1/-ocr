@@ -3,8 +3,8 @@ import json
 
 from pathlib import Path
 
-from app.backend.evaluation.desensitize import desensitize_text
-from app.backend.evaluation.feedback import build_review_golden, load_review_golden
+from evaluation.code.desensitize import desensitize_text
+from evaluation.code.feedback import build_review_golden, load_review_golden
 
 
 def test_desensitize_masks_phone_id_and_long_numbers():

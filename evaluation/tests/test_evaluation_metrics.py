@@ -1,7 +1,7 @@
 """评估指标模块单测（合成数据，不依赖真实 LLM）。"""
 import pytest
 
-from app.backend.evaluation.metrics import (
+from evaluation.code.metrics import (
     _KNOWN_J_FIELDS,
     METRIC_VERSION,
     compare_j_value,
@@ -289,7 +289,7 @@ class TestGroundingNormalExemptionV2:
         assert result["located_fragments"] == ["大便基本正常，性状可"]
         assert result["unsupported_fragments"] == []
         # 逗号切分会把整段拆成两个碎片；强边界切分只按句号/分号/换行
-        from app.backend.evaluation.metrics import split_grounding_fragments
+        from evaluation.code.metrics import split_grounding_fragments
         assert split_grounding_fragments("大便基本正常，性状可") == ["大便基本正常，性状可"]
 
 

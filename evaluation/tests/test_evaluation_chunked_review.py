@@ -11,7 +11,7 @@ These tests cover:
   in grouped mode — never fabricates evidence)
 """
 
-from app.backend.evaluation.chunked_review import inject_field_evidence, units_from_ocr_text
+from evaluation.code.chunked_review import inject_field_evidence, units_from_ocr_text
 
 OCR = "主诉：反复咳嗽、咳痰20年。\n现病史：20年前患者受凉后反复出现咳嗽。\n体格检查：神清，颈软，气管居中。体温36.5℃，脉搏88次/分。\n辅助检查：血气分析示PO2 60mmHg。"
 
