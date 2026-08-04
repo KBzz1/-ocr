@@ -37,8 +37,8 @@ data/sessions/*
 data/pages/*
 data/tasks/*
 data/algorithm_jobs/*
-data/evaluation/*
-!data/evaluation/README.md
+evaluation/data/*
+!evaluation/data/README.md
 res/
 exports/*
 output/*

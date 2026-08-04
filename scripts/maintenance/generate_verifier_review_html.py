@@ -14,10 +14,10 @@ HTML 内实时统计 Cohen's kappa 并可导出裁定 JSON（格式与 calibrate
 
 用法（worktree/仓库根）:
     conda run -n manzufei_ocr python scripts/maintenance/generate_verifier_review_html.py \
-      --verdicts data/evaluation/calibration/20260801_1330_verdicts.json \
-      --golden-dir data/evaluation/golden \
-      --llm-adjudications data/evaluation/calibration/20260801_1330_adjudications.json \
-      --out data/evaluation/calibration/20260802_verifier_manual_review.html
+      --verdicts evaluation/data/calibration/20260801_1330_verdicts.json \
+      --golden-dir evaluation/data/golden \
+      --llm-adjudications evaluation/data/calibration/20260801_1330_adjudications.json \
+      --out evaluation/data/calibration/20260802_verifier_manual_review.html
 
 输出含病历 OCR 原文（患者信息），必须留在 data/，不得提交。
 """
@@ -464,9 +464,9 @@ renderAll();
 def main() -> None:
     parser = argparse.ArgumentParser(description="生成复核器人工评价 HTML（离线自包含，含病历原文，输出不进 git）")
     parser.add_argument("--verdicts", required=True, help="calibrate export 输出的 verdicts JSON")
-    parser.add_argument("--golden-dir", default="data/evaluation/golden")
+    parser.add_argument("--golden-dir", default="evaluation/data/golden")
     parser.add_argument("--llm-adjudications", default=None, help="可选：LLM 裁定 JSON，用于人工 vs LLM 对比")
-    parser.add_argument("--out", required=True, help="输出 HTML 路径（建议 data/evaluation/calibration/）")
+    parser.add_argument("--out", required=True, help="输出 HTML 路径（建议 evaluation/data/calibration/）")
     parser.add_argument("--store-key", default="verifier-manual-review",
                         help="浏览器进度存储键；不同评测集用不同 key 避免进度互相覆盖")
     args = parser.parse_args()
