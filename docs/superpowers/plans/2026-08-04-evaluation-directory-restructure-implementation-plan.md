@@ -745,15 +745,38 @@ git commit -m "docs:新增evaluation目录规则文件(AGENTS.md内容源+CLAUDE
 
 ---
 
-### Task 7: 全量验证
+### Task 7: 修复遗留失败 + 全量验证
 
 **Files:**
-- 无文件修改；全部为验证命令
+- Modify: `app/backend/tests/test_review_routes.py`（过时字段 pe_vital_signs → pe_temperature，用户已批准顺手修复 master 既有失败）
+- 其余为验证命令
 
 **Interfaces:**
 - 消费 Task 1-6e 全部产物；通过后解锁 Task 8 删除
 
-- [ ] **Step 1: 评估测试全绿**
+- [ ] **Step 0: 修复 test_review_routes 过时字段（用户已批准）**
+
+根因（lead 定位）：qwen_batch_admission_record.v2.yaml 已无 `pe_vital_signs` 单字段，生命体征细分为 pe_temperature/pe_pulse/pe_heart_rate/pe_respiration_rate/pe_blood_pressure/pe_height/pe_weight/pe_bmi（parameter_group: 生命体征）；测试 fixture 与断言仍引用旧字段导致 review 初始化缺字段（KeyError）与提交 400。
+
+`app/backend/tests/test_review_routes.py` 中全部 `pe_vital_signs` 替换为 `pe_temperature`（值"体温36.5℃"不变，与 pe_temperature 的 label 体温吻合）：
+
+```bash
+sed -i 's/pe_vital_signs/pe_temperature/g' app/backend/tests/test_review_routes.py
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_review_routes.py -q
+```
+
+Expected: 全部 PASS。
+
+- [ ] **Step 1: 清理 qwen pycache 残留（环境问题）**
+
+```bash
+find algorithms/qwen_batch_engine -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+conda run -n manzufei_ocr python -m pytest app/backend/tests/test_qwen_batch_engine_layout.py -q
+```
+
+Expected: PASS（此前因 upstream/scripts/__pycache__ 残留失败）。
+
+- [ ] **Step 2: 评估测试全绿**
 
 ```bash
 cd /home/kbzz1/manzufei_ocr/.claude/worktrees/prompt-refactor-field-boundary
@@ -762,7 +785,7 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests -q
 
 Expected: 全绿。
 
-- [ ] **Step 2: 后端全量测试全绿**
+- [ ] **Step 3: 后端全量测试全绿**
 
 ```bash
 conda run -n manzufei_ocr python -m pytest app/backend/tests -q
