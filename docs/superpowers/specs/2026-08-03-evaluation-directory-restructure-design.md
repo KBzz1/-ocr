@@ -14,11 +14,18 @@
 
 评估是研究性质的工作，与生产业务解耦（业务代码对 `app/backend/evaluation/` 零反向依赖，只有 `run_eval.py` CLI 与测试引用它）。本次将其收拢为顶层 `evaluation/` 文件夹，并同步统一全仓规则文件，使整体架构清晰。
 
-## 2. 执行前提与基准
+## 2. 执行流程与基准
 
-- **执行时机**：等所有相关分支合并后执行；以**主分支（master）实际状态为唯一基准**进行整理
-- 当前各 worktree 分支的未合并改动不属于本次整理基准；整理时按 master 上已合入的代码、测试、文档实际状态为准
-- 迁移不改变任何评估行为：指标口径、管线组装、CLI 参数、金标格式均不变
+**以主分支（master）实际状态为唯一基准进行整理。执行前先完成 worktree 收拢（2026-08-04 实测）：**
+
+1. **git 层面已全部同步**：
+   - `worktree-prompt-refactor-field-boundary`（评估线）：与 master 完全同步（0 ahead / 0 behind，评估线 22 commits 已全部合入 master `711bc60`，含两份 spec），零未提交改动
+   - `worktree-review-ocr-floating-window`（Qwen 批处理 + OCR 浮窗线）：18 个独有 commit 仅在分支上，但其功能内容已以更新形态存在于 master（`ReviewOcrFloatingWindow.tsx`、`algorithms/qwen_batch_engine/`、`qwen_batch_admission_record.v2.yaml` 均在 master 树中），分支为历史痕迹，删除不丢工作
+2. **未同步的只有 `data/`**（运行产物，不进 git）：worktree 独有的评估数据（44 个文件 + 1 个内容不同）需按第 7 节对账流程并入主仓库再迁移
+3. **再整理**：以 master 实际状态为唯一基准，执行本 spec 的评估体系整理
+4. **删除 worktree**：整理完成、验证通过后，删除 `worktree-prompt-refactor-field-boundary` 与 `worktree-review-ocr-floating-window` 两个 worktree
+
+迁移不改变任何评估行为：指标口径、管线组装、CLI 参数、金标格式均不变。
 
 ## 3. 目标与边界
 
@@ -84,16 +91,26 @@ evaluation/                      # 顶层目录（不是 Python 包）
 
 `data/evaluation/`、`data/text_data/` 均为 gitignored 本地数据，主仓库与 worktree 各自独立、不同步。
 
+**双侧数据现状（2026-08-04 实测）：**
+
+| 来源 | 内容 |
+|---|---|
+| 主仓库 `data/evaluation/` | 08-01/02 旧数据（`20260801_1330_adjudications.json`、`20260801_1330_verdicts.json`、`20260801_iter1_verdicts.json`、`20260802_verdicts_newprompt.json`、`20260802_verdicts_newprompt_v2.json` 等，主仓库自有历史，保留）；golden/ 6 例金标已与 worktree 一致 |
+| worktree 独有 `calibration/`（16 个） | `adjudications_library.json`（287 条 AI 模拟裁定库，kappa 计算依赖，后续评估必用）、`judge/` 目录（step5/step6 逐例裁定）、step4/5/6 的 `adjudications_ai_step*`、`verdicts_step*` 系列（分块实验数据）、`20260802_step6_focus.html`、`verifier_manual_review_step5_focus.html` |
+| worktree 独有 `reports/`（28 个） | 08-04 v3 全系列（6 例 `case_XXX-candidates.json`、6 例 smoke-partial、`verifier-v3-full-smoke-summary.json`、`verifier-v3-report.html`、`parallel-vs-serial-timing.json`）；08-03 v2 冒烟基线（`verifier-opt-v1-case006-candidates/smoke.json`、`verifier-opt-v1-report.html`）；08-03 报告（`prompt-refactor-v3-full-prompts.html`、`prompt-v4-appendix.html`、`prompt-policy-metric-alignment-v1-report.html`、`gpt55-v2-rescore.json`、case005 两个分析 HTML）；08-02/03 抽取产物 JSON（3 个） |
+| 内容不同（1 个） | `20260802-verifier-overall-analysis.html` 两边都有但内容不同——**以 worktree 版（更新版）为准**，主仓库版弃置（记录在案，不算丢失） |
+| `data/text_data/` | 仅主仓库有（ground_truth/ ocr_results/ output/），worktree 无 |
+
 **流程（不可跳步）：**
-1. **迁移前**：生成源目录文件清单（相对路径）、文件数量和每文件 SHA-256 哈希，落盘为对账清单
-2. **无覆盖合并**：目标目录存在同名文件时比较哈希——哈希相同则跳过（视为已存在），哈希不同则**不得覆盖**，报冲突由人工裁决；不存在冲突则全部迁入
-3. **数据守恒对账**：迁移后对目标目录重新生成清单+哈希，与源清单逐项比对；文件数、路径、哈希完全一致才判定守恒
-4. **只有对账一致且旧目录确认无有效资产后**，才删除旧目录（`data/evaluation/`、`data/text_data/` 旧路径）
-5. worktree 侧从主仓库复制同步（实施计划中单独列步骤）
+1. **迁移前**：对主仓库与 worktree 两侧的 `data/evaluation/` 分别生成文件清单（相对路径）、文件数量和每文件 SHA-256 哈希，落盘为对账清单（含 `data/text_data/`）
+2. **无覆盖合并**：合并到目标 `evaluation/data/`——同名同哈希跳过；同名异哈希**不得覆盖**，按裁决表处理（`20260802-verifier-overall-analysis.html` 以 worktree 更新版为准）；其余全部迁入
+3. **数据守恒对账**：迁移后对目标目录重新生成清单+哈希，与"主仓库清单 ∪ worktree 清单（含裁决后弃置项标注）"逐项比对；文件数、路径、哈希完全一致才判定守恒
+4. **只有对账一致且旧目录确认无有效资产后**，才删除旧目录（主仓库与 worktree 两侧的 `data/evaluation/`、`data/text_data/` 旧路径）
+5. 主仓库为数据归宿；worktree 数据合并入主仓库的 `evaluation/data/` 后，worktree 侧数据目录随 worktree 删除
 
 `.gitignore`：`data/evaluation/*` → `evaluation/data/*`，保留 `!evaluation/data/README.md` 特例；`data/text_data` 迁移后由 `evaluation/data/*` 一并覆盖。真实金标、校准数据、运行报告继续通过 .gitignore 排除，不提交患者数据或本地实验产物。
 
-`evaluation/data/README.md` 保留并更新（说明 golden 与 text_data/ground_truth 的来源关系：golden 由 ground_truth 提炼）。
+`evaluation/data/README.md` 保留并更新（说明 golden 与 text_data/ground_truth 的来源关系：golden 由 ground_truth 提炼；注明 08-01 旧数据并入后留存于 reports/calibration 的历史位置）。
 
 ## 8. 文档：统一索引与现行入口（不物理迁移）
 
