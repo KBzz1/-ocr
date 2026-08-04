@@ -26,6 +26,7 @@ _IMAGE_MIME_BY_EXT = {
 
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL | re.IGNORECASE)
 _THINK_OPEN_TAG_RE = re.compile(r"<think>", flags=re.IGNORECASE)
+_DEFAULT_CONTEXT_WINDOW = 16_384
 
 try:
     from openai import OpenAI  # type: ignore
@@ -152,19 +153,48 @@ class QwenVLLMClient:
         temperature: float,
         system_prompt: str | None = None,
         enable_thinking: bool | None = None,
+        json_schema: dict | None = None,
     ) -> dict:
-        kwargs = self._common_kwargs(
-            max_tokens=max_tokens, temperature=temperature,
-            enable_thinking=bool(enable_thinking),
-        )
         if system_prompt:
-            kwargs["messages"] = [
+            messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
         else:
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
-        kwargs["response_format"] = {"type": "json_object"}
+            messages = [{"role": "user", "content": prompt}]
+        # The verified service exposes a 16K context window.  A long Chinese
+        # evidence packet can make the old fixed 8192 output budget itself
+        # invalid before decoding starts.  Keep the requested budget for short
+        # prompts and deterministically cap only when necessary; the fixed-field
+        # response is still given a generous lower bound.
+        effective_max_tokens = _fit_json_output_budget(messages, max_tokens)
+        kwargs = self._common_kwargs(
+            max_tokens=effective_max_tokens,
+            temperature=temperature,
+            enable_thinking=bool(enable_thinking),
+        )
+        kwargs["messages"] = messages
+        if json_schema:
+            # Callers may provide either the complete OpenAI/vLLM wrapper
+            # (name/strict/schema) or a raw JSON Schema.  Supporting both keeps
+            # the client useful for old adapters while making the constrained
+            # decoding boundary explicit.
+            if "schema" in json_schema and "name" in json_schema:
+                schema_format = dict(json_schema)
+            else:
+                schema_format = {
+                    "name": "structured_response",
+                    "strict": True,
+                    "schema": json_schema,
+                }
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": schema_format,
+            }
+        else:
+            # OCR and historical callers continue to use the permissive JSON
+            # object mode.
+            kwargs["response_format"] = {"type": "json_object"}
 
         try:
             response = self._client.chat.completions.create(**kwargs)
@@ -225,6 +255,31 @@ def _recover_truncated_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             continue
     return None
+
+
+def _fit_json_output_budget(messages: list[dict], requested: int) -> int:
+    """Fit a JSON completion into the service context without changing prompts.
+
+    This is deliberately a conservative character estimate rather than a
+    model-specific tokenizer dependency.  It only lowers the budget; it never
+    raises a caller's requested value and leaves ordinary short requests
+    untouched.
+    """
+    requested = max(1, int(requested))
+    characters = sum(
+        len(message.get("content", ""))
+        for message in messages
+        if isinstance(message, dict) and isinstance(message.get("content", ""), str)
+    )
+    # Chinese medical text is commonly close to one token per character.  A
+    # two-character estimate plus a fixed grammar/safety reserve avoids the
+    # server's "input >= 8193 + output 8192" rejection while retaining ample
+    # room for the 61 fixed field objects.
+    estimated_input_tokens = (characters + 1) // 2
+    available = _DEFAULT_CONTEXT_WINDOW - estimated_input_tokens - 512
+    if available >= requested:
+        return requested
+    return max(1024, available)
 
 
 def _normalize_json_response(content: str) -> str:

@@ -215,6 +215,77 @@ class TestSchemaLoaderReject:
         assert exc_info.value.code == ErrorCode.INTERNAL_SERVER_ERROR.code
 
 
+class TestSchemaLoaderDescription:
+    """v4：可选字符串 description 必须保留；非法非字符串必须 fail closed。"""
+
+    def test_preserves_field_description(self):
+        from app.backend.services.schema_loader import load_schema
+
+        tmpdir = tempfile.mkdtemp()
+        schema = _valid_schema()
+        schema["field_groups"][0]["fields"][0]["description"] = "姓名项目：姓名、曾用名"
+        path = _write_yaml(tmpdir, "schema.yaml", schema)
+
+        result = load_schema(path)
+        field = result["field_groups"][0]["fields"][0]
+        assert field["description"] == "姓名项目：姓名、曾用名"
+
+    def test_missing_description_is_absent_from_normalized_field(self):
+        from app.backend.services.schema_loader import load_schema
+
+        tmpdir = tempfile.mkdtemp()
+        path = _write_yaml(tmpdir, "schema.yaml", _valid_schema())
+
+        result = load_schema(path)
+        field = result["field_groups"][0]["fields"][0]
+        assert "description" not in field
+
+    def test_rejects_non_string_description(self):
+        from app.backend.services.schema_loader import load_schema
+
+        tmpdir = tempfile.mkdtemp()
+        schema = _valid_schema()
+        schema["field_groups"][0]["fields"][0]["description"] = 12345
+        path = _write_yaml(tmpdir, "schema.yaml", schema)
+
+        with pytest.raises(AppError) as exc_info:
+            load_schema(path)
+        assert exc_info.value.code == ErrorCode.INTERNAL_SERVER_ERROR.code
+
+    def test_repo_schema_keeps_all_pe_and_aux_descriptions(self):
+        from app.backend.config import PROJECT_ROOT
+        from app.backend.services.schema_loader import load_schema
+        import os
+
+        path = os.path.join(
+            PROJECT_ROOT,
+            "app",
+            "config",
+            "schemas",
+            "admission_record_structured_fields.v1.yaml",
+        )
+        schema = load_schema(path)
+        fields = {
+            field["field_key"]: field
+            for group in schema["field_groups"]
+            for field in group["fields"]
+        }
+        # 13 个查体 description
+        pe_with_description = [
+            "pe_skin", "pe_eyes", "pe_ears", "pe_nose", "pe_oral_cavity",
+            "pe_neck", "pe_chest", "pe_breast", "pe_respiratory_exam",
+            "pe_cardiac_exam", "pe_abdomen", "pe_limbs", "pe_neurological_exam",
+        ]
+        for key in pe_with_description:
+            assert fields[key]["description"], f"缺少查体 description: {key}"
+        # aux 两个互斥边界
+        assert "电解质" in fields["aux_electrolytes"]["description"]
+        assert "肾功" in fields["aux_renal_function"]["description"]
+        # 数值型字段不得有 description
+        for key in ("pe_temperature", "pe_pulse", "pe_bmi"):
+            assert "description" not in fields[key]
+
+
 def test_load_admission_record_structured_schema_from_repo():
     from app.backend.config import PROJECT_ROOT
     from app.backend.services.schema_loader import load_schema

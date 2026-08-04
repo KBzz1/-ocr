@@ -168,3 +168,57 @@ paths:
     assert "copd_history_years" not in field_keys
     assert "blood_gas_pao2" not in field_keys
     assert "ct_features" not in field_keys
+
+
+def test_schema_api_field_allowlist_unchanged(tmp_path, monkeypatch):
+    """公共 schema API 允许键不变化：field 级只暴露
+    field_key/key/label/type/required/hint，description 等内部键不得泄露。"""
+    import os
+
+    from app.backend import create_backend_app
+    from app.backend.config import PROJECT_ROOT
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    (config_dir / "default.yaml").write_text(
+        f"""
+app:
+  version: "test"
+server:
+  bind_host: "127.0.0.1"
+  port: 8081
+paths:
+  data_dir: "{data_dir}"
+  log_dir: "{log_dir}"
+  export_dir: "{export_dir}"
+  static_dir: "{static_dir}"
+  storage_dir: "{data_dir}"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.backend._get_lan_addresses", lambda port: ["192.168.1.5:8081"])
+
+    app_instance = create_backend_app(config_dir=str(config_dir))
+    admission_schema_path = os.path.join(
+        PROJECT_ROOT, "app", "config", "schemas",
+        "admission_record_structured_fields.v1.yaml",
+    )
+    app_instance.config["SCHEMA_SERVICE"] = SchemaService(admission_schema_path)
+    app_instance.config["TESTING"] = True
+    client = app_instance.test_client()
+
+    resp = client.get("/api/schema/current")
+    assert resp.status_code == 200
+    field = resp.get_json()["data"]["field_groups"][6]["fields"][0]
+    allowed = {"field_key", "key", "label", "type", "required", "hint"}
+    assert set(field.keys()) == allowed, f"公共 API field 允许键变化: {set(field.keys())}"
+    # description 渲染进 prompt，但不得成为公共 API 业务字段
+    assert "description" not in resp.get_json()["data"]["field_groups"][6]["fields"][0]

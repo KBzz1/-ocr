@@ -152,3 +152,32 @@ def test_build_evidence_units_uses_saved_page_order():
     )
     assert diagnosis_unit["page_no"] == 1
     assert chief_complaint_unit["page_no"] == 2
+
+
+def test_long_history_or_exam_is_not_protected_as_vital_sign_row():
+    """普通长病史/查体不能因出现两个生命体征词而吞掉句子边界。"""
+    long_exam = (
+        "发育正常，营养良好，体重无明显变化，神志清楚，精神可。"
+        "皮肤粘膜正常，无黄染，无皮疹。"
+        "正常呼吸，双肺呼吸音清，心率规则。"
+    )
+    text = "体格检查\n" + long_exam
+    units = build_evidence_units({
+        "pages": [{"page_no": 1, "status": "success", "text": text}],
+        "merged_text": text,
+    })
+
+    assert len(units) >= 3
+    assert max(len(unit["text"]) for unit in units) < len(long_exam)
+    assert any("皮肤粘膜正常" in unit["text"] for unit in units)
+    assert any("正常呼吸" in unit["text"] for unit in units)
+
+
+def test_short_vital_sign_row_stays_together_after_strong_split():
+    row = "体温:36.7℃ 脉搏:99次/分 呼吸:21次/分 血压:142/87mmHg"
+    units = build_evidence_units({
+        "pages": [{"page_no": 1, "status": "success", "text": row}],
+        "merged_text": row,
+    })
+
+    assert [unit["text"] for unit in units] == [row]

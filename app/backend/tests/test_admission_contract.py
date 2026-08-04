@@ -93,37 +93,25 @@ def _valid_payload() -> dict:
         "document_type": "copd_admission_record",
         "fields": [
             {
-                "section_key": "chief_complaint",
-                "section_label": "主诉",
                 "field_key": "chief_complaint",
-                "field_label": "主诉",
                 "status": "found",
                 "value": "反复咳嗽、咳痰15年",
                 "evidence_ids": ["u001"],
             },
             {
-                "section_key": "physical_examination",
-                "section_label": "体格检查",
                 "field_key": "pe_temperature",
-                "field_label": "体温",
                 "status": "found",
                 "value": "36.7℃",
                 "evidence_ids": ["u002"],
             },
             {
-                "section_key": "physical_examination",
-                "section_label": "体格检查",
                 "field_key": "pe_pulse",
-                "field_label": "脉搏",
                 "status": "not_found",
                 "value": "",
                 "evidence_ids": [],
             },
             {
-                "section_key": "diagnosis",
-                "section_label": "诊断",
                 "field_key": "diagnosis_final",
-                "field_label": "最终诊断",
                 "status": "uncertain",
                 "value": "慢性阻塞性肺疾病急性加重",
                 "evidence_ids": [],
@@ -153,10 +141,7 @@ def test_validate_qwen_payload_rejects_schema_outside_field():
     payload = _valid_payload()
     # inject a field that is not in the schema
     payload["fields"].append({
-        "section_key": "chief_complaint",
-        "section_label": "主诉",
         "field_key": "evil_extra",
-        "field_label": "多余字段",
         "status": "found",
         "value": "x",
         "evidence_ids": [],

@@ -21,6 +21,8 @@ from ..services.copd_extraction.llm_client import OpenAICompatibleJsonClient
 from ..services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
 from ..services.schema_loader import load_schema
 from .feedback import load_review_golden
+from .chunked_review import units_from_ocr_text
+from .metrics import METRIC_VERSION
 from .runner import build_report, evaluate_sample, run_pipeline
 
 # 批处理 schema（含 qwen_type/review_control 注解），用于给 v1 评估 schema
@@ -75,10 +77,13 @@ def load_golden_samples(golden_dir: Path) -> list[dict]:
 
 
 def _input_for(sample: dict, schema: dict) -> dict:
+    ocr_text = sample.get("ocr_text") or ""
     return {
         "schema": schema,
-        "document_result": {"merged_text": sample.get("ocr_text") or ""},
-        "evidence_units": [],
+        "document_result": {"merged_text": ocr_text},
+        # Evaluation and production now consume the same stable uXXX unit
+        # assembler.  No field-value search or re-numbering occurs here.
+        "evidence_units": units_from_ocr_text(ocr_text),
     }
 
 
@@ -115,6 +120,8 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--report-dir", default="data/evaluation/reports")
     parser.add_argument("--golden-review", default=None,
                         help="review 金标活资产目录(如 data/evaluation/golden_review)，单独统计修正字段子集")
+    parser.add_argument("--case-id", default=None,
+                        help="只运行一个金标病例（冒烟时使用；不改变默认全量行为）")
     parser.add_argument("--no-quality-flags", action="store_true")
     parser.add_argument("--no-contract", action="store_true")
     parser.add_argument("--no-verifier", action="store_true")
@@ -132,8 +139,11 @@ def main(argv: list[str] | None = None) -> Path:
     if batch_schema:
         schema = _merge_j_annotations(schema, batch_schema)
     samples = load_golden_samples(Path(args.golden_dir))
+    if args.case_id:
+        samples = [sample for sample in samples if sample.get("case_id") == args.case_id]
     if not samples:
-        print(f"未找到金标样本: {args.golden_dir}", file=sys.stderr)
+        label = f"{args.golden_dir} / {args.case_id}" if args.case_id else args.golden_dir
+        print(f"未找到金标样本: {label}", file=sys.stderr)
         raise SystemExit(1)
 
     llm_client = build_llm_client(args)
@@ -144,6 +154,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     meta = {
         "model": args.model,
+        "metric_version": METRIC_VERSION,
         "prompt_version": ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION,
         "schema_version": schema.get("version", ""),
         "temperature": args.temperature,
@@ -195,7 +206,11 @@ def _print_console_summary(report: dict) -> None:
     print(f"样本数          : {m['sample_count']}   (噪声带宽 ±{m['noise_bandwidth']})")
     print(f"status 准确率   : {m['status_accuracy']:.2%}")
     print(f"value 准确率    : {m['value_accuracy']:.2%}")
-    print(f"幻觉数(veto)    : {m['hallucination_count']}")
+    print(f"literal-unlocated: {m['literal_unlocated_count']}")
+    print(f"unsupported 候选 : {m['unsupported_claim_candidate_count']}")
+    print(f"confirmed 幻觉   : {m['confirmed_hallucination_count']}")
+    print(f"extraction FN    : {m['extraction_fn']}")
+    print(f"over-extraction FP: {m['over_extraction_fp']}")
     print(f"契约非法数      : {m['contract_invalid_count']}")
     print(f"任务级成功      : {m['task_success_count']}/{m['sample_count']}")
     if report["by_field"]:
@@ -221,14 +236,26 @@ def _print_review_summary(review_report: dict) -> None:
 
 def _print_compare(baseline_path: Path, report: dict) -> None:
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    bm, nm = baseline["metrics"], report["metrics"]
+    baseline_version = baseline.get("meta", {}).get("metric_version")
+    current_version = report.get("meta", {}).get("metric_version")
     print("\n=== 与基线对比 ===")
     print(f"基线: {baseline_path.name}")
+    if baseline_version != current_version:
+        # 跨口径比较不可比：只警告"口径不同"，不输出 delta。
+        print(f"警告: 指标口径不同（基线 {baseline_version or '未知'} vs 本次 {current_version or '未知'}），不输出可比 delta。")
+        return
+    bm, nm = baseline["metrics"], report["metrics"]
     for k in ("status_accuracy", "value_accuracy"):
         diff = nm[k] - bm[k]
         print(f"  {k}: {bm[k]:.2%} → {nm[k]:.2%} ({diff:+.2%})")
-    for k in ("hallucination_count", "contract_invalid_count"):
-        print(f"  {k}: {bm[k]} → {nm[k]} ({nm[k] - bm[k]:+d})")
+    for k in (
+        "literal_unlocated_count", "unsupported_claim_candidate_count",
+        "confirmed_hallucination_count", "extraction_fn", "over_extraction_fp",
+        "contract_invalid_count",
+    ):
+        before = bm.get(k, 0)
+        after = nm.get(k, 0)
+        print(f"  {k}: {before} → {after} ({after - before:+d})")
     b_errs = {(e['case_id'], e['field_key']) for e in baseline.get("errors", [])}
     n_errs = {(e['case_id'], e['field_key']) for e in report.get("errors", [])}
     new_errs = sorted(n_errs - b_errs)

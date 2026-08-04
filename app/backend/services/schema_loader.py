@@ -148,6 +148,14 @@ def load_schema(path: str) -> dict:
                                         "group_key": group_key,
                                         "field_key": field_key})
 
+            description = field.get("description")
+            if description is not None and not isinstance(description, str):
+                raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
+                               message="field description 必须为 string",
+                               details={"reason": "description 非法",
+                                        "group_key": group_key,
+                                        "field_key": field_key})
+
             parameter_group = field.get("parameter_group")
             if parameter_group is not None and not isinstance(parameter_group, str):
                 raise AppError(ErrorCode.INTERNAL_SERVER_ERROR,
@@ -184,6 +192,9 @@ def load_schema(path: str) -> dict:
                 **({
                     "options": field["options"],
                 } if "options" in field else {}),
+                **({
+                    "description": description,
+                } if description is not None else {}),
                 **({
                     "unit": unit,
                 } if unit is not None else {}),

@@ -1,12 +1,12 @@
-"""复核器分块审核实验：评估侧证据注入与分臂驱动。
+"""Evaluation helpers for the shared original ``uXXX`` evidence stream.
 
-背景：评估路径（run_eval/calibrate）的 _input_for 硬编码 evidence_units=[]，
-candidates 的 evidence 数组为空，复核器实际拿到的是整篇原文前 8000 字符
-（_collect_evidence 兜底）。本模块从纯文本 OCR 构建证据单元（复用
-evidence_units 切分规则）并按字段值定位回填，使分组复核（group_by）有可
-消费的证据；抽取阶段输入保持现状（基线可比），注入只发生在复核调用前。
+The active path builds units once in ``_input_for`` and the verifier consumes
+the same registry. ``inject_field_evidence`` remains only as a deprecated
+compatibility helper for archived experiments.
 """
 from __future__ import annotations
+
+from ..services.copd_extraction.evidence_context import assemble_verification_groups
 
 
 def units_from_ocr_text(ocr_text: str) -> list[dict]:
@@ -22,6 +22,15 @@ def units_from_ocr_text(ocr_text: str) -> list[dict]:
         "pages": [{"text": text, "page_no": 1}],
         "merged_text": text,
     })
+
+
+def build_review_context(
+    candidates: list[dict], evidence_units: list[dict], group_by: str | None = "section",
+) -> list[dict]:
+    """Expose the production/evaluation context assembler for tooling/tests."""
+    return assemble_verification_groups(
+        candidates, evidence_units, group_by=group_by, neighbor_radius=1
+    )
 
 
 def inject_field_evidence(candidates: list[dict], units: list[dict]) -> list[dict]:

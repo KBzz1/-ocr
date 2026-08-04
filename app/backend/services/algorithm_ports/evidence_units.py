@@ -34,6 +34,11 @@ _PRIMARY_SPLIT_CHARS = ("\n", "。", "；")
 # single unit. Fragments shorter than this threshold stay together.
 _LONG_COMMA_FALLBACK = 80
 
+# A normal vital-sign row is short and label-led.  This guard prevents a long
+# history/physical-examination paragraph containing words such as ``呼吸`` or
+# ``体重`` from being mistaken for the whole vital-sign row.
+_VITAL_SIGN_MAX_CHARS = 180
+
 # Best-effort section hints. Used purely as an aid for human readability; never
 # relied upon for offset computation or unit boundaries.
 _SECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -184,8 +189,6 @@ def _split_fragment(text: str) -> list[str]:
     """
     if not text:
         return []
-    if _looks_like_blood_gas_group(text) or _looks_like_vital_sign_row(text):
-        return [text]
 
     pieces: list[str] = []
     buf = ""
@@ -194,12 +197,25 @@ def _split_fragment(text: str) -> list[str]:
         if char in _PRIMARY_SPLIT_CHARS:
             stripped = buf.strip()
             if stripped:
-                pieces.extend(_apply_comma_fallback(stripped))
+                pieces.extend(_protect_special_fragment(stripped))
             buf = ""
     tail = buf.strip()
     if tail:
-        pieces.extend(_apply_comma_fallback(tail))
+        pieces.extend(_protect_special_fragment(tail))
     return pieces
+
+
+def _protect_special_fragment(fragment: str) -> list[str]:
+    """Keep only genuinely short coupled rows intact.
+
+    Special-row detection happens *after* strong-boundary splitting.  This is
+    important because OCR frequently puts a complete physical examination on
+    one line; matching ``呼吸`` + ``体重`` in that line must not suppress all
+    sentence boundaries.
+    """
+    if _looks_like_blood_gas_group(fragment) or _looks_like_vital_sign_row(fragment):
+        return [fragment]
+    return _apply_comma_fallback(fragment)
 
 
 def _apply_comma_fallback(fragment: str) -> list[str]:
@@ -225,11 +241,15 @@ def _looks_like_blood_gas_group(text: str) -> bool:
 
 
 def _looks_like_vital_sign_row(text: str) -> bool:
-    # A single line containing vital-sign keywords should remain as one unit so
-    # temperature/pulse/respiration/blood-pressure values stay together.
-    keywords = ("体温", "脉搏", "呼吸", "血压", "身高", "体重", "BMI")
-    if not any(k in text for k in keywords):
+    # A short line containing vital-sign labels should remain as one unit so
+    # temperature/pulse/respiration/blood-pressure values stay together.  The
+    # label-led check prevents ordinary clinical prose from matching merely
+    # because it mentions two of these words later in the paragraph.
+    if len(text) > _VITAL_SIGN_MAX_CHARS:
         return False
+    if not re.match(r"^\s*(?:体温|脉搏|呼吸|血压|身高|体重|BMI)\s*[:：]", text):
+        return False
+    keywords = ("体温", "脉搏", "呼吸", "血压", "身高", "体重", "BMI")
     matches = sum(1 for k in keywords if k in text)
     return matches >= 2
 

@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 VALID_QWEN_STATUSES = {"found", "not_found", "uncertain"}
 VALID_TOP_LEVEL_KEYS = {"schema_version", "document_type", "fields"}
+VALID_FIELD_KEYS = {"field_key", "status", "value", "evidence_ids"}
 
 # Mapping from the new Qwen status to the legacy extraction_status used by the
 # review-candidate layer.
@@ -216,6 +217,24 @@ def _validate_and_index_by_key(payload: dict, schema: dict) -> dict[str, dict]:
                 message=f"Qwen fields[{index}] 必须是字典",
             )
         field_key = entry.get("field_key")
+        extra_field_keys = set(entry) - VALID_FIELD_KEYS
+        if extra_field_keys:
+            raise AppError(
+                ErrorCode.ALGORITHM_CONTRACT_INVALID,
+                message=(
+                    f"Qwen fields[{index}] 包含非法键："
+                    f"{', '.join(sorted(extra_field_keys))}"
+                ),
+            )
+        missing_field_keys = VALID_FIELD_KEYS - set(entry)
+        if missing_field_keys:
+            raise AppError(
+                ErrorCode.ALGORITHM_CONTRACT_INVALID,
+                message=(
+                    f"Qwen fields[{index}] 缺少键："
+                    f"{', '.join(sorted(missing_field_keys))}"
+                ),
+            )
         if not isinstance(field_key, str) or not field_key:
             raise AppError(
                 ErrorCode.ALGORITHM_CONTRACT_INVALID,
@@ -254,6 +273,11 @@ def _validate_and_index_by_key(payload: dict, schema: dict) -> dict[str, dict]:
             raise AppError(
                 ErrorCode.ALGORITHM_CONTRACT_INVALID,
                 message=f"Qwen field_key={field_key} evidence_ids 必须是字符串列表",
+            )
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise AppError(
+                ErrorCode.ALGORITHM_CONTRACT_INVALID,
+                message=f"Qwen field_key={field_key} evidence_ids 不得重复",
             )
 
         by_key[field_key] = dict(entry)

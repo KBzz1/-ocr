@@ -297,3 +297,67 @@ def test_main_passes_merged_schema_to_evaluate_sample(tmp_path, monkeypatch):
     fields = _field_map(captured["schema"])
     assert fields["pe_nose"]["qwen_type"] == "J"
     assert fields["chief_complaint"].get("qwen_type") != "J"  # T 字段不受影响
+
+
+def _run_fake_main(tmp_path, monkeypatch, extra_args=None):
+    schema_path = _write_schema(tmp_path)
+    golden_dir = _write_golden(tmp_path, ["case_001"])
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    monkeypatch.setattr(run_eval, "build_llm_client", lambda args: FakeClient())
+    args = ["--golden-dir", str(golden_dir), "--schema", str(schema_path),
+            "--model", "fake-model", "--report-dir", str(report_dir)]
+    if extra_args:
+        args += extra_args
+    return run_eval.main(args)
+
+
+def test_report_meta_stamps_metric_version_v2(tmp_path, monkeypatch):
+    """evaluator.v2：报告 meta 必须带 metric_version="evaluator.v2"。"""
+    report_path = _run_fake_main(tmp_path, monkeypatch)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["meta"]["metric_version"] == "evaluator.v2"
+
+
+def _synthetic_metrics(version):
+    return {
+        "meta": {"metric_version": version} if version else {},
+        "metrics": {
+            "status_accuracy": 0.9, "value_accuracy": 0.8,
+            "literal_unlocated_count": 0, "unsupported_claim_candidate_count": 1,
+            "confirmed_hallucination_count": 0, "extraction_fn": 0,
+            "over_extraction_fp": 0, "contract_invalid_count": 0,
+        },
+        "errors": [],
+    }
+
+
+def test_print_compare_cross_version_only_warns_no_delta(tmp_path, capsys):
+    """跨 metric version 比较：只警告"口径不同"，不得输出可比 delta。"""
+    baseline_v1 = tmp_path / "baseline_v1.json"
+    baseline_v1.write_text(json.dumps(_synthetic_metrics(None), ensure_ascii=False), encoding="utf-8")
+    report_v2 = _synthetic_metrics("evaluator.v2")
+    run_eval._print_compare(baseline_v1, report_v2)
+    out = capsys.readouterr().out
+    assert "口径" in out
+    assert "→" not in out
+
+    baseline_other = tmp_path / "baseline_other.json"
+    baseline_other.write_text(json.dumps(
+        _synthetic_metrics("evaluator.v1"), ensure_ascii=False), encoding="utf-8")
+    run_eval._print_compare(baseline_other, report_v2)
+    out = capsys.readouterr().out
+    assert "口径" in out
+    assert "→" not in out
+
+
+def test_print_compare_same_version_prints_delta(tmp_path, capsys):
+    """同 metric version 比较：输出可比 delta（原对比行为保留）。"""
+    baseline_v2 = tmp_path / "baseline_v2.json"
+    baseline_v2.write_text(json.dumps(_synthetic_metrics("evaluator.v2"), ensure_ascii=False),
+                           encoding="utf-8")
+    report_v2 = _synthetic_metrics("evaluator.v2")
+    run_eval._print_compare(baseline_v2, report_v2)
+    out = capsys.readouterr().out
+    assert "→" in out
+    assert "口径" not in out

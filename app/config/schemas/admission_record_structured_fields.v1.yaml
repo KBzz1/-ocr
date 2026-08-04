@@ -206,9 +206,11 @@ field_groups:
       - field_key: aux_electrolytes
         label: 电解质
         type: string
+        description: 电解质/矿物项目：钾、钠、氯、钙、镁、磷等电解质和矿物项目；不含肾功能项目（eGFR、尿素、肌酐、尿酸）
       - field_key: aux_renal_function
         label: 肾功
         type: string
+        description: 肾功项目：eGFR、尿素、肌酐、尿酸等肾功能项目；不含电解质/矿物项目（钾、钠、氯、钙、镁、磷等）
       - field_key: aux_d_dimer
         label: D2聚体
         type: string
