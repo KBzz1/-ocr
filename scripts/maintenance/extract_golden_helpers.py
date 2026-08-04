@@ -9,8 +9,8 @@ import difflib
 import re
 from pathlib import Path
 
-GROUND_TRUTH_DIR = Path("data/text_data/ground_truth")
-OCR_RESULTS_DIR = Path("data/text_data/ocr_results")
+GROUND_TRUTH_DIR = Path("evaluation/data/text_data/ground_truth")
+OCR_RESULTS_DIR = Path("evaluation/data/text_data/ocr_results")
 
 SECTION_TITLES = [
     "主诉", "现病史", "既往史", "个人史", "婚育史", "月经史", "家族史",
