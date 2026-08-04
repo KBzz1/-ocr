@@ -672,11 +672,11 @@ Expected: 各目录 4-6 行差异（2026-08-04 实测）。逐目录人工判断
 
 ```bash
 for f in $(find . -name "CLAUDE.md" -not -path "./.git/*" -not -path "./.claude/*"); do
-  head -1 "$f" | grep -q "指针\|AGENTS.md" || echo "漏改: $f"
+  grep -q "请阅读同目录的 \`AGENTS.md\`" "$f" || echo "漏改: $f"
 done
 ```
 
-Expected: 无输出（除新建的 evaluation/CLAUDE.md，Task 6e 处理）。
+Expected: 无输出（含 evaluation/CLAUDE.md——注意不要用 `head -1` 检查标题，指针模板首行是 `# CLAUDE.md` 会误报）。
 
 - [ ] **Step 4: 提交**
 
