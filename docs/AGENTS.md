@@ -10,8 +10,8 @@
 
 - 产品需求源头：`docs/PRD文档/产品PRD.md`
 - PRD 实现进度：`docs/PRD文档/PRD任务清单.md`
-- 前端文档规则：`docs/Front/AGENTS.md` / `docs/Front/CLAUDE.md`
-- 后端文档规则：`docs/Backend/AGENTS.md` / `docs/Backend/CLAUDE.md`
+- 前端文档规则：`docs/Front/AGENTS.md`
+- 后端文档规则：`docs/Backend/AGENTS.md`
 
 ## 信息架构
 
@@ -37,9 +37,10 @@
 - 修改算法集成边界：先读 `PRD文档/产品PRD.md`、`Backend/Backend_TDD/02-algorithm-ports.md` 和 `Backend/Backend_TDD/07-algorithm-failure-contracts.md`。
 - PRD 记录业务目标和验收标准；BDD 记录用户可观察行为；TDD 记录可执行测试设计、fixtures、失败条件和实施顺序。
 - superpowers 的现行 specs/plans 放在 `docs/superpowers/specs/` 和 `docs/superpowers/plans/`；`docs/superpowers/archive/` 只作历史资料，不作为当前产品契约。
+- 评估/复核/提示词实验的 spec/plan 留在本目录（`superpowers/specs|plans/`）不迁移；统一索引与版本迭代归档见 `evaluation/README.md`、`evaluation/versions/`；`codex_design/` 保持原样不动。
 - 共享契约变更必须同时扫描前端和后端引用，发现冲突先说明，不直接用局部文档覆盖全局契约。
 - 文档应把 OCR、图像处理、文档解析和 LLM 结构化提取描述为可替换算法子系统，而不是写死某一套实现。是否把具体算法包纳入仓库或部署包，由端口契约、隐私边界、离线交付和版本管理共同决定。
-- 不在 BDD/TDD 目录下继续新增 AGENTS.md / CLAUDE.md，除非该目录确有长期独有规则且不能由现有文件覆盖。
+- 不在 BDD/TDD 目录下继续新增 AGENTS.md，除非该目录确有长期独有规则且不能由现有文件覆盖。
 
 ## 全局架构边界
 
