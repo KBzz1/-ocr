@@ -169,8 +169,8 @@ dest = manifest("evaluation/data", pathlib.Path("evaluation/data"))
 expected = {}
 for rel, h in main["evaluation"].items(): expected[rel] = h
 for rel, h in wt.items():
-    if rel == "calibration/20260802-verifier-overall-analysis.html":
-        expected[rel] = h  # 以 worktree 更新版为准
+    if rel == "reports/20260802-verifier-overall-analysis.html":
+        expected[rel] = h  # 以 worktree 更新版为准（实测文件在 reports/ 下）
     else:
         expected.setdefault(rel, h)
 for rel, h in main["text_data"].items(): expected[f"text_data/{rel}"] = h
@@ -518,7 +518,7 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests -q
 - 08-01/02 历史数据（adjudications/verdicts 旧系列）随合并留存于 calibration/reports 原位，不迁移不删除。
 ```
 
-若 `data/evaluation/README.md` 存在，先 `git mv data/evaluation/README.md evaluation/data/README.md`（注意它当前被 .gitignore 特例跟踪，是仓库文件），否则直接新建。
+`data/evaluation/README.md` 是仓库跟踪文件（.gitignore 特例），Task 1 合并脚本已把其内容复制到 `evaluation/data/README.md`。此处直接 `git rm data/evaluation/README.md`（旧位置删除，新位置已有副本），然后编辑 `evaluation/data/README.md` 补充内容（若新位置文件缺失则直接新建）。
 
 - [ ] **Step 4: 提交**
 

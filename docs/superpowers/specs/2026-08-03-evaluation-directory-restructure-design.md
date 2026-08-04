@@ -75,7 +75,7 @@ evaluation/                      # 顶层目录（不是 Python 包）
    - `run_eval.py`：`..services.algorithm_ports.qwen_vllm_client`、`..services.copd_extraction.llm_client/prompts`、`..services.schema_loader` → 对应绝对导入
    - `chunked_review.py`：`..services.copd_extraction.evidence_context` → 绝对导入
    - `metrics.py`：`..services.copd_extraction.field_policies` → 绝对导入
-   - `calibrate.py`：仅 stdlib，无需改
+   - `calibrate.py`：`main()` 函数内有 4 条 `from ..services/..services.schema_loader` 导入（函数内缩进导入，行首锚定扫描漏检）→ 绝对导入；其余仅 stdlib
 3. **路径基准修正**：`run_eval.py` 的 `_BATCH_SCHEMA_PATH` 中 `Path(__file__).parents[3]` → `parents[2]`（层级少一级）；同类基于 `__file__` 的路径计算一并核查
 4. **CLI 命令变更**：`python -m app.backend.evaluation.run_eval` → `python -m evaluation.code.run_eval`（仓库根运行；`app` 与 `evaluation` 均为 namespace 包，无需安装）
 5. 确认 `app/backend/evaluation/` 无有效资产后才删除（见第 13 节删除门槛）
