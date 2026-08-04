@@ -68,7 +68,7 @@ def review_task(app):
             "status": "success",
             "candidates": [
                 {"field_key": "chief_complaint", "original_value": "退休", "evidence": "第1页", "confidence": 0.9},
-                {"field_key": "pe_vital_signs", "original_value": "体温36.5℃", "evidence": "第2页", "confidence": 0.85},
+                {"field_key": "pe_temperature", "original_value": "体温36.5℃", "evidence": "第2页", "confidence": 0.85},
             ],
         },
     )
@@ -88,7 +88,8 @@ def test_get_review_initializes_result(client, review_task):
     # 候选里有的字段被正确填入
     field_by_key = {f["field_key"]: f for f in fields}
     assert field_by_key["chief_complaint"]["final_value"] == "退休"
-    assert field_by_key["pe_vital_signs"]["final_value"] == "体温36.5℃"
+    # pe_temperature 为数值型参数(unit ℃),review 初始化按既有契约规范化为纯数值
+    assert field_by_key["pe_temperature"]["final_value"] == "36.5"
 
 
 def test_put_review_saves_final_fields(client, review_task):
@@ -97,7 +98,7 @@ def test_put_review_saves_final_fields(client, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "工人", "status": "modified"},
-                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
+                {"field_key": "pe_temperature", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -107,7 +108,7 @@ def test_put_review_saves_final_fields(client, review_task):
     field_by_key = {f["field_key"]: f for f in fields}
     assert field_by_key["chief_complaint"]["status"] == "modified"
     assert field_by_key["chief_complaint"]["final_value"] == "工人"
-    assert field_by_key["pe_vital_signs"]["status"] == "confirmed"
+    assert field_by_key["pe_temperature"]["status"] == "confirmed"
 
 
 def test_complete_review_route_marks_done(client, review_task):
@@ -116,7 +117,7 @@ def test_complete_review_route_marks_done(client, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "退休", "status": "confirmed"},
-                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
+                {"field_key": "pe_temperature", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
@@ -133,7 +134,7 @@ def test_reopen_review_transitions_done_to_review(client, app, review_task):
         json={
             "fields": [
                 {"field_key": "chief_complaint", "value": "退休", "status": "confirmed"},
-                {"field_key": "pe_vital_signs", "value": "体温36.5℃", "status": "confirmed"},
+                {"field_key": "pe_temperature", "value": "体温36.5℃", "status": "confirmed"},
             ]
         },
     )
