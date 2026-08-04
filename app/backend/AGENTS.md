@@ -16,10 +16,11 @@
 ## 目录职责（用指针，不复制代码）
 
 - `routes/`：Flask 蓝图，每个文件对应一类接口
-  - `task.py` — 任务生命周期、状态推进
+  - `task.py` — 任务生命周期、状态推进、归属元数据修改
+  - `patient.py` — 患者档案创建、搜索、改名、删除、详情时间轴
   - `review.py` — 人工审核与字段修订
   - `export.py` — 导出请求入口（实现落 `services/export_service.py`）
-  - `mobile.py` — 手机端采集与上传
+  - `mobile.py` — 手机端采集与上传（已移除记录类型切换）
   - `schema.py` — schema 查询与版本管理
   - `maintenance.py` — 维护类接口
   - `system.py` — 健康检查、离线自检
@@ -27,11 +28,14 @@
   - `algorithm_ports/` — 图像、OCR、文档解析、结构化字段抽取算法子系统的端口、适配器、orchestrator、Qwen Vision vLLM 客户端
   - `copd_extraction/` — 慢阻肺专病字段抽取核心：extractor、port、prompts、admission_contract、llm_client、quality_checks、field_result
   - `task_service.py` — 任务状态机主逻辑
+  - `patient_service.py` — 患者档案创建、改名、逻辑删除
+  - `patient_query_service.py` — 患者详情聚合与任务时间轴
   - `reextraction_service.py` — 模板切换 / 重抽取
-  - `export_service.py` — 导出文件生成
+  - `export_service.py` — 导出文件生成（含患者和记录元数据）
   - `review_service.py` — 审核与字段结果更新
   - `cleanup_service.py`、`local_event_log.py`、`offline_check_service.py` 等 — 维护与日志
 - `storage/`：`json_store.py` 本地 JSON 持久化（任务、会话、字段结果、审核记录）
+- `../evaluation/`：评估体系已迁至顶层 `evaluation/`（代码在 `evaluation/code/`，单向依赖本目录生产模块）；金标/校准/报告在 `evaluation/data/`；文档索引见 `evaluation/README.md`。复核器（`services/copd_extraction/verifier.py`）活动路径未默认注入（kappa 未达 0.7 上岗线，spec 5.2）
 - `tests/`：pytest 测试；可执行契约权威来源是 `test_api_contracts.py` 和 `test_backend_e2e.py`
 - `config.py`、`settings.py`：后端配置加载与校验；`../config/` 模板在仓库根 `app/config/`，**不在**本目录
 
