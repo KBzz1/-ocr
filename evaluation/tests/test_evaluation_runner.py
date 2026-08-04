@@ -524,7 +524,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 class TestCase005GoldenIntegrity:
     """case_005 金标只允许两处已裁定 value 变化（DESIGN §4.4/PLAN T2 Action 4-5）。"""
 
-    GOLDEN_PATH = REPO_ROOT / "data" / "evaluation" / "golden" / "case_005.json"
+    GOLDEN_PATH = REPO_ROOT / "evaluation" / "data" / "golden" / "case_005.json"
 
     def _current(self):
         data = json.loads(self.GOLDEN_PATH.read_text(encoding="utf-8"))
