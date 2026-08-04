@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from ..services.copd_extraction.field_policies import NORMAL_JUDGEMENT_FIELD_KEYS
+from app.backend.services.copd_extraction.field_policies import NORMAL_JUDGEMENT_FIELD_KEYS
 
 # 评估口径版本：跨版本比较不得输出可比 delta（run_eval._print_compare 只警告）。
 METRIC_VERSION = "evaluator.v2"

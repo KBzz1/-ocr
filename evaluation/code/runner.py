@@ -1,15 +1,15 @@
 """Evaluation pipeline, atomic grounding diagnostics and report assembly."""
 from __future__ import annotations
 
-from ..errors import AppError
-from ..services.copd_extraction.admission_contract import (
+from app.backend.errors import AppError
+from app.backend.services.copd_extraction.admission_contract import (
     map_qwen_fields_to_review_candidates,
     validate_qwen_payload,
 )
-from ..services.copd_extraction.prompts import build_admission_structured_fields_messages
-from ..services.copd_extraction.quality_checks import apply_quality_checks
-from ..services.copd_extraction.response_schemas import build_extraction_json_schema
-from ..services.copd_extraction.verifier import FieldVerifier, apply_verdicts
+from app.backend.services.copd_extraction.prompts import build_admission_structured_fields_messages
+from app.backend.services.copd_extraction.quality_checks import apply_quality_checks
+from app.backend.services.copd_extraction.response_schemas import build_extraction_json_schema
+from app.backend.services.copd_extraction.verifier import FieldVerifier, apply_verdicts
 from .metrics import (
     LONG_TEXT_FIELDS,
     METRIC_VERSION,

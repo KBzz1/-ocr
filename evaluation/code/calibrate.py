@@ -92,9 +92,9 @@ def main(argv: list[str] | None = None) -> None:
     import sys
     from datetime import datetime, timezone
 
-    from ..services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
-    from ..services.copd_extraction.llm_client import OpenAICompatibleJsonClient
-    from ..services.schema_loader import load_schema
+    from app.backend.services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
+    from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+    from app.backend.services.schema_loader import load_schema
     from .run_eval import _input_for, load_golden_samples
     from .runner import run_pipeline
 
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_export = sub.add_parser("export", help="跑抽取+复核，导出裁定模板")
-    p_export.add_argument("--golden-dir", default="data/evaluation/golden")
+    p_export.add_argument("--golden-dir", default="evaluation/data/golden")
     p_export.add_argument("--schema", required=True)
     p_export.add_argument("--base-url", default="http://localhost:8000/v1")
     p_export.add_argument("--model", required=True)
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> None:
         samples = load_golden_samples(Path(args.golden_dir))
         qwen = QwenVLLMClient(base_url=args.base_url, model=args.model, api_key="not-needed", timeout_seconds=360)
         llm_client = OpenAICompatibleJsonClient(qwen, max_tokens=args.max_tokens, temperature=0.0)
-        from ..services.copd_extraction.verifier import FieldVerifier
+        from app.backend.services.copd_extraction.verifier import FieldVerifier
         verifier = FieldVerifier(llm_client)
         items = []
         for sample in samples:

@@ -6,7 +6,7 @@ compatibility helper for archived experiments.
 """
 from __future__ import annotations
 
-from ..services.copd_extraction.evidence_context import assemble_verification_groups
+from app.backend.services.copd_extraction.evidence_context import assemble_verification_groups
 
 
 def units_from_ocr_text(ocr_text: str) -> list[dict]:
@@ -15,7 +15,7 @@ def units_from_ocr_text(ocr_text: str) -> list[dict]:
     构造单页 document_result 喂 build_evidence_units；返回带
     id/text/start_offset/end_offset/可选 page_no/section_key 的 units。
     """
-    from ..services.algorithm_ports.evidence_units import build_evidence_units
+    from app.backend.services.algorithm_ports.evidence_units import build_evidence_units
 
     text = ocr_text or ""
     return build_evidence_units({

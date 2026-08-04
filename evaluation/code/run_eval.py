@@ -16,10 +16,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
-from ..services.copd_extraction.llm_client import OpenAICompatibleJsonClient
-from ..services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
-from ..services.schema_loader import load_schema
+from app.backend.services.algorithm_ports.qwen_vllm_client import QwenVLLMClient
+from app.backend.services.copd_extraction.llm_client import OpenAICompatibleJsonClient
+from app.backend.services.copd_extraction.prompts import ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION
+from app.backend.services.schema_loader import load_schema
 from .feedback import load_review_golden
 from .chunked_review import units_from_ocr_text
 from .metrics import METRIC_VERSION
@@ -28,7 +28,7 @@ from .runner import build_report, evaluate_sample, run_pipeline
 # 批处理 schema（含 qwen_type/review_control 注解），用于给 v1 评估 schema
 # 补同名 J 字段注解（见 _merge_j_annotations）。
 _BATCH_SCHEMA_PATH = str(
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[2]
     / "app" / "config" / "schemas" / "qwen_batch_admission_record.v2.yaml"
 )
 
@@ -109,7 +109,7 @@ def _run_pipeline_with_fallback(sample: dict, schema: dict, llm_client, args) ->
 
 def main(argv: list[str] | None = None) -> Path:
     parser = argparse.ArgumentParser(description="COPD 病历抽取评估")
-    parser.add_argument("--golden-dir", default="data/evaluation/golden")
+    parser.add_argument("--golden-dir", default="evaluation/data/golden")
     parser.add_argument("--schema", required=True, help="admission_record_structured_fields.v1.yaml 路径")
     parser.add_argument("--base-url", default="http://localhost:8000/v1")
     parser.add_argument("--model", required=True)
@@ -117,9 +117,9 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--thinking", action="store_true",
                         help="Qwen chat_template 开启 thinking(CoT)；缺省关闭，供消融实测")
-    parser.add_argument("--report-dir", default="data/evaluation/reports")
+    parser.add_argument("--report-dir", default="evaluation/data/reports")
     parser.add_argument("--golden-review", default=None,
-                        help="review 金标活资产目录(如 data/evaluation/golden_review)，单独统计修正字段子集")
+                        help="review 金标活资产目录(如 evaluation/data/golden_review)，单独统计修正字段子集")
     parser.add_argument("--case-id", default=None,
                         help="只运行一个金标病例（冒烟时使用；不改变默认全量行为）")
     parser.add_argument("--no-quality-flags", action="store_true")
