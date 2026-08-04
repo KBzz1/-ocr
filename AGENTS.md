@@ -2,7 +2,7 @@
 
 ## 作用
 
-本文件是全仓库长期 onboarding，只保留所有任务都适用的项目定位、目录边界和工作规则。文档目录的细节先读 `docs/AGENTS.md`；代码/部署/脚本目录的细节先读目标目录的 `AGENTS.md` / `CLAUDE.md`（如 `app/frontend/AGENTS.md`、`app/backend/CLAUDE.md`、`deploy/CLAUDE.md`、`scripts/CLAUDE.md`），没有这些文件的再读 `README.md`。
+本文件是全仓库长期 onboarding，只保留所有任务都适用的项目定位、目录边界和工作规则。文档目录的细节先读 `docs/AGENTS.md`；代码/部署/脚本目录的细节先读目标目录的 `AGENTS.md`（如 `app/backend/AGENTS.md`、`deploy/AGENTS.md`、`scripts/AGENTS.md`），没有 `AGENTS.md` 的再读 `README.md`。
 
 ## 项目定位
 
@@ -32,7 +32,8 @@
 - `scripts/`：开发启停、部署打包、离线检查和维护脚本，按 `dev/`、`deploy/`、`checks/`、`maintenance/` 分层。详见 `scripts/CLAUDE.md`。
 - `models/ppstructure/`：外部图像、OCR、文档解析模型。
 - `models/llm/`：本地 LLM 模型权重。
-- `data/`：上传文件、处理结果和临时文件。
+- `data/`：上传文件、处理结果和临时文件（评估本地数据已迁至 `evaluation/data/`，见 evaluation 条目）。
+- `evaluation/`：观测与评估体系（评估代码/测试/本地数据收拢；代码单向依赖 app.backend 生产模块；文档索引与版本规范见 evaluation/README.md）。规则见 evaluation/AGENTS.md。
 - `exports/`：本地导出文件。
 - `logs/`：本地运行日志。
 
@@ -54,7 +55,7 @@
 
 ## 工作方式
 
-- 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 `AGENTS.md`/`CLAUDE.md`/`README.md`。
+- 根级 agent 文档只保留全仓库通用信息；目录细节读取 `docs/AGENTS.md` 或对应目录 `AGENTS.md`/`README.md`。
 - 修改行为、状态或错误码前，先检查 `docs/PRD文档/产品PRD.md`、`docs/Shared/` 和相关 TDD/BDD 文档，如果对应文档跟当前任务有冲突，请告知我。
 - 新增实现时，测试设计和契约文档先于实现落地；算法子系统变更先明确端口输入输出、部署形态、失败语义和隐私边界，再落实现或适配代码。
 - 当前 PRD 进度以 `docs/PRD文档/PRD任务清单.md` 为索引；具体行为以对应 BDD/TDD、spec、plan 和代码测试为准。
