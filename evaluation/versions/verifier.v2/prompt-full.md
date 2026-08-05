@@ -1,7 +1,7 @@
 <!-- 组件口径全文（prompt-full.md 统一模板）
 组件: verifier（复核器）
 版本: verifier.v2
-恢复来源: step7 spec §3.1 逐字定稿（2026-08-03-verifier-step7-scale-evidence-design.md 84-129 行），源码未提交且 blob 不在对象库，以设计文档定稿为准
+恢复来源: step7 spec §3.1 逐字定稿（2026-08-03-verifier-step7-scale-evidence-design.md 84-113 行），源码未提交且 blob 不在对象库，以设计文档定稿为准
 提取日期: 2026-08-05
 -->
 

@@ -8,7 +8,7 @@
 
 固定字段 Qwen prompt 契约初版。字段表来自 `admission_record_structured_fields.v1` schema，
 证据以编号单元（evidence_units）形式入 prompt，含 OCR 风险提示（1/I/l、P62/PO2 等近形错读）、
-药名纠偏规则、字段输出契约（field_key/original_value/evidence/confidence 等）。
+药名纠偏规则、字段输出契约（section_key/section_label/field_key/field_label/status/value/evidence_ids）。
 
 ## 依据
 
