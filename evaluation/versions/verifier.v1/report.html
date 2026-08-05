@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>复核器改造报告 — 去掉"爱找茬"，专盯 OCR 认错字</title>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --blue: #3b6ef5;
+    --bluebg: #e8efff;
+    --teal: #0d9488;
+    --tealbg: #e6f7f5;
+    --orange: #f59e0b;
+    --orangebg: #fef3e2;
+    --red: #ef4444;
+    --redbg: #feecec;
+    --green: #10b981;
+    --greenbg: #e7f8f1;
+    --border: #e5e7eb;
+    --sans: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.8;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px 90px; }
+
+  /* ── 顶部 ── */
+  .hero {
+    background: linear-gradient(135deg, #1e2a4a 0%, #2b3f78 55%, #3b6ef5 130%);
+    color: #fff;
+    border-radius: 0 0 22px 22px;
+    padding: 52px 32px 44px;
+    margin-bottom: 34px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute; right: -70px; top: -70px;
+    width: 260px; height: 260px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,.14) 0%, transparent 65%);
+  }
+  .hero .tag {
+    display: inline-block;
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: .12em;
+    padding: 4px 14px;
+    margin-bottom: 18px;
+  }
+  .hero h1 { font-size: 30px; font-weight: 700; letter-spacing: .01em; }
+  .hero .sub { margin-top: 10px; font-size: 15px; opacity: .88; max-width: 640px; }
+  .hero .meta { margin-top: 18px; font-size: 12.5px; opacity: .6; font-family: var(--mono); }
+
+  /* ── 一句话结论 ── */
+  .verdict-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--blue);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 34px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .verdict-bar .lbl { font-size: 12px; color: var(--muted); letter-spacing: .08em; margin-bottom: 6px; }
+  .verdict-bar .txt { font-size: 16.5px; font-weight: 600; }
+  .verdict-bar .txt b { color: var(--green); }
+
+  /* ── 章节 ── */
+  .sec { margin-bottom: 44px; }
+  .sec-h {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 21px; font-weight: 700; margin-bottom: 6px;
+  }
+  .sec-h .no {
+    background: var(--blue); color: #fff;
+    width: 30px; height: 30px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .sec-desc { color: var(--muted); font-size: 14px; margin: 0 0 18px 40px; }
+
+  /* ── 科普卡片 ── */
+  .cards3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .kcard {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 18px 16px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .kcard .ico { font-size: 22px; }
+  .kcard h4 { font-size: 15.5px; margin: 8px 0 6px; }
+  .kcard p { font-size: 13.5px; color: #4b5563; }
+  .kcard .ex {
+    margin-top: 10px; padding: 8px 10px;
+    background: var(--bluebg); border-radius: 8px;
+    font-size: 12.5px; color: #1e3a8a;
+    font-family: var(--mono);
+  }
+
+  /* ── 数据卡片 ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 1px 4px rgba(16,24,40,.06);
+  }
+  .stat .k { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .stat .v { font-size: 30px; font-weight: 800; letter-spacing: -.01em; }
+  .stat .d { font-size: 12.5px; margin-top: 6px; }
+  .up { color: var(--green); } .down { color: var(--red); }
+  .stat.good .v { color: var(--green); }
+  .stat.bad .v { color: var(--red); }
+  .stat.mid .v { color: var(--orange); }
+  .stat.blue .v { color: var(--blue); }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  th, td { padding: 11px 14px; text-align: left; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  th { background: #f8fafc; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.bad { background: var(--redbg); color: var(--red); }
+  .pill.warn { background: var(--orangebg); color: #b45309; }
+  .pill.good { background: var(--greenbg); color: #047857; }
+  .pill.blue { background: var(--bluebg); color: #1d4ed8; }
+  .right { text-align: right; } .center { text-align: center; }
+
+  /* ── kappa 刻度条 ── */
+  .gauge { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .gauge .track { position: relative; height: 14px; background: linear-gradient(90deg, #fde8e8, #fef3e2 40%, #e7f8f1 70%, #d1fae5); border-radius: 999px; margin: 14px 0 8px; }
+  .gauge .dot { position: absolute; top: -6px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 4px solid var(--blue); box-shadow: 0 1px 5px rgba(0,0,0,.25); transform: translateX(-50%); }
+  .gauge .gate { position: absolute; top: -8px; height: 30px; width: 3px; background: var(--green); transform: translateX(-1.5px); }
+  .gauge .gatelbl { position: absolute; top: -26px; transform: translateX(-50%); font-size: 11.5px; color: var(--green); font-weight: 700; white-space: nowrap; }
+  .gauge .lbls { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .gauge .note { margin-top: 14px; font-size: 13px; color: #4b5563; }
+
+  /* ── 2×2 表 ── */
+  .matrix { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 0; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .matrix .c { padding: 16px; text-align: center; border-bottom: 1px solid var(--border); }
+  .matrix .c:nth-child(3n+2), .matrix .c:nth-child(3n+3) { border-left: 1px solid var(--border); }
+  .matrix .hd { background: #f8fafc; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  .matrix .num { font-size: 26px; font-weight: 800; }
+  .matrix .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── 案例卡 ── */
+  .cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .case { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .case .t { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .case p { font-size: 13px; color: #4b5563; }
+  .case .pair {
+    margin-top: 10px; padding: 9px 12px; border-radius: 9px;
+    font-size: 13px; font-family: var(--mono);
+  }
+  .pair.wrong { background: var(--redbg); color: #991b1b; text-decoration: line-through; opacity: .85; }
+  .pair.right { background: var(--greenbg); color: #065f46; margin-top: 4px; }
+  .case.ok { border-left: 4px solid var(--green); }
+  .case.fail { border-left: 4px solid var(--red); }
+  .case.info { border-left: 4px solid var(--blue); }
+
+  /* ── 时间线 ── */
+  .timeline { position: relative; padding-left: 26px; }
+  .timeline::before { content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 20px; }
+  .tl-item::before {
+    content: ""; position: absolute; left: -24px; top: 7px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--blue); border: 3px solid var(--bluebg);
+  }
+  .tl-item.bad::before { background: var(--red); border-color: var(--redbg); }
+  .tl-item.good::before { background: var(--green); border-color: var(--greenbg); }
+  .tl-item .h { font-size: 15px; font-weight: 700; }
+  .tl-item .h .vtag { font-size: 11.5px; font-family: var(--mono); color: var(--muted); margin-left: 8px; font-weight: 400; }
+  .tl-item p { font-size: 13.5px; color: #4b5563; margin-top: 4px; }
+
+  /* ── 结论 ── */
+  .concl { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .concl li { font-size: 14px; margin: 8px 0 8px 18px; }
+  .concl b.g { color: var(--green); } .concl b.r { color: var(--red); } .concl b.o { color: #b45309; }
+
+  /* ── 目录 ── */
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 22px; margin-bottom: 34px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .toc .lbl { font-size: 12px; color: var(--muted); letter-spacing: .08em; margin-bottom: 12px; }
+  .toc ol { list-style: none; counter-reset: tc; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 22px; }
+  .toc li { counter-increment: tc; font-size: 13.5px; }
+  .toc li::before {
+    content: counter(tc);
+    background: var(--bluebg); color: #1d4ed8; font-weight: 700;
+    width: 20px; height: 20px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11.5px; margin-right: 9px; font-family: var(--mono);
+  }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--blue); }
+
+  /* ── agent pipeline 图 ── */
+  .pipeline { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin-bottom: 8px; }
+  .pnode {
+    flex: 1 1 180px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(16,24,40,.06);
+    border-top: 3px solid var(--blue);
+  }
+  .pnode.ocr { border-top-color: var(--orange); }
+  .pnode.extract { border-top-color: var(--teal); }
+  .pnode.judge { border-top-color: var(--red); }
+  .pnode .role { font-size: 11px; color: var(--muted); letter-spacing: .1em; margin-bottom: 6px; }
+  .pnode h4 { font-size: 15.5px; margin-bottom: 6px; }
+  .pnode p { font-size: 12.5px; color: #4b5563; }
+  .pnode .file {
+    display: inline-block; margin-top: 10px; font-family: var(--mono); font-size: 11px;
+    background: var(--bluebg); color: #1d4ed8; padding: 2px 8px; border-radius: 6px;
+  }
+  .parrow { display: flex; align-items: center; color: var(--muted); font-size: 20px; padding: 0 2px; }
+  .pipeline-note { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+
+  /* ── 代码块 ── */
+  .codebox { background: #0f172a; border-radius: 14px; overflow: hidden; margin: 14px 0; box-shadow: 0 4px 14px rgba(15,23,42,.18); }
+  .codebox .cb-top { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: #1e293b; border-bottom: 1px solid #334155; }
+  .cb-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .cb-dot.r { background: #f87171; } .cb-dot.y { background: #fbbf24; } .cb-dot.g { background: #34d399; }
+  .codebox .cb-file { font-family: var(--mono); font-size: 11.5px; color: #94a3b8; }
+  .codebox .cb-tag { margin-left: auto; font-size: 10.5px; letter-spacing: .08em; color: #7dd3fc; background: rgba(14,165,233,.14); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .codebox pre { padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.8; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }
+  .codebox .cm { color: #64748b; }
+  .codebox .hl { color: #fbbf24; font-weight: 600; }
+  .codebox .hlb { color: #7dd3fc; font-weight: 600; }
+  .codebox .hlg { color: #86efac; font-weight: 600; }
+  .codebox .hll { background: rgba(251,191,36,.08); padding: 0 4px; border-radius: 4px; }
+  .codebox .hllb { background: rgba(125,211,252,.10); padding: 0 4px; border-radius: 4px; }
+
+  /* ── 设计要点卡 ── */
+  .dpoint { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--blue); border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .dpoint .dp-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .dpoint .dp-no { color: var(--blue); font-weight: 800; font-size: 14px; font-family: var(--mono); }
+  .dpoint h4 { font-size: 16px; }
+  .dpoint .dp-why { font-size: 13.5px; color: #4b5563; }
+  .dpoint .dp-why b { color: var(--ink); }
+  .dpoint .dp-why .path { font-family: var(--mono); font-size: 12px; background: #f1f5f9; color: #334155; padding: 1px 6px; border-radius: 5px; }
+
+  /* ── 引用条 ── */
+  .quote-bar { background: var(--bluebg); border-left: 4px solid var(--blue); border-radius: 0 10px 10px 0; padding: 10px 16px; font-size: 13px; color: #1e3a8a; margin: 10px 0; }
+  .quote-bar.warn { background: var(--orangebg); border-color: var(--orange); color: #92400e; }
+  .quote-bar.red { background: var(--redbg); border-color: var(--red); color: #991b1b; }
+  .quote-bar.good { background: var(--greenbg); border-color: var(--green); color: #065f46; }
+  .quote-bar .src { display: block; margin-top: 4px; font-family: var(--mono); font-size: 11px; opacity: .75; }
+
+  /* ── 文件名 chip ── */
+  .chip { display: inline-block; font-family: var(--mono); font-size: 11.5px; background: #f1f5f9; color: #334155; border: 1px solid var(--border); padding: 1px 8px; border-radius: 6px; }
+
+  /* ── 对比两列 ── */
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .cmp { grid-template-columns: 1fr; } }
+  .cmp .col { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(16,24,40,.06); }
+  .cmp .col.old { border-top: 3px solid var(--red); }
+  .cmp .col.new { border-top: 3px solid var(--green); }
+  .cmp .col h5 { font-size: 13.5px; margin-bottom: 8px; }
+  .cmp .col.old h5 { color: var(--red); }
+  .cmp .col.new h5 { color: var(--green); }
+  .cmp .col p { font-size: 12.5px; color: #4b5563; font-family: var(--mono); line-height: 1.7; }
+
+  /* ── 骨架条 ── */
+  .skel { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .skel .seg { flex: 1 1 200px; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; }
+  .skel .seg b { display: block; font-size: 13px; margin-bottom: 2px; }
+  .skel .sys { background: var(--bluebg); color: #1e3a8a; }
+  .skel .usr { background: var(--tealbg); color: #115e59; }
+  .skel .why { flex: 1 1 100%; font-size: 12.5px; color: var(--muted); }
+
+  /* ── 名词速查（折叠） ── */
+  details.gloss {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 10px;
+  }
+  details.gloss summary { cursor: pointer; font-weight: 700; font-size: 14.5px; }
+  details.gloss .g-body { margin-top: 10px; font-size: 13.5px; color: #4b5563; }
+  details.gloss .g-body p { margin: 6px 0; }
+  details.gloss b { color: var(--ink); }
+
+  .footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); text-align: center; }
+  .kv { font-size: 13px; color: #4b5563; }
+  .kv b { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="tag">评估体系 · 复核器改造实验</div>
+  <h1>复核器"去对抗"改造报告</h1>
+  <div class="sub">给自动检查员换个性格：以前它什么都标可疑，现在只盯真正的毛病。这份报告先用大白话讲清结果，再附上实现详解——提示词逐块怎么写的、三个 AI 角色各自的设计策略，全部对照真实源码。</div>
+  <div class="meta">2026-08-02 · 6 份真实病历 · 295 个字段 · 本地模型实测</div>
+</div>
+
+<div class="wrap">
+
+  <!-- 一句话结论 -->
+  <div class="verdict-bar">
+    <div class="lbl">一句话结论</div>
+    <div class="txt">去对抗<b>成功了</b>：误报从 30 处降到 4 处；OCR 认错字也能标出来了。但新问题出现——<b>该标的有不少没标到</b>。整体一致性打分 kappa≈0.2，距离"允许上岗"的 0.7 还很远，所以<b>复核器继续保持不上岗</b>（不自动进入医生工作流），和之前的决定一致。</div>
+  </div>
+
+  <!-- 目录 -->
+  <div class="toc">
+    <div class="lbl">本报告目录</div>
+    <ol>
+      <li><a href="#s1">先认识几个词</a></li>
+      <li><a href="#s2">旧检查员的问题</a></li>
+      <li><a href="#s3">这次干了什么</a></li>
+      <li><a href="#s4">三个环节的完整提示词（新增）</a></li>
+      <li><a href="#s5">三个 AI 角色的设计策略（新增）</a></li>
+      <li><a href="#s6">结果：好坏各一半</a></li>
+      <li><a href="#s7">结论与下一步</a></li>
+      <li><a href="#s8">名词速查</a></li>
+    </ol>
+  </div>
+
+  <!-- 第一章：背景科普 -->
+  <div class="sec">
+    <div class="sec-h" id="s1"><span class="no">1</span>先认识几个词（30 秒速成）</div>
+    <div class="sec-desc">后面的内容全靠这几个概念，先花 30 秒建立共同语言。</div>
+    <div class="cards3">
+      <div class="kcard">
+        <div class="ico">📄</div>
+        <h4>OCR 认错字</h4>
+        <p>系统把病历照片变成文字，机器认字偶尔会认错。比如"粗测"被读成"粗侧"，"回流征"被读成"回流证"。</p>
+        <div class="ex">例：双眼粗测视力正常 → 双眼<b>粗侧</b>视力正常</div>
+      </div>
+      <div class="kcard">
+        <div class="ico">🔍</div>
+        <h4>复核器 = 自动检查员</h4>
+        <p>从病历里抽出的每个字段（心率、体格检查、用药……）再让 AI 过一遍，发现可疑就在字段上贴一张"请医生重点看"的标签。</p>
+        <div class="ex">贴了标签的字段 → 进人工审核页</div>
+      </div>
+      <div class="kcard">
+        <div class="ico">📏</div>
+        <h4>校准 = 验收考试 + kappa = 打分</h4>
+        <p>检查员标得准不准，得考试：拿一批字段让它标，再找权威（这里用 AI 模拟医生）逐条裁判"该不该标"。裁判和检查员意见越一致，分越高。</p>
+        <div class="ex">kappa：0~1 的分数，0.7 及格才能上岗</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二章：问题 -->
+  <div class="sec">
+    <div class="sec-h" id="s2"><span class="no">2</span>旧检查员的问题：太爱找茬</div>
+    <div class="sec-desc">你之前说"复核器是不是太对抗了"——数据支持这个感觉。</div>
+    <div class="stats">
+      <div class="stat bad">
+        <div class="k">旧版：100 个字段里标了多少可疑</div>
+        <div class="v">62.5%</div>
+        <div class="d">接近 2/3 的字段被贴"可疑"标签</div>
+      </div>
+      <div class="stat">
+        <div class="k">但真正有问题的</div>
+        <div class="v">约 22%</div>
+        <div class="d">大部分标签是虚惊一场</div>
+      </div>
+    </div>
+    <p class="kv" style="margin-top:10px">后果就是<b>"狼来了"</b>：医生每次审核页都塞满标签，点开一看大多是正常字段，慢慢就不信任这些标签了。同时意见文本会被机器截断成半句话（"应为'…'或"），人根本看不懂在说什么。</p>
+  </div>
+
+  <!-- 第三章：做了什么 -->
+  <div class="sec">
+    <div class="sec-h" id="s3"><span class="no">3</span>这次干了什么：给检查员换"说明书"</div>
+    <div class="sec-desc">检查员是 AI，行为由一份"说明书"（prompt）决定。我们按你的两个决定改了它，改一版考一次试，共三轮。</div>
+    <div class="timeline">
+      <div class="tl-item bad">
+        <div class="h">第 1 版（v2）<span class="vtag">你的决定 1：去掉"爱找茬"性格</span></div>
+        <p>删掉"每个字段都要主动挑毛病"的要求，改成"只做事实核对，没毛病就说没毛病"。同时保留并写明了"标记 OCR 认错字"这个职责。</p>
+        <p>结果：<b>矫枉过正</b>——295 个字段只标了 1 个，等于检查员罢工了。真实存在的错字（"粗侧""回流证"）一个都没标。</p>
+      </div>
+      <div class="tl-item good">
+        <div class="h">第 2 版（v3）<span class="vtag">修复：长字段拆句 + 错字模式清单</span></div>
+        <p>找出罢工原因：体格检查这类字段特别长（几百字），AI 扫一眼觉得"整体通顺"就放行了。改成把长字段<b>拆成一句一句</b>让它逐句看，再给它一份<b>常见错字模式清单</b>（叠字"舌舌"、近形字"扣及/扪及"等）。</p>
+        <p>结果：能标出问题了（11 处），但离及格还远。</p>
+      </div>
+      <div class="tl-item">
+        <div class="h">每次考试怎么考<span class="vtag">3 个 AI 质检员 × 295 个字段</span></div>
+        <p>每版都跑 6 份真实病历（本地 Qwen 模型，每轮约 15 分钟），产出 295 个字段的检查结果；再派 3 个 AI 质检员，像医生一样逐条判断"这个字段该不该标"，算一致性打分。</p>
+      </div>
+    </div>
+  </div>
+
+    <!-- 第四章：三个环节的完整提示词 -->
+  <div class="sec" id="s4">
+    <div class="sec-h"><span class="no">4</span>三个环节的完整提示词（OCR · 抽取 · 复核）</div>
+    <div class="sec-desc">三份提示词的完整原文，即模型实际收到的内容。运行时注入的变量以 <b style="color:#15803d">绿色 {xxx}</b> 标注；抽取与复核的组装代码见 <span class="chip">copd_extraction/prompts.py</span>，OCR 见 <span class="chip">algorithm_ports/qwen_vision_vllm.py</span>。</div>
+
+    <!-- 4.1 OCR -->
+    <div class="dpoint" style="border-left-color:var(--orange)">
+      <div class="dp-h"><span class="dp-no">4.1</span><h4>OCR 提示词</h4></div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">algorithm_ports/qwen_vision_vllm.py:18-26 · _OCR_SYSTEM_PROMPT</span><span class="cb-tag">system · 完全固定</span></div>
+<pre>你是一个医疗文档 OCR 识别助手。
+请只输出图片里的病历正文文本；不输出解释、寒暄、JSON、Markdown 代码块或思考过程。
+保持当前页可见正文的自然阅读顺序；不纠错、不改写、不总结、不补全、不重排。
+当前页末尾未完句保持原样，不补标点、不补后文。
+可以忽略页眉、页脚、页码、打印时间、医院页眉页脚、医生签名、手签等非病历正文干扰；但禁止纠正文书正文、做标题字符串替换、用医学知识补写诊断、症状、检查或治疗。
+不要把结构化字段名反向写进 OCR 文本。</pre>
+      </div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">qwen_vision_vllm.py:81 · user_prompt</span><span class="cb-tag">user · 完全固定</span></div>
+<pre>请识别这张图片里的病历正文。</pre>
+      </div>
+    </div>
+
+    <!-- 4.2 抽取 -->
+    <div class="dpoint" style="border-left-color:var(--teal)">
+      <div class="dp-h"><span class="dp-no">4.2</span><h4>抽取提示词</h4></div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">copd_extraction/prompts.py:189-321 · build_admission_structured_fields_messages</span><span class="cb-tag">system · 固定 + 字段表变量</span></div>
+<pre>你是慢阻肺/呼吸系统入院记录结构化抽取助手，使用固定字段表对 OCR 原文做结构化抽取。
+
+schema_version：<span class="hlg">{schema_version}</span>
+document_type：<span class="hlg">{document_type}</span>
+
+【硬约束 — 输出 JSON 形状】
+输出必须是单个 JSON 对象，顶层键固定为 `schema_version`、`document_type`、`fields`，不得新增顶层键。`fields` 是数组，每个 schema 字段对应一项，不得增删。
+
+字段状态枚举仅允许：`found` / `not_found` / `uncertain`。
+- found：原文中明确出现该字段语义，`value` 非空，`evidence_ids` 应非空。
+- not_found：原文未提及该字段，必须输出 `status="not_found"`、`value=""`、`evidence_ids=[]`，不得省略字段。
+- uncertain：疑似找到但 OCR 或上下文不确定，需要医生重点核验；`value` 可空，`evidence_ids` 可空。
+
+每项字段输出固定包含：field_key、status、value、evidence_ids。后端按 schema 回填章节、字段标签、审核状态和 evidence 详情，模型不要重复输出 section_key、section_label、field_label 或其他字段。`evidence_ids` 必须是字符串列表（list[str]），只允许从"证据单元编号"中选择现有 ID，不允许编造或自填 evidence 文本。
+
+输出示例：
+```json
+{
+  "schema_version": "<span class="hlg">{schema_version}</span>",
+  "document_type": "<span class="hlg">{document_type}</span>",
+  "fields": [
+    {
+      "field_key": "chief_complaint",
+      "status": "found",
+      "value": "反复咳嗽、咳痰15年，喘息6年，加重1月。",
+      "evidence_ids": ["u009"]
+    },
+    {
+      "field_key": "hpi_initial_onset",
+      "status": "not_found",
+      "value": "",
+      "evidence_ids": []
+    }
+  ]
+}
+```
+
+【硬约束 — 字段与 key】
+- field_key 只允许使用"固定字段表"中的 key；禁止输出 schema 外字段；禁止自由生成二级 key、二级字典或额外字段。
+- 字段章节和字段标签由后端按固定字段表回填；模型输出中禁止重复 section_key、section_label、field_label。
+- 字段顺序按固定字段表顺序输出，便于后端对齐。
+
+【硬约束 — evidence 与原文】
+- evidence_ids 只允许从编号证据单元中选择，禁止编造 ID；找不到支撑证据时使用 `evidence_ids=[]`。
+- 不允许在 value 或 evidence_ids 之外再输出 evidence 原文片段、章节标题字符串作为定位依据，也不得输出任何章节定位字符串或历史版本遗留的来源元数据字段。新契约不要求算法直接输出旧版抽取元数据（章节定位字符串、原文短片段字段、置信度、抽取状态、复核状态、原始/修正对比、质控标记等一律不输出）。
+- value 必须是 OCR 原文中可定位的语义片段，不得根据医学常识补全、合并或重写。
+
+【硬约束 — 否定表达与既往史】
+- 对既往史、个人史、家族史中的疾病字段，必须先判断否定范围；`否认A、B等病史`、`无A、B史`、`未见A、B` 均表示 A、B 是明确否定事实。
+- 字段被明确否定时，不得输出阳性值；应输出 `status="found"`，并在 `value` 中保留否定词，例如 `否认糖尿病病史`、`否认冠心病病史`，同时引用对应 evidence_ids。
+- 保留否定词是硬要求：不得把 `否认/无/未见` 从 value 中删掉；删掉否定词会把否定事实变成模型幻觉。
+- OCR 示例 `否认"糖尿病"、"冠心病"等病史`：`pmh_diabetes` 应输出 `否认糖尿病病史`，`pmh_coronary_heart_disease` 应输出 `否认冠心病病史`；不得输出"有糖尿病病史"，不得输出"有冠心病病史"。
+- OCR 示例 `否认肝炎、结核等传染病史`：不得改成有肝炎、乙肝或结核病史；对 `pmh_hepatitis_b` 如无法确认乙肝精确语义，使用 `uncertain` 或保留 OCR 否定短语，绝不能输出阳性。
+- 若同一句存在混合事实，例如 `否认糖尿病，既往有冠心病`，只允许把冠心病输出为阳性，糖尿病仍必须保留否定。
+
+【硬约束 — J 型状态字段判定】
+- qwen_type 为 J 或 review_control 为 judgement 的字段：正常时输出 `value="正常"`；异常时必须在 `value` 中摘录 OCR 原文里的具体异常描述；未提及时输出 `status="not_found"`、`value=""`；不确定时输出 `status="uncertain"`。
+- 原文明确描述该部位/项目正常或阴性时，必须输出 `status="found"`、`value="正常"`，并引用对应 evidence_ids；不得因为是阴性描述而输出 not_found。
+- 正常/阴性证据包括但不限于：`正常`、`未见异常`、`无异常`、`无压痛`、`无肿大`、`无充血水肿`、`无黄染`、`未闻及病理性杂音`、`阴性`。
+- 例如 `外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常` 明确表示 `耳部=正常`；`鼻腔通畅，各鼻窦区无压痛` 明确表示 `鼻部=正常`。
+- 只有原文完全没有该部位/项目信息时才输出 `status="not_found"`、`value=""`、`evidence_ids=[]`。
+- 原文明确描述异常、阳性、肿大、压痛、发绀、皮疹、水肿、杂音等异常事实时，输出 `status="found"`，`value` 填写对应异常原文短描述，并引用对应 evidence_ids；不要只输出 `value="异常"`，也不要把否定词约束范围内的项目误判为异常。
+
+【硬约束 — OCR 原文保持原样】
+- 不得静默修正 OCR 文本；不得把 1/I/l、0/O/o、P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 等疑似错读标签自动改成标准标签。
+- 不得纠正章节标题错字；例如 `品后诊断` 必须保留原文写法，禁止替换为 `最后诊断`；同样禁止为单个错字写专门规则。
+- 不得重排页序或重新组织 OCR 原文；raw OCR 顺序即真相。
+- 字段归属不得依赖 OCR 是否正确识别章节标题；按固定字段表从全文/证据单元抽取。
+
+【硬约束 — 诊断字段禁止主观】
+- diagnosis_preliminary（初步诊断）和 diagnosis_final（最终诊断）只能摘录 OCR 原文中已经写出的诊断文本。
+- 禁止对诊断字段做主观医学判断、推断、改写、合并、添加诊断或医学推理。
+- 诊断字段不可结合其他字段或常识推断"应该是"什么诊断；证据缺失时输出 not_found。
+- 如果初步诊断或最终诊断在原文中是编号列表，`value` 必须按编号分行保留，例如 `1慢性阻塞性肺疾病急性加重\n2高血压2级中危\n3慢性胃炎`；不得合并成一句，不得丢失编号，便于审核页逐条展示、编辑和导出。
+- 诊断编号是原文结构，不是新增诊断；只允许拆分原文已有编号项，禁止补充或重排。
+
+【硬约束 — 共享证据单元】
+- 允许多个字段共用同一条 evidence unit；evidence_ids 可以包含 1 个或多个 ID。
+- 血气 6 个字段（血气pH、血气pCO2、血气pO2、血气Na+、血气FIO2、血气氧合指数）通常共享同一条血气分析证据单元，应当显式共享 evidence_ids。
+
+【OCR 风险提示】
+OCR 风险提示：1/I/l、0/O/o、BHI/BMI、cT/CT/Ct、血气项目名 P62/P02/PC02/PCO2/PO2/PaO2/PaCO2 混淆、药名和医学词近形/同音/缺字错读（例如嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱）、单位断裂、单位符号错读（例如 +10^9/L 可能是 ×10^9/L）、表格错位、项目和值跨行、冒号和空格丢失、小数点和逗号异常、常见错别字。硬约束：不得静默修正 OCR；不得改写数值；不得医学换算；不得把"无、否认、未见、可能、考虑、建议复查"等表达改成确定阳性。
+
+【固定字段表】
+<span class="hlg">{固定字段表 · 运行时按 schema 注入}</span>
+
+【再次强调】
+- 字段必须全量输出，未找到返回 status="not_found"、value=""、evidence_ids=[]，不得省略任何字段。
+- 禁止 schema 外字段；禁止自由生成二级 key；禁止输出章节/标签重复字段或任何旧版抽取元数据字段（如章节定位字符串、原文短片段、置信度、抽取/复核状态、原文/修正对比、质控标记等）。
+- 禁止 OCR 文本修正、标题纠正、页序重排；禁止诊断字段主观推断或医学推理。
+- 允许多个字段共用同一条 evidence unit，特别是血气 6 项。</pre>
+      </div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">prompts.py:323-327 · user</span><span class="cb-tag">user · 变量</span></div>
+<pre>【证据单元编号（每条对应 OCR 原文片段，仅按 ID 引用）】
+<span class="hlg">{证据单元块 · 运行时注入}</span>
+
+【合并 OCR 原文（仅供上下文理解，不作为 evidence_ids 选择依据）】
+<span class="hlg">{OCR 原文全文 · 运行时注入}</span></pre>
+      </div>
+    </div>
+
+    <!-- 4.3 复核 -->
+    <div class="dpoint">
+      <div class="dp-h"><span class="dp-no">4.3</span><h4>复核提示词</h4></div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">copd_extraction/prompts.py:42-100 · build_verification_messages</span><span class="cb-tag">system · 完全固定</span></div>
+<pre>你是字段级复核器，负责核对已抽取的字段值是否被 OCR 原文事实支持。
+
+职责与边界：
+- 只做事实核验：对照证据，指出字段值中与原文矛盾、无法在证据中定位、或明显由 OCR 识别错误造成的内容。
+- 只标记可逐字定位的问题：每条 suspicious/fail 必须能在证据单元文本中找到原文依据；禁止编造原文、禁止用医学常识推断或补全字段值、禁止把否定或不确定表述改成确定阳性。
+- 双向标准：字段值完整摘录了证据内容（即使表述顺序略有不同）、或与证据语义等价时输出 pass；不编造理由标记（误报会损害医生信任）。反之，缺陷清单所列的确凿问题必须标记，不得以"证据与值一致"为由放行——尤其是 OCR 识别错误：证据与值来自同一 OCR 源，两者一致恰恰不能说明文本没错。
+- 不顺着字段值在证据中找支撑（找补）：先独立读证据，再对照声称值。
+
+核验步骤：
+1. 先通读证据单元（eXXX 编号），独立形成对原文的理解；
+2. 再逐字段对照声称值，检查两件事：(a) 值与证据是否逐字一致（矛盾、缺失、幻觉）；(b) 文本本身质量（疑似 OCR 错读、病句、残缺用字）；
+3. 仅在证据可逐字定位到实质矛盾、或文本本身可确证为 OCR 错读时输出 suspicious/fail。
+
+【缺陷清单 —— 仅限以下五类，其余情形一律 pass】
+1. 否定翻转：证据含"无、否认、未见、可能、考虑、建议复查"等否定/不确定表述，字段值却为确定阳性（删除了否定词）。
+2. OCR 识别错误：项目名/药名/单位近形错读（P62/P02/PC02/PCO2、嗜托溴铵/噻托溴铵、二程丙苯碱/二羟丙茶碱、+10^9/L/×10^9/L）；OCR 错读导致的病句或残缺用字（如"粗侧/粗测""回流证/回流征""眼测"）。本类不看值与证据是否一致：证据与值来自同一 OCR 源，值完整复制了错读文本时两者完全一致，但只要文本本身明显不是规范医学表述（非规范用字、病句、残缺），即须标记。标记字段为 ocr_quality_issue 并提示原文片段即可，不必给出修正值（纠偏由抽取环节负责，这里只负责识别）。
+   长文本字段（体格检查等整段摘录）已按句拆分编号，必须逐句扫读全值，不得因整体语义通顺而放行。典型错读模式（对照医学规范用词逐字检查，以下为常见示例而非全部）：
+   - 叠字/重复字：如"舌舌居中""触及及""克格征征"；
+   - 近形替换：如"未扣及/未扪及""回流证/回流征""杂音/余音""语音额/语颤""胸状胸/桶状胸""腹股部/腹部"；
+   - 语序倒置：如"舌伸居中/伸舌居中"；
+   - 残缺断句：如"回流征性/回流征阴性""古手/左手"。
+3. 数值矛盾或异常：同一字段附近存在与字段值不一致的数值（如脉搏 9 次/分但同段另有心率 99 次/分）；体温/脉搏/呼吸/血压/BMI/血气超出合理范围，疑似 OCR 截断（99→9、36.7→3.7）；体重下降/减轻字段输出 0g、0kg、0克 等反直觉数值。
+4. 证据缺失/幻觉：字段值在下方证据单元中找不到对应文本；引入了 OCR 原文没有的信息或做了医学推断。
+5. OCR 纠偏（ocr_correction）依据不充分：原始 OCR 文本与修正后值关系不合理、纠偏理由站不住。
+
+【证据一致性硬约束 —— 任何标记必须逐字可查】
+- 任何 suspicious/fail 标记必须能在证据单元文本中逐字定位；字段值中已存在的内容不得标记为缺失或删除（如值里已有"偏"字，不得说"删掉了'偏'字"；值里已有"↑"符号，不得说"漏了'↑'符号"）。
+- comment 禁止引用证据中不存在的内容，禁止编造原文（原文有某药名，不得说"原文无此药"）；引用同一段文本时不得自称"误读"。
+- 引用证据必须写"证据 eXXX 原文为'…'"，引号内内容必须与证据单元文本逐字一致；无法逐字一致的，不得作为标记依据。
+
+【verdict 契约】
+输出 JSON 对象，顶层键为 `verifications`，`verifications` 是数组，与字段一一对应（每个字段有且仅有一条，不重复、不遗漏）。每项包含：
+- field_key：被审查字段的 key
+- verdict：只能是 pass / suspicious / fail
+- reason_code：只能是 ocr_quality_issue / extraction_mistake / evidence_insufficient / none（pass 固定为 none）
+- checks：对象，包含 value_semantically_supported（值是否被证据语义支持）、no_hallucination_or_inference（是否引入原文外信息或医学推断）、ocr_correction_justified（纠偏理由是否充分）
+- comment：不超过 40 个汉字，只写必要原因；通过项写"一致"；suspicious/fail 必须引用具体证据编号（eXXX）和疑点描述
+
+输出示例：
+```json
+{"verifications": [
+  {"field_key": "pe_ear", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"},
+  {"field_key": "pe_pulse", "verdict": "suspicious", "reason_code": "ocr_quality_issue",
+   "checks": {"value_semantically_supported": false, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "e002附近另有心率99次/分，疑与脉搏9次/分冲突"}
+]}
+```
+示例仅示范结构，字段内容为占位，不得照抄。
+
+反例（值正确，不得标记）：字段值完整摘录了证据内容（即使表述顺序略有不同），复核员错误找茬 → 正确输出应为 verdict=pass：
+```json
+{"verifications": [
+  {"field_key": "pe_lung", "verdict": "pass", "reason_code": "none",
+   "checks": {"value_semantically_supported": true, "no_hallucination_or_inference": true, "ocr_correction_justified": true},
+   "comment": "一致"}
+]}
+```</pre>
+      </div>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">prompts.py:123-127 · user</span><span class="cb-tag">user · 变量</span></div>
+<pre>【OCR 原文证据（先读，编号引用）】
+<span class="hlg">{证据单元块 eXXX · 运行时注入}</span>
+
+【字段声称值（后看，逐字段审查）】
+<span class="hlg">{字段块 field_key / 声称值 / evidence_ids · 运行时注入}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第五章：三个 AI 角色的设计策略 -->
+  <div class="sec" id="s5">
+    <div class="sec-h"><span class="no">5</span>三个 AI 角色的设计策略</div>
+    <div class="sec-desc">复核器不是孤立的提示词——它是"抽取 → 复核 → 裁判"三个 AI 角色流水线的中间一环。这一章讲每个角色的职责边界、prompt 设计策略和工程护栏，以及三者如何配合决定"能不能上岗"。</div>
+
+    <div class="pipeline">
+      <div class="pnode ocr">
+        <div class="role">输入</div>
+        <h4>OCR 原文 + 证据单元</h4>
+        <p>病历照片识别出的文本，按证据单元编号（eXXX）。事实核验的唯一依据。</p>
+      </div>
+      <div class="parrow">→</div>
+      <div class="pnode extract">
+        <div class="role">角色 1</div>
+        <h4>抽取 agent</h4>
+        <p>按固定字段表把 OCR 抽成结构化字段，用 evidence_ids 引用证据。prompt 即契约。</p>
+        <span class="file">prompts.py:189</span>
+      </div>
+      <div class="parrow">→</div>
+      <div class="pnode">
+        <div class="role">角色 2</div>
+        <h4>复核 agent</h4>
+        <p>对已抽字段二次审查，输出 verdict + 标签。失败静默降级，绝不拖垮任务。</p>
+        <span class="file">prompts.py:34 · verifier.py</span>
+      </div>
+      <div class="parrow">→</div>
+      <div class="pnode judge">
+        <div class="role">角色 3</div>
+        <h4>裁判 agent</h4>
+        <p>模拟医生逐条裁定"该不该标"，算 kappa 一致性打分，≥0.7 才允许上岗。</p>
+        <span class="file">evaluation/calibrate.py</span>
+      </div>
+    </div>
+    <p class="pipeline-note">流水线设计原则：抽取与复核<b>职责分离</b>（抽取只摘录、复核只标疑点）；裁判与复核<b>互不见面</b>（考试时各跑各的，最后只对一致性打分）。</p>
+
+    <div class="dpoint">
+      <div class="dp-h"><span class="dp-no">5.1</span><h4>抽取 agent：prompt 即契约</h4></div>
+      <p class="dp-why">抽取 prompt 与复核 prompt 同一套骨架（system 固定 + user 变量），但策略不同——它把<b>每类失败模式变成一节【硬约束】</b>，system 按主题分块，各管各的：</p>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">prompts.py:232-321 · 抽取 system 的硬约束分块</span><span class="cb-tag">分块策略</span></div>
+<pre>【硬约束 — 输出 JSON 形状】   <span class="cm"># 顶层键固定、字段全量输出、status 三枚举</span>
+【硬约束 — 字段与 key】      <span class="cm"># field_key 只允许固定字段表内的 key</span>
+【硬约束 — evidence 与原文】 <span class="cm"># evidence_ids 只能选已有编号，禁止编造</span>
+【硬约束 — 否定表达与既往史】<span class="cm"># "否认糖尿病病史"必须保留否定词，删词=幻觉</span>
+【硬约束 — J 型状态字段判定】<span class="cm"># 正常输出"正常"，异常摘录原文描述</span>
+【硬约束 — OCR 原文保持原样】<span class="cm"># 不得静默修正（1/I/l、P62/P02）；"品后诊断"必须保留</span>
+【硬约束 — 诊断字段禁止主观】<span class="cm"># 只摘录原文诊断，禁止医学推理、编号必须分行保留</span>
+【硬约束 — 共享证据单元】    <span class="cm"># 血气 6 项共享同一条证据单元</span></pre>
+      </div>
+      <p class="dp-why" style="margin-top:10px">两块值得注意的设计：<b>① 否定词保留是硬要求</b>——"否认糖尿病"抽成"有糖尿病"是抽取器最危险的幻觉，prompt 里直接写死"删掉否定词会把否定事实变成模型幻觉"；<b>② OCR 保持原样</b>——标题错字（品后诊断）也必须原样保留，纠错职责交给审核页的人工环节。另外抽取与复核共用同一个 OCR 风险常量 <span class="path">_OCR_RISK_WARNINGS</span>（prompts.py:23），两边的"什么算 OCR 风险"定义完全一致。</p>
+      <div class="quote-bar">改动纪律：抽取 prompt 的任何修改都视为<b>契约变更</b>，要同步 spec/plan/测试——因为字段输出契约变了，下游审核页、导出、复核器全部受影响。<span class="src">——copd_extraction/CLAUDE.md</span></div>
+    </div>
+
+    <div class="dpoint">
+      <div class="dp-h"><span class="dp-no">5.2</span><h4>复核 agent：工程护栏 —— 失败也必须静默</h4></div>
+      <p class="dp-why">复核器是"锦上添花"的一环，它<b>不允许影响主流程</b>。verifier.py 的三个护栏：<b>① 静默降级</b>——LLM 失败、输出非 JSON、契约非法，一律返回空意见，绝不抛出、绝不让任务失败；<b>② 范围过滤</b>——只复核 status=found 且 value 非空的字段（not_found 和空值由审核页兜底）；<b>③ 只贴标签不改值</b>——apply_verdicts 只加 quality_flags 和把 verification_status 升为 suspicious，不碰字段值，已是 failed 的不降级。</p>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">verifier.py:49-51 · 静默降级</span><span class="cb-tag">失败语义</span></div>
+<pre>except Exception:  <span class="cm"># noqa: BLE001 — 复核器失败必须静默降级</span>
+    logger.warning("复核器调用失败，已降级为空意见", exc_info=True)
+    <span class="hl">return []</span>   <span class="cm"># 空意见 = 该字段不贴标签，主流程照常走</span></pre>
+      </div>
+      <div class="quote-bar">设计取舍：复核器误报会消耗医生信任，但复核器<b>宕机不能消耗任务</b>。宁可这一轮一个标签都不贴，也不能让复核失败把整个任务拖进 failed——那是把"质检员"的地位摆得比"生产线"还高。<span class="src">——verifier.py 失败语义注释</span></div>
+    </div>
+
+    <div class="dpoint">
+      <div class="dp-h"><span class="dp-no">5.3</span><h4>裁判 agent：上岗考试（kappa ≥ 0.7 才允许接生产）</h4></div>
+      <p class="dp-why">裁判 agent 是<b>考试制度</b>，不是生产环节。流程：跑抽取+复核 → 导出裁定模板（每条含 case_id/field_key/verdict/声称值/证据片段）→ 3 个 AI 质检员（Claude 子 agent 模拟医生）逐条判定"该字段<b>是否应被标记</b>可疑" → 2×2 一致表 → 算 Cohen's kappa。<b>kappa ≥ 0.7 才算"意见高度一致"，才允许复核器上岗</b>——这是 spec 里写死的准入门槛。</p>
+      <div class="codebox">
+        <div class="cb-top"><span class="cb-dot r"></span><span class="cb-dot y"></span><span class="cb-dot g"></span><span class="cb-file">calibrate.py:54-68 · compute_kappa 的 2×2 一致表</span><span class="cb-tag">考试评分</span></div>
+<pre>def compute_kappa(verdicts, adjudications):
+    <span class="cm">"""verdict 二值化（suspicious/fail=应标侧）后与裁定比对，返回 kappa/n/table。"""</span>
+    table = [[0,0],[0,0]]  <span class="cm"># [复核pass][复核标可疑] × [裁定不应标][裁定应标]</span>
+    ...
+    verifier_flagged = v["verdict"] in ("suspicious", "fail")
+    should_flag = adjudications[key]
+    table[verifier_flagged][should_flag] += 1
+    return {"kappa": cohen_kappa(table), "n": n, "table": table}</pre>
+      </div>
+      <p class="dp-why" style="margin-top:10px">三个细节：<b>① 裁判与复核互不见面</b>——裁定模板只带声称值和证据片段，不带复核器意见，防止裁判被带节奏；<b>② 报告第六章那个"脉搏 99 vs 心率 108"案例</b>就是裁判的价值——房颤病人脉搏心率不一致是正常现象，只有"懂医学的"能判它不该标；<b>③ 真人可介入</b>——配套的 <span class="path">scripts/maintenance/generate_verifier_review_html.py</span> 把裁定模板生成 HTML，让真人逐条裁决（替代纯 LLM judge），复核器能不能上岗最终由人的意见说了算。</p>
+    </div>
+
+    <div class="dpoint" style="border-left-color:var(--teal)">
+      <div class="dp-h"><span class="dp-no">5.4</span><h4>三层护栏总览：职责边界决定信任边界</h4></div>
+      <div class="cmp">
+        <div class="col"><h5 style="color:var(--teal)">抽取层 · 契约校验</h5><p style="font-family:var(--sans)">输出必须过字段契约；整体为空 / 契约非法 / LLM 返回非法 JSON → 任务进 failed。抽取是"生产线"，不合格就得停产。</p></div>
+        <div class="col"><h5 style="color:var(--blue)">复核层 · 静默降级</h5><p style="font-family:var(--sans)">复核失败只影响"有没有标签"，不影响任务本身。质检员坏了，产品照发。</p></div>
+        <div class="col"><h5 style="color:var(--red)">上岗层 · 考试准入</h5><p style="font-family:var(--sans)">kappa ≥ 0.7 才注入生产路径；当前 0.20~0.24，所以复核器保持不上岗。考不过，永远只活在评估工具链里。</p></div>
+      </div>
+      <p class="dp-why" style="margin-top:12px">三层各回答一个问题：<b>抽出来的对不对？</b>（契约校验）<b>抽查时崩不崩？</b>（静默降级）<b>有没有资格见医生？</b>（kappa 考试）。越靠近人，门槛越严。</p>
+    </div>
+  </div>
+
+<!-- 第六章：结果 -->
+  <div class="sec">
+    <div class="sec-h" id="s6"><span class="no">6</span>结果：好坏各一半</div>
+    <div class="sec-desc">三版对比（同一批 295 个字段、同一考试标准下才公平，下表用同一套裁判口径）。</div>
+    <table>
+      <tr><th>版本</th><th class="center">标可疑的比例</th><th class="center">误报（虚惊）</th><th class="center">命中（真抓到）</th><th class="center">一致性打分 kappa</th></tr>
+      <tr>
+        <td>旧版（对抗型）</td>
+        <td class="center"><span class="pill bad">62.5%</span></td>
+        <td class="center">约 30 处</td>
+        <td class="center">—</td>
+        <td class="center">0.40</td>
+      </tr>
+      <tr>
+        <td>v2（去对抗）</td>
+        <td class="center"><span class="pill bad">0.3%</span></td>
+        <td class="center">2 处</td>
+        <td class="center">4 处</td>
+        <td class="center">0.18</td>
+      </tr>
+      <tr>
+        <td><b>v3（拆句+错字清单）</b></td>
+        <td class="center"><span class="pill warn">3.7%</span></td>
+        <td class="center"><b>4 处</b></td>
+        <td class="center"><b>6~7 处</b></td>
+        <td class="center"><b>0.20~0.24</b></td>
+      </tr>
+    </table>
+
+    <div class="gauge" style="margin-top:18px">
+      <div style="font-size:13px;color:var(--muted)">一致性打分（kappa）位置：越靠右越好，绿线 = 上岗线</div>
+      <div class="track">
+        <div class="gate" style="left:70%"></div>
+        <div class="gatelbl" style="left:70%">上岗线 0.7</div>
+        <div class="dot" style="left:24%"></div>
+      </div>
+      <div class="lbls"><span>0（纯瞎猜）</span><span>0.5</span><span>1（完全一致）</span></div>
+      <div class="note">当前 0.20~0.24（蓝点），远没到 0.7。0.7 的意思是：检查员和医生的意见高度一致，此时让检查员上岗才有意义。</div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">误报 / 命中 / 漏报 的结构（v3 轮，295 个字段）</h3>
+    <div class="matrix">
+      <div class="c hd"></div>
+      <div class="c hd">检查员说：没问题（286 个）</div>
+      <div class="c hd">检查员说：可疑（9 个）</div>
+      <div class="c hd">裁判说：没问题</div>
+      <div class="c"><div class="num" style="color:var(--green)">258</div><div class="sub">✅ 都没问题，放行正确</div></div>
+      <div class="c"><div class="num" style="color:var(--orange)">5</div><div class="sub">⚠️ 虚惊：正常字段被贴标签</div></div>
+      <div class="c hd">裁判说：有问题</div>
+      <div class="c"><div class="num" style="color:var(--red)">26</div><div class="sub">❌ 漏网：有错字却没被标出来</div></div>
+      <div class="c"><div class="num" style="color:var(--blue)">6</div><div class="sub">🎯 真抓到：有错字且被标出</div></div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">它抓到的，和它误报的（真实例子）</h3>
+    <div class="cases">
+      <div class="case ok">
+        <div class="t">✅ 真抓到了（v3）</div>
+        <p>"粗侧""回流证""舌舌""齿辅"这类 OCR 错字，跨多个病历被标出。</p>
+        <div class="pair wrong">原文：双眼粗侧视力正常</div>
+        <div class="pair right">应为：双眼粗测视力正常</div>
+      </div>
+      <div class="case fail">
+        <div class="t">⚠️ 误报 1：把正常词当错字</div>
+        <p>"鼻翼无煽动"是正常医学表述（鼻翼、煽动都是规范词），检查员却标了可疑。</p>
+      </div>
+      <div class="case info">
+        <div class="t">🧑‍⚕️ 有意思的案例：AI 没医生懂</div>
+        <p>检查员发现"脉搏 99 次/分但心率 108 次/分"标了可疑——表面看是矛盾。但裁判（模拟医生）知道：这病人是房颤，脉搏本来就跟心率不齐，这是正常现象，不该标。这类判断只有懂医学的才能做。</p>
+      </div>
+    </div>
+
+    <h3 style="margin:28px 0 14px;font-size:17px">最大的短板：漏网之鱼太多</h3>
+    <p class="kv">该标出的 32 处里只标出 6~7 处（<b>约两成</b>）。原因：OCR 错字变体太多——同一处错读在不同病历里可能长成"粗侧""相测""粗测"三种样子，检查员记不住所有变体，说明书里写了的模式它有时也对不上号。这就像让人背字典，永远背不全。</p>
+  </div>
+
+  <!-- 第五章：结论 -->
+  <div class="sec">
+    <div class="sec-h" id="s7"><span class="no">7</span>结论与下一步</div>
+    <div class="concl">
+      <li><b class="g">你的两个决定都验证有效</b>：去掉对抗后误报从 30 处降到 4 处（医生的信任不再被消耗）；"标记 OCR 认错字"成为检查员的明确职责且能干活。</li>
+      <li><b class="r">但整体还不能上岗</b>：漏报太多，kappa≈0.2 远低于 0.7 门槛。现在让它自动进医生工作流，反而漏掉真问题，比没有它还危险。</li>
+      <li><b class="o">保持现状</b>：复核器继续"不上岗"（不自动接入），和之前的处理一致。三版实验数据全部存档，随时可复查。</li>
+      <li><b class="g">未来可选方案</b>：把长字段拆成句子后<b>每句强制判定</b>（漏网之鱼无处可藏），能把召回做上去，但要改动检查员和考试工具的一整套约定，工程量大。等需要时再做。</li>
+    </div>
+  </div>
+
+  <!-- 附录：名词速查 -->
+  <div class="sec">
+    <div class="sec-h" id="s8"><span class="no">8</span>名词速查（点开看）</div>
+    <div class="sec-desc">正文里用过的词，忘了随时回来查。</div>
+    <details class="gloss"><summary>OCR / 字段 / 抽取</summary>
+      <div class="g-body">
+        <p><b>OCR</b>：把照片里的字变成电脑文字的程序。会认错字，尤其手写体和模糊的字。</p>
+        <p><b>字段</b>：病历里的一个个格子，比如"心率""体格检查""既往史"。</p>
+        <p><b>抽取</b>：从一整段病历文字里，把每个格子该填的内容自动填好。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>复核器 / 标可疑 / verdict</summary>
+      <div class="g-body">
+        <p><b>复核器</b>：抽完字段后再用 AI 检查一遍的自动检查员。发现可疑就贴标签，让医生在审核页重点看。</p>
+        <p><b>标可疑（suspicious）</b>：贴"请医生重点看"的标签。<b>通过（pass）</b>：没问题。<b>失败（fail）</b>：问题严重。</p>
+        <p><b>verdict</b>：检查员对每个字段给出的结论（通过 / 可疑 / 失败）。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>校准 / kappa / 上岗线</summary>
+      <div class="g-body">
+        <p><b>校准</b>：给检查员"验收考试"——拿真实病历让它标，再找权威逐条裁判它对不对，算一致性。</p>
+        <p><b>kappa</b>：检查员和裁判的意见重合度，0~1。0.7 以上算高度一致（上岗线）；0.4 以下基本等于各说各的。</p>
+        <p><b>上岗</b>：检查员合格后，才允许自动接入医生日常工作流。</p>
+      </div>
+    </details>
+    <details class="gloss"><summary>误报 / 漏报 / 召回</summary>
+      <div class="g-body">
+        <p><b>误报</b>：没问题的字段被贴了标签（虚惊一场，消耗医生信任）。</p>
+        <p><b>漏报</b>：有问题的字段没被贴标签（漏网之鱼，比虚惊更危险）。</p>
+        <p><b>召回</b>：该抓的问题抓到了几成。两成 = 10 个真问题只抓到 2 个。</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="footer">复核器改造实验报告 · 2026-08-02 · 数据存档于 data/evaluation/calibration/<br>实现详解对照源码：app/backend/services/copd_extraction/prompts.py · verifier.py · app/backend/evaluation/calibrate.py</div>
+</div>
+
+</body>
+</html>
