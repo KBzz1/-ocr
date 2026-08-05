@@ -1,7 +1,7 @@
 # evaluator.v2 — 版本分析
 
 - **版本号**: `evaluator.v2`（显式版本常量 `METRIC_VERSION`；旧命名 `admission_eval.v2`）
-- **锚点**: 当前 HEAD（blob sha256 前16: `2a1944a318cf75fd`）
+- **锚点**: 当前 HEAD（blob sha256 前16: `77bed02fb070b47d`；注册表 §4 记录 `2a1944a318cf75fd` 为 2026-08-04 建档时未提交工作区快照）
 
 ## 变更摘要
 

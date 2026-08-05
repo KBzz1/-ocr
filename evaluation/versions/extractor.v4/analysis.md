@@ -1,7 +1,7 @@
 # extractor.v4 — 版本分析
 
 - **版本号**: `extractor.v4`（首个显式版本常量；旧命名 `admission_record_structured_fields_prompt.v4`）
-- **锚点**: 当前 HEAD（blob sha256 前16: `d121b834ff85688f`；PPEMA-V1 终态 `01250ed89387ba30`）
+- **锚点**: 当前 HEAD（blob sha256 前16: `7f9ca9aece4be109`；注册表 §3 记录 `d121b834ff85688f` 为命名规范化时未提交工作区快照；PPEMA-V1 终态 `01250ed89387ba30`）
 
 ## 变更摘要
 
