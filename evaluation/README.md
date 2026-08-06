@@ -29,8 +29,8 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests -q
 
 ## 版本迭代规范（自下一次版本迭代起生效，不回溯补做历史版本）
 
-每次提示词/评估口径版本迭代在 `versions/<版本号>/` 建目录（版本号沿用 `ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION` / `METRIC_VERSION`）：
+每次提示词/评估口径版本迭代在 `versions/<组件>/<版本号>/` 建目录（组件为 `extractor` / `verifier` / `evaluator` 之一，版本号沿用 `ADMISSION_STRUCTURED_FIELDS_PROMPT_VERSION` / `VERIFIER_PROMPT_VERSION` / `METRIC_VERSION`，如 `versions/extractor/v4/`）：
 - `analysis.md` — 改动点、依据、指标前后对比、结论
-- `prompt-full.md` — 运行时完整渲染的 system+user 提示词全文（`build_admission_structured_fields_messages` 实际产出，不截断不摘要）
+- `prompt-full.md` — 运行时完整渲染的 system+user 提示词全文（`build_admission_structured_fields_messages` 实际产出，不截断不摘要；评估器无 prompt 时放指标源码快照并注明）
 - `report.html` — 本版本评估报告（若有）
 - `versions/README.md` 索引表追加一行（版本号 | 日期 | 变更摘要 | 分析文档 | 全量提示词 | 报告）
