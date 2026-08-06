@@ -16,6 +16,6 @@
 
 ## 指标对比与结论
 
-PPEMA-V1 实验报告（`docs/可视化html/`）含抽取器对比结论，详见
+PPEMA-V1 实验报告（`data/evaluation/reports/20260803-prompt-policy-metric-alignment-v1-report.html`，gitignored 运行产物）含抽取器对比结论，详见
 `docs/codex_design/prompt-policy-metric-alignment-v1/WORKER_REPORT.md`；
 本目录 prompt-full.md 为当前线上形态。

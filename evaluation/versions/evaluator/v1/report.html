@@ -1,9 +1,5 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>评估体系构建复盘 — 2026-08-01</title>
 <style>
   /* ── 仿《深入理解 AI Agent》排版风格 ──
      ElegantBook cyan theme 覆写为深海军蓝 structurecolor = RGB(30,58,107)
@@ -231,7 +227,7 @@
     text-align: center;
   }
 </style>
-</head>
+<body>
 <body>
 
 <div class="page">
@@ -250,6 +246,8 @@
 </div>
 
 <!-- ══════════ 第一章 ══════════ -->
+  <!-- 抽取注记: 评估体系构建复盘（2026-08-01-evaluation-retrospective.html），作为 evaluator.v1 报告归档 -->
+  <div style="margin:0 auto 18px;max-width:820px;padding:10px 14px;border-left:3px solid var(--blue,#3b6ef5);background:rgba(59,110,245,.06);font-size:13px;color:var(--muted,#6b7280);">📌 抽取自 评估体系构建复盘（2026-08-01-evaluation-retrospective.html），作为 evaluator.v1 报告归档</div>
 <h2 class="chapter"><span class="no">第 一 章</span>为什么是评估</h2>
 
 <p>一切始于一个直白的问题：<strong>怎么证明改 prompt 是变好了，而不是碰运气？</strong>项目的最大需求是准确性——病历字段抽取错一个数值，医生就要多花一分钟核验。但翻开代码，找到的却是这样一个 harness：</p>
@@ -282,6 +280,7 @@
 <p>把"准确性"这个词工程化，落点只有一个：<strong>评估</strong>。而项目恰好拥有一份别处拿不到的黄金资源——医生审核修正后的字段结果，天然就是金标标注。</p>
 
 <!-- ══════════ 第二章 ══════════ -->
+
 <h2 class="chapter"><span class="no">第 二 章</span>设计：三个关键决策</h2>
 
 <h3>2.1 决策一：评估先行，不做上下文工程、不做多 Agent</h3>
@@ -315,6 +314,7 @@
 <p>医生审核数据回流（金标活资产）是明确的价值点，但第一步刻意不做——6 份人工金标先把体系立起来，回流机制等验证器规范化时一并设计。边界划清，scope 才能守住。</p>
 
 <!-- ══════════ 第三章 ══════════ -->
+
 <h2 class="chapter"><span class="no">第 三 章</span>实施：六个任务</h2>
 
 <div class="figure">
@@ -344,6 +344,7 @@
 </div>
 
 <!-- ══════════ 第四章 ══════════ -->
+
 <h2 class="chapter"><span class="no">第 四 章</span>首个基线：尺子量出了什么</h2>
 
 <pre>评估报告  Qwen3.5-4B-AWQ-4bit / admission_record_structured_fields_prompt.v1
@@ -374,6 +375,7 @@ value 准确率  : 88.32%
 <p>这三个观察，正是"评估让改进有依据"的最好注脚——<strong>不是模型不行，是指标本身需要进化</strong>。它们已记入工作记录，成为第二步验证器规范化的输入。</p>
 
 <!-- ══════════ 第五章 ══════════ -->
+
 <h2 class="chapter"><span class="no">第 五 章</span>复盘：什么做对了</h2>
 
 <h3>5.1 做对的事</h3>
@@ -406,5 +408,6 @@ value 准确率  : 88.32%
 </footer>
 
 </div>
+</body>
 </body>
 </html>

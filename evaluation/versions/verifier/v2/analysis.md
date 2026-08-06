@@ -19,4 +19,4 @@ reason↔check 对应 / comment 引用真实 uXXX；违规整组跳过）。
 
 v2 为 step7 实验基线₂'（定稿 prompt + 上岗形态）与 A'（+字段级分块+完整证据）的
 共同 prompt 基线；kappa 结果见 step7 实验（spec 附录）与
-`docs/可视化html/2026-08-02-verifier-prompt-v3-report.html` 实验轮次对比。
+`verifier/v1/report.html`（原 `docs/可视化html/2026-08-02-verifier-prompt-v3-report.html`）实验轮次对比。

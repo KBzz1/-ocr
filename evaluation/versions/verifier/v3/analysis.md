@@ -20,5 +20,5 @@ checks 键 `ocr_text_clear`→`text_standard`、reason `ocr_quality_issue`→`no
 ## 指标对比与结论
 
 v3 为当前上线形态（定稿后未再迭代）；kappa 达标验证见上线报告
-`docs/可视化html/2026-08-02-verifier-prompt-v3-report.html` 的实验轮次对比
+`verifier/v1/report.html`（原 `docs/可视化html/2026-08-02-verifier-prompt-v3-report.html`）的实验轮次对比
 （注：该报告内 v2/v3 为实验轮次命名，非本目录正式版本号）。

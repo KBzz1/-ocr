@@ -24,7 +24,7 @@ conda run -n manzufei_ocr python -m pytest evaluation/tests -q
 - 评估/复核/提示词实验设计：`docs/superpowers/specs/2026-08-0{1,2,3}-*.md`（evaluation-harness、verifier-normalization、verifier-chunked-review-experiment、verifier-recall-optimization、prompt-refactor-field-boundary、verifier-step7-scale-evidence）
 - 实施计划：`docs/superpowers/plans/2026-08-0{1,2}-*.md` 对应 5 份
 - 架构师实验记录：`docs/codex_design/`（prompt-policy-metric-alignment-v1、verifier-optimization-v1、verifier-judge-rubric-v1）
-- 报告 HTML：`docs/可视化html/`（4 份评估报告）
+- 报告 HTML：`versions/<组件>/<版本号>/report.html`（本版本报告，如 `versions/verifier/v1/report.html`；前身抽取文档 `versions/verifier/v1/verifier-normalization.html`、`versions/evaluator/v1/report.html`；架构全景图 `docs/可视化html/architecture_overview.html`）
 - 历史文档内旧路径映射：`app/backend/evaluation` → `evaluation.code`（命令 `python -m evaluation.code.run_eval`）；`data/evaluation`、`data/text_data` → `evaluation/data`
 
 ## 版本迭代规范（自下一次版本迭代起生效，不回溯补做历史版本）

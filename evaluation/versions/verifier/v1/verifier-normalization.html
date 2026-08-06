@@ -1,9 +1,5 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>验证器规范化设计 — 2026-08-01</title>
 <style>
   /* ── 仿《深入理解 AI Agent》排版风格（与评估体系复盘同款）──
      ElegantBook cyan theme 覆写为深海军蓝 structurecolor = RGB(30,58,107) */
@@ -251,7 +247,8 @@
   .decision .d-body { padding-top: 4px; }
   .decision .d-q { font-family: var(--sans); font-weight: 600; color: var(--navy); }
 </style>
-</head>
+<body>
+<body>
 <body>
 <div class="page">
 
@@ -269,7 +266,9 @@
   </div>
 
   <!-- ═══════════ 第 1 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 1 章</span>为什么做这件事</h2>
+  <!-- 抽取注记: 验证器规范化设计（2026-08-01-verifier-normalization.html）抽取：第1-5章（复核器 v1 形成相关） -->
+  <div style="margin:0 auto 18px;max-width:820px;padding:10px 14px;border-left:3px solid var(--blue,#3b6ef5);background:rgba(59,110,245,.06);font-size:13px;color:var(--muted,#6b7280);">📌 抽取自 验证器规范化设计（2026-08-01-verifier-normalization.html）抽取：第1-5章（复核器 v1 形成相关）</div>
+<h2 class="chapter"><span class="no">第 1 章</span>为什么做这件事</h2>
 
   <p>第一步评估体系跑出首个基线，数据摆在面前：</p>
 
@@ -301,7 +300,8 @@
   </blockquote>
 
   <!-- ═══════════ 第 2 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 2 章</span>目标与边界</h2>
+  
+<h2 class="chapter"><span class="no">第 2 章</span>目标与边界</h2>
 
   <h3>2.1 六个目标</h3>
   <div class="decision">
@@ -340,7 +340,8 @@
   </table>
 
   <!-- ═══════════ 第 3 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 3 章</span>复核器设计</h2>
+  
+<h2 class="chapter"><span class="no">第 3 章</span>复核器设计</h2>
 
   <h3>3.1 位置与形态</h3>
   <p>新模块 <code>copd_extraction/verifier.py</code>，<code>FieldVerifier</code> 类。输入抽取结果 + 原文 + schema + LLM 客户端，输出按字段 verdict。复核范围：<strong>status=found 且 value 非空</strong> 的字段。</p>
@@ -387,7 +388,8 @@
   </div>
 
   <!-- ═══════════ 第 4 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 4 章</span>消息结构改造：适配 Qwen ChatML</h2>
+  
+<h2 class="chapter"><span class="no">第 4 章</span>消息结构改造：适配 Qwen ChatML</h2>
 
   <p>现状问题：<code>complete_json</code> 把整个 prompt（身份+硬约束+字段表+原文）塞进<strong>一条 user 消息</strong>——Qwen 训练时 system / user / assistant 是三种有区分度的角色，官方最佳实践是角色规则放 system、实际数据放 user。讽刺的是 OCR 路径（<code>complete_text_from_image</code>）已是 system+user 双消息，抽取路径反而没有。</p>
 
@@ -400,7 +402,8 @@
   <p><code>complete_json</code> 签名扩展支持 system+user 分离，<strong>不传 system 时行为不变</strong>（向后兼容）。system 完全固定 → 前缀缓存命中率最大化（固定前缀变长）。</p>
 
   <!-- ═══════════ 第 5 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 5 章</span>验证器校准：kappa ≥ 0.7 才上岗</h2>
+  
+<h2 class="chapter"><span class="no">第 5 章</span>验证器校准：kappa ≥ 0.7 才上岗</h2>
 
   <div class="term">
     <span class="t-label">Cohen's kappa</span> <span class="t-en">一致度系数</span><br>
@@ -420,98 +423,101 @@
   <p>工具：<code>evaluation/calibrate.py</code>（跑复核 → 导出裁定模板 → 算 kappa）。不达标就迭代 prompt（缺陷清单 / few-shot / 布局）重测，不达标不接入。校准集存 <code>data/evaluation/calibration/</code>（运行数据，不进 git）。</p>
 
   <!-- ═══════════ 第 6 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 6 章</span>审核数据回流：金标活资产</h2>
+  
+</body>
+  <div style="margin:34px auto 8px;max-width:820px;padding:10px 14px;border-left:3px solid var(--accent,#1e3a6b);background:var(--accentbg,#eef1f7);font-size:13px;color:var(--muted,#6b6b6b);">📌 抽取合并注记: 下方正文为设计文档（第1-5章：为什么/目标/复核器设计/消息结构/校准）与复盘文档（全部5章：实施/kappa 0.40 结论）抽取合并，对应复核器 v1 形成过程</div>
+<h2 class="chapter"><span class="no">第 一 章</span>为什么是复核器</h2>
 
-  <div class="flow">
-    <div class="step">审核确认（complete_review）</div><span class="arrow">→</span>
-    <div class="step">聚合 auto_value ≠ final_value 字段</div><span class="arrow">→</span>
-    <div class="step">回流文件（运行数据）</div><span class="arrow">→</span>
-    <div class="step hot">脱敏</div><span class="arrow">→</span>
-    <div class="step">金标活资产 source: review</div>
-  </div>
+<h3>1.1 复核器一直是死代码</h3>
+<p>第一步的复盘里留了一句话：审核链路（quality_flags → verification_status=suspicious → attention_required → 审核页）是活的，但产生这些标记的复核器（<code>build_verification_prompt</code> / <code>build_adversarial_verification_prompt</code>）从设计之初就没有被任何调用方使用。第二步要做的不是发明新东西，而是把设计意图真正接进管线——并回答一个更尖锐的问题：<b>它值得上岗吗？</b></p>
 
-  <h3>6.1 采集</h3>
-  <p>字段结构天然支持回流：<code>auto_value</code> 恒为抽取原值、<code>final_value</code> 为医生最终值，二者不等即"修正过"。确认时聚合写入 <code>data/evaluation/review_feedback/&lt;task_id&gt;.json</code>（含患者信息，不进 git）。status 规则：修正值非空记 <code>found</code>，修正值为空串（医生清空误值）记 <code>not_found</code>——"医生认为该字段不存在"本身是金标信号。</p>
+<div class="term">
+  <div class="t-label">上岗门槛 KAPPA ≥ 0.7 <span class="t-en">— go-live gate</span></div>
+  <p>复核器与人工裁定的一致性用 Cohen's kappa 度量；kappa ≥ 0.7 才允许接入活动路径（生产与评估共用同一 verifier 实现）。这条门槛写在设计文档里，本步用真实样本验证了它——结论是暂不上岗。</p>
+</div>
 
-  <h3>6.2 脱敏</h3>
-  <p>轻量正则：手机号 / 身份证 / 住院号 / 11 位数字串；日期保留（病历日期是抽取语义的一部分）。回流原始文件不脱敏，<strong>脱敏发生在生成金标活资产时</strong>。</p>
+<h3>1.2 本步的五件事</h3>
+<p>① 复核器接入评估管线（可消融：<code>--no-verifier</code>）；② 校准：kappa ≥ 0.7 后上岗；③ 医生审核数据回流为金标活资产（source: review）；④ 修正三个指标误报；⑤ prompt 适配 Qwen ChatML 分层 + thinking 消融实测。</p>
 
-  <h3>6.3 金标活资产</h3>
-  <p>增量修正字段文件（不要求 61 字段全量），<code>data/evaluation/golden_review/&lt;task_id&gt;.json</code>，source: "review"。评估工具按 source 子集单独统计<strong>"修正字段错误率"</strong>——修正字段 = 抽取器易错字段，盯住它们就是盯住实际伤害。</p>
 
-  <div class="term">
-    <span class="t-label">为什么只回流修正字段</span> <span class="t-en">signal not noise</span><br>
-    医生确认的字段与抽取一致，不携带新信息；修正字段才是学习信号。全量回流只会把数据放大 4-5 倍、全是噪音。
-  </div>
+<h2 class="chapter"><span class="no">第 二 章</span>设计：关键决策</h2>
 
-  <!-- ═══════════ 第 7 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 7 章</span>指标修正：三个冤枉好人的判定</h2>
+<h3>2.1 同源缓解：不引入第二个模型</h3>
+<p>复核器与被复核的抽取器是<b>同一个 Qwen 模型、温度恒 0.0</b>——同源模型做对抗复核，只能靠上下文差异缓解锚定：evidence 前置在后（复核器先读证据再看法定值，防"找补"）、缺陷清单逐项核对、suspicious/fail 的 verdict 必须引用具体证据编号（eXXX）。</p>
 
-  <table>
-    <tr><th>误报场景</th><th>实例</th><th>修正机制</th></tr>
-    <tr>
-      <td><strong>幻觉误报</strong><br>否定短语重建不可定位</td>
-      <td>原文"否认'糖尿病'、'冠心病'等病史"，抽取按契约输出"否认糖尿病病史"——原文找不到这句话 → 判幻觉</td>
-      <td>先测<strong>金标 value</strong> 可定位性：金标不可定位 → 该字段跳过幻觉判定（期望输出本身就是重建短语）。真错误由 value_mismatch 兜底</td>
-    </tr>
-    <tr>
-      <td><strong>J 型粒度误判</strong><br>"正常" vs "鼻腔通畅"</td>
-      <td>pe_nose：金标"鼻腔通畅"、抽取"正常"，语义等价被判 mismatch</td>
-      <td>从 schema 加载 J 型字段清单（qwen_type=J / review_control=judgement），仅这些字段做"正常族"归一：正常/通畅/未见异常/无异常/阴性/无压痛 → 同一 token</td>
-    </tr>
-    <tr>
-      <td><strong>长文本摘录过严</strong><br>摘录范围差异</td>
-      <td>金标摘 A 段、抽取摘 B 段，内容都对，被判错（hpi_* 现病史类）</td>
-      <td>长文本字段（初始：hpi_* 类 + chief_complaint）改判<strong>核心句重合率</strong>：按句切分后共有句占比 ≥ 0.6 判对</td>
-    </tr>
-  </table>
+<h3>2.2 失败静默降级是铁律</h3>
+<p>复核器 LLM 调用失败 / 输出非 JSON / verdict 契约非法 → 空意见 + 记日志，<b>绝不抛出、绝不导致任务失败、绝不修改字段值</b>。这条铁律在 thinking 实测中被真实触发过一次（非 JSON 输出），降级机制按设计工作——复核器可以不存在，但不能制造故障。</p>
 
-  <div class="experiment">
-    <div class="x-title">重要：口径影响</div>
-    <p>三处修正都改变 value_accuracy 统计口径——<strong>修正后基线必须重跑</strong>。报告 meta 记录指标版本号，对比时显式标注。</p>
-  </div>
+<h3>2.3 ChatML 分层：system 固定、user 变量</h3>
+<p>vLLM 已开启 <code>--enable-prefix-caching</code>，prompt 拆成 system（身份、硬约束、字段表、契约——完全固定）与 user（证据单元、OCR 原文——变量数据），固定部分全命中前缀缓存。拆层由测试锁死：system 中不得出现任何证据/原文变量。</p>
 
-  <!-- ═══════════ 第 8 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 8 章</span>评估执行与消融矩阵</h2>
+<h3>2.4 指标修正：三个误报源</h3>
+<p>第一步基线暴露的误报：① 金标 value 本身不可定位（否定短语重建，如"否认糖尿病病史"）被当幻觉——金标不可定位时跳过该字段幻觉判定；② J 型字段"鼻腔通畅"与"正常"被当成不同值——正常族归一（正常/通畅/未见异常/阴性…→统一 token）；③ 长文本字段（hpi_*、chief_complaint）精确比较过于苛刻——核心句重合率 ≥ 0.6。</p>
 
-  <pre><code>python -m app.backend.evaluation.run_eval \
-  --golden data/evaluation/golden \
-  --schema app/config/schemas/admission_record_structured_fields.v1.yaml \
-  --model &lt;模型名&gt; \
-  [--no-verifier] [--no-quality-flags] [--no-contract] [--thinking]</code></pre>
 
-  <table>
-    <tr><th>开关</th><th>含义</th></tr>
-    <tr><td><code>--no-quality-flags</code></td><td>跳过薄规则 quality_checks（第一步已有）</td></tr>
-    <tr><td><code>--no-contract</code></td><td>跳过契约校验（第一步已有）</td></tr>
-    <tr><td><code>--no-verifier</code></td><td>跳过复核器（本步新增）</td></tr>
-    <tr><td><code>--thinking</code></td><td>开启 Qwen thinking 模式（本步新增）</td></tr>
-  </table>
+<h2 class="chapter"><span class="no">第 三 章</span>实施：八个任务与一次迭代</h2>
 
-  <p>典型对比：<code>--no-verifier</code> vs 默认（复核器对质量指标的影响）；<code>--thinking</code> vs 默认（CoT 收益与代价）。</p>
+<h3>3.1 任务清单</h3>
+<p>8 个 TDD 任务全部按计划落地（每个任务独立 subagent 实施 + 两阶段评审），外加校准迭代 1 轮。关键数字：新增测试约 140 例全绿，全量 740+ passed，未触碰既有 5 个无关失败。</p>
+<div class="figure">
+<pre style="font-size:12.5px;line-height:1.7">
+Task 1  ChatML 拆层            complete_json(system_prompt) + prompt 拆 system/user
+Task 2  复核器 FieldVerifier    verdict 解析 / 静默降级 / quality_flags 映射
+Task 3  管线接入与消融          run_pipeline(apply_verify) + port 注入 + --no-verifier
+Task 4  指标修正三处            J 型归一（评估路径接线）/ 长文本重合 / 幻觉豁免
+Task 5  校准工具                Cohen's kappa / 裁定模板导出 / CLI
+Task 6  审核数据回流            确认时聚合修正字段 → 脱敏 → 金标活资产
+Task 7  thinking 开关           --thinking → chat_template_kwargs
+Task 8  数据任务                四轮真实运行 + 校准 + 复盘
+迭代 1  复核 prompt 降误报       证据一致性硬约束 / 找茬失败转 pass / 误报反例
+</pre>
+  <div class="caption"><b>表 3-1</b>　第二步的八个任务与一次校准迭代</div>
+</div>
 
-  <!-- ═══════════ 第 9 章 ═══════════ -->
-  <h2 class="chapter"><span class="no">第 9 章</span>实施顺序</h2>
+<h3>3.2 计划文本的现场修复</h3>
+<p>实施中发现的三处计划内部矛盾，均以"测试意图优先"裁定：system 模板示例 evidence id（u001）与新测试断言互斥；回流金标键名（fields vs golden）以评估消费契约 golden 为准；句子重合率逐字实现的数值（1/3）与断言（≥0.5）矛盾——改为对称包含判定。这类偏差在每轮评审中独立复核，未引入契约漂移。</p>
 
-  <table>
-    <tr><th>顺序</th><th>任务</th><th>理由</th></tr>
-    <tr><td>1</td><td>消息结构改造（complete_json system+user、prompt 拆层）</td><td>一切 prompt 工作的地基</td></tr>
-    <tr><td>2</td><td>指标修正（metrics.py 三处 + 单测）</td><td>重跑基线，得到修正后基线</td></tr>
-    <tr><td>3</td><td>复核器（verifier.py + prompt 激活 + 接入 + --no-verifier）</td><td>第二步主角</td></tr>
-    <tr><td>4</td><td>校准（calibrate.py + 人工裁定 + kappa）</td><td>合格才上岗</td></tr>
-    <tr><td>5</td><td>回流（review_service 聚合 + 脱敏 + 金标活资产 + 评估子集统计）</td><td>数据反哺</td></tr>
-    <tr><td>6</td><td>thinking 实测（--thinking 消融 + 报告对比）</td><td>数字说话</td></tr>
-  </table>
+<div class="experiment">
+  <div class="x-title">实验 3-1 ★ J 型归一的接线缺口</div>
+  <p>评审发现：生产 schema（v1）61 个字段<b>完全没有 qwen_type / review_control 注解</b>——J 型归一是死代码，生产审核路径的 J 型推断同样是死代码（既有隐藏问题）。用户裁决"仅评估路径合并 v2 注解"（最窄边界）：run_eval 从批处理 schema 合并 18 个同名 J 字段注解，不碰生产契约。</p>
+</div>
 
-  <blockquote>
-    好的设计原则穿越模型的迭代周期——它们描述的不是某个模型的用法，而是智能系统与世界交互的基本模式。
-    ——《深入理解 AI Agent》后记
-  </blockquote>
 
-  <p style="margin-top:40px; color: var(--muted); font-size: 13px; font-family: var(--sans);">
-    验证器规范化设计 · 2026-08-01 · 配套文档：docs/superpowers/specs/2026-08-01-verifier-normalization-design.md
-  </p>
+<h2 class="chapter"><span class="no">第 四 章</span>四轮运行：数字说了什么</h2>
+
+<h3>4.1 修正后基线：幻觉 43 → 13</h3>
+<div class="experiment">
+  <div class="x-title">实验 4-1 ★★★ 指标修正前后对比</div>
+  <p><b>status 98.09% → 98.36%（+0.27）　value 88.32% → 89.35%（+1.03）　幻觉 43 → 13（−30）</b>　契约非法 0 → 0　任务级 0/6 → 0/6</p>
+  <p>幻觉 −30 是三个指标修正的直接收益：否定短语重建的期望输出不再被计为幻觉（约 30 个字段从"模型幻觉"翻案为"判定误报"）。value +1.03% 来自 J 型归一的评估路径接线（鼻腔通畅 == 正常）。任务级 0/6 是既有状态：任务级判定要求全字段成功，本步未修改该口径。</p>
+</div>
+
+<h3>4.2 消融对比：复核器对指标零影响（设计使然）</h3>
+<p><code>--no-verifier</code> 与默认运行的指标<b>完全一致</b>（98.36 / 89.35 / 13）。这不是巧合而是铁律的结果：复核器不修改字段值，只追加 quality_flags 与 suspicious 标记——评估指标不读这些信号。复核器的影响面在审核页（可疑字段进人工核验），不在指标。这也意味着"复核器让指标变好/变坏"不是它的评价方式，一致性（kappa）才是。</p>
+
+<h3>4.3 校准：kappa 0.40 → 0.45，未达上岗线</h3>
+<div class="experiment">
+  <div class="x-title">实验 4-2 ★★★ 校准执行与结论</div>
+  <p>48 条 verdict（suspicious 29 / fail 1 / pass 18）→ 36 个去重字段由 Claude 子 agent 模拟医生逐条裁定（8 应标 / 28 不应标）→ 官方 kappa = <b>0.3962</b>（表 [[18,0],[16,14]]：<b>无漏报</b>，但 flagged 30 条中 16 条误报）。</p>
+  <p>迭代 1（证据一致性硬约束 + 找茬失败转 pass + 误报反例）：官方 kappa 0.4545，但<b>同键公平口径持平</b>（0.4615 → 0.4444）——官方提升是键集漂移的假象（export 重跑抽取非确定性）。</p>
+  <p><b>根因</b>：4B 模型复核存在能力天花板——编造指控（声称值"删了偏字"但值里就有）、套用缺陷模板未核对值、医学常识错误（"经口吸入应为经皮吸入"）。降误报与防漏报是跷跷板：保守化后出现"值退化为纯标签仍 pass"的漏报苗头。</p>
+  <p><b>结论（用户裁决：接受现状收尾）</b>：复核器 kappa 不达标，<b>活动路径保持不注入</b>（spec 5.2 上岗门槛被尊重）；评估路径可消融使用；校准/回流/指标基础设施完整保留，待模型升级后重校准。</p>
+</div>
+
+<h3>4.4 thinking 消融：无收益，默认关闭</h3>
+<p><code>--thinking</code> 开启后 status 98.09%（−0.27）、value 87.97%（−1.38）、幻觉 13 持平，且出现 1 次复核器输出非 JSON（静默降级机制按设计工作）。结论：4B 模型 CoT 在抽取任务上<b>无收益甚至略降</b>，默认保持关闭，开关保留供模型升级后复测。</p>
+
+
+<h2 class="chapter"><span class="no">第 五 章</span>复盘：做对的与留到下一步的</h2>
+
+<h3>5.1 做对的事</h3>
+<p><b>指标修正把噪声清掉了。</b>幻觉 43 → 13 说明第一步的"尺子"本身有 30 个误报——先校准尺子再量产品，是评估体系该有的顺序。<b>静默降级被真实触发且可靠。</b>复核器失败、非 JSON 输出都没能扰动任何任务。<b>ChatML 分层与消融开关就位。</b>前缀缓存、thinking、verifier 三个开关都可以独立对比。<b>数据闭环基础设施完整。</b>回流（脱敏 → 金标活资产）、校准（裁定模板 → kappa）都是真实可用的工具链，第一步"审核回流留到下一步"的承诺兑现。</p>
+
+<h3>5.2 留到下一步的事</h3>
+<p><b>复核器上岗需要更强的模型。</b>编造指控是 4B 模型的能力问题而非 prompt 缺失——prompt 工程把 kappa 从 0.40 推到 0.45 已近极限，建议模型升级后复用现有校准工具链重测（缺陷清单补"值退化"型、export 复用抽取结果 + verdict 去重消除键集漂移）。<b>活动路径复核器暂不注入。</b>kappa 不达标期间审核页继续由既有薄规则（quality_flags）兜底。<b>--golden-review 统计局限。</b>回流金标不含 OCR 原文，修正字段错误率衡量的是"空文档命中"——未来在回流文件补存 ocr_text（本就不进 git，PII 面不变）即可让该指标真正可读。<b>任务级 0/6</b> 是既有口径问题，留给第三步。</p>
 
 </div>
+</body>
+</body>
 </body>
 </html>
