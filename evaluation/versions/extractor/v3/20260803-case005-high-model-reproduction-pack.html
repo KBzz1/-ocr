@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>case_005 高模型等价复现包</title>
+<style>
+body{margin:0;background:#f4f6f9;color:#1f2937;font:15px/1.7 "Microsoft YaHei",sans-serif}.top{background:#173b68;color:#fff;padding:25px 30px}.top h1{margin:0;font-size:23px}.top p{margin:4px 0 0;opacity:.85}.wrap{max-width:1180px;margin:24px auto;padding:0 22px}.note,.card{background:#fff;border:1px solid #d9e1ec;border-radius:10px;padding:15px 18px;margin:13px 0}.warn{background:#fff8e6;border-color:#efd38f}h2{color:#173b68;font-size:18px;margin:30px 0 10px}textarea{width:100%;min-height:330px;resize:vertical;border:1px solid #bcc8d8;border-radius:8px;padding:13px;font:12.5px/1.6 Consolas,"Noto Sans Mono",monospace;background:#f9fbfd;color:#111;white-space:pre}#user{min-height:620px}#schema{min-height:520px}button{border:0;border-radius:7px;padding:8px 13px;background:#175ea8;color:#fff;cursor:pointer;margin:0 7px 8px 0}button.secondary{background:#4b5563}.small{font-size:13px;color:#667085}code{background:#edf1f5;padding:1px 4px;border-radius:4px}</style>
+</head>
+<body>
+<header class="top"><h1>case_005 高模型等价复现包</h1><p>当前 v3 实际抽取请求 · 原样 system + 原样 user + 原样 JSON Schema</p></header>
+<main class="wrap">
+<div class="note warn"><strong>重要：</strong>只有网页支持分别设置 system/user 且支持 JSON Schema structured output 时，才是协议层相同。普通聊天框只能做语义等价测试。为避免污染比较，请不要自行增删提示词，模型回复只保留一个 JSON 对象。</div>
+<div class="card"><strong>推荐操作：</strong>网页支持 system 时，分别复制第 1、2 段；若支持结构化输出，再配置第 3 段。网页只有一个输入框时，点击“复制网页单消息版”，但结果应标记为“非协议完全一致”。</div>
+
+<h2>1. 原样 system message</h2>
+<button onclick="copyText('system')">复制 system</button>
+<textarea id="system" readonly>你是慢阻肺/呼吸系统入院记录结构化抽取助手。只能根据有序 OCR 证据抽取固定字段；不得诊断、推理、纠正 OCR、补写证据或改变原文顺序。
+
+【任务边界】
+从证据头到尾阅读，按原始 [uXXX] 顺序理解上下文，不重排页序。每个字段只读取字段目录规定的章节、部位和时间范围。原文明确的事实可以被多个字段引用，共享同一证据合法；多个证据单元可以按原文顺序聚合。
+保留否定词“否认、无、未见”，禁止把否定翻转为阳性。
+
+【状态判定】
+- found（status="found"）：原文语义明确出现该字段事实；value 非空，并引用一个或多个真实 [uXXX]。
+- not_found（status="not_found"）：证据完全没有该字段事实；value=""，evidence_ids=[]。
+- uncertain（status="uncertain"）：存在疑似片段，但 OCR、时间归属或字段归属仍不能确定；不得用医学常识补齐。
+
+【取值策略】
+- 原文摘录型：保留否定词、不确定性、数值、单位和 OCR 原貌，不静默改写。
+- 正常判断型：明确正常/阴性时输出“正常”；出现异常时摘录具体异常；完全未提及才 not_found。阴性描述不能被当作未提及。
+- 诊断型：保留原文编号和编号顺序；不推断、合并、改标题或补写、添加诊断。
+
+【字段目录】
+【主诉】
+共同规则：只取主诉中直接记录的症状、持续时间和加重时间。
+chief_complaint｜主诉
+【现病史】
+共同规则：只取现病史；按字段特有时间范围归属，不用常识补齐。
+hpi_initial_onset｜初次发病情况｜首次/最初发病；不吸收后续加重或近期表现
+hpi_subsequent_course｜后续发病情况｜首次发病后的反复、进展和就诊过程；不吸收首次或近期表现
+hpi_hospital_diagnosis｜院内诊断情况｜住院期间原文已写出的诊断或检查结论
+hpi_treatment_medications｜治疗药物｜现病史中实际记录的药物和治疗措施
+hpi_recent_symptoms｜近期症状｜本次或近期加重、近期症状和伴随表现
+hpi_mental_status｜精神
+hpi_stool_status｜大便情况
+hpi_urine_status｜小便情况
+hpi_weight_change｜体重变化
+【既往史】
+共同规则：只取既往疾病、治疗、手术、输血、过敏等原文；保留否认作用域。
+pmh_cardiac_disease｜心脏病
+pmh_hypertension｜高血压
+pmh_diabetes｜糖尿病
+pmh_hepatitis_b｜乙肝
+pmh_hematochezia｜便血
+pmh_nephritis｜肾炎
+pmh_hematologic_disease｜血液病
+pmh_coronary_heart_disease｜冠心病
+pmh_cerebral_infarction｜脑梗塞
+pmh_surgery_history｜手术史
+pmh_transfusion_history｜输血史
+pmh_blood_product_history｜血制品史
+pmh_allergy_history｜过敏史
+【个人史】
+共同规则：只取个人史、职业、吸烟和饮酒等原文。
+personal_occupation｜工作
+personal_smoking_history｜吸烟史
+personal_drinking_history｜饮酒史
+【家族史】
+共同规则：只取家族史原文，不由疾病常识推断。
+family_history｜家族史
+【体格检查】
+共同规则：只取对应查体部位或生命体征；不吸收一般情况和邻近部位。
+pe_temperature｜体温
+pe_pulse｜脉搏
+pe_respiration_rate｜生命体征呼吸
+pe_blood_pressure｜血压
+pe_height｜身高
+pe_weight｜体重
+pe_bmi｜BMI
+pe_skin｜皮肤
+pe_eyes｜眼部
+pe_ears｜耳部
+pe_nose｜鼻部
+pe_oral_cavity｜口腔
+pe_neck｜颈部
+pe_chest｜胸部
+pe_breast｜乳房
+pe_respiratory_exam｜呼吸系统查体
+pe_cardiac_exam｜心脏查体
+pe_abdomen｜腹部
+pe_limbs｜四肢
+pe_neurological_exam｜神经
+【辅助检查】
+共同规则：只取对应检查项目及其原文数值、单位和结论。
+aux_chest_ct｜胸部CT
+aux_cardiac_ultrasound｜心脏超声
+aux_blood_gas_ph｜血气pH
+aux_blood_gas_pco2｜血气pCO2
+aux_blood_gas_po2｜血气pO2
+aux_blood_gas_na｜血气Na+
+aux_blood_gas_fio2｜血气FIO2
+aux_blood_gas_oxygenation_index｜血气氧合指数
+aux_blood_routine｜血常规
+aux_electrolytes｜电解质
+aux_renal_function｜肾功
+aux_d_dimer｜D2聚体
+【诊断】
+共同规则：只取原文诊断；保留编号和顺序，不推断、合并或改写。
+diagnosis_preliminary｜初步诊断
+diagnosis_final｜最终诊断
+
+【三个局部判定示例】
+1. 原文同时出现“10年前首次咳嗽”和“2天前咳嗽加重”：首次字段只取前者，近期症状字段只取后者，不能按相似词合并。
+2. 原文出现眼部、耳部、鼻部和口腔连续查体：每个部位只取自己的项目；原文支持不等于可以跨字段复制。
+3. 原文明确“耳道及听力正常”时，耳部是 found、value=“正常”；完全没有耳部内容时才是 not_found。
+示例只说明判断边界，正式输出仍须覆盖字段目录中的全部字段。</textarea>
+
+<h2>2. 原样 case_005 user message</h2>
+<button onclick="copyText('user')">复制 user</button>
+<textarea id="user" readonly>&lt;document&gt;
+&lt;section key="chief_complaint"&gt;
+[u001] 主诉:反复咳嗽、咳痰10+年, 喘累、气促2+年, 颜面部浮肿1周。
+&lt;/section&gt;
+&lt;section key="history_of_present_illness"&gt;
+[u002] 现病史: 10+年前, 患者无明显诱因出现咳嗽、咳痰, 咳白色泡沫痰, 好发于冬春季, 每年咳嗽、咳痰总时长超过3月, 于当地医院诊断为慢性阻塞性肺疾病, 并办理医保卡;近2+年, 患者出现活动后喘累、气促不适宜, 日常活动耐量减少, 长期家庭导氧, 每日鼻导管吸氧1.5小时左右, 未吸氧情况下, 自测指氧饱和度和在82%左右, 吸氧情况下, 指氧饱和度和在92%左右;1+月前(2月24日), 患者接电话时出现腰腹痛, 未影响日常生活, 未予以重视, 但腰痛症状持续加重, 患者于22天前(3月4日)前往沙坪坝区中医院住院行康复理疗, 觉腰痛症状逐渐缓解, 于7天前办理出院(3月19日), 家属发现患者颜面部浮肿, 面部浮肿持续2-3天后, 同时出现双下肢水肿明显, 家属将其送往重庆市中医院门诊就诊, 查血肌酐91 (41-81) umol/L、尿酸427umol/L、血钾5.71mmol/L, 拟安排住院治疗, 但无床位; 患者于昨日就诊于我院肾内科、呼吸科门诊, 在就诊期间患者出现指氧饱和度和偏低, 遂转至我院急诊就诊, 查血气分析:pCO250.00mmHg↑、pO248.00mmHg↓, 考虑Ⅱ型呼吸衰竭, 给予无创呼吸机辅助通气, 为进一步诊疗, 今日携呼吸机收入我科重症监护病房。
+[u003] 患者自患病以来, 精神食欲欠佳, 夜间休息一般, 大小便基本正常, 近期体重未见明显减轻。
+&lt;/section&gt;
+&lt;section key="past_medical_history"&gt;
+[u004] 既往史: 平素身体一般, 既往有“骨质疏松”病史多年;否认“高血压”、“糖尿病”、“肾炎”、“冠心病”等慢性病史, 否认肝炎、结核、疟疾等传染病史, 否认手术史, 否认外伤史, 否认输血史, 否认制品史, 否认药物、食物过敏史, 预防接种史不详。
+&lt;/section&gt;
+&lt;section key="personal_history"&gt;
+[u005] 个人史: 生于原籍, 在原籍长大, 无长期外地居住史, 无疫区居住史, 无疫区居住史, 无疫区居住史, 无放射物
+[u006] 毒物接触史, 无毒品接触史, 无烟史, 无饮酒史, 无冶游史。
+[u007] 婚育史:已婚, 适龄结婚, 配偶健康状况良好, 夫妻关系和睦, 育2女。
+[u008] 月经史:, , 没有经期状况。
+&lt;/section&gt;
+&lt;section key="family_history"&gt;
+[u009] 家族史:子女健康良好, 家族中无传染病及遗传病史, 无特殊疾病。
+&lt;/section&gt;
+&lt;section key="physical_examination"&gt;
+[u010] 体格检查
+[u011] 体温: 36.5℃ 脉搏: 92次/分 呼吸: 26次/分 血压: 102/57mmHg 体重: 40 kg。
+[u012] 发育正常，营养中等，匀称体型，平车推入病房，自动体位，神志清楚，精神好，表情自然，急性痛容，语言正常，对答切题，反应灵敏，查体合作。
+[u013] 皮肤粘膜正常，无黄疸、无出血点、无蜘蛛痣、无疣状斑、无皮疹，皮肤弹性正常，皮肤温度湿度正常，皮肤无疤痕，皮肤未见明显水肿。
+[u014] 全身浅表淋巴结未结及肿大，头颅无畸形，无压痛，头发色泽正常，颜面眼睑浮肿，睑结膜正常，球结膜无充血水肿，巩膜无黄染，眼球居中活动正常，角膜透明，瞳孔等大等圆，瞳孔:2.5mm，对光反射正常，双眼相凝视视物正常。
+[u015] 外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常。
+[u016] 鼻翼不煽动，鼻腔通畅，外鼻道无流涕，各鼻窦区无压痛。
+[u017] 唇色正常，口腔粘膜无溃疡，张口正常，牙齿排列整齐，齿龈正常，舌舌居中，口腔无异味，咽部正常，双侧扁桃体无肿大，腮腺无肿大压痛，两侧颈部，齿辅正常，舌舌居中，口腔无异味，咽部正常，双侧扁桃体无肿大，腮腺无肿大压痛，两侧颈部，颈静脉怒张，肝颈静脉回流征性，颈动脉搏动正常，颈软，颈部未扣及包块，气管居中，甲状腺正常、未触及明显震颤、未闻及明显血管杂音，颈部血管无杂音。
+[u018] 胸廓对称无畸形，胸壁静脉不显露，胸壁无肿块，肋间隙正常，肋骨挤压试验阴性，胸骨无压痛，双肺乳房对称，乳房呈正常发育，乳头无畸形，乳房皮肤未见异常，未扣及包块。
+[u019] 正常呼吸，呼吸动度两侧对称，双肺语音额两侧减弱，双肺叩诊过清音，双肺呼吸音减弱，可闻及湿啰音。
+[u020] 心前区无隆起，心尖搏动正常，双肺语音额两侧减弱，双肺叩诊过清音，双肺呼吸音减弱，可闻及湿啰音。
+[u021] 心前区无隆起，心尖搏动无震荡，心界叩诊向左下扩大，心率92次/分，心律规则，心音正常，心脏各瓣膜未闻及病理性杂音，无心包摩擦音。
+[u022] 周围血管征阴性。
+[u023] 腹部正常，腹股部左右对称，腹壁静脉无曲张，腹股部软无压痛，肝肋缘下未扣及，Murphy征阳性，脾肋缘下未扣及，肝脾区无叩痛，全腹未触及包块，肾区无叩击感，脐部移动性浊音阴性，膀胱区无压痛，肠鸣音正常，3次/分，腹部未闻及明显血管杂音，肛门生殖器外观正常，脊柱正常生理弯曲，腰椎有压痛，四肢关节正常，活动自如，双下肢水肿，无畸形、下肢静脉曲张、杵状指（趾），四肢肌力正常，四肢肌张力正常，腹壁反射正常，肱二头肌反射正常，膝反射正常，跟腱反射正常，霍夫曼征未引出，巴宾斯基征未引出，克匿格征未引出，布鲁津斯基征未引出。
+&lt;/section&gt;
+&lt;section key="ancillary_tests"&gt;
+[u024] 辅助检查：
+[u025] 我院：
+[u026] (2024-03-25 13:23)行超声(心脏)检查提示：检查结果仅供参考：1.左房增大；
+[u027] 2.左室壁增厚；
+[u028] 3.三尖瓣中重度反流，反流压差增高，考虑有肺动脉高压；
+[u029] 4.左室舒张功能减退。
+[u030] (2024-03-25 15:57)行CT(胸部)检查提示：检查结果：双肺散在吸支性病变可能，建议治疗后复查；
+[u031] 双肺气肿；
+[u032] 双侧胸腔积液，伴右肺下叶部分肺段被动性不张；
+[u033] 心包少量积液；
+[u034] 胸5、8椎体变扁；
+[u035] 右侧第7肋骨局部骨皮质欠光整；
+[u036] 肝周少量积液。
+[u037] (2024-03-25 17:36)行超声(床旁)检查提示：检查印象：床旁超声检查结果仅供参考，建议必要时门诊复查：双侧胸腔积液（右侧为著）。
+[u038] (2024-03-25 11:02)血细胞形态分析+血常规(静脉血)(静脉血)：白细胞(WBC)14.45×10^9/L↑
+[u039] 中性粒细胞百分率(NEUT%)92.2%↑
+[u040] 淋巴细胞百分率(LYM%)2.1%↓
+[u041] 嗜酸性粒细胞百分比(E0%)0.0%↓
+[u042] 中性粒细胞绝对值(NEUT#)13.33×10^9/L↑
+[u043] 淋巴细胞绝对值(LYM#)0.30×10^9/L↓
+[u044] 单核细胞绝对值(MXD#)0.79×10^9/L↑
+[u045] 嗜酸性粒细胞(E0#)0.00×10^9/L↓
+[u046] 平均血红蛋白浓度(MCHC)297.0g/L↓
+[u047] (2024-03-25 13:08)心衰标志物(急诊科)+梗死标志物(急诊科)(静脉血)：肌红蛋白(MYO)117.00ng/ml↑
+[u048] 氨基末端脑利钠肽1520.00pg/ml↑
+[u049] (2024-03-25 13:39)电解质+血清钙磷碱测定+肾功+肝功(9项)(静脉血)：肾小球滤过率(eGFR)35ml/min/1L↓
+[u050] 钾(K)5.70mmol/L↑
+[u051] 钠(NA)130.6mmol/L↓
+[u052] 氯(CL)90.5mmol/L↓
+[u053] 总二氧化碳(CO2)19.8mmol/L↓
+[u054] 阴离子间隙(GAP)20mmol/L↑
+[u055] 尿素(UREA)19.01mmol/L↑
+[u056] 肌酐(CREA)123.4umol/L↑
+[u057] 尿酸(UA)508umol/L↑
+[u058] 磷(P)1.88mmol/L↑
+[u059] 丙氨酸氨基转移酶(ALT)322.4IU/L↑
+[u060] 门冬氨酸氨基转移酶(AST)340.2IU/L↑
+[u061] 白蛋白(ALB)33.1g/L↓
+[u062] 白蛋白/球蛋白(ALB/GLB)0.96↓
+[u063] 总胆红素(TBIL)30.1umol/L↑
+[u064] 直接胆红素(DBIL)20.0Umol/L↑
+[u065] 碱性磷酸酶(ALP)263.5U/L↑
+[u066] γ-谷氨酰转肽酶(GGT)87.4IU/L↑
+[u067] 前白蛋白(PA)111mg/L↓
+[u068] (2024-03-25 13:43)甲功五项(静脉血)：游离三碘甲状腺原氨酸(FT3)2.71pmol/L↓
+[u069] 三碘甲状腺原氨酸(T3)0.77nmol/L↓(2024-03-25 14:08)降钙素原(静脉血)：降钙素原检测(PCT-J)
+&lt;/section&gt;
+&lt;section key="diagnosis"&gt;
+[u070] 初步诊断：慢性阻塞性肺疾病急性加重合并肺部感染2. 慢性肺源性心脏病3. II型呼吸衰竭4. 慢性心力衰竭5. 肾功能不全6. 肝功能不全7. 低蛋白血症8. 高胆红素血症9. 双侧胸腔积液10. 心包积液11. 肝周积液12. 电解质代谢紊乱13. 低钠血症14. 低氯血症15. 高钾血症16. 低T3综合征17. 高尿酸血症
+[u071] 最后诊断：慢性阻塞性肺疾病急性加重合并肺部感染2. 慢性肺源性心脏病3. II型呼吸衰竭4. 呼吸性酸中毒并代谢性碱中毒5. 心力衰竭6. 心房颤动7. 急性肾功能不全8. 肝功能异常9. 凝血功能障碍10. 低蛋白血症11. 双侧胸腔积液12. 心包积液13. 肝周积液14. 尿路感染15. 右侧小腿肌间静脉血栓形成16. 高胆红素血症17. 电解质代谢紊乱18. 骨质疏松症19. 营养风险20. 完全性右束支传导阻滞21. 左侧颈动脉粥样硬化斑块形成22. 低T3综合征
+&lt;/section&gt;
+&lt;/document&gt;
+
+请依据 system 中的任务边界、状态判定、取值策略和字段目录输出 JSON。</textarea>
+
+<h2>3. 原样 response_format JSON Schema</h2>
+<button onclick="copyText('schema')">复制 Schema</button>
+<textarea id="schema" readonly>{
+  "name": "admission_record_structured_fields",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schema_version", "document_type", "fields"],
+    "properties": {
+      "schema_version": {"type": "string", "enum": ["admission_record_structured_fields.v1"]},
+      "document_type": {"type": "string", "enum": ["copd_admission_record"]},
+      "fields": {
+        "type": "array",
+        "minItems": 61,
+        "maxItems": 61,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field_key", "status", "value", "evidence_ids"],
+          "properties": {
+            "field_key": {"type": "string", "enum": ["chief_complaint", "hpi_initial_onset", "hpi_subsequent_course", "hpi_hospital_diagnosis", "hpi_treatment_medications", "hpi_recent_symptoms", "hpi_mental_status", "hpi_stool_status", "hpi_urine_status", "hpi_weight_change", "pmh_cardiac_disease", "pmh_hypertension", "pmh_diabetes", "pmh_hepatitis_b", "pmh_hematochezia", "pmh_nephritis", "pmh_hematologic_disease", "pmh_coronary_heart_disease", "pmh_cerebral_infarction", "pmh_surgery_history", "pmh_transfusion_history", "pmh_blood_product_history", "pmh_allergy_history", "personal_occupation", "personal_smoking_history", "personal_drinking_history", "family_history", "pe_temperature", "pe_pulse", "pe_respiration_rate", "pe_blood_pressure", "pe_height", "pe_weight", "pe_bmi", "pe_skin", "pe_eyes", "pe_ears", "pe_nose", "pe_oral_cavity", "pe_neck", "pe_chest", "pe_breast", "pe_respiratory_exam", "pe_cardiac_exam", "pe_abdomen", "pe_limbs", "pe_neurological_exam", "aux_chest_ct", "aux_cardiac_ultrasound", "aux_blood_gas_ph", "aux_blood_gas_pco2", "aux_blood_gas_po2", "aux_blood_gas_na", "aux_blood_gas_fio2", "aux_blood_gas_oxygenation_index", "aux_blood_routine", "aux_electrolytes", "aux_renal_function", "aux_d_dimer", "diagnosis_preliminary", "diagnosis_final"]},
+            "status": {"type": "string", "enum": ["found", "not_found", "uncertain"]},
+            "value": {"type": "string"},
+            "evidence_ids": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}</textarea>
+
+<h2>4. 普通网页单消息版</h2>
+<button onclick="copyCombined()">复制网页单消息版</button>
+<p class="small">该按钮会按 system → user → 外部 Schema 的顺序拼接，并要求只输出 JSON。由于角色和约束方式改变，它不是协议层完全相同，只能用于判断高模型是否能理解同一语义任务。</p>
+<p class="small">拿到回复后，请把模型名称、是否开启思考/搜索，以及完整 JSON 原样贴回；不要手工修正。</p>
+</main>
+<script>
+async function copyText(id){await navigator.clipboard.writeText(document.getElementById(id).value);}
+async function copyCombined(){
+ const s=document.getElementById('system').value,u=document.getElementById('user').value,j=document.getElementById('schema').value;
+ const text='【SYSTEM MESSAGE｜原样】\n'+s+'\n\n【USER MESSAGE｜原样】\n'+u+'\n\n【原 API 使用的 JSON Schema 结构约束】\n'+j+'\n\n只返回符合该 Schema 的一个 JSON 对象，不要 Markdown 代码围栏，不要解释。';
+ await navigator.clipboard.writeText(text);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>当前 v4 抽取与复核完整提示词</title>
+  <style>
+
+  :root { --navy:#173b68; --ink:#1f2937; --muted:#667085; --line:#d9e1ec; --bg:#f5f7fa; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",sans-serif; font-size:15px; line-height:1.75; }
+  header { background:linear-gradient(135deg,#173b68,#27588e); color:#fff; padding:27px 34px; }
+  header h1 { margin:0 0 5px; font-size:24px; font-weight:650; }
+  header p { margin:0; opacity:.88; font-size:14px; }
+  main { max-width:1180px; margin:26px auto 60px; padding:0 24px; }
+  h2 { color:var(--navy); font-size:19px; border-left:5px solid var(--navy); padding-left:12px; margin:32px 0 12px; }
+  h3 { color:var(--navy); font-size:16px; margin:22px 0 8px; }
+  .note { background:#fff8e6; border:1px solid #f0d28a; border-radius:9px; padding:13px 17px; margin:14px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin:12px 0; }
+  pre { white-space:pre-wrap; word-break:break-word; overflow:auto; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:16px 18px; font-family:"SFMono-Regular",Consolas,"Noto Sans Mono",monospace; font-size:13px; line-height:1.68; }
+  .prompt { max-height:none; }
+  code { background:#eef2f6; border-radius:4px; padding:1px 4px; }
+  a { color:#175ea8; }
+  .small { color:var(--muted); font-size:13px; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:20px; background:#e8eef7; color:#28496f; font-size:12px; margin-right:4px; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:10px; margin:12px 0; }
+  summary { cursor:pointer; color:var(--navy); font-weight:650; padding:12px 17px; }
+  details pre { margin:0 12px 14px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); font-size:14px; }
+  th,td { padding:8px 11px; border-bottom:1px solid #edf0f5; text-align:left; vertical-align:top; }
+  th { background:#eef3f9; color:#243b5a; }
+  tr:last-child td { border-bottom:0; }
+  mark { background:#ffe3e3; color:#b91c1c; padding:0 2px; border-radius:3px; font-weight:600; }
+  footer { border-top:1px solid var(--line); margin-top:30px; padding-top:13px; color:var(--muted); font-size:13px; }
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>当前 v4 抽取与复核完整提示词</h1>
+    <p>版本：extractor.v4 + verifier.v3 · 来源：当前工作树实际 prompts.py（build_verification_messages 渲染） · 2026-08-04</p>
+  </header>
+  <main>
+    <div class="note">
+      <strong>阅读说明：</strong>以下文本按评估运行时的 <code>load_schema()</code> 路径展开。抽取器和复核器各有固定的 system prompt；user prompt 中的证据和 claim 会随病例、字段和引用 ID 变化。字段目录由 schema 渲染：每行携带取值策略标记（T/J/D）与 schema <code>description</code> 边界（pe_* 与电解质/肾功共 15 条）；示例为 3 个 JSON 微例。JSON Schema 通过 API 的 <code>response_format.type=json_schema</code> 传入，不属于下面的自然语言提示词。
+    </div>
+
+    <h2>一、调用结构</h2>
+    <table>
+      <thead><tr><th>阶段</th><th>system</th><th>user</th><th>输出约束</th></tr></thead>
+      <tbody>
+        <tr><td>抽取</td><td>固定任务边界、状态判定、T/J/D 取值策略、61 字段目录（P 标记 + 边界）、3 个 JSON 微例</td><td>一次完整的 <code>&lt;document&gt;</code> 证据流 + 输出指令</td><td>抽取 JSON Schema；一次覆盖全部 61 字段</td></tr>
+        <tr><td>复核</td><td>固定审核顺序 → 判定与原因 → 输出契约 + 5 个 JSON 微例（verifier.v3）</td><td><code>&lt;evidence&gt;</code> 原文一次 + <code>&lt;claims&gt;</code> JSON</td><td>复核 JSON Schema；verdict 只生成 <code>pass/suspicious</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>二、抽取器完整 system prompt</h2>
+    <pre class="prompt">你是慢阻肺/呼吸系统入院记录结构化抽取助手。只能根据有序 OCR 证据抽取固定字段；不得诊断、推理、纠正 OCR、补写证据或改变原文顺序。
+
+【任务边界】
+从证据头到尾阅读，按原始 [uXXX] 顺序理解上下文，不重排页序。每个字段只读取字段目录规定的章节、部位和时间范围。原文明确的事实可以被多个字段引用，共享同一证据合法；多个证据单元可以按原文顺序聚合。
+保留否定词“否认、无、未见”，禁止把否定翻转为阳性。
+
+【状态判定】
+- found（status="found"）：原文语义明确出现该字段事实；value 非空，并引用一个或多个真实 [uXXX]。
+- not_found（status="not_found"）：证据完全没有该字段事实；value=""，evidence_ids=[]。
+- uncertain（status="uncertain"）：存在疑似片段，但 OCR、时间归属或字段归属仍不能确定；不得用医学常识补齐。
+
+【取值策略】
+每个字段在字段目录中携带一个取值策略标记（T/J/D），定义如下：
+- 原文摘录型：保留否定词、不确定性、数值、单位和 OCR 原貌，不静默改写。
+- 正常判断型：明确正常/阴性时输出“正常”；出现异常时摘录具体异常；完全未提及才 not_found。阴性描述不能被当作未提及。
+- 诊断型：保留原文编号和编号顺序；不推断、合并、改标题或补写、添加诊断。
+
+【字段目录】
+每个字段一行，格式：field_key｜中文名｜P 标记｜特有边界（如有）。
+【主诉】
+共同规则：只取主诉中直接记录的症状、持续时间和加重时间。
+chief_complaint｜主诉｜P=T
+【现病史】
+共同规则：只取现病史；按字段特有时间范围归属，不用常识补齐。
+hpi_initial_onset｜初次发病情况｜P=T｜首次/最初发病；不吸收后续加重或近期表现
+hpi_subsequent_course｜后续发病情况｜P=T｜首次发病后的反复、进展和就诊过程；不吸收首次或近期表现
+hpi_hospital_diagnosis｜院内诊断情况｜P=T｜住院期间原文已写出的诊断或检查结论
+hpi_treatment_medications｜治疗药物｜P=T｜现病史中实际记录的药物和治疗措施
+hpi_recent_symptoms｜近期症状｜P=T｜本次或近期加重、近期症状和伴随表现
+hpi_mental_status｜精神｜P=J
+hpi_stool_status｜大便情况｜P=T
+hpi_urine_status｜小便情况｜P=J
+hpi_weight_change｜体重变化｜P=T
+【既往史】
+共同规则：只取既往疾病、治疗、手术、输血、过敏等原文；保留否认作用域。
+pmh_cardiac_disease｜心脏病｜P=T
+pmh_hypertension｜高血压｜P=T
+pmh_diabetes｜糖尿病｜P=T
+pmh_hepatitis_b｜乙肝｜P=J
+pmh_hematochezia｜便血｜P=T
+pmh_nephritis｜肾炎｜P=J
+pmh_hematologic_disease｜血液病｜P=J
+pmh_coronary_heart_disease｜冠心病｜P=J
+pmh_cerebral_infarction｜脑梗塞｜P=J
+pmh_surgery_history｜手术史｜P=J
+pmh_transfusion_history｜输血史｜P=J
+pmh_blood_product_history｜血制品史｜P=J
+pmh_allergy_history｜过敏史｜P=J
+【个人史】
+共同规则：只取个人史、职业、吸烟和饮酒等原文。
+personal_occupation｜工作｜P=T
+personal_smoking_history｜吸烟史｜P=T
+personal_drinking_history｜饮酒史｜P=T
+【家族史】
+共同规则：只取家族史原文，不由疾病常识推断。
+family_history｜家族史｜P=T
+【体格检查】
+共同规则：只取对应查体部位或生命体征；不吸收一般情况和邻近部位。
+pe_temperature｜体温｜P=T
+pe_pulse｜脉搏｜P=T
+pe_respiration_rate｜生命体征呼吸｜P=T
+pe_blood_pressure｜血压｜P=T
+pe_height｜身高｜P=T
+pe_weight｜体重｜P=T
+pe_bmi｜BMI｜P=T
+pe_skin｜皮肤｜P=J｜皮肤项目：颜色、皮疹、弹性、毛发、淋巴结；不含一般情况内容
+pe_eyes｜眼部｜P=J｜眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容
+pe_ears｜耳部｜P=J｜耳部项目：外耳道、鼓膜、听力、乳突；不含眼、鼻、口咽内容
+pe_nose｜鼻部｜P=J｜鼻部项目：鼻腔、鼻窦、鼻翼、鼻通气；不含耳、口腔内容
+pe_oral_cavity｜口腔｜P=J｜口腔咽喉项目：唇、齿、龈、舌、口腔黏膜、咽、扁桃体；不含颈部、耳鼻内容
+pe_neck｜颈部｜P=J｜颈部项目：颈静脉、颈动脉、甲状腺、气管、颈软、淋巴结；不含口腔、胸部内容
+pe_chest｜胸部｜P=T｜胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验；双肺内容归呼吸系统检查，乳房内容归乳房字段
+pe_breast｜乳房｜P=J｜乳房项目：对称、发育、乳头、皮肤、包块；不含胸廓、双肺内容
+pe_respiratory_exam｜呼吸系统查体｜P=T｜呼吸系统项目：呼吸动度、语颤、叩诊音、呼吸音、啰音；不含胸廓形态、乳房内容
+pe_cardiac_exam｜心脏查体｜P=J｜心脏项目：心前区、心尖搏动、心界、心率、心律、心音、杂音
+pe_abdomen｜腹部｜P=J｜腹部项目：腹壁、压痛、肝脾、移动性浊音、Murphy 征
+pe_limbs｜四肢｜P=J｜四肢脊柱项目：脊柱、关节、肌力、水肿、静脉曲张、病理征
+pe_neurological_exam｜神经｜P=J｜神经系统项目：神志、精神、对答、反射、病理征；一般情况（发育/营养/体型/体位/表情）不属本字段
+【辅助检查】
+共同规则：只取对应检查项目及其原文数值、单位和结论；明确带检查标签和值的结果可以出现在辅助检查章节或现病史中；仍禁止从诊断、症状或医学常识反推数值。
+aux_chest_ct｜胸部CT｜P=T
+aux_cardiac_ultrasound｜心脏超声｜P=T
+aux_blood_gas_ph｜血气pH｜P=T
+aux_blood_gas_pco2｜血气pCO2｜P=T
+aux_blood_gas_po2｜血气pO2｜P=T
+aux_blood_gas_na｜血气Na+｜P=T
+aux_blood_gas_fio2｜血气FIO2｜P=T
+aux_blood_gas_oxygenation_index｜血气氧合指数｜P=T
+aux_blood_routine｜血常规｜P=T
+aux_electrolytes｜电解质｜P=J｜电解质/矿物项目：钾、钠、氯、钙、镁、磷等电解质和矿物项目；不含肾功能项目（eGFR、尿素、肌酐、尿酸）
+aux_renal_function｜肾功｜P=J｜肾功项目：eGFR、尿素、肌酐、尿酸等肾功能项目；不含电解质/矿物项目（钾、钠、氯、钙、镁、磷等）
+aux_d_dimer｜D2聚体｜P=J
+【诊断】
+共同规则：只取原文诊断；保留编号和顺序，不推断、合并或改写。
+diagnosis_preliminary｜初步诊断｜P=D
+diagnosis_final｜最终诊断｜P=D
+
+【三个局部判定示例】
+示例只展示局部 output_fields 判断边界，不是完整顶层响应；示例 ID u901-u903 只属于示例，正式输出禁止使用。正式输出仍须覆盖字段目录中的全部字段。
+1. 共享否定作用域：同一合成证据同时支持一个 T 字段的否定摘录和一个 J 字段的“正常”，两者均 found 并引用同一 ID。
+```json
+{"output_fields": [
+  {"field_key": "pmh_cardiac_disease", "status": "found", "value": "否认心脏病史", "evidence_ids": ["u901"]},
+  {"field_key": "pe_eyes", "status": "found", "value": "正常", "evidence_ids": ["u901"]}
+]}
+```
+
+2. J 型异常优先：合成心脏查体同时有异常与正常描述，输出只保留异常片段，不因出现“正常”而折叠。
+```json
+{"output_fields": [
+  {"field_key": "pe_cardiac_exam", "status": "found", "value": "心率104次/分，心尖区可闻及2/6级收缩期杂音", "evidence_ids": ["u902"]}
+]}
+```
+
+3. 禁止推导 BMI：合成证据只有身高和体重，二者 found；BMI 必须 not_found、value 为空、evidence_ids 为空。
+```json
+{"output_fields": [
+  {"field_key": "pe_height", "status": "found", "value": "170cm", "evidence_ids": ["u903"]},
+  {"field_key": "pe_weight", "status": "found", "value": "70kg", "evidence_ids": ["u903"]},
+  {"field_key": "pe_bmi", "status": "not_found", "value": "", "evidence_ids": []}
+]}
+```</pre>
+
+    <h2>三、抽取器完整 user prompt 模板</h2>
+    <p class="small">实际病例会把下面示例证据替换为切分器生成的全部原始证据单元；不会再次粘贴完整 merged OCR。</p>
+    <pre class="prompt">&lt;document&gt;
+&lt;section key="history_of_present_illness"&gt;
+[u001] 示例证据
+&lt;/section&gt;
+&lt;/document&gt;
+
+请依据 system 中的任务边界、状态判定、取值策略和字段目录输出 JSON。</pre>
+    <div class="card">
+      <strong>user prompt 的实际渲染规则：</strong>
+      <ul>
+        <li>证据区按原始 <code>[uXXX]</code> 顺序分组渲染，<code>&lt;section key&gt;</code> 跟随证据单元章节，不重排、不重编号。</li>
+        <li>证据流跨多页时，在换页处插入 <code>&lt;page no="…"/&gt;</code> 标记；单页病例不渲染。</li>
+        <li>末尾固定追加输出指令；可选参数 <code>append_reminder</code> 再追加"再次检查：只输出固定字段，evidence_ids 必须来自上面的 [uXXX]。"（生产默认关闭）。</li>
+      </ul>
+    </div>
+
+    <h2>四、复核器完整 system prompt</h2>
+    <pre class="prompt">你是慢阻肺入院记录的字段级复核器。你只核验给定字段是否被给定 OCR 证据支持，不改写字段值、不补造证据、不提供医学建议。
+
+【固定审核顺序】
+1. grounding：先在 cited evidence 中核对声称值；完整值不连续时按句号、分号或换行拆成事实片段，再逐片段核对。value 超过 40 字时，按逗号、顿号补充拆分；含"否认、无、未见"的片段不拆。普通短 value 的逗号、顿号列表不拆开。
+2. field scope：检查内容是否属于该字段定义的部位、项目和时间范围；原文支持但字段越界仍应标记。
+3. 表述规范性：只检查证据中确实可定位的非标准表述（错读、病句、残缺、标签或单位问题），不归因于 OCR、不要求给出修正词。术语陌生（规范医学/日常用词但少见，如"粗测听力"）不构成问题；非任何标准用词或形近/音近标准词 → 必须标记。正确用字、符合规范的表述不得标记；值忠实摘录原文不豁免表述检查——值一致只证明抄得对，不证明文本本身没问题。
+4. logic consistency：检查否定/不确定、时间归属、数值关系和字段内部是否自相矛盾；值与他句/他证据矛盾（时间归属错误、否定翻转、体征互斥、数值关系不合理）→ 均应标记；不能从常识补出证据不存在的事实。
+5. verdict：四项检查全部通过才 pass；任何一项明确失败才 suspicious。调用方已在请求前检查 cited ID 是否完整，证据装配缺失不归因于字段。
+
+【判定与原因】
+- grounding、字段越界、时间归属、否定翻转或逻辑矛盾 → reason_code=extraction_mistake。
+- 可定位的非标准表述 → reason_code=nonstandard_expression。
+- 术语陌生（规范用词但少见）、写法不常见、轻微格式或正常有序聚合，不构成明确问题 → pass。
+- 术语陌生与非标准表述的判别：术语陌生是规范医学/日常用词（如"粗测"），不标；非任何标准用词或形近/音近标准词（如"胸状胸"→"桶状胸"、"古手"→"左手"），是错读 → 必须标，标注时不需要给出正确词。
+- pass 的 reason_code 必须为 none；不要把语义等价、多个有序证据片段聚合或正常族归一误报为问题。
+- 只生成 pass 或 suspicious。历史数据可能含 fail，解析器会兼容，但本次不要生成 fail。
+
+【输出契约】
+输出单个 JSON 对象，顶层只有 verifications。数组与输入字段一一对应，不能重复、遗漏或新增字段。每项固定包含：
+- field_key：输入字段 key；verdict：pass 或 suspicious；reason_code：extraction_mistake、nonstandard_expression 或 none。
+- checks：只包含 grounding_supported、field_scope_valid、text_standard、logic_consistent 四个布尔值。
+- pass 必须四项 checks 全 true 且 reason_code=none；suspicious 必须至少一项 check=false 且 reason_code 不是 none。
+- nonstandard_expression 必须对应 text_standard=false；extraction_mistake 必须对应 grounding_supported/field_scope_valid/logic_consistent 至少一项 false。
+- comment：不超过 40 个汉字。pass 写"一致"；suspicious 必须引用本请求实际存在的 uXXX 和具体疑点。
+
+【示例】
+1. 正确且有据 → pass
+```json
+{"verifications":[{"field_key":"pe_respiratory_exam","verdict":"pass","reason_code":"none","checks":{"grounding_supported":true,"field_scope_valid":true,"text_standard":true,"logic_consistent":true},"comment":"一致"}]}
+```
+2. 原文支持但字段越界 → suspicious/extraction_mistake
+```json
+{"verifications":[{"field_key":"pe_eyes","verdict":"suspicious","reason_code":"extraction_mistake","checks":{"grounding_supported":true,"field_scope_valid":false,"text_standard":true,"logic_consistent":true},"comment":"u911 原文属一般情况，不属眼部"}]}
+```
+3. 抽取忠实但证据存在可定位非标准表述 → suspicious/nonstandard_expression
+```json
+{"verifications":[{"field_key":"pe_neurological_exam","verdict":"suspicious","reason_code":"nonstandard_expression","checks":{"grounding_supported":true,"field_scope_valid":true,"text_standard":false,"logic_consistent":true},"comment":"u912 原文'古手'非标准表述，疑为'左手'错读"}]}
+```
+4. 术语陌生（如"粗测听力正常"，规范用词但少见）但文本完整明确，不因不熟悉用词误报 → pass
+```json
+{"verifications":[{"field_key":"pe_ears","verdict":"pass","reason_code":"none","checks":{"grounding_supported":true,"field_scope_valid":true,"text_standard":true,"logic_consistent":true},"comment":"一致"}]}
+```
+5. 对照：错读但形似规范词（如"胸状胸"疑为"桶状胸"）→ suspicious/nonstandard_expression
+```json
+{"verifications":[{"field_key":"pe_chest","verdict":"suspicious","reason_code":"nonstandard_expression","checks":{"grounding_supported":true,"field_scope_valid":true,"text_standard":false,"logic_consistent":true},"comment":"u913 原文'胸状胸'非标准表述，疑为'桶状胸'错读"}]}
+```
+
+示例仅展示结构与裁定边界；示例 ID u911-u913 不属于正式输入，禁止复制到输出。</pre>
+
+    <h2>五、复核器完整 user prompt 模板</h2>
+    <pre class="prompt">&lt;evidence&gt;
+&lt;document&gt;
+&lt;section key="history_of_present_illness"&gt;
+[u001] 示例证据
+&lt;/section&gt;
+&lt;/document&gt;
+&lt;/evidence&gt;
+&lt;claims&gt;
+{"claims":[{"field_key":"hpi_recent_symptoms","definition":"现病史/近期症状和加重","value":"示例值","cited_ids":["u001"]}]}
+&lt;/claims&gt;</pre>
+    <div class="card">
+      <strong>复核 user prompt 的实际组装规则：</strong>
+      <ul>
+        <li>证据区按原始顺序展示 cited unit 及其前后各一个邻接 unit（<code>neighbor_radius=1</code>）；证据正文只出现这一次，多页时同样插入 <code>&lt;page no="…"/&gt;</code> 标记。</li>
+        <li><code>claims</code> 是紧凑 JSON：<code>field_key</code>、字段定义（复核 scope hint 优先，其次 schema label）、预测 <code>value</code>、原始 <code>cited_ids</code>。</li>
+        <li>不根据预测 value 重新定位证据，不生成 <code>cited_text</code>，不对证据重新编号。</li>
+        <li>每组先收集去重 cited_ids；存在缺失 ID 的分组在调用前跳过，不让证据装配错误被模型标成字段错误。</li>
+      </ul>
+    </div>
+
+    <h3>实际复核 user prompt（case_006 真实请求 × 3）</h3>
+    <p class="small">以下三个请求由当前代码按实际组装规则生成（字段级分组便于聚焦，生产按 section 分组；红底 = 错读/越界问题位置）。</p>
+    <h3>实际案例：pe_chest —— 这个请求长什么样：</h3>
+    <p class="small">字段级分组展示实际复核请求（生产按 section 分组，与体格检查章约 20 个字段同组调用）。证据区 = cited 单元 ± 前后各 1 个邻接（neighbor_radius=1）。红底 = 错读/越界问题位置。</p>
+    <pre class="prompt">&lt;evidence&gt;
+&lt;document&gt;
+&lt;section key="physical_examination"&gt;
+[u035] 唇色正常，口腔粘膜无溃疡，张口正常，牙齿排列整齐，齿龈正常，伸舌居中，口腔无异味，咽部正常，双侧扁桃体无肿大，腮腺无肿大压痛，两侧颈部对称，颈静脉正常，肝颈静脉回流征阴性，颈动脉搏动正常，颈软，颈部未触及包块，气管居中，甲状腺正常、未触及明显震颤、未闻及明显血管杂音，颈部血管无余音。
+[u036] <mark>胸状胸</mark>，胸壁静脉不显露，胸壁无肿块，肋间隙变宽，胸廓挤压试验阴性，胸骨无压痛，<mark>双侧乳房对称，乳房呈正常发育，乳头无畸形，乳房皮肤未见异常，未触及包块</mark>。
+[u037] 呼吸稍促，呼吸动度两侧对称，双肺语颤两侧减弱，双肺听诊过清音，双肺呼吸音粗，双肺可闻及少许哮鸣音，双肺未闻及干湿啰音。
+&lt;/section&gt;
+&lt;/document&gt;
+&lt;/evidence&gt;
+&lt;claims&gt;
+{"claims":[{"field_key":"pe_chest","definition":"体格检查/胸廓：胸廓形态、肋间隙、胸骨、挤压试验；排除双肺和乳房","value":"<mark>胸状胸</mark>，胸壁静脉不显露，胸壁无肿块，肋间隙变宽，胸廓挤压试验阴性，胸骨无压痛，<mark>双侧乳房对称，乳房呈正常发育，乳头无畸形，乳房皮肤未见异常，未触及包块</mark>","cited_ids":["u036"]}]}
+&lt;/claims&gt;</pre>
+    <div class="card">
+      <strong>这个请求长什么样：</strong>
+      <ul>
+        <li>证据区共 3 个单元：u036（被引用）± 邻接 u035、u037——全部是“一行一个句号”的长行。</li>
+        <li>claim 的 value 是 <b>u036 的整段摘录</b>（74 字、只有句尾 1 个句号）：<mark>「胸状胸」</mark>疑为「桶状胸」OCR 错读；<mark>「双侧乳房对称……未触及包块」</mark>属乳房字段（pe_breast），越界抄入胸部。</li>
+        <li>v3 起 value &gt;40 字时按逗号、顿号补充拆分，且“表述规范性”环节对形近/音近标准词强制标记：<b>「胸状胸」命中 <code>nonstandard_expression</code>（V1 验收 pass）</b>。乳房越界内容仍与整段语义混在一起，靠字段级拆句未能单独揪出，但错读一项已足以令该字段 suspicious。</li>
+      </ul>
+    </div>
+    <h3>实际案例：pe_neurological_exam —— 这个请求长什么样：</h3>
+    <p class="small">字段级分组展示实际复核请求（生产按 section 分组，与体格检查章约 20 个字段同组调用）。证据区 = cited 单元 ± 前后各 1 个邻接（neighbor_radius=1）。红底 = 错读/越界问题位置。</p>
+    <pre class="prompt">&lt;evidence&gt;
+&lt;document&gt;
+&lt;section key="physical_examination"&gt;
+[u028] BMI:24.2kg/m2。
+[u029] <mark>发育正常，营养良好，匀称体型，步入病房，自动体位</mark>，神志清楚，精神好，表情自然，<mark>急性病容</mark>，语言正常，对答切题，反应灵敏，查体合作。
+[u030] 皮肤粘膜正常，无黄染、无出血点、无蜘蛛痣、无瘀点麻斑、无皮疹，皮肤弹性正常，皮肤温度湿度正常，皮肤无疤痕，皮肤未见明显水肿。
+&lt;/section&gt;
+&lt;/document&gt;
+&lt;/evidence&gt;
+&lt;claims&gt;
+{"claims":[{"field_key":"pe_neurological_exam","definition":"体格检查/神经：神志、精神、对答、反射、病理征；排除一般情况","value":"<mark>发育正常，营养良好，匀称体型，步入病房，自动体位</mark>，神志清楚，精神好，表情自然，<mark>急性病容</mark>，语言正常，对答切题，反应灵敏，查体合作","cited_ids":["u029"]}]}
+&lt;/claims&gt;</pre>
+    <div class="card">
+      <strong>这个请求长什么样：</strong>
+      <ul>
+        <li>claim 的 definition 明确写<code>排除一般情况</code>，但 value 仍是 u029 的整段摘录（63 字、1 个句号）：前段 <mark>「发育正常……自动体位」「急性病容」</mark>均属一般情况（发育/营养/体型/体位/表情），不是神经系统内容。</li>
+        <li>v3 逗号级拆句下 value 被拆成多个片段逐句核对，一般情况片段与神经项目归属冲突被明确识别 → <b>命中 <code>extraction_mistake</code>（V2 验收 pass）</b>。</li>
+        <li>注意根因之一在抽取器：整段摘录把越界内容原样抄进 value，复核器面对的是“忠实原文但边界错误”的文本。</li>
+      </ul>
+    </div>
+    <h3>实际案例：pe_temperature —— 对照意义：</h3>
+    <p class="small">字段级分组展示实际复核请求（生产按 section 分组，与体格检查章约 20 个字段同组调用）。证据区 = cited 单元 ± 前后各 1 个邻接（neighbor_radius=1）。红底 = 错读/越界问题位置。</p>
+    <pre class="prompt">&lt;evidence&gt;
+&lt;document&gt;
+&lt;section key="physical_examination"&gt;
+[u026] 体格检查
+[u027] 体温:36.7℃ 脉搏:99次/分 呼吸:21次/分 血压:142/87mmHg 身高:175cm 体重:74 kg。
+[u028] BMI:24.2kg/m2。
+&lt;/section&gt;
+&lt;/document&gt;
+&lt;/evidence&gt;
+&lt;claims&gt;
+{"claims":[{"field_key":"pe_temperature","definition":"体温","value":"36.7℃","cited_ids":["u027"]}]}
+&lt;/claims&gt;</pre>
+    <div class="card">
+      <strong>对照意义：</strong>
+      <ul>
+        <li>value 只有 <code>36.7℃</code>（5 个字），证据 u027 是生命体征整行（体温/脉搏/呼吸/血压/身高/体重，切分器刻意保持单单元防止数值错位）。</li>
+        <li>短 value 拆句天然是 1 个片段且无嵌套问题——这就是“长字段内嵌问题”的对照面：问题只出在 <b>整段摘录 + 单句号长 value</b> 的组合上。</li>
+      </ul>
+    </div>
+
+    <h2>六、case_006 实际抽取 user 证据包</h2>
+    <p class="small">这是按当前切分器从 case_006 OCR 生成的实际证据流，共 48 个单元，最长单元 347 字，单页 OCR 不渲染 page 标记。抽取器收到的 user prompt 就是在此证据流后追加第三节的输出指令。</p>
+    <details>
+      <summary>展开 case_006 的完整 &lt;document&gt; 证据流</summary>
+      <pre class="prompt">&lt;document&gt;
+&lt;section key="chief_complaint"&gt;
+[u001] 主诉：反复咳嗽、咳痰15年，喘息6年，加重1月。
+&lt;/section&gt;
+&lt;section key="history_of_present_illness"&gt;
+[u002] 现病史：15年前，患受凉感冒后因出现反复咳嗽、咳痰，咳嗽呈阵发性，咳痰以白色粘痰为主，无畏寒、发热，无咯血、胸痛，无胸闷、心悸，无反酸、烧心，无夜间阵发性呼吸困难，无下肢水肿，无黑朦、晕厥，无活动耐力下降，患者未予以重视，未规律诊疗。
+[u003] 6年前，患者再次因受凉感冒后出现咳嗽
+[u004] 咳痰较前明显加重，表现为咳嗽次数增加，痰液增多，仍未白色粘痰，伴活动后气促，表现为爬陡坡
+[u005] 爬3-4层楼梯后即感喘累气促不适，遂于太和镇卫生院就诊，行胸部CT提示慢性支气管炎，肺气肿，予以对症治疗后（具体诊疗情况不详），病情无明显缓解；
+[u006] 患者遂到合川区人民医院就诊，行对症支持治疗后仍无明显好转；
+[u007] 遂于我院门诊就诊，行 CT(胸部)检查提示：慢性支气管炎
+[u008] 肺气肿改变，肺功能提示中度阻塞性通气功能障碍，具体未见报告，诊断“慢性阻塞性肺疾病”，予以“噻托溴铵粉雾剂 18ug 经口吸入 1/日
+[u009] 布地奈德福莫特罗吸入粉雾剂 320ug 经口吸入 2/日
+[u010] 复方甲氧那明胶囊 2 粒 口服 3/日
+[u011] 乙酰半胱氨酸泡腾片 600mg 溶水口服 2/日”等治疗，用药后患者咳嗽咳痰症状控制尚可，患者院外长期规律用药及家庭氧疗。
+[u012] 咳嗽、1月前，患者咳嗽、咳痰症状再次加重，呈阵发性咳嗽，咳白色粘痰，伴活动后气促、活动耐力下降，表现为步行10米需停下休息，伴腹胀、无发热、胸痛、头晕、头痛、恶心、呕吐、腹痛，患者为进一步治疗，遂到我院级急诊就诊，给予二羟丙茶碱注射液 0.3g 静滴 1/日，盐酸氨溴索注射液 30mg 静推 1/日，吸入用布地奈德混悬液 2mg 雾化吸入 1/日，吸入用复方异丙托溴安溶液 2.5mg 雾化吸入 1/日，注射液头抱呋辛钠 2g 静滴 1/日等治疗后症状缓解不明显，遂于我科门诊就诊，门诊以“1.慢性阻塞性肺疾病急性加重 2.高血压”收入我科，自病情加重以来，精神、睡眠尚可，食欲正常，大便便血2次为第一次为鲜红色，量约200ml，第二次为粪便表面附暗红色血块，小便正常，近2周体重减轻6kg。
+&lt;/section&gt;
+&lt;section key="past_medical_history"&gt;
+[u013] 既往史：平素身体一般，患者自诉心前区隐痛10+年，一直未予以重视，我院急诊行心脏彩超未见明显异常；
+[u014] 高血压5+年，最高血压160/92mmHg,长期口服苯磺酸左氨氯地平片 2.5mg 2/日，平素未规律监测血压，控制情况不详；
+[u015] 自诉发现血糖异常1年，最高血糖不详（合川区人民医院诊断），一直未治疗未用药；
+[u016] 20天前，于合川区人民医院诊断乙肝，自诉乙肝小三阳，未服药；
+[u017] 20天前便血，于合川区人名医院对症处理后（具体不详），未再次出现便血。
+[u018] 否认“肾炎”、“血液病”、“冠心病”、“心脏病”、“脑梗塞”等病史，左下肢静脉曲张术后10年，术后恢复可；
+[u019] 古手中指断指再植术后5年，术后恢复可。
+[u020] 否认输血史，否认制品史，否认药物、食物过敏史，预防
+&lt;/section&gt;
+&lt;section key="personal_history"&gt;
+[u021] 个人史：生于重庆市合川区，在原籍长大，无长期外地居住史，文化程度小学，从事木匠工作，无疫区居住史，无疫水
+[u022] 疫源接触史，无放射物
+[u023] 毒物接触史，无毒品接触史，吸烟48年，1包/日，戒烟4年，饮酒48年，7-8两白酒/日，戒酒半年，无冶游史。
+[u024] 婚育史：已婚，22岁结婚，夫妻关系和睦，育1男，体健。
+&lt;/section&gt;
+&lt;section key="family_history"&gt;
+[u025] 家族史：母亲健在，父亲因慢阻肺并发症去世7年，1弟弟，1姐姐，3妹妹，兄弟姐妹及儿子健康状况良好，家族中无传染病及遗传病史，无特殊疾病。
+&lt;/section&gt;
+&lt;section key="physical_examination"&gt;
+[u026] 体格检查
+[u027] 体温:36.7℃ 脉搏:99次/分 呼吸:21次/分 血压:142/87mmHg 身高:175cm 体重:74 kg。
+[u028] BMI:24.2kg/m2。
+[u029] 发育正常，营养良好，匀称体型，步入病房，自动体位，神志清楚，精神好，表情自然，急性病容，语言正常，对答切题，反应灵敏，查体合作。
+[u030] 皮肤粘膜正常，无黄染、无出血点、无蜘蛛痣、无瘀点麻斑、无皮疹，皮肤弹性正常，皮肤温度湿度正常，皮肤无疤痕，皮肤未见明显水肿。
+[u031] 全身浅表淋巴结未触及肿大，头颅无畸形，无压痛,头发色泽正常，颜面眼睑无浮肿
+[u032] 下垂及闭合不全，睑结膜正常，球结膜无充血水肿，巩膜无黄染，眼球居中活动正常，角膜透明，瞳孔等大等圆，瞳孔:3mm,对光反射正常，双眼粗测视力正常。
+[u033] 外耳道无异常分泌物，双侧乳突区无压痛，双耳粗测听力正常。
+[u034] 鼻翼无煽动，鼻腔通畅，外鼻道无流涕，各鼻窦区无压痛。
+[u035] 唇色正常，口腔粘膜无溃疡，张口正常，牙齿排列整齐，齿龈正常，伸舌居中，口腔无异味，咽部正常，双侧扁桃体无肿大，腮腺无肿大压痛，两侧颈部对称，颈静脉正常，肝颈静脉回流征阴性，颈动脉搏动正常，颈软，颈部未触及包块，气管居中，甲状腺正常、未触及明显震颤、未闻及明显血管杂音，颈部血管无余音。
+[u036] 胸状胸，胸壁静脉不显露，胸壁无肿块，肋间隙变宽，胸廓挤压试验阴性，胸骨无压痛，双侧乳房对称，乳房呈正常发育，乳头无畸形，乳房皮肤未见异常，未触及包块。
+[u037] 呼吸稍促，呼吸动度两侧对称，双肺语颤两侧减弱，双肺听诊过清音，双肺呼吸音粗，双肺可闻及少许哮鸣音，双肺未闻及干湿啰音。
+[u038] 心前区无隆起，心尖搏动正常，心尖搏动无震颤，心界叩诊在正常范围，心率99次/分，心律规则，心脏正常，心脏各瓣膜未闻及病理性杂音，无心包摩擦音。
+[u039] 周围血管征阴性。
+[u040] 腹部正常，腹部左右对称，腹壁静脉无曲张，腹部软无压痛，肝肋缘下未触及，Murphy阳性，脾肋缘下未触及，肝脾区无叩痛，全腹未触及包块，肾区无叩击痛，腹部移动性浊音阴性，膀胱区无压痛，肠鸣音正常，4次/分，腹部未闻及明显血管杂音，肛门生殖器等外观正常，脊柱正常生理弯曲，脊柱四肢无压痛，四肢关节正常，活动自如，双下肢无水肿，无畸形，下肢静脉曲张，杵状指（趾），四肢肌力正常，四肢肌张力正常，腹壁反射正常，肱二头肌反射正常，膝反射正常，跟腱反射正常，霍夫曼征未引出，巴宾斯基征未引出，克格征征未引出，布鲁津斯基征未引出。
+&lt;/section&gt;
+&lt;section key="ancillary_tests"&gt;
+[u041] 辅助检查：(2026-04-29,我院)胸部CT:双肺多发实性结节，炎性结节或增殖灶可能，建议治疗后复查除外其它；
+[u042] 慢性支气管炎、肺气肿；
+[u043] 主动脉及冠状动脉钙化。
+[u044] 心脏超声:1.心脏各腔室大小基本正常;2.左室收缩功能正常。
+[u045] 血气分析:pH7.40、pCO236.00mmHg、PO276.00mmHg↓、Na+130.00mmol/L↓、FiO221.00、氧合指数:961.C反应蛋白:C反应蛋白(CRP)3.8mg/L;血常规:白细胞(WBC)6.53*10^9/L、单核细胞百分率(MID%)13.9%↑、单核细胞绝对值(MID#)0.92*10^9/L↑。
+[u046] 电解质、肾功能、D2聚体未见异常。
+&lt;/section&gt;
+&lt;section key="diagnosis"&gt;
+[u047] 初步诊断：1.慢性阻塞性肺病伴有急性加重2.冠状动脉粥样硬化性心脏病待诊3.高血压2级 很高危
+[u048] 最后诊断：1.慢性阻塞性肺病伴有急性加重2.冠状动脉粥样硬化性心脏病3.高血压2级 很高危4.2型糖尿病5.前列腺增生症6.消化道出血
+&lt;/section&gt;
+&lt;/document&gt;</pre>
+    </details>
+
+    <h2>七、与提示词并行发送的结构约束</h2>
+    <p>下面不是自然语言提示词，而是请求参数中的 JSON Schema：</p>
+    <ul>
+      <li>抽取：顶层固定 <code>schema_version/document_type/fields</code>，字段 key、status、value、evidence_ids 均受约束，字段数量固定为 61。</li>
+      <li>复核：顶层固定 <code>verifications</code>，verdict 只生成 <code>pass/suspicious</code>（解析器兼容历史 <code>fail</code>），reason_code 和四个 checks 受枚举/类型约束。</li>
+      <li>后端仍检查字段唯一性、完整覆盖、顺序和 evidence ID 是否真实存在；Schema 不替代语义验证。</li>
+    </ul>
+    <p><a href="../../../app/backend/services/copd_extraction/prompts.py">查看提示词实现源码 prompts.py</a> · <a href="20260803-prompt-v4-appendix.html">v4 附录（抽取器 + JSON Schema 全量）</a> · <a href="20260803-prompt-refactor-v3-implementation-evaluation-report.html">返回实施与评估报告</a></p>
+    <footer>以上文本基于当前工作树实际代码生成；证据内容和字段 claim 会随每个病例的运行结果变化。本页没有重新调用模型。实际案例区基于 2026-08-03 冒烟抽取产物（case_006，extractor.v4，用户授权唯一一次）；复核器区为 verifier.v3 定稿文本（2026-08-04）。</footer>
+  </main>
+</body>
+</html>

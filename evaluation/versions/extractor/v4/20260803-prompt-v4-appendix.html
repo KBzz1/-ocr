@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>PPEMA-V1 prompt v4 完整附录</title>
+<style>
+body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; }
+h2 { border-bottom: 2px solid #4a90d9; padding-bottom: 4px; }
+pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+</style></head><body>
+<h1>admission_record_structured_fields_prompt.v4 完整附录</h1>
+<p>Goal: PPEMA-V1 | 生成时间: 2026-08-03 | schema: admission_record_structured_fields.v1</p>
+
+<h2>扫描统计</h2>
+<table border="1" cellpadding="4" cellspacing="0">
+<tr><th>项</th><th>结果</th></tr>
+<tr><td>字段目录行数 / 唯一 P 标记</td><td>61 / 61（T=34 J=25 D=2）</td></tr>
+<tr><td>J 集合成员</td><td>25（与 field_policies 真源一致）</td></tr>
+<tr><td>三个 JSON 微例</td><td>3 个，全部可解析，顶层键仅 output_fields: True</td></tr>
+<tr><td>示例 ID u901-u903</td><td>仅存在于 system 示例段（不在 user 证据流）</td></tr>
+<tr><td>description 可见性</td><td>['睑结膜', '巩膜', '电解质', '肾功', '尿酸']</td></tr>
+<tr><td>禁用标记</td><td>无</td></tr>
+<tr><td>system 字符数</td><td>4169</td></tr>
+<tr><td>user 模板字符数</td><td>58</td></tr>
+<tr><td>system sha256</td><td><code>7d8d80dd9336ba9bed21db908e840de52b0147ce80828a381d48b6cab74369c7</code></td></tr>
+<tr><td>JSON Schema 字段数</td><td>61（minItems=61 maxItems=61）</td></tr>
+</table>
+
+<h2>完整 system prompt</h2>
+<pre>你是慢阻肺/呼吸系统入院记录结构化抽取助手。只能根据有序 OCR 证据抽取固定字段；不得诊断、推理、纠正 OCR、补写证据或改变原文顺序。
+
+【任务边界】
+从证据头到尾阅读，按原始 [uXXX] 顺序理解上下文，不重排页序。每个字段只读取字段目录规定的章节、部位和时间范围。原文明确的事实可以被多个字段引用，共享同一证据合法；多个证据单元可以按原文顺序聚合。
+保留否定词“否认、无、未见”，禁止把否定翻转为阳性。
+
+【状态判定】
+- found（status=&quot;found&quot;）：原文语义明确出现该字段事实；value 非空，并引用一个或多个真实 [uXXX]。
+- not_found（status=&quot;not_found&quot;）：证据完全没有该字段事实；value=&quot;&quot;，evidence_ids=[]。
+- uncertain（status=&quot;uncertain&quot;）：存在疑似片段，但 OCR、时间归属或字段归属仍不能确定；不得用医学常识补齐。
+
+【取值策略】
+每个字段在字段目录中携带一个取值策略标记（T/J/D），定义如下：
+- 原文摘录型：保留否定词、不确定性、数值、单位和 OCR 原貌，不静默改写。
+- 正常判断型：明确正常/阴性时输出“正常”；出现异常时摘录具体异常；完全未提及才 not_found。阴性描述不能被当作未提及。
+- 诊断型：保留原文编号和编号顺序；不推断、合并、改标题或补写、添加诊断。
+
+【字段目录】
+每个字段一行，格式：field_key｜中文名｜P 标记｜特有边界（如有）。
+【主诉】
+共同规则：只取主诉中直接记录的症状、持续时间和加重时间。
+chief_complaint｜主诉｜P=T
+【现病史】
+共同规则：只取现病史；按字段特有时间范围归属，不用常识补齐。
+hpi_initial_onset｜初次发病情况｜P=T｜首次/最初发病；不吸收后续加重或近期表现
+hpi_subsequent_course｜后续发病情况｜P=T｜首次发病后的反复、进展和就诊过程；不吸收首次或近期表现
+hpi_hospital_diagnosis｜院内诊断情况｜P=T｜住院期间原文已写出的诊断或检查结论
+hpi_treatment_medications｜治疗药物｜P=T｜现病史中实际记录的药物和治疗措施
+hpi_recent_symptoms｜近期症状｜P=T｜本次或近期加重、近期症状和伴随表现
+hpi_mental_status｜精神｜P=J
+hpi_stool_status｜大便情况｜P=T
+hpi_urine_status｜小便情况｜P=J
+hpi_weight_change｜体重变化｜P=T
+【既往史】
+共同规则：只取既往疾病、治疗、手术、输血、过敏等原文；保留否认作用域。
+pmh_cardiac_disease｜心脏病｜P=T
+pmh_hypertension｜高血压｜P=T
+pmh_diabetes｜糖尿病｜P=T
+pmh_hepatitis_b｜乙肝｜P=J
+pmh_hematochezia｜便血｜P=T
+pmh_nephritis｜肾炎｜P=J
+pmh_hematologic_disease｜血液病｜P=J
+pmh_coronary_heart_disease｜冠心病｜P=J
+pmh_cerebral_infarction｜脑梗塞｜P=J
+pmh_surgery_history｜手术史｜P=J
+pmh_transfusion_history｜输血史｜P=J
+pmh_blood_product_history｜血制品史｜P=J
+pmh_allergy_history｜过敏史｜P=J
+【个人史】
+共同规则：只取个人史、职业、吸烟和饮酒等原文。
+personal_occupation｜工作｜P=T
+personal_smoking_history｜吸烟史｜P=T
+personal_drinking_history｜饮酒史｜P=T
+【家族史】
+共同规则：只取家族史原文，不由疾病常识推断。
+family_history｜家族史｜P=T
+【体格检查】
+共同规则：只取对应查体部位或生命体征；不吸收一般情况和邻近部位。
+pe_temperature｜体温｜P=T
+pe_pulse｜脉搏｜P=T
+pe_respiration_rate｜生命体征呼吸｜P=T
+pe_blood_pressure｜血压｜P=T
+pe_height｜身高｜P=T
+pe_weight｜体重｜P=T
+pe_bmi｜BMI｜P=T
+pe_skin｜皮肤｜P=J｜皮肤项目：颜色、皮疹、弹性、毛发、淋巴结；不含一般情况内容
+pe_eyes｜眼部｜P=J｜眼部项目：睑结膜、球结膜、巩膜、角膜、瞳孔、对光反射、视力；不含头颅、头发、颜面、耳鼻口颈内容
+pe_ears｜耳部｜P=J｜耳部项目：外耳道、鼓膜、听力、乳突；不含眼、鼻、口咽内容
+pe_nose｜鼻部｜P=J｜鼻部项目：鼻腔、鼻窦、鼻翼、鼻通气；不含耳、口腔内容
+pe_oral_cavity｜口腔｜P=J｜口腔咽喉项目：唇、齿、龈、舌、口腔黏膜、咽、扁桃体；不含颈部、耳鼻内容
+pe_neck｜颈部｜P=J｜颈部项目：颈静脉、颈动脉、甲状腺、气管、颈软、淋巴结；不含口腔、胸部内容
+pe_chest｜胸部｜P=T｜胸廓项目：胸廓形态、肋间隙、胸骨、挤压试验；双肺内容归呼吸系统检查，乳房内容归乳房字段
+pe_breast｜乳房｜P=J｜乳房项目：对称、发育、乳头、皮肤、包块；不含胸廓、双肺内容
+pe_respiratory_exam｜呼吸系统查体｜P=T｜呼吸系统项目：呼吸动度、语颤、叩诊音、呼吸音、啰音；不含胸廓形态、乳房内容
+pe_cardiac_exam｜心脏查体｜P=J｜心脏项目：心前区、心尖搏动、心界、心率、心律、心音、杂音
+pe_abdomen｜腹部｜P=J｜腹部项目：腹壁、压痛、肝脾、移动性浊音、Murphy 征
+pe_limbs｜四肢｜P=J｜四肢脊柱项目：脊柱、关节、肌力、水肿、静脉曲张、病理征
+pe_neurological_exam｜神经｜P=J｜神经系统项目：神志、精神、对答、反射、病理征；一般情况（发育/营养/体型/体位/表情）不属本字段
+【辅助检查】
+共同规则：只取对应检查项目及其原文数值、单位和结论；明确带检查标签和值的结果可以出现在辅助检查章节或现病史中；仍禁止从诊断、症状或医学常识反推数值。
+aux_chest_ct｜胸部CT｜P=T
+aux_cardiac_ultrasound｜心脏超声｜P=T
+aux_blood_gas_ph｜血气pH｜P=T
+aux_blood_gas_pco2｜血气pCO2｜P=T
+aux_blood_gas_po2｜血气pO2｜P=T
+aux_blood_gas_na｜血气Na+｜P=T
+aux_blood_gas_fio2｜血气FIO2｜P=T
+aux_blood_gas_oxygenation_index｜血气氧合指数｜P=T
+aux_blood_routine｜血常规｜P=T
+aux_electrolytes｜电解质｜P=J｜电解质/矿物项目：钾、钠、氯、钙、镁、磷等电解质和矿物项目；不含肾功能项目（eGFR、尿素、肌酐、尿酸）
+aux_renal_function｜肾功｜P=J｜肾功项目：eGFR、尿素、肌酐、尿酸等肾功能项目；不含电解质/矿物项目（钾、钠、氯、钙、镁、磷等）
+aux_d_dimer｜D2聚体｜P=J
+【诊断】
+共同规则：只取原文诊断；保留编号和顺序，不推断、合并或改写。
+diagnosis_preliminary｜初步诊断｜P=D
+diagnosis_final｜最终诊断｜P=D
+
+【三个局部判定示例】
+示例只展示局部 output_fields 判断边界，不是完整顶层响应；示例 ID u901-u903 只属于示例，正式输出禁止使用。正式输出仍须覆盖字段目录中的全部字段。
+1. 共享否定作用域：同一合成证据同时支持一个 T 字段的否定摘录和一个 J 字段的“正常”，两者均 found 并引用同一 ID。
+```json
+{&quot;output_fields&quot;: [
+  {&quot;field_key&quot;: &quot;pmh_cardiac_disease&quot;, &quot;status&quot;: &quot;found&quot;, &quot;value&quot;: &quot;否认心脏病史&quot;, &quot;evidence_ids&quot;: [&quot;u901&quot;]},
+  {&quot;field_key&quot;: &quot;pe_eyes&quot;, &quot;status&quot;: &quot;found&quot;, &quot;value&quot;: &quot;正常&quot;, &quot;evidence_ids&quot;: [&quot;u901&quot;]}
+]}
+```
+
+2. J 型异常优先：合成心脏查体同时有异常与正常描述，输出只保留异常片段，不因出现“正常”而折叠。
+```json
+{&quot;output_fields&quot;: [
+  {&quot;field_key&quot;: &quot;pe_cardiac_exam&quot;, &quot;status&quot;: &quot;found&quot;, &quot;value&quot;: &quot;心率104次/分，心尖区可闻及2/6级收缩期杂音&quot;, &quot;evidence_ids&quot;: [&quot;u902&quot;]}
+]}
+```
+
+3. 禁止推导 BMI：合成证据只有身高和体重，二者 found；BMI 必须 not_found、value 为空、evidence_ids 为空。
+```json
+{&quot;output_fields&quot;: [
+  {&quot;field_key&quot;: &quot;pe_height&quot;, &quot;status&quot;: &quot;found&quot;, &quot;value&quot;: &quot;170cm&quot;, &quot;evidence_ids&quot;: [&quot;u903&quot;]},
+  {&quot;field_key&quot;: &quot;pe_weight&quot;, &quot;status&quot;: &quot;found&quot;, &quot;value&quot;: &quot;70kg&quot;, &quot;evidence_ids&quot;: [&quot;u903&quot;]},
+  {&quot;field_key&quot;: &quot;pe_bmi&quot;, &quot;status&quot;: &quot;not_found&quot;, &quot;value&quot;: &quot;&quot;, &quot;evidence_ids&quot;: []}
+]}
+```</pre>
+<h2>user 模板（evidence_units 渲染占位）</h2>
+<pre>（未提供证据；不得凭空生成字段）
+
+请依据 system 中的任务边界、状态判定、取值策略和字段目录输出 JSON。</pre>
+<h2>严格 JSON Schema（response_format.json_schema）</h2>
+<pre>{
+  &quot;name&quot;: &quot;admission_record_structured_fields&quot;,
+  &quot;strict&quot;: true,
+  &quot;schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;additionalProperties&quot;: false,
+    &quot;required&quot;: [
+      &quot;schema_version&quot;,
+      &quot;document_type&quot;,
+      &quot;fields&quot;
+    ],
+    &quot;properties&quot;: {
+      &quot;schema_version&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;enum&quot;: [
+          &quot;admission_record_structured_fields.v1&quot;
+        ]
+      },
+      &quot;document_type&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;enum&quot;: [
+          &quot;copd_admission_record&quot;
+        ]
+      },
+      &quot;fields&quot;: {
+        &quot;type&quot;: &quot;array&quot;,
+        &quot;minItems&quot;: 61,
+        &quot;maxItems&quot;: 61,
+        &quot;items&quot;: {
+          &quot;type&quot;: &quot;object&quot;,
+          &quot;additionalProperties&quot;: false,
+          &quot;required&quot;: [
+            &quot;field_key&quot;,
+            &quot;status&quot;,
+            &quot;value&quot;,
+            &quot;evidence_ids&quot;
+          ],
+          &quot;properties&quot;: {
+            &quot;field_key&quot;: {
+              &quot;type&quot;: &quot;string&quot;,
+              &quot;enum&quot;: [
+                &quot;chief_complaint&quot;,
+                &quot;hpi_initial_onset&quot;,
+                &quot;hpi_subsequent_course&quot;,
+                &quot;hpi_hospital_diagnosis&quot;,
+                &quot;hpi_treatment_medications&quot;,
+                &quot;hpi_recent_symptoms&quot;,
+                &quot;hpi_mental_status&quot;,
+                &quot;hpi_stool_status&quot;,
+                &quot;hpi_urine_status&quot;,
+                &quot;hpi_weight_change&quot;,
+                &quot;pmh_cardiac_disease&quot;,
+                &quot;pmh_hypertension&quot;,
+                &quot;pmh_diabetes&quot;,
+                &quot;pmh_hepatitis_b&quot;,
+                &quot;pmh_hematochezia&quot;,
+                &quot;pmh_nephritis&quot;,
+                &quot;pmh_hematologic_disease&quot;,
+                &quot;pmh_coronary_heart_disease&quot;,
+                &quot;pmh_cerebral_infarction&quot;,
+                &quot;pmh_surgery_history&quot;,
+                &quot;pmh_transfusion_history&quot;,
+                &quot;pmh_blood_product_history&quot;,
+                &quot;pmh_allergy_history&quot;,
+                &quot;personal_occupation&quot;,
+                &quot;personal_smoking_history&quot;,
+                &quot;personal_drinking_history&quot;,
+                &quot;family_history&quot;,
+                &quot;pe_temperature&quot;,
+                &quot;pe_pulse&quot;,
+                &quot;pe_respiration_rate&quot;,
+                &quot;pe_blood_pressure&quot;,
+                &quot;pe_height&quot;,
+                &quot;pe_weight&quot;,
+                &quot;pe_bmi&quot;,
+                &quot;pe_skin&quot;,
+                &quot;pe_eyes&quot;,
+                &quot;pe_ears&quot;,
+                &quot;pe_nose&quot;,
+                &quot;pe_oral_cavity&quot;,
+                &quot;pe_neck&quot;,
+                &quot;pe_chest&quot;,
+                &quot;pe_breast&quot;,
+                &quot;pe_respiratory_exam&quot;,
+                &quot;pe_cardiac_exam&quot;,
+                &quot;pe_abdomen&quot;,
+                &quot;pe_limbs&quot;,
+                &quot;pe_neurological_exam&quot;,
+                &quot;aux_chest_ct&quot;,
+                &quot;aux_cardiac_ultrasound&quot;,
+                &quot;aux_blood_gas_ph&quot;,
+                &quot;aux_blood_gas_pco2&quot;,
+                &quot;aux_blood_gas_po2&quot;,
+                &quot;aux_blood_gas_na&quot;,
+                &quot;aux_blood_gas_fio2&quot;,
+                &quot;aux_blood_gas_oxygenation_index&quot;,
+                &quot;aux_blood_routine&quot;,
+                &quot;aux_electrolytes&quot;,
+                &quot;aux_renal_function&quot;,
+                &quot;aux_d_dimer&quot;,
+                &quot;diagnosis_preliminary&quot;,
+                &quot;diagnosis_final&quot;
+              ]
+            },
+            &quot;status&quot;: {
+              &quot;type&quot;: &quot;string&quot;,
+              &quot;enum&quot;: [
+                &quot;found&quot;,
+                &quot;not_found&quot;,
+                &quot;uncertain&quot;
+              ]
+            },
+            &quot;value&quot;: {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            &quot;evidence_ids&quot;: {
+              &quot;type&quot;: &quot;array&quot;,
+              &quot;items&quot;: {
+                &quot;type&quot;: &quot;string&quot;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}</pre>
+</body></html>

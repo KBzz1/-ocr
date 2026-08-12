@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>抽取与复核上下文工程重构 · 实施与评估报告</title>
+  <style>
+    :root { --navy:#173b68; --ink:#1f2937; --muted:#667085; --line:#d9e1ec;
+      --bg:#f5f7fa; --card:#fff; --green:#137333; --red:#b42318; --amber:#a15c00; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",sans-serif; font-size:15px; line-height:1.75; }
+    .top { background:linear-gradient(135deg,#173b68,#27588e); color:#fff; padding:28px 34px; }
+    .top h1 { margin:0 0 5px; font-size:25px; font-weight:650; }
+    .top p { margin:0; opacity:.88; font-size:14px; }
+    .wrap { max-width:1120px; margin:26px auto 60px; padding:0 26px; }
+    h2 { color:var(--navy); font-size:19px; border-left:5px solid var(--navy); padding-left:12px; margin:34px 0 14px; }
+    h3 { color:var(--navy); font-size:16px; margin:22px 0 8px; }
+    p { margin:9px 0; }
+    .lead { font-size:17px; }
+    .banner { padding:15px 19px; border-radius:10px; margin:16px 0; border:1px solid; }
+    .banner.warn { background:#fff7e6; border-color:#f0d28a; }
+    .banner.good { background:#edf8ef; border-color:#b8dfbf; }
+    .banner.bad { background:#fff0ef; border-color:#efc1bc; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:13px; margin:16px 0; }
+    .stat { background:var(--card); border:1px solid var(--line); border-radius:11px; padding:13px 16px; }
+    .stat .k { color:var(--muted); font-size:13px; }
+    .stat .v { font-size:25px; font-weight:700; line-height:1.25; margin-top:3px; }
+    .pass { color:var(--green); } .fail { color:var(--red); } .warn-text { color:var(--amber); }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:11px; padding:16px 20px; margin:12px 0; }
+    table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:13px 0; font-size:14px; }
+    th,td { padding:9px 12px; border-bottom:1px solid #edf0f5; text-align:left; vertical-align:top; }
+    th { background:#eef3f9; color:#243b5a; font-weight:650; }
+    tr:last-child td { border-bottom:0; }
+    code { background:#eef2f6; border-radius:4px; padding:1px 4px; font-family:"SFMono-Regular",Consolas,monospace; font-size:.92em; }
+    pre { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:13px 16px; overflow:auto; white-space:pre-wrap; font-size:13px; line-height:1.6; }
+    ul,ol { padding-left:24px; }
+    li { margin:5px 0; }
+    .small { color:var(--muted); font-size:13px; }
+    .tag { display:inline-block; padding:2px 8px; border-radius:20px; background:#e8eef7; color:#28496f; font-size:12px; margin-right:5px; }
+    .foot { border-top:1px solid var(--line); margin-top:34px; padding-top:14px; color:var(--muted); font-size:13px; }
+    a { color:#175ea8; }
+    @media (max-width:700px) { .top { padding:22px 20px; } .wrap { padding:0 15px; } .top h1 { font-size:21px; } table { font-size:13px; } th,td { padding:7px 8px; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>抽取与复核上下文工程重构</h1>
+    <p>实施与评估报告 · 2026-08-03 · Qwen3.5-4B-AWQ-4bit · 6 例全量、无消融</p>
+  </header>
+
+  <main class="wrap">
+    <div class="banner warn">
+      <strong>结论先行：</strong>结构性改造已完成，证据 ID、JSON Schema 和复核上下文链路通过；但一次 6 例全量评估未通过质量硬门，因此本版本不能宣称达到上线标准。本轮按约定停止，不继续调参或重跑。
+    </div>
+
+    <div class="grid">
+      <div class="stat"><div class="k">case_006 状态准确率</div><div class="v pass">98.36%</div></div>
+      <div class="stat"><div class="k">case_006 确认幻觉</div><div class="v pass">0</div></div>
+      <div class="stat"><div class="k">6 例状态准确率</div><div class="v fail">93.99%</div></div>
+      <div class="stat"><div class="k">6 例值准确率</div><div class="v fail">80.41%</div></div>
+      <div class="stat"><div class="k">6 例确认幻觉</div><div class="v fail">1</div></div>
+      <div class="stat"><div class="k">契约非法</div><div class="v pass">0</div></div>
+    </div>
+
+    <h2>一、这次实际改了什么</h2>
+    <div class="card">
+      <h3>1. 证据切分与编号</h3>
+      <ul>
+        <li>先按换行、句号、分号切强边界，再判断生命体征、血气和诊断组合；普通逗号、顿号不作为常规切分符。</li>
+        <li>生命体征保护限制为短的标签行，避免长现病史或长查体段落因出现“呼吸”“体重”等词而被整体保护。</li>
+        <li>最终按原始顺序生成唯一的 <code>uXXX</code>；模型不再看到第二套 <code>order</code> 编号，也不再看到 <code>id_namespace</code> 或 <code>evidence_complete</code>。</li>
+        <li>复核使用生产与评估共用的证据组装器：引用单元加前后各一个邻接单元；缺失 cited ID 在调用前拦截。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>2. 抽取提示词</h3>
+      <ul>
+        <li>删除自然语言 <code>【schema】</code>、版本号和文书类型，固定结构交给 JSON Schema。</li>
+        <li>将 61 个重复字段卡压缩为“章节共同规则 + 简短字段边界表 + 三种取值策略”。</li>
+        <li>保留现病史首次/后续/近期边界、查体部位边界，以及 3 个局部对比示例；不塞入完整 61 字段 few-shot JSON。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>3. 复核提示词与 claim</h3>
+      <p>证据原文只在前面的 evidence 区出现一次，claim 只引用 ID，不复制证据文字：</p>
+      <pre>&lt;document&gt;
+&lt;section key="physical_examination"&gt;
+[u031] 睑结膜正常，球结膜无充血水肿，巩膜无黄染。
+[u032] 外耳道无异常分泌物，双耳粗测听力正常。
+[u033] 唇色发绀，口腔黏膜无溃疡，张口正常。
+&lt;/section&gt;
+&lt;/document&gt;
+
+{"claims":[{"field_key":"pe_oral_cavity","definition":"口腔：唇、齿、龈、舌、黏膜、咽、扁桃体；排除耳鼻和颈部","value":"唇色发绀，口腔黏膜无溃疡","cited_ids":["u033"]}]}</pre>
+      <p>审核顺序固定为：grounding → field scope → OCR quality → logic consistency → verdict。</p>
+    </div>
+    <div class="card">
+      <h3>4. 评估口径</h3>
+      <ul>
+        <li>“完整 value 不是连续子串”改名为 <code>literal_unlocated_count</code>，只作诊断。</li>
+        <li>新增原子级 grounding：按句号、分号、换行拆事实片段；可定位但非连续的片段记为支持候选，不直接判幻觉。</li>
+        <li><code>confirmed_hallucination</code> 只统计：证据和全文均不存在、不是允许归一、且引入新临床事实。</li>
+        <li>金标 <code>found</code>、预测 <code>not_found</code> 现在会进入 extraction FN 和 value mismatch，不再被跳过。</li>
+      </ul>
+    </div>
+
+    <h2>二、证据粒度修复结果</h2>
+    <p>原切分器在 <code>case_006</code> 生成过 904 字的体格检查单元和 836 字的现病史单元。修复后共生成 48 个单元，最长单元为 347 字；眼、耳、鼻、口腔等查体内容可以独立引用，异常长单元已经消失。</p>
+    <table>
+      <thead><tr><th>检查项</th><th>修复前</th><th>修复后</th><th>意义</th></tr></thead>
+      <tbody>
+        <tr><td>体格检查最大单元</td><td>904 字</td><td>不再出现</td><td>不再把整段查体误判为生命体征行</td></tr>
+        <tr><td>现病史最大单元</td><td>836 字</td><td>最大 347 字</td><td>强边界切分恢复，长病史可按证据单元引用</td></tr>
+        <tr><td>编号</td><td>可能出现 order/u 双编号</td><td>仅原始 uXXX</td><td>避免复核器看到缺失或错位的第二套编号</td></tr>
+      </tbody>
+    </table>
+
+    <h2>三、测试与评估协议</h2>
+    <table>
+      <thead><tr><th>阶段</th><th>执行内容</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>聚焦单元门</td><td>证据切分、提示词、复核器、字段端口、评估 runner、Schema/LLM 客户端</td><td><span class="pass">128 passed，1 skipped</span></td></tr>
+        <tr><td>唯一冒烟</td><td><code>case_006</code></td><td><span class="pass">已完成；契约和证据链通过</span></td></tr>
+        <tr><td>一次全量</td><td>6 例，temperature=0，无消融</td><td><span class="fail">已完成，但硬门未通过</span></td></tr>
+      </tbody>
+    </table>
+    <p class="small">全后端测试当时为 792 passed、1 skipped、5 failed：其中 4 个 review route 测试仍期待当前字段表中已不存在的 legacy <code>pe_vital_signs</code>，另 1 个是测试运行生成 <code>__pycache__</code> 的断言。核心改造路径以聚焦单元门为准。</p>
+
+    <h2>四、指标结果</h2>
+    <p>冒烟用于确认结构和关键病例；全量用于一次性判断整体质量。指标中的 <code>literal_unlocated_count</code> 和 <code>unsupported_claim_candidate</code> 不作为单独否决项。</p>
+    <table>
+      <thead><tr><th>指标</th><th>硬门/解释</th><th>case_006</th><th>6 例全量</th></tr></thead>
+      <tbody>
+        <tr><td>status accuracy</td><td>≥95%</td><td class="pass">98.36%</td><td class="fail">93.99%</td></tr>
+        <tr><td>value accuracy</td><td>≥84%</td><td class="pass">90.00%</td><td class="fail">80.41%</td></tr>
+        <tr><td>contract invalid</td><td>必须为 0</td><td class="pass">0</td><td class="pass">0</td></tr>
+        <tr><td>confirmed hallucination</td><td>必须为 0</td><td class="pass">0</td><td class="fail">1</td></tr>
+        <tr><td>extraction FN</td><td>不得高于基线</td><td class="pass">0</td><td class="fail">19</td></tr>
+        <tr><td>over-extraction FP</td><td>单独报告</td><td class="pass">0</td><td class="warn-text">2</td></tr>
+        <tr><td>literal-unlocated</td><td>诊断明细，不直接否决</td><td>8</td><td>31</td></tr>
+        <tr><td>unsupported candidate</td><td>诊断明细，不直接否决</td><td>5</td><td>18</td></tr>
+      </tbody>
+    </table>
+
+    <div class="banner bad">
+      <strong>全量门禁失败原因：</strong>状态准确率低于 95%，值准确率低于 84%，出现 1 个确认幻觉，并有 19 个 extraction FN。结构性门禁（契约非法、证据装配误报）通过，但整体抽取质量尚未达到计划要求。
+    </div>
+
+    <h2>五、错误分布与解释</h2>
+    <div class="card">
+      <p>全量报告包含 82 条字段错误记录和 50 条 grounding 明细。主要问题集中在：</p>
+      <ul>
+        <li><code>hpi_hospital_diagnosis</code>、<code>hpi_initial_onset</code>、<code>hpi_mental_status</code>：现病史时间段和字段归属仍容易混淆。</li>
+        <li><code>pe_cardiac_exam</code>、<code>pe_abdomen</code>、部分口腔/四肢字段：长查体被切细后，局部边界仍有值聚合误差。</li>
+        <li><code>pmh_*</code> 否定字段：case_002 等病例中否定列表的作用域仍出现状态和值不一致。</li>
+        <li>1 个确认幻觉来自 <code>pe_bmi=25.3</code>：既不在 cited evidence，也不在完整 OCR，且不是允许的格式归一。</li>
+      </ul>
+    </div>
+    <table>
+      <thead><tr><th>grounding 层</th><th>数量</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>literal_unlocated</td><td>31</td><td>整个 value 不是连续原文；其中一部分可由多个原文片段支持</td></tr>
+        <tr><td>unsupported_claim_candidate</td><td>18</td><td>当前自动规则无法定位，但可能是语义等价或聚合，不直接定性为幻觉</td></tr>
+        <tr><td>confirmed_hallucination</td><td>1</td><td>确认引入 OCR 与完整原文均不存在的新临床事实</td></tr>
+      </tbody>
+    </table>
+
+    <h2>六、与旧基线的比较注意事项</h2>
+    <p>旧报告（prompt v1）6 例 status accuracy 为 96.45%、value accuracy 为 84.54%、旧 hallucination_count 为 14。新报告的 status accuracy 可以直接参考，但 value accuracy <strong>不能直接与旧值比较</strong>：旧评估口径会跳过部分预测 <code>not_found</code>，导致分母偏乐观；本轮已按计划把这些字段计入 value mismatch 和 extraction FN。旧的 14 也不是新定义下的 <code>confirmed_hallucination</code>，两者不等价。</p>
+
+    <h2>七、产物与复核入口</h2>
+    <ul>
+      <li>本报告：<code>data/evaluation/reports/20260803-prompt-refactor-v3-implementation-evaluation-report.html</code></li>
+      <li><a href="20260803-prompt-refactor-v3-full-prompts.html">完整提示词附录（抽取器 + 复核器 + case_006 证据包）</a></li>
+      <li><a href="file:///tmp/manzufei_prompt_refactor_v3_smoke/20260803_092327_admission_record_structured_fields_prompt.v3_Qwen3.5-4B-AWQ-4bit.json">case_006 冒烟 JSON 报告</a></li>
+      <li><a href="file:///tmp/manzufei_prompt_refactor_v3_full/20260803_093738_admission_record_structured_fields_prompt.v3_Qwen3.5-4B-AWQ-4bit.json">6 例全量 JSON 报告</a></li>
+      <li><a href="../../../app/backend/services/algorithm_ports/evidence_units.py">证据切分实现</a> · <a href="../../../app/backend/services/copd_extraction/prompts.py">抽取/复核提示词</a> · <a href="../../../app/backend/services/copd_extraction/evidence_context.py">证据组装器</a> · <a href="../../../app/backend/evaluation/runner.py">评估 runner</a></li>
+    </ul>
+
+    <div class="banner good">
+      <strong>最终判断：</strong>本次改造解决了“证据切分过粗、编号不一致、claim 重复证据、FN 被漏计”等结构问题；但没有解决现病史/既往史状态边界和部分查体字段的语义抽取问题。当前版本适合作为下一轮诊断基线，不适合作为通过硬门的最终版本。
+    </div>
+
+    <div class="foot">报告生成于 2026-08-03。实验严格执行“case_006 冒烟一次 + 6 例全量一次”，未进行消融、A/B 或失败后的继续调参。</div>
+  </main>
+</body>
+</html>

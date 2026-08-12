@@ -14,4 +14,9 @@
 
 ## 指标对比与结论
 
-无独立评估报告；为 v3 主状态（非终态），终态描述见 extractor.v4。
+为 v3 主状态（非终态），终态描述见 extractor.v4。本目录报告（来自 `evaluation/data/reports/` 运行产物归档）：
+
+- `report.html` — 抽取与复核上下文工程重构·实施与评估报告（2026-08-03，v3 时代 6 例全量评估）
+- `20260802-prompt-refactor-field-boundary-ablation-report.html` — 提示词瘦身+字段边界四步消融报告（v3 终态前身，字段边界演进）
+- `20260803-case005-high-model-reproduction-pack.html` — case_005 高模型等价复现包（当前 v3 实际抽取请求原样复现）
+- `20260803-case005-high-model-vs-4b-analysis.html` — case_005 高模型与 4B 同提示词对比（4B 能力/注意力为主要失败变量）
