@@ -1,8 +1,22 @@
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
 ENGINE_ROOT = ROOT / "algorithms" / "qwen_batch_engine"
+
+
+def _tracked_files(rel: str) -> list[str]:
+    """返回 rel 路径下被 git 跟踪的文件列表(相对仓库根的路径)。
+
+    git 按路径前缀匹配,__pycache__ 等目录下任何被跟踪文件都会被列出。
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "--", f"algorithms/qwen_batch_engine/{rel}"],
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in proc.stdout.splitlines() if line]
 
 
 def test_qwen_batch_engine_layout_exists():
@@ -20,13 +34,16 @@ def test_qwen_batch_engine_version_records_upstream_commit():
 
 
 def test_qwen_batch_engine_does_not_commit_runtime_or_secret_files():
+    # 检查 git 跟踪状态而非磁盘存在性:__pycache__ 等运行产物在本机必然存在,
+    # 只要未被提交就不算违规。
     forbidden = [
-        ENGINE_ROOT / "upstream" / ".git",
-        ENGINE_ROOT / "upstream" / ".env",
-        ENGINE_ROOT / "upstream" / "scripts" / "__pycache__",
+        "upstream/.git",
+        "upstream/.env",
+        "upstream/scripts/__pycache__",
     ]
-    for path in forbidden:
-        assert not path.exists(), f"forbidden upstream artifact committed: {path}"
+    for rel in forbidden:
+        tracked = _tracked_files(rel)
+        assert not tracked, f"forbidden upstream artifact committed: {tracked[0]}"
 
 
 def test_qwen_batch_snapshot_contains_minimum_audit_files():
